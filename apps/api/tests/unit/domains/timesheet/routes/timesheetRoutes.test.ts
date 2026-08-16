@@ -56,11 +56,13 @@ const ACTION_IDS = {
   approve: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1',
   query: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc2',
   reopen: 'cccccccc-cccc-4ccc-8ccc-ccccccccccc3',
+  viewed: 'cccccccc-cccc-4ccc-8ccc-ccccccccccb0',
 } as const;
 const SEQUENCE_ID = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc4';
 const THREAD_READ_ID = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc7';
 const THREAD_POST_ID = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc8';
 const WITHDRAW_ID = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc9';
+const VIEWED_ID = 'cccccccc-cccc-4ccc-8ccc-ccccccccccb1';
 const AUTH_USER_ID = 'removed-parent-1';
 const VOID_ENTRY_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1';
 const VOID_REFUSED_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2';
@@ -138,6 +140,7 @@ beforeAll(async () => {
         reopen: (...args: unknown[]) => approveMock(...args),
         addThreadMessage: (...args: unknown[]) => approveMock(...args),
         withdrawQuery: (...args: unknown[]) => approveMock(...args),
+        markParentViewed: (...args: unknown[]) => approveMock(...args),
         voidEntry: (...args: unknown[]) => voidEntryMock(...args),
       },
     })
@@ -189,6 +192,7 @@ const ACTION_BODIES = {
   approve: {},
   query: { note: 'Tuesday looks long' },
   reopen: { reason: 'Missed an hour' },
+  viewed: {},
 } as const;
 
 function postAction(
@@ -224,8 +228,8 @@ describe('GET /timesheets/:id — the read reaches the service gate, unguarded b
   });
 });
 
-describe('POST /timesheets/:id/{approve,query,reopen} — actions stay ACTIVE-only', () => {
-  for (const action of ['approve', 'query', 'reopen'] as const) {
+describe('POST /timesheets/:id/{approve,query,reopen,viewed} — actions stay ACTIVE-only', () => {
+  for (const action of ['approve', 'query', 'reopen', 'viewed'] as const) {
     it(`404s ${action} for a removed member, and never reaches the command service`, async () => {
       const res = await postAction(action, ACTION_IDS[action]);
 
@@ -542,6 +546,18 @@ describe('POST /timesheets/:id/thread — writing stays ACTIVE-only', () => {
     );
 
     expect(res.status).toBe(404);
+    expect(approveMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /timesheets/:id/viewed — parent read receipt', () => {
+  it('404s viewed for a removed member without reaching the command service', async () => {
+    const res = await fetch(`${baseUrl}/timesheets/${VIEWED_ID}/viewed`, {
+      method: 'POST',
+    });
+
+    expect(res.status).toBe(404);
+    expect(getOwnedTimesheetMock).toHaveBeenCalledWith(AUTH_USER_ID, VIEWED_ID);
     expect(approveMock).not.toHaveBeenCalled();
   });
 });

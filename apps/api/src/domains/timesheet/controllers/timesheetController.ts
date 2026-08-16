@@ -369,4 +369,29 @@ export class TimesheetController {
       return next(error);
     }
   }
+
+  /**
+   * POST /timesheets/:id/viewed — parent read receipt.
+   *
+   * A POST rather than a side effect of `getWeek`: that read is also what
+   * the CARER does when she opens Hours, and folding the stamp into it would
+   * make "Opened by the household" mean she looked at her own week. The
+   * client calls this once, when the parent week view mounts WITH DATA.
+   */
+  static async markParentViewed(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const id = req.params.id as string;
+      const timesheet = await timesheetCommandService.markParentViewed(
+        getAuthUserId(req),
+        id
+      );
+      return sendSuccessResponse(res, 'Timesheet marked viewed', { timesheet });
+    } catch (error) {
+      return next(error);
+    }
+  }
 }

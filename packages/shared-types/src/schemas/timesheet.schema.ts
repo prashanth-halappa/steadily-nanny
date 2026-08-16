@@ -258,6 +258,12 @@ export const TimesheetSchema = z.object({
   // re-approval, while the append-only `timesheet_reopened` shift_event
   // remains the permanent audit. Two facts, two places (docs/11-MONEY.md §3).
   reopen_reason: z.string().nullable(),
+  /**
+   * First time a parent opened this week in the app. Whether, never how many
+   * times — mirrors `terms_proposals.viewed_at`. Optional so a client talking
+   * to an older API still parses (same reasoning as `household_member_id`).
+   */
+  parent_viewed_at: z.iso.datetime({ offset: true }).nullable().optional(),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
 });

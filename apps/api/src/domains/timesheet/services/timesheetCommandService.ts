@@ -87,6 +87,7 @@ import {
   CLEARED_EARNINGS_SNAPSHOT,
   type TimesheetEarningsSnapshot,
   TimesheetRepository,
+  type TimesheetRow,
 } from '../repositories/timesheetRepository';
 import type {
   AddTimesheetThreadMessageInput,
@@ -1782,6 +1783,39 @@ export class TimesheetCommandService {
     }
 
     return toWireTimesheet(approved);
+  }
+
+  /**
+   * One-way Hours receipt: WHETHER a parent opened this week in the app,
+   * never how many times. Mirrors `TermsProposalCommandService.markViewed`.
+   *
+   * The AUTHOR of the hours (the carer) never stamps — otherwise "opened by
+   * the household" on her Hours screen would mean she looked at her own
+   * week. A removed member is refused by `assertWriteMember`. An already-
+   * stamped row, or a week that is not `submitted`/`queried`, is a no-op
+   * return. No push: a receipt is not a notification.
+   *
+   * `now` is injectable so tests can pin the ISO string the repository sees.
+   */
+  async markParentViewed(
+    userId: string,
+    timesheetId: string,
+    now: () => Date = () => new Date()
+  ): Promise<Timesheet> {
+    const timesheet = await this.queries.getOwnedTimesheet(userId, timesheetId);
+    await this.assertWriteMember(userId, timesheet.household_id);
+    if (
+      timesheet.parent_viewed_at ||
+      !QUERYABLE_STATUSES.has(timesheet.status)
+    ) {
+      return toWireTimesheet(timesheet as TimesheetRow);
+    }
+    return toWireTimesheet(
+      (await this.timesheetRepo.stampParentViewed(
+        timesheet.id,
+        now().toISOString()
+      )) ?? (timesheet as TimesheetRow)
+    );
   }
 
   /**

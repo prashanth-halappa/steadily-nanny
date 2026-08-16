@@ -188,6 +188,16 @@ mock.module('@/src/hooks/mutations/useWithdrawTimesheetQuery', () => ({
     isPending: false,
   }),
 }));
+// U2: ParentWeekView stamps parent_viewed_at on a submitted week. Unmocked
+// it reaches the real useMutation and every HoursScreen case dies on
+// "No QueryClient" — same reason as useWithdrawTimesheetQuery above.
+mock.module('@/src/hooks/mutations/useMarkTimesheetViewed', () => ({
+  useMarkTimesheetViewed: () => ({
+    mutate: mock(() => {}),
+    mutateAsync: mock(() => Promise.resolve({})),
+    isPending: false,
+  }),
+}));
 
 // TimeEntryDayRow now hosts a flagged-entry AlertDialog (Wave 4 CX).
 mock.module('@rn-primitives/alert-dialog', () => {

@@ -271,6 +271,7 @@ mock.module('@/src/api/endpoints/timesheets', () => {
       query: mock(),
       reopen: mock(),
       exportCsv: exportCsvMock,
+      markViewed: mock(() => Promise.resolve({})),
     },
   };
 });

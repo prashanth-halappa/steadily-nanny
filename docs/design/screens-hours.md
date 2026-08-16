@@ -131,10 +131,17 @@ Card tone={weekTotalTone(...)}  p-5.5  gap-3
 - The parent's status headline is a `MetadataLabel` today
   (`WeekTotal.tsx:350–354`) — 13px. **The sentence telling a parent they owe an
   approval is the smallest text in the card.** It becomes `H3`.
-- The nanny's `StatusPill` stays (P0-5 was right to add it) and inherits the new
-  AA-passing fills — `confirmed` is now `#DEE7E2` / `#2F5A42` at 6.25:1, up from
-  4.10:1. On a screen where a pill is the only signal of whether your pay week is
-  settled, sub-AA was a real defect.
+- The nanny's `StatusPill` stays for queried / not-submitted / approved-adjacent
+  states (P0-5 was right to add it) and inherits the new AA-passing fills —
+  `confirmed` is now `#DEE7E2` / `#2F5A42` at 6.25:1, up from 4.10:1.
+- **Submitted, nanny viewer: the pill is gone.** "With the family" told her the
+  week had left her hands, not whether anyone had opened the hours her rent
+  depends on — five minutes and five days read the same. A three-step timeline
+  (`hours-status-timeline`) replaces that pill: hours logged (done), opened by
+  the household (done when `parent_viewed_at` is set, otherwise the not-opened
+  wording), waiting for approval (pending). The parent viewer never sees it —
+  they *are* the opening. Queried keeps the pill; approved keeps the
+  appreciation block.
 - `Approve` at `size="lg"`, full width, `variant="default"`. `Query` as
   `ghost` with `text-destructive` — correct as built.
 - Never colour an approved sentence green: `success` on `surfacePositive` v2 is
@@ -212,8 +219,9 @@ they match, a reader glancing at the screen cannot tell which number is money.
 
 Both roles get the same skeleton; the fork is who acts.
 
-**Nanny** (`NannyWeekView`) — her own week, her own total, her own status pill,
-her corrections, her expenses, her paid state. She never sees an Approve button
+**Nanny** (`NannyWeekView`) — her own week, her own total, her own status
+(timeline on a submitted week, pill otherwise), her corrections, her expenses,
+her paid state. She never sees an Approve button
 and never sees another carer's hours (the `currentUserId` filters at `:282–284`
 and `:159–161` fail *closed*, which is the correct instinct for a money screen
 and must not be softened).

@@ -452,6 +452,11 @@ export function NannyWeekView({
           localDateInZone(timeZone, new Date(timesheet.approved_at))
         )
       : null;
+  const parentViewedDateLabel = timesheet?.parent_viewed_at
+    ? formatEarningsLongDate(
+        localDateInZone(timeZone, new Date(timesheet.parent_viewed_at))
+      )
+    : null;
 
   // TIER0-CX-SPEC.md §6.3/§7: the Reimbursements card is approved-only and
   // shares the week's currency — `earningsOk.currency` when a timesheet
@@ -534,6 +539,7 @@ export function NannyWeekView({
               earnings={earnings}
               earningsRole="nanny"
               approvedDateLabel={approvedDateLabel}
+              parentViewedDateLabel={parentViewedDateLabel}
               householdName={activeHousehold.household?.name ?? null}
               earningsReopened={reopened}
               earningsReopenReason={timesheet?.reopen_reason ?? null}

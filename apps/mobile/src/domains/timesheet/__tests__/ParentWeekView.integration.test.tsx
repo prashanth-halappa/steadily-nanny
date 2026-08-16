@@ -284,6 +284,11 @@ const approveMock = mock(() =>
 const queryMock = mock(() =>
   Promise.resolve(makeTimesheet({ status: 'queried' }))
 );
+const markViewedMock = mock(() =>
+  Promise.resolve(
+    makeTimesheet({ parent_viewed_at: '2026-08-16T12:00:00.000Z' })
+  )
+);
 const listMembersMock = mock(() => Promise.resolve([householdMember]));
 // Phase 4 (additive): the week's own approved-expenses read + the
 // household-wide pending-review inbox + the review mutation. Mocked so this
@@ -348,6 +353,7 @@ mock.module('@/src/api/endpoints/timesheets', () => {
       getThread: () => Promise.resolve({ messages: [] }),
       addThreadMessage: () => Promise.resolve({ messages: [] }),
       withdrawQuery: () => Promise.resolve({}),
+      markViewed: markViewedMock,
     },
   };
 });
@@ -364,14 +370,13 @@ beforeAll(async () => {
   formatWeekRangeLabel = weekUtils.formatWeekRangeLabel;
 });
 
-function renderParentView(
-  queryClient = new QueryClient({
+function renderParentView(extra: { isPastMember?: boolean } = {}) {
+  const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: 0 },
       mutations: { retry: false },
     },
-  })
-) {
+  });
   const weekDates = getWeekDates(WEEK_START);
   const weekRangeLabel = formatWeekRangeLabel(weekDates);
   const utils = render(
@@ -387,6 +392,7 @@ function renderParentView(
         onNextWeek={() => {}}
         isNextWeekDisabled={false}
         isPreviousWeekDisabled={false}
+        isPastMember={extra.isPastMember}
       />
     </QueryClientProvider>
   );
@@ -399,6 +405,7 @@ beforeEach(() => {
   getByIdMock.mockReset();
   approveMock.mockReset();
   queryMock.mockReset();
+  markViewedMock.mockReset();
   listMembersMock.mockReset();
   listExpensesForWeekMock.mockReset();
   listPendingExpensesMock.mockReset();
@@ -420,6 +427,11 @@ beforeEach(() => {
   );
   queryMock.mockImplementation(() =>
     Promise.resolve(makeTimesheet({ status: 'queried' }))
+  );
+  markViewedMock.mockImplementation(() =>
+    Promise.resolve(
+      makeTimesheet({ parent_viewed_at: '2026-08-16T12:00:00.000Z' })
+    )
   );
   listMembersMock.mockImplementation(() => Promise.resolve([householdMember]));
 
@@ -2352,5 +2364,119 @@ describe('ParentWeekView — breakdown on landing', () => {
 
     await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
     expect(queryByTestId('hours-earnings-breakdown')).toBeNull();
+  });
+});
+
+describe('ParentWeekView — parent viewed receipt', () => {
+  // Own ids: `viewedThisSession` is module-scope and outlives a test, so a
+  // test that reused `ts-1` would be asserting an earlier render's stamp.
+  it('fires markViewed once for the selected carer when her week is submitted and unviewed', async () => {
+    const id = 'ts-viewed-1';
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([makeTimesheet({ id })])
+    );
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(makeTimesheetWeek({ id }))
+    );
+
+    const { getByTestId } = renderParentView();
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+    await waitFor(() => expect(markViewedMock).toHaveBeenCalledTimes(1));
+    expect(markViewedMock).toHaveBeenCalledWith(id);
+  });
+
+  it('does not fire when parent_viewed_at is already set', async () => {
+    const id = 'ts-viewed-already';
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([
+        makeTimesheet({
+          id,
+          parent_viewed_at: '2026-08-16T12:00:00.000Z',
+        }),
+      ])
+    );
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(
+        makeTimesheetWeek({
+          id,
+          parent_viewed_at: '2026-08-16T12:00:00.000Z',
+        })
+      )
+    );
+
+    const { getByTestId } = renderParentView();
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+    expect(markViewedMock).not.toHaveBeenCalled();
+  });
+
+  it('fires again for the second carer when the carer switcher changes', async () => {
+    const CARER_B_ID = 'carer-bea';
+    const amaraId = 'ts-viewed-amara';
+    const beaId = 'ts-viewed-bea';
+    const carerBMember = {
+      ...householdMember,
+      id: 'member-carer-b-viewed',
+      user_id: CARER_B_ID,
+    };
+
+    listEntriesMock.mockImplementation(() =>
+      Promise.resolve([
+        makeEntry(),
+        makeEntry({
+          id: 'entry-bea-viewed',
+          carer_id: CARER_B_ID,
+          carer_display_name: 'Bea',
+        }),
+      ])
+    );
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([
+        makeTimesheet({ id: amaraId }),
+        makeTimesheet({
+          id: beaId,
+          carer_id: CARER_B_ID,
+          carer_display_name: 'Bea',
+        }),
+      ])
+    );
+    getByIdMock.mockImplementation((timesheetId?: string) =>
+      Promise.resolve(
+        timesheetId === beaId
+          ? makeTimesheetWeek({
+              id: beaId,
+              carer_id: CARER_B_ID,
+              carer_display_name: 'Bea',
+            })
+          : makeTimesheetWeek({ id: amaraId })
+      )
+    );
+    listMembersMock.mockImplementation(() =>
+      Promise.resolve([householdMember, carerBMember])
+    );
+
+    const { getByTestId } = renderParentView();
+    await waitFor(() =>
+      expect(getByTestId(`hours-carer-tab-${CARER_ID}`)).toBeTruthy()
+    );
+    await waitFor(() => expect(markViewedMock).toHaveBeenCalledWith(amaraId));
+    expect(markViewedMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.press(getByTestId(`hours-carer-tab-${CARER_B_ID}`));
+    await waitFor(() => expect(markViewedMock).toHaveBeenCalledWith(beaId));
+    expect(markViewedMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not fire for a past member', async () => {
+    const id = 'ts-viewed-past';
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([makeTimesheet({ id })])
+    );
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(makeTimesheetWeek({ id }))
+    );
+
+    const { getByTestId } = renderParentView({ isPastMember: true });
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+    expect(markViewedMock).not.toHaveBeenCalled();
   });
 });

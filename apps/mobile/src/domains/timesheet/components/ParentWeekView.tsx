@@ -70,6 +70,7 @@ import {
   useCorrectPayment,
 } from '@/src/hooks/mutations/useCorrectPayment';
 import { useMarkReimbursed } from '@/src/hooks/mutations/useMarkReimbursed';
+import { useMarkTimesheetViewed } from '@/src/hooks/mutations/useMarkTimesheetViewed';
 import { useQueryTimesheet } from '@/src/hooks/mutations/useQueryTimesheet';
 import {
   type OverPaymentMetadata,
@@ -131,6 +132,10 @@ import { WeekMoneyCard } from './WeekMoneyCard';
 import { WeekQueryThread } from './WeekQueryThread';
 import { WeekTotal } from './WeekTotal';
 import { WithdrawQueryDialog } from './WithdrawQueryDialog';
+
+/** Session-scoped one-shot so a remount does not re-stamp. Keyed per
+ * viewer and per timesheet — a two-carer week has two rows. */
+const viewedThisSession = new Set<string>();
 
 interface ParentWeekViewProps {
   householdId: string;
@@ -210,6 +215,7 @@ export function ParentWeekView({
   );
   const markReimbursed = useMarkReimbursed();
   const withdrawQuery = useWithdrawTimesheetQuery();
+  const markViewed = useMarkTimesheetViewed();
   const addThreadMessage = useAddTimesheetThreadMessage();
   const [isQuerySheetVisible, setIsQuerySheetVisible] = useState(false);
   const [isWithdrawDialogOpen, setIsWithdrawDialogOpen] = useState(false);
@@ -329,6 +335,32 @@ export function ParentWeekView({
   const entries = allEntries.filter(e => carerKeyOf(e) === selectedCarerId);
   const timesheet =
     weekTimesheets.find(t => carerKeyOf(t) === selectedCarerId) ?? null;
+  useEffect(() => {
+    if (!timesheet || !currentUserId) return;
+    if (isPastMember) return;
+    if (
+      timesheet.status !== TIMESHEET_STATUSES.SUBMITTED &&
+      timesheet.status !== TIMESHEET_STATUSES.QUERIED
+    ) {
+      return;
+    }
+    if (timesheet.parent_viewed_at) return;
+    const key = `${currentUserId}:${timesheet.id}`;
+    if (viewedThisSession.has(key)) return;
+    viewedThisSession.add(key);
+    markViewed.mutate({
+      timesheetId: timesheet.id,
+      householdId,
+      weekStart: weekStartISO,
+    });
+  }, [
+    timesheet,
+    currentUserId,
+    isPastMember,
+    markViewed,
+    householdId,
+    weekStartISO,
+  ]);
   const reopened = useReopenedNotice(timesheet?.id, timesheet?.status);
   // Drop the staged adjustment whenever the week underneath it moves — a
   // different carer's row, or a roll-up that changed the hours. The parent

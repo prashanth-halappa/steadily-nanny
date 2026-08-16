@@ -183,6 +183,7 @@ server revert. Know them before you ship.
 | Sick time-off auto-opens cancel requests (D-23/S10) | Service logic. | Server revert. Worst case is a burst of change requests. |
 | `week_below_guarantee` REPLACES `timesheet_approved` | One act, one push (A8 discipline). | Older clients fall back to the route-map default on an unknown type — a silent no-op tap, not a crash. |
 | Query supersede / withdraw-query exit (D-19) | Status machine change. | Server revert. |
+| Timesheet `parent_viewed_at` receipt (migration 100) | Column + own `updated_at` trigger on `timesheets`. No job, no push, no flag. | Drop the trigger, recreate 017's `set_timesheets_updated_at` using `public.set_updated_at()`, then drop the column. Older clients tolerate the missing field because `TimesheetSchema.parent_viewed_at` is optional. **Never** edit the shared `public.set_updated_at` as a rollback shortcut. |
 
 ---
 

@@ -138,7 +138,7 @@ describe('WeekTotal', () => {
     const { getByTestId } = render(
       <WeekTotal
         testID="hours-week-total"
-        timesheetStatus="submitted"
+        timesheetStatus="queried"
         showPayBoundary
       />
     );
@@ -480,7 +480,7 @@ describe('WeekTotal', () => {
       const { getByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          timesheetStatus="submitted"
+          timesheetStatus="queried"
           earningsRole="nanny"
         />
       );
@@ -545,7 +545,6 @@ describe('WeekTotal', () => {
   describe('nanny StatusPill — carer-side wording (P0-5)', () => {
     it.each([
       ['open', 'stillOpen'],
-      ['submitted', 'withTheFamily'],
       ['queried', 'theFamilyAsked'],
       ['approved', 'approved'],
     ] as const)('labels the pill for nanny status %s', (status, _label) => {
@@ -567,7 +566,7 @@ describe('WeekTotal', () => {
       const { getByTestId, queryByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
-          timesheetStatus="submitted"
+          timesheetStatus="queried"
           earningsRole="nanny"
         />
       );
@@ -586,18 +585,6 @@ describe('WeekTotal', () => {
       );
 
       expect(getByText('nannyStatusNotSubmitted')).toBeTruthy();
-    });
-
-    it('reads "With the family" for a nanny whose week is submitted', () => {
-      const { getByText } = render(
-        <WeekTotal
-          testID="hours-week-total"
-          timesheetStatus="submitted"
-          earningsRole="nanny"
-        />
-      );
-
-      expect(getByText('nannyStatusSubmitted')).toBeTruthy();
     });
 
     it('reads "The family asked a question" for a nanny whose week is queried', () => {
@@ -707,6 +694,84 @@ describe('WeekTotal', () => {
 
       expect(queryByTestId('hours-approved-by-note')).toBeNull();
       expect(queryByTestId('hours-approved-by-amount')).toBeNull();
+    });
+  });
+
+  describe('nanny status timeline', () => {
+    it('renders hours-status-timeline and no status pill for a submitted week in the nanny view', () => {
+      const { getByTestId, queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="submitted"
+          earningsRole="nanny"
+        />
+      );
+
+      expect(getByTestId('hours-status-timeline')).toBeTruthy();
+      expect(getByTestId('hours-timeline-logged')).toBeTruthy();
+      expect(getByTestId('hours-timeline-opened')).toBeTruthy();
+      expect(getByTestId('hours-timeline-waiting')).toBeTruthy();
+      expect(queryByTestId('hours-timesheet-status')).toBeNull();
+    });
+
+    it('reads timeline.opened when parentViewedDateLabel is set and timeline.notOpened when it is null', () => {
+      const opened = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="submitted"
+          earningsRole="nanny"
+          parentViewedDateLabel="16 August"
+          householdName="the Smiths"
+        />
+      );
+      expect(opened.getByText('timeline.opened')).toBeTruthy();
+
+      const notOpened = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="submitted"
+          earningsRole="nanny"
+          parentViewedDateLabel={null}
+          householdName="the Smiths"
+        />
+      );
+      expect(notOpened.getByText('timeline.notOpened')).toBeTruthy();
+    });
+
+    it('keeps the existing pill for a queried week and the appreciation block for an approved week', () => {
+      const queried = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="queried"
+          earningsRole="nanny"
+        />
+      );
+      expect(queried.getByTestId('hours-timesheet-status')).toBeTruthy();
+      expect(queried.queryByTestId('hours-status-timeline')).toBeNull();
+
+      const approved = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="approved"
+          earningsRole="nanny"
+          approvedDateLabel="6 August"
+          householdName="the Smiths"
+        />
+      );
+      expect(approved.getByTestId('hours-approved-by-note')).toBeTruthy();
+      expect(approved.queryByTestId('hours-status-timeline')).toBeNull();
+    });
+
+    it('never renders the timeline for the parent viewer', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="submitted"
+          earningsRole="parent"
+        />
+      );
+
+      expect(queryByTestId('hours-status-timeline')).toBeNull();
     });
   });
 

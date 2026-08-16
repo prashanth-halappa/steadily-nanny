@@ -40,7 +40,8 @@
  * (`docs/11-MONEY.md`).
  *
  * Card vertical order (`CardContent`, one `gap-3`):
- * 1. Title row: `IconChip` + parent `H3` headline / nanny `StatusPill`.
+ * 1. Title row: nanny submitted-week three-step timeline, else `IconChip` +
+ *    parent `H3` headline / nanny `StatusPill` (queried / not-submitted).
  * 2. Nanny-only "Approved by {household} on {date}." + gross `Figure28`.
  * 3. Reopened-reason caption (non-approved, wire/ephemeral reason).
  * 4. Approved-week slot — the reopen button when `onReopenPress` is
@@ -65,6 +66,7 @@
 import { CircleCheck, Clock } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { useThemeColors } from '@/lib/design-tokens/useThemeColors';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent, type CardTone } from '@/src/components/ui/card';
 import { IconChip } from '@/src/components/ui/icon-chip';
@@ -118,6 +120,11 @@ interface WeekTotalProps {
   /** Already-formatted approved date — the parent headline's "Approved on
    * {date}" and the nanny appreciation line's "on {date}.". */
   approvedDateLabel?: string | null;
+  /**
+   * Nanny-only: already-formatted date a parent first opened this week, or
+   * null when they have not. Drives the submitted-week status timeline.
+   */
+  parentViewedDateLabel?: string | null;
   /** Nanny-only: the household's name, for the approved appreciation line. */
   householdName?: string | null;
   /** Full-width `size="lg"` `variant="default"` action (Approve). */
@@ -204,6 +211,7 @@ export function WeekTotal({
   onReopenPress,
   isReopenPending = false,
   approvedDateLabel = null,
+  parentViewedDateLabel = null,
   householdName = null,
   primaryAction = null,
   secondaryAction = null,
@@ -217,8 +225,12 @@ export function WeekTotal({
   const isParentViewer = earningsRole === 'parent';
   const hasStatus = timesheetStatus !== undefined;
   // The pill is a nanny-side affordance — the parent gets the headline
-  // instead (pills annotate rows; the anchor card gets a headline).
-  const showPillRow = (showStatusPill ?? hasStatus) && !isParentViewer;
+  // instead (pills annotate rows; the anchor card gets a headline). A
+  // submitted week replaces the pill with the three-step status timeline:
+  // "With the family" did not say whether anyone had opened the hours.
+  const showTimeline = !isParentViewer && timesheetStatus === 'submitted';
+  const showPillRow =
+    (showStatusPill ?? hasStatus) && !isParentViewer && !showTimeline;
   const showHeadline = isParentViewer && hasStatus;
   const showReopenedNote =
     timesheetStatus !== 'approved' &&
@@ -234,6 +246,7 @@ export function WeekTotal({
   // Nothing to say about the agreement, nothing to do about it — an empty
   // tinted rectangle would be worse than no card at all.
   if (
+    !showTimeline &&
     !showPillRow &&
     !showHeadline &&
     !showReopenedNote &&
@@ -249,6 +262,12 @@ export function WeekTotal({
   return (
     <Card testID={testID} className="mb-4" tone={tone}>
       <CardContent className="gap-3">
+        {showTimeline ? (
+          <WeekStatusTimeline
+            parentViewedDateLabel={parentViewedDateLabel}
+            householdName={householdName}
+          />
+        ) : null}
         {showPillRow || showHeadline ? (
           <View className="flex-row items-center gap-3">
             {/* v2 §5.2: an L1 card moves ground, type AND iconography — the
@@ -389,5 +408,68 @@ export function WeekTotal({
         ) : null}
       </CardContent>
     </Card>
+  );
+}
+
+/** Three-step receipt for a submitted week the nanny is looking at. */
+function WeekStatusTimeline({
+  parentViewedDateLabel,
+  householdName,
+}: {
+  parentViewedDateLabel?: string | null;
+  householdName?: string | null;
+}) {
+  const { t } = useTranslation('hours');
+  const colors = useThemeColors();
+  const opened = parentViewedDateLabel != null && parentViewedDateLabel !== '';
+  return (
+    <View testID="hours-status-timeline" className="gap-2">
+      <TimelineStep
+        testID="hours-timeline-logged"
+        color={colors.success}
+        label={t('timeline.logged')}
+      />
+      <TimelineStep
+        testID="hours-timeline-opened"
+        color={opened ? colors.success : colors.border}
+        label={
+          opened
+            ? t('timeline.opened', {
+                household: householdName,
+                date: parentViewedDateLabel,
+              })
+            : t('timeline.notOpened', { household: householdName })
+        }
+      />
+      <TimelineStep
+        testID="hours-timeline-waiting"
+        color={colors.border}
+        label={t('timeline.waiting')}
+      />
+    </View>
+  );
+}
+
+function TimelineStep({
+  testID,
+  color,
+  label,
+}: {
+  testID: string;
+  color: string;
+  label: string;
+}) {
+  return (
+    <View testID={testID} className="flex-row items-center gap-2">
+      <View
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+          backgroundColor: color,
+        }}
+      />
+      <Small className="text-muted-foreground">{label}</Small>
+    </View>
   );
 }

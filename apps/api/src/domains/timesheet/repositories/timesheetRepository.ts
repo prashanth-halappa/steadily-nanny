@@ -208,7 +208,9 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
    * consistent forever. So the predicate also pins `updated_at` to the value
    * the service read BEFORE it computed: `expectedUpdatedAt`. `timesheets`
    * carries `updated_at` maintained by the `set_timesheets_updated_at` trigger
-   * (017 → `public.set_updated_at`, `before update ... for each row`), which
+   * (017 → `public.set_updated_at`; 100 → timesheets-own
+   * `public.set_timesheets_updated_at`, which preserves `OLD.updated_at` for a
+   * `parent_viewed_at`-only write and still bumps every other update), which
    * fires on EVERY update of the row including the roll-up's, so it is a true
    * row version and needs no new column. Its precision is Postgres's
    * transaction timestamp at microseconds; the roll-up and the approve are
@@ -395,6 +397,43 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
         details: error.message,
         timesheetId,
       });
+    }
+    return data as TimesheetRow | null;
+  }
+
+  /**
+   * One-way Hours receipt. `.is('parent_viewed_at', null)` makes this one-way
+   * in the database rather than in a service branch: the FIRST open wins and
+   * every later one matches nothing, so the timestamp answers "did this
+   * reach them" and can never drift into "when did they last look at it" —
+   * whether, never how many times (100's column comment; mirrors 092).
+   *
+   * Returns null when there was nothing to stamp, which the caller reads as
+   * "already viewed", not as an error.
+   *
+   * A write of ONLY this column must not bump `updated_at`: approve's
+   * compare-and-swap pins the row version, and the timesheets-own trigger
+   * (`set_timesheets_updated_at`, migration 100) preserves `OLD.updated_at`
+   * for a receipt-only write. See GOLDEN-FIXES.
+   */
+  async stampParentViewed(
+    id: string,
+    viewedAt: string
+  ): Promise<TimesheetRow | null> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update({ parent_viewed_at: viewedAt })
+      .eq('id', id)
+      .is('parent_viewed_at', null)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to stamp timesheet as viewed',
+        'DATABASE_ERROR',
+        { details: error.message, id }
+      );
     }
     return data as TimesheetRow | null;
   }
