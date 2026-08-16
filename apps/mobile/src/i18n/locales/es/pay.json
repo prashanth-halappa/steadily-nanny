@@ -182,7 +182,7 @@
     "subtitle": "Lo que cada familia ha acordado contigo. Solo esa familia puede ver sus propias condiciones.",
     "historyButton": "Ver historial",
     "emptyTitle": "Aún no hay condiciones de pago",
-    "emptyDescription": "Esta familia aún no ha establecido tu tarifa en Steadily. Tus horas se siguen registrando.",
+    "emptyDescription": "Esta familia aún no ha acordado tus condiciones en Steadily. Las horas se podrán añadir aquí una vez acordadas las condiciones.",
     "notAvailableTitle": "No disponible",
     "notAvailableDescription": "Mi sueldo es para niñeras — no has iniciado sesión como tal en esta cuenta."
   },
@@ -246,15 +246,15 @@
   "ack": {
     "changedTitle": "Tus condiciones cambiaron el {{date}}",
     "firstTitle": "Tus condiciones de pago están fijadas",
-    "seenButton": "He visto estas condiciones",
+    "seenButton": "He leído estas condiciones",
     "disagreeButton": "No estoy de acuerdo con esto",
     "reassurance": "Esto registra la fecha en que las viste. No es una aceptación de ellas y no renuncias a nada.",
     "recordFailed": "No se pudo registrar. Revisa tu conexión e inténtalo de nuevo.",
-    "seenBy": "Visto por {{name}} el {{date}}",
-    "seen": "Visto el {{date}}",
-    "notSeenYet": "Aún sin ver",
+    "seenBy": "Leído por {{name}} el {{date}}",
+    "seen": "Leído el {{date}}",
+    "notSeenYet": "Aún sin leer",
     "disagreed": "En desacuerdo el {{date}}",
-    "historySeen": "Visto el {{date}}"
+    "historySeen": "Leído el {{date}}"
   },
   "dissent": {
     "title": "Diles qué está mal",
@@ -312,7 +312,9 @@
     "sendFailed": "No se pudo enviar. Comprueba tu conexión e inténtalo de nuevo.",
     "withdrawButton": "Retirar",
     "declineButton": "Rechazar",
-    "openRowTitle": "Condiciones propuestas por {{name}}",
+    "openRowTitleSent": "Condiciones que enviaste a {{name}}",
+    "openRowTitleReceived": "Condiciones de {{name}}",
+    "notAgreedYet": "Nada de esto queda acordado hasta que alguien pulse De acuerdo. Abrir esto no te compromete.",
     "state": {
       "proposed": "Propuesto el {{date}}",
       "countered": "Contrapropuesto el {{date}}",

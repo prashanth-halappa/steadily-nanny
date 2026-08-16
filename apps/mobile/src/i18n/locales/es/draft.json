@@ -45,7 +45,7 @@
     "state": {
       "sent": "Enviado",
       "opened": "Abierto",
-      "viewed": "Visto",
+      "viewed": "Abierto, sin responder",
       "joined": "Se unió",
       "expired": "Caducado",
       "revoked": "Anulado"
@@ -53,7 +53,7 @@
     "timeline": {
       "sent": "Enviado el {{date}}",
       "opened": "abierto el {{date}}",
-      "viewed": "visto el {{date}}",
+      "viewed": "abierto el {{date}}, sin responder",
       "joined": "se unió el {{date}}"
     },
     "moreOptions": "Más opciones para {{name}}"

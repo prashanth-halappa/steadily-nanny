@@ -38,7 +38,7 @@ import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { SkeletonShimmer } from '@/src/components/ui/skeleton-shimmer';
 import { Text } from '@/src/components/ui/text';
-import { H1 } from '@/src/components/ui/typography';
+import { Body, H1 } from '@/src/components/ui/typography';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { DEFAULT_WEEK_STARTS_ON } from '@/src/domains/timesheet/utils/week';
 import { useAcceptTerms } from '@/src/hooks/mutations/useAcceptTerms';
@@ -243,6 +243,12 @@ export function ProposalReviewScreen() {
           ? t('proposal.reviewTitleFamily', { name: counterpartyName })
           : t('proposal.reviewTitle', { name: data.carer_display_name })}
       </H1>
+      <Body
+        testID="proposal-not-agreed-yet"
+        className="mt-2 text-muted-foreground"
+      >
+        {t('proposal.notAgreedYet')}
+      </Body>
 
       <View className="mt-4">
         <ProposalTermsDocument

@@ -7,6 +7,8 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, waitFor } from '@testing-library/react-native';
+import enPay from '@/src/i18n/locales/en/pay.json';
+import esPay from '@/src/i18n/locales/es/pay.json';
 import { useAuthStore } from '@/src/store/auth';
 import { renderWithProviders } from '@/src/test-utils';
 
@@ -435,7 +437,23 @@ describe('MyPayScreen', () => {
       expect(getByTestId(`my-pay-ack-disagree-${HOUSEHOLD_A}`)).toBeTruthy();
     });
 
-    it('"I\'ve seen these terms" records the ack, and the prompt gives way to the seen state word', async () => {
+    it('the ack button copy resolves to the "read" wording, never "seen"', async () => {
+      const { getByTestId, getByText } = renderWithProviders(<MyPayScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-ack-seen-${HOUSEHOLD_A}`)).toBeTruthy()
+      );
+      // Wiring: the button still uses ack.seenButton (key names stay).
+      expect(getByText('ack.seenButton')).toBeTruthy();
+      // Copy: key-echo cannot see the English, so the catalogue is the check.
+      // A parent/nanny reading "seen" as agreement is the bug this pass fixes.
+      expect(enPay.ack.seenButton).toMatch(/read/i);
+      expect(enPay.ack.seenButton).not.toMatch(/seen/i);
+      expect(esPay.ack.seenButton).toMatch(/leíd/i);
+      expect(esPay.ack.seenButton).not.toMatch(/visto/i);
+    });
+
+    it('"I\'ve read these terms" records the ack, and the prompt gives way to the read state word', async () => {
       let recorded = false;
       listAcksMock.mockImplementation(() =>
         Promise.resolve(recorded ? [seenRow] : [])
