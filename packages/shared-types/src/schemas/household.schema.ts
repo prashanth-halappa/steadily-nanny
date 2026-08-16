@@ -13,7 +13,35 @@ import { z } from 'zod';
 // The invite's pay OFFER is a full arrangement request (P8, 098). No cycle:
 // `payArrangement.schema` imports nothing but zod, and `termsProposal.schema`
 // already leans on it the same way for the `terms` bag it carries.
+import { PhoneNumberSchema } from './contact.schema';
 import { CreatePayArrangementRequestSchema } from './payArrangement.schema';
+
+/**
+ * `households.emergency_contact_*` (099) — THE NEXT PERSON DOWN THE LIST.
+ *
+ * Not the parent's own alternate number. A second number for the same parent
+ * solves nothing when that parent is the one not answering; she needs a
+ * partner, a grandparent, a neighbour — someone who could actually get
+ * there. The column names invite the other reading, which is why this says
+ * so here and in 099's column comments.
+ *
+ * All three are `.nullable()`: most households have not been asked yet (the
+ * question is put the day a carer first goes active, not during onboarding,
+ * where it collects "my other mobile").
+ *
+ * On the RESPONSE schema they are `.nullable().optional()` rather than
+ * `.nullable().default(null)` — the `profile_name` treatment, not the
+ * `pay_offer` one — so a client on this schema parses a response from a
+ * server that predates 099 AND every existing `Household` literal in both
+ * apps' tests keeps compiling. Read them as `?? null`; absent and null both
+ * mean "no contact recorded" and no caller should distinguish them.
+ *
+ * Parent-editable through `PATCH /households/:id` and nothing else — there is
+ * no second endpoint, and `householdCommandService.update`'s existing
+ * owner/parent gate is the whole authorisation story.
+ */
+const EmergencyContactNameSchema = z.string().min(1).max(200);
+const EmergencyContactRelationshipSchema = z.string().min(1).max(80);
 
 // =============================================================================
 // Const-maps — mirror the SQL `check` constraints exactly. If these drift,
@@ -215,6 +243,11 @@ export const HouseholdSchema = z.object({
    * backfill was needed.
    */
   state: z.enum(Object.values(HOUSEHOLD_STATES)).default(HOUSEHOLD_STATES.LIVE),
+  /** See `EmergencyContactNameSchema` above — a THIRD PARTY, not a parent. */
+  emergency_contact_name: EmergencyContactNameSchema.nullable().optional(),
+  emergency_contact_phone: PhoneNumberSchema.nullable().optional(),
+  emergency_contact_relationship:
+    EmergencyContactRelationshipSchema.nullable().optional(),
   created_by: z.uuid().nullable(),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
@@ -272,6 +305,16 @@ export const UpdateHouseholdSchema = z
     currency: HouseholdCurrencySchema.optional(),
     jurisdiction: HouseholdJurisdictionSchema.nullable().optional(),
     week_starts_on: HouseholdWeekStartsOnSchema.optional(),
+    /**
+     * The emergency contact (099). Nullable as well as optional, unlike most
+     * of this body: a contact can be taken back DOWN — the grandparent moved
+     * away, the neighbour fell out with the family — and a field that can
+     * only ever be set is a stale number a nanny would ring in a crisis.
+     */
+    emergency_contact_name: EmergencyContactNameSchema.nullable().optional(),
+    emergency_contact_phone: PhoneNumberSchema.nullable().optional(),
+    emergency_contact_relationship:
+      EmergencyContactRelationshipSchema.nullable().optional(),
   })
   .refine(data => Object.keys(data).length > 0, {
     message: 'at least one field is required',
@@ -324,6 +367,24 @@ export const HouseholdMemberSchema = z.object({
   // rows produced by redeem/patch, and null when the profile row is gone.
   // Clients resolve a label as override -> profile_name -> role fallback.
   profile_name: z.string().nullable().optional(),
+  /**
+   * The member's own `user_profiles.phone`, joined by the SAME members-list
+   * read as `profile_name` (099). This is the ONLY route a co-member's number
+   * takes out of the database: `user_profiles` RLS stays owner-only, and
+   * widening it to co-members would hand over the whole profile row to
+   * deliver one field.
+   *
+   * `null` means one of three things and the client must treat them alike:
+   * the member gave no number, her profile row is gone, or she is not an
+   * ACTIVE member of this household — `householdQueryService.listMembers`
+   * nulls the field on every `candidate` and `removed` row it returns. A
+   * candidate has redeemed a code but her terms are not accepted; neither
+   * side has agreed to be reachable by the other yet.
+   *
+   * `.optional()` for the same reason as `profile_name`: absent on every
+   * producer of a member row that is not the roster read (redeem, patch).
+   */
+  profile_phone: z.string().nullable().optional(),
   colour: z.string().nullable(),
   joined_at: z.iso.datetime({ offset: true }),
   created_at: z.iso.datetime({ offset: true }),

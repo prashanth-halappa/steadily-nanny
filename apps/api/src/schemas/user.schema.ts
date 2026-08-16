@@ -3,6 +3,7 @@
  *
  * @module schemas/user.schema
  */
+import { PhoneNumberSchema } from '@steadily-nanny/shared-types/schemas/contact.schema';
 import { z } from 'zod';
 
 /**
@@ -65,6 +66,19 @@ export const UpsertProfileSchema = z.object({
   // display preference that defaults to Monday (1) at the DB level — so there
   // is nothing meaningful to seed at signup, before any household exists.
   timezone: TIMEZONE_FIELD.optional(),
+  /**
+   * `user_profiles.phone` (099) — the number a nanny actually dials.
+   *
+   * Optional here: it is asked for on the existing HOUSEHOLD onboarding step
+   * ("and your number" is the same thought as "family name + your name"), but
+   * a client that skips it must still be able to create a profile. Not
+   * nullable on CREATE — there is nothing to clear yet; `UpdateProfileSchema`
+   * below is where a number comes back down.
+   *
+   * Loose by design — see `PhoneNumberSchema`. A parent types
+   * "07700 900123", never E.164.
+   */
+  phone: PhoneNumberSchema.optional(),
 });
 
 export const UpdateProfileSchema = z.object({
@@ -86,6 +100,12 @@ export const UpdateProfileSchema = z.object({
   // ISO-week bucketing for usage quotas and has no callers here.)
   timezone: TIMEZONE_FIELD.optional(),
   week_starts_on: WEEK_STARTS_ON_FIELD.optional(),
+  /**
+   * `user_profiles.phone` (099). NULLABLE here and not on the upsert: a
+   * number given once has to be removable, and `null` is the only way to say
+   * "take mine down" through a PATCH whose omitted fields mean "leave alone".
+   */
+  phone: PhoneNumberSchema.nullable().optional(),
 });
 
 export type UpsertProfileInput = z.infer<typeof UpsertProfileSchema>;

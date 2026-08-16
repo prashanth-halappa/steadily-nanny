@@ -134,6 +134,40 @@ describe('household.schema', () => {
       ).toBe(true);
     });
 
+    // 099 / §6. The next person down the list when the parent is the one not
+    // answering. Nullable because most households have not been asked yet,
+    // and OPTIONAL so a client on this schema still parses a response from a
+    // server that predates the columns — absent and null mean the same thing
+    // and no caller may distinguish them.
+    it('carries the emergency contact when set', () => {
+      const parsed = HouseholdSchema.parse({
+        ...validHousehold,
+        emergency_contact_name: 'Grace Adeyemi',
+        emergency_contact_phone: '07700 900456',
+        emergency_contact_relationship: 'Neighbour',
+      });
+      expect(parsed.emergency_contact_name).toBe('Grace Adeyemi');
+      expect(parsed.emergency_contact_phone).toBe('07700 900456');
+      expect(parsed.emergency_contact_relationship).toBe('Neighbour');
+    });
+
+    it('still parses a response from a server that predates the columns', () => {
+      const parsed = HouseholdSchema.parse(validHousehold);
+      expect(parsed.emergency_contact_name ?? null).toBeNull();
+      expect(parsed.emergency_contact_phone ?? null).toBeNull();
+      expect(parsed.emergency_contact_relationship ?? null).toBeNull();
+    });
+
+    it('accepts an explicit null on each — "asked, and there is nobody"', () => {
+      const parsed = HouseholdSchema.parse({
+        ...validHousehold,
+        emergency_contact_name: null,
+        emergency_contact_phone: null,
+        emergency_contact_relationship: null,
+      });
+      expect(parsed.emergency_contact_name).toBeNull();
+    });
+
     it.each([
       'gbp',
       'ab1',
@@ -245,6 +279,45 @@ describe('household.schema', () => {
         UpdateHouseholdSchema.safeParse({ name: 'New Name' }).success
       ).toBe(true);
     });
+
+    // 099 / §6. The emergency contact is parent-editable through THIS body —
+    // there is no separate endpoint — so the PATCH schema has to carry all
+    // three fields, and each has to be clearable (the grandparent moved away).
+    it('accepts the three emergency-contact fields', () => {
+      const parsed = UpdateHouseholdSchema.parse({
+        emergency_contact_name: 'Grace Adeyemi',
+        emergency_contact_phone: '07700 900456',
+        emergency_contact_relationship: 'Neighbour',
+      });
+      expect(parsed.emergency_contact_name).toBe('Grace Adeyemi');
+      expect(parsed.emergency_contact_phone).toBe('07700 900456');
+      expect(parsed.emergency_contact_relationship).toBe('Neighbour');
+    });
+
+    it('accepts null on each, so a contact can be taken back down', () => {
+      expect(
+        UpdateHouseholdSchema.safeParse({
+          emergency_contact_name: null,
+          emergency_contact_phone: null,
+          emergency_contact_relationship: null,
+        }).success
+      ).toBe(true);
+    });
+
+    it('rejects a phone that is not a number', () => {
+      expect(
+        UpdateHouseholdSchema.safeParse({
+          emergency_contact_phone: 'ask Amara',
+        }).success
+      ).toBe(false);
+    });
+
+    it('leaves the emergency fields optional — an unrelated PATCH omits them', () => {
+      const parsed = UpdateHouseholdSchema.parse({ name: 'New Name' });
+      expect(parsed.emergency_contact_name).toBe(undefined);
+      expect(parsed.emergency_contact_phone).toBe(undefined);
+      expect(parsed.emergency_contact_relationship).toBe(undefined);
+    });
   });
 
   describe('HouseholdIdParamSchema', () => {
@@ -304,6 +377,26 @@ describe('household.schema', () => {
         HouseholdMemberSchema.safeParse({ ...validMember, role: 'grandparent' })
           .success
       ).toBe(false);
+    });
+
+    // 099. Same join, same discipline as `profile_name` — absent on every
+    // producer but the roster read, null when there is no number to give.
+    it('KEEPS a joined profile_phone through parse', () => {
+      const parsed = HouseholdMemberSchema.parse({
+        ...validMember,
+        profile_phone: '07700 900123',
+      });
+      expect(parsed.profile_phone).toBe('07700 900123');
+    });
+
+    it('accepts a null profile_phone and its absence', () => {
+      expect(
+        HouseholdMemberSchema.safeParse({ ...validMember, profile_phone: null })
+          .success
+      ).toBe(true);
+      expect(HouseholdMemberSchema.parse(validMember).profile_phone).toBe(
+        undefined
+      );
     });
   });
 

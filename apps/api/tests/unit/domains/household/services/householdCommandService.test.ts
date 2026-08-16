@@ -481,6 +481,79 @@ describe('HouseholdCommandService.update', () => {
       svc.update('u1', 'h1', { name: 'New name' })
     ).rejects.toBeInstanceOf(NotAHouseholdParentError);
   });
+
+  // ---------------------------------------------------------------------
+  // 099 — the emergency contact rides THIS body. No new endpoint, no new
+  // gate: the existing owner/parent check is the whole authorisation story,
+  // and these tests are what pin that it actually covers the new fields.
+  // ---------------------------------------------------------------------
+  const emergency = {
+    emergency_contact_name: 'Grace Adeyemi',
+    emergency_contact_phone: '07700 900456',
+    emergency_contact_relationship: 'Neighbour',
+  };
+
+  it('lets a parent set the emergency contact', async () => {
+    const householdRepo = makeHouseholdRepo();
+    const svc = new HouseholdCommandService(
+      householdRepo,
+      makeMemberRepo(),
+      makeInviteRepo(),
+      makeQueries('parent'),
+      stubUsers
+    );
+    await svc.update('u1', 'h1', emergency);
+    expect(householdRepo.update).toHaveBeenCalledWith('h1', emergency);
+  });
+
+  it('lets a parent clear the emergency contact', async () => {
+    const householdRepo = makeHouseholdRepo();
+    const svc = new HouseholdCommandService(
+      householdRepo,
+      makeMemberRepo(),
+      makeInviteRepo(),
+      makeQueries('parent'),
+      stubUsers
+    );
+    const cleared = {
+      emergency_contact_name: null,
+      emergency_contact_phone: null,
+      emergency_contact_relationship: null,
+    };
+    await svc.update('u1', 'h1', cleared);
+    expect(householdRepo.update).toHaveBeenCalledWith('h1', cleared);
+  });
+
+  // The nanny READS this contact — it is the "If something happens" section of
+  // her family screen — but she never writes it. The §2.2 draft-author
+  // capability is name-only and does not widen here.
+  it('refuses a nanny setting the emergency contact, and writes nothing', async () => {
+    const householdRepo = makeHouseholdRepo();
+    const svc = new HouseholdCommandService(
+      householdRepo,
+      makeMemberRepo(),
+      makeInviteRepo(),
+      makeQueries('nanny'),
+      stubUsers
+    );
+    await expect(svc.update('u1', 'h1', emergency)).rejects.toBeInstanceOf(
+      NotAHouseholdParentError
+    );
+    expect(householdRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses a helper setting the emergency contact', async () => {
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo(),
+      makeMemberRepo(),
+      makeInviteRepo(),
+      makeQueries('helper'),
+      stubUsers
+    );
+    await expect(svc.update('u1', 'h1', emergency)).rejects.toBeInstanceOf(
+      NotAHouseholdParentError
+    );
+  });
 });
 
 describe('HouseholdCommandService.update — week_starts_on lock (T1)', () => {

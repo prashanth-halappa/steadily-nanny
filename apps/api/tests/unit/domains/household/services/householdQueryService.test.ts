@@ -239,7 +239,12 @@ describe('HouseholdQueryService.listMembers', () => {
       memberRepo,
       makeInviteRepo()
     );
-    expect(await svc.listMembers('u1', 'h1')).toEqual([membership, candidate]);
+    // The candidate keeps her place in the roster; 099 only takes her PHONE
+    // off it (see the phone-exposure block below).
+    expect(await svc.listMembers('u1', 'h1')).toEqual([
+      membership,
+      { ...candidate, profile_phone: null },
+    ]);
   });
 
   it('throws HouseholdNotFoundError for a non-member', async () => {
@@ -249,6 +254,88 @@ describe('HouseholdQueryService.listMembers', () => {
       makeInviteRepo()
     );
     await expect(svc.listMembers('u2', 'h1')).rejects.toBeInstanceOf(
+      HouseholdNotFoundError
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 099 — `profile_phone` on the roster.
+//
+// The phone is exposed HERE and nowhere else: `user_profiles` RLS stays
+// owner-only, and the number reaches a co-member only as a joined field on a
+// roster read that already required an ACTIVE membership to reach. That leaves
+// exactly one rule for this service to enforce — whose number goes out.
+// ---------------------------------------------------------------------------
+describe('HouseholdQueryService.listMembers — phone exposure (099)', () => {
+  const withPhone = (over: Partial<HouseholdMember>): HouseholdMember =>
+    ({
+      ...membership,
+      profile_phone: '07700 900123',
+      ...over,
+    }) as HouseholdMember;
+
+  it('carries profile_phone for an ACTIVE member', async () => {
+    const active = withPhone({});
+    const svc = new HouseholdQueryService(
+      makeHouseholdRepo(),
+      makeMemberRepo({ listNonRemovedByHousehold: mock(async () => [active]) }),
+      makeInviteRepo()
+    );
+    const [row] = await svc.listMembers('u1', 'h1');
+    expect(row?.profile_phone).toBe('07700 900123');
+  });
+
+  // A candidate has redeemed a code but her terms are not accepted — she is
+  // not hired, and neither side has agreed to be reachable by the other.
+  it('nulls profile_phone for a CANDIDATE member', async () => {
+    const candidate = withPhone({ id: 'm2', user_id: 'u2', role: 'nanny' });
+    candidate.status = 'candidate';
+    const svc = new HouseholdQueryService(
+      makeHouseholdRepo(),
+      makeMemberRepo({
+        listNonRemovedByHousehold: mock(async () => [candidate]),
+      }),
+      makeInviteRepo()
+    );
+    const [row] = await svc.listMembers('u1', 'h1');
+    expect(row?.profile_phone).toBeNull();
+    // Everything else about her is unchanged — this nulls one field, it does
+    // not drop the row the inbox fans its proposal queries from.
+    expect(row?.id).toBe('m2');
+    expect(row?.status).toBe('candidate');
+  });
+
+  // `listNonRemovedByHousehold` cannot return one today, but the rule is a
+  // POSITIVE `status === 'active'` test rather than a `!== 'candidate'` one,
+  // so a status added tomorrow is silent by construction.
+  it('nulls profile_phone for a REMOVED member', async () => {
+    const removed = withPhone({ id: 'm3', user_id: 'u3' });
+    removed.status = 'removed';
+    const svc = new HouseholdQueryService(
+      makeHouseholdRepo(),
+      makeMemberRepo({
+        listNonRemovedByHousehold: mock(async () => [removed]),
+      }),
+      makeInviteRepo()
+    );
+    const [row] = await svc.listMembers('u1', 'h1');
+    expect(row?.profile_phone).toBeNull();
+  });
+
+  // The other half of the rule: the CALLER must be active too. A removed or
+  // candidate caller never reaches the roster at all — `getMembership` resolves
+  // through `findActiveMembership`, so there is no row to null.
+  it('refuses the whole roster to a caller who is not an active member', async () => {
+    const svc = new HouseholdQueryService(
+      makeHouseholdRepo(),
+      makeMemberRepo({
+        findActiveMembership: mock(async () => null),
+        listNonRemovedByHousehold: mock(async () => [withPhone({})]),
+      }),
+      makeInviteRepo()
+    );
+    await expect(svc.listMembers('u9', 'h1')).rejects.toBeInstanceOf(
       HouseholdNotFoundError
     );
   });
