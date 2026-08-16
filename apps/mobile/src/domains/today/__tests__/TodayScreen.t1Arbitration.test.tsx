@@ -66,6 +66,12 @@ mock.module('@/src/domains/today/components/TodayCoverage', () => ({
 mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
   HandoffChipsCard: () => null,
 }));
+mock.module(
+  '@/src/domains/today/components/EmergencyContactPromptCard',
+  () => ({
+    EmergencyContactPromptCard: () => null,
+  })
+);
 mock.module('@/src/domains/today/hooks/useHouseholdIsLive', () => ({
   useHouseholdIsLive: () => false,
 }));

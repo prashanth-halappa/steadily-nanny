@@ -228,5 +228,16 @@
     "ctaNothingSent": "Enviar mis condiciones",
     "footnote": "Las horas trabajadas antes de acordar las condiciones no se pueden fichar. Anótalas por tu cuenta: podrás añadirlas aquí en cuanto se acuerden.",
     "sendFailed": "No se pudo enviar. Inténtalo de nuevo."
+  },
+  "emergencyContactPrompt": {
+    "title": "Un número más para {{name}}",
+    "body": "Si ella no puede localizarte y algo ha pasado, ¿a quién debería llamar? Una pareja, un abuelo, un vecino — cualquiera que pueda llegar rápido.",
+    "cta": "Añadir su número",
+    "notNow": "Ahora no",
+    "nameLabel": "Su nombre",
+    "phoneLabel": "Su número",
+    "relationshipLabel": "Cómo lo conoces (opcional)",
+    "saveButton": "Guardar",
+    "saveFailed": "No se pudo guardar. Inténtalo de nuevo."
   }
 }

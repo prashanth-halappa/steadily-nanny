@@ -211,5 +211,26 @@
       "readback": "{{daysSummary}}, {{start}}–{{end}} for {{childName}}.",
       "submit": "Add hours"
     }
+  },
+  "thisFamily": {
+    "navLabel": "This family",
+    "addressEmpty": "No address added yet",
+    "ifSomethingHappens": "If something happens",
+    "callButton": "Call",
+    "callLabel": "Call {{name}}",
+    "childrenTitle": "The children",
+    "childrenEmpty": "No children added yet",
+    "termsRow": "Your terms with this family",
+    "daysOffTitle": "Days off and closures",
+    "daysOffEmpty": "No days off scheduled"
+  },
+  "carerProfile": {
+    "withYouSince": "With you since {{date}}",
+    "callButton": "Call",
+    "messageButton": "Message",
+    "payRow": "Pay & terms",
+    "availabilityRow": "Availability",
+    "timeOffRow": "Time off",
+    "removeButton": "Remove from this household"
   }
 }

@@ -42,7 +42,7 @@ import { HOUSEHOLD_STATES } from '@steadily-nanny/shared-types/schemas/household
 import { type Href, useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Image, ScrollView, View } from 'react-native';
+import { Image, Pressable, ScrollView, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
@@ -89,6 +89,7 @@ import { buildJoinedComposition } from '../utils/joinedComposition';
 import { resolveSlotOccupant } from '../utils/slotOccupant';
 import { ClockInBlockedCard } from './ClockInBlockedCard';
 import { ClockInCard } from './ClockInCard';
+import { EmergencyContactPromptCard } from './EmergencyContactPromptCard';
 import { HandoffChipsCard } from './HandoffChipsCard';
 import { PinnedSlot } from './PinnedSlot';
 import { ThisWeekCard } from './ThisWeekCard';
@@ -133,6 +134,12 @@ export function TodayScreen() {
   );
   const isParentView = canViewParentSchedule(onboarding.role);
   const isPastMember = !!onboarding.isPastMember;
+  // S9 / direction §4 — "This family" is nanny/helper-only reference
+  // material; a parent has no such screen, so the date line stays inert
+  // for her.
+  const canOpenThisFamily =
+    onboarding.role === SETUP_ROLES.NANNY ||
+    onboarding.role === SETUP_ROLES.HELPER;
   const activeNanny = onboarding.role === SETUP_ROLES.NANNY && !isPastMember;
   // One occupant per screen: `resolveAttentionOwner` (its own module doc
   // carries the ranking + justification) ranks the obligations, and
@@ -318,15 +325,27 @@ export function TodayScreen() {
                 `text-muted-strong`, not `text-muted-foreground`: this line
                 sits on the wash, where mutedForeground is 4.28:1 (Rule M). */}
             {household ? (
-              <Small testID="today-date" className="mt-1 text-muted-strong">
-                {`${tSchedule(`weekday.${localDateToWeekday(localDateInZone(household.timezone))}`)} ${formatDisplayDate(localDateInZone(household.timezone))}${
-                  activeHousehold.households.length +
-                    activeHousehold.pastHouseholds.length <=
-                    1 && !activeHousehold.isPastHousehold
-                    ? ` · ${household.name}`
-                    : ''
-                }`}
-              </Small>
+              <Pressable
+                testID="today-family-link"
+                disabled={!canOpenThisFamily}
+                accessibilityRole={canOpenThisFamily ? 'button' : undefined}
+                onPress={
+                  canOpenThisFamily
+                    ? () =>
+                        router.push('/(private)/settings/this-family' as Href)
+                    : undefined
+                }
+              >
+                <Small testID="today-date" className="mt-1 text-muted-strong">
+                  {`${tSchedule(`weekday.${localDateToWeekday(localDateInZone(household.timezone))}`)} ${formatDisplayDate(localDateInZone(household.timezone))}${
+                    activeHousehold.households.length +
+                      activeHousehold.pastHouseholds.length <=
+                      1 && !activeHousehold.isPastHousehold
+                      ? ` · ${household.name}`
+                      : ''
+                  }`}
+                </Small>
+              </Pressable>
             ) : null}
           </View>
           {/* Transparent PNG on purpose — the wash gradient passes under it. */}
@@ -414,6 +433,11 @@ export function TodayScreen() {
                 group on purpose, and never a slot occupant. Self-contained —
                 no props, same shape as PendingScheduleCard. */}
             <SendMyTermsCard />
+
+            {/* S9 / direction §6 — a second, unrelated one-time offer, same
+                shape as the one above it: self-contained, feed-only, never a
+                slot occupant. */}
+            <EmergencyContactPromptCard />
 
             {/* Not on a household she was REMOVED from: every write there is
                 refused server-side, so the button would only ever fail. */}

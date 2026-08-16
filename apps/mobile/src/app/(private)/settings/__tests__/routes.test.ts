@@ -145,6 +145,30 @@ describe('settings/my-pay route', () => {
   });
 });
 
+describe('settings/this-family route', () => {
+  let source: string;
+  beforeAll(async () => {
+    source = await readRoute('../this-family.tsx');
+  });
+
+  it('delegates to ThisFamilyScreen', () => {
+    expect(source).toContain('ThisFamilyScreen');
+    expect(source).toContain('export default function');
+  });
+});
+
+describe('settings/carer/[carerId] route', () => {
+  let source: string;
+  beforeAll(async () => {
+    source = await readRoute('../carer/[carerId].tsx');
+  });
+
+  it('delegates to CarerProfileScreen', () => {
+    expect(source).toContain('CarerProfileScreen');
+    expect(source).toContain('export default function');
+  });
+});
+
 describe('settings/join-household route', () => {
   let source: string;
   beforeAll(async () => {

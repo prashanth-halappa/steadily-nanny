@@ -211,5 +211,26 @@
       "readback": "{{daysSummary}}, {{start}}–{{end}} para {{childName}}.",
       "submit": "Añadir horas"
     }
+  },
+  "thisFamily": {
+    "navLabel": "Esta familia",
+    "addressEmpty": "Aún no se ha añadido una dirección",
+    "ifSomethingHappens": "Si pasa algo",
+    "callButton": "Llamar",
+    "callLabel": "Llamar a {{name}}",
+    "childrenTitle": "Los niños",
+    "childrenEmpty": "Aún no hay niños añadidos",
+    "termsRow": "Tus condiciones con esta familia",
+    "daysOffTitle": "Días libres y cierres",
+    "daysOffEmpty": "No hay días libres programados"
+  },
+  "carerProfile": {
+    "withYouSince": "Contigo desde {{date}}",
+    "callButton": "Llamar",
+    "messageButton": "Mensaje",
+    "payRow": "Pago y condiciones",
+    "availabilityRow": "Disponibilidad",
+    "timeOffRow": "Días libres",
+    "removeButton": "Eliminar de este hogar"
   }
 }

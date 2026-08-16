@@ -20,7 +20,7 @@
   "appVersion": "Versión {{version}}",
   "carerAvailability": "Disponibilidad de la niñera",
   "carerAvailabilityEmpty": "Aún no hay niñera en este hogar",
-  "carerAvailabilityNone": "Tu niñera aún no ha compartido disponibilidad",
+  "carerAvailabilityNone": "{{name}} aún no ha indicado su disponibilidad.",
   "carerTimeOff": "Ausencias de la niñera",
   "carerTimeOffHint": "Ausencias reservadas — solo estado; la aprobación aún no está en la app.",
   "carerTimeOffEmpty": "No hay ausencias reservadas",
