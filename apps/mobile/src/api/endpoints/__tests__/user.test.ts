@@ -158,6 +158,30 @@ describe('userApi', () => {
       });
     });
 
+    // Onboarding collects a mobile number so a carer has someone to call when
+    // a child is hurt. Zod strips unknown keys by default, so a field missing
+    // from this schema is dropped silently between the screen and the wire —
+    // the mutation looks correct and the number never arrives.
+    it('forwards the phone number on upsert without stripping it', async () => {
+      (apiClient.post as any).mockResolvedValue({
+        data: { data: { user: { ...validUser, phone: '07700 900123' } } },
+      });
+
+      await userApi.upsertProfile({ ...req, phone: '07700 900123' });
+
+      expect(apiClient.post).toHaveBeenCalledWith('/v1/users/profile', {
+        ...req,
+        phone: '07700 900123',
+      });
+    });
+
+    it('rejects a phone number that is not one, without calling the API', async () => {
+      await expect(
+        userApi.upsertProfile({ ...req, phone: 'ask Amara' })
+      ).rejects.toThrow();
+      expect(apiClient.post).not.toHaveBeenCalled();
+    });
+
     it('throws on an invalid request payload (empty name) without calling the API', async () => {
       await expect(
         userApi.upsertProfile({ name: '', city: 'Oslo', country: 'Norway' })

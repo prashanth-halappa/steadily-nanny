@@ -42,6 +42,28 @@ appId: com.jetto.steadily.nanny
 # (2026-08-12). The header's "safe to call unconditionally" claim only
 # accounted for HouseholdSwitcher rendering null; it did not account for the
 # tab bar itself being absent pre-onboarding-completion.
+#
+# `extendedWaitUntil` (optional, bounded) BEFORE every `when: visible` guard
+# below — 2026-08-16: a bare `when: visible:` is a single instantaneous poll,
+# not a wait, and right after sign-in / a tab switch the tab bar or the sheet
+# trigger can still be a frame or two from mounting. That one false negative
+# makes the ENTIRE guarded block a silent no-op — no assertion fails, the
+# flow just carries on with whatever household was already active.
+# Root-caused via flow 07's `commands-*.json`: the outer guard's
+# `runFlowCommand` came back `SKIPPED` (tab-settings genuinely not yet
+# visible at that instant), so the flow never switched off the household a
+# PRIOR run had left active, and that household's pre-existing pay
+# arrangement made `PaySetupScreen`'s own (unrelated, pre-existing)
+# redirect-when-arrangement-exists behaviour bounce the flow before it typed
+# anything — read as an app defect, it was this race. Confirmed the same
+# stale-household symptom stranding a nanny login flow via a standalone
+# diagnostic run (Sunday household, not `PHASE4_HOUSEHOLD_ID`, was still on
+# screen after `login-nanny.yaml` + a tap on Today).
+- extendedWaitUntil:
+    visible:
+      id: 'tab-settings'
+    timeout: 6000
+    optional: true
 - runFlow:
     when:
       visible:
@@ -59,6 +81,11 @@ appId: com.jetto.steadily.nanny
             - tapOn:
                 text: 'Maybe later'
             - waitForAnimationToEnd
+      - extendedWaitUntil:
+          visible:
+            id: 'household-switcher-trigger'
+          timeout: 4000
+          optional: true
       - runFlow:
           when:
             visible:

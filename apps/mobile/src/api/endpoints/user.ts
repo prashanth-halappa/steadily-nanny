@@ -13,6 +13,7 @@ import type {
   UserProfile,
   UserProfileRequest,
 } from '@steadily-nanny/shared-types';
+import { PhoneNumberSchema } from '@steadily-nanny/shared-types/schemas/contact.schema';
 import {
   type HouseholdMember,
   HouseholdMemberListResponseSchema,
@@ -94,6 +95,10 @@ const UserProfileRequestSchema = z.object({
   country: z.string().min(1, 'Country is required'),
   additional_data: z.record(z.string(), z.unknown()).optional(),
   timezone: TIMEZONE_FIELD.optional(),
+  // Zod strips unknown keys, so a field absent here is dropped silently
+  // between the screen and the wire — the onboarding mutation looks correct
+  // and the number never arrives. Same definition the server validates with.
+  phone: PhoneNumberSchema.optional(),
 });
 
 const UpdatePreferredLocaleSchema = z.object({
