@@ -55,4 +55,19 @@ describe('TodayScreen layout', () => {
     expect(screenSource).toContain('resolveSlotOccupant');
     expect(screenSource).toContain('<PinnedSlot>');
   });
+
+  // P5/S10 — the cross-family strip renders BEFORE everything else: it is
+  // not scoped to the active household at all, so it must not sit behind
+  // (or compete with) the header, the slot, or the feed.
+  it('mounts the cross-family strip before the header, before the slot, before the ScrollView', () => {
+    const stripAt = screenSource.indexOf('<CrossFamilyStrip');
+    const headerAt = screenSource.indexOf('testID="today-header"');
+    const slotAt = screenSource.indexOf('<PinnedSlot>{');
+    const scrollAt = screenSource.indexOf('<ScrollView');
+
+    expect(stripAt).toBeGreaterThan(-1);
+    expect(stripAt).toBeLessThan(headerAt);
+    expect(headerAt).toBeLessThan(slotAt);
+    expect(slotAt).toBeLessThan(scrollAt);
+  });
 });

@@ -127,6 +127,13 @@ mock.module(
     EmergencyContactPromptCard: () => null,
   })
 );
+// P5/S10 — self-contained, unscoped, no ORDER_MARKER (it renders above the
+// header, outside anything this file is pinning). Its own file owns its
+// render-condition tests; real hooks need a QueryClient this file
+// deliberately does not build.
+mock.module('@/src/domains/today/components/CrossFamilyStrip', () => ({
+  CrossFamilyStrip: () => null,
+}));
 
 const HOUSEHOLD_ID = 'household-order-1';
 

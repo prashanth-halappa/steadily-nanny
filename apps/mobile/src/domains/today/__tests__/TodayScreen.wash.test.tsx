@@ -83,6 +83,11 @@ mock.module('@/src/domains/today/components/ThisWeekCard', () => ({
 mock.module('@/src/domains/today/components/HandoffChipsCard', () => ({
   HandoffChipsCard: () => null,
 }));
+// P5/S10 — self-contained, unscoped; real hooks need a QueryClient this file
+// deliberately does not build.
+mock.module('@/src/domains/today/components/CrossFamilyStrip', () => ({
+  CrossFamilyStrip: () => null,
+}));
 mock.module(
   '@/src/domains/today/components/EmergencyContactPromptCard',
   () => ({
