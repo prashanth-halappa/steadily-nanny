@@ -8,13 +8,29 @@ import { beforeAll, describe, expect, it } from 'bun:test';
 import { join } from 'node:path';
 
 const viewPath = join(__dirname, '../components/AgendaView.tsx');
+const shiftRowPath = join(__dirname, '../components/ShiftRow.tsx');
 let viewSource: string;
+let agendaSource: string;
 
 beforeAll(async () => {
-  viewSource = await Bun.file(viewPath).text();
+  agendaSource = await Bun.file(viewPath).text();
+  // ShiftRow used to live in AgendaView. Existing source-inspection
+  // assertions still look at the row's markers (parent-cover mute, etc.)
+  // — concatenate so those keep passing after the extraction.
+  viewSource = `${agendaSource}\n${await Bun.file(shiftRowPath).text()}`;
 });
 
 describe('AgendaView source', () => {
+  it('renders the shift row from its own module', () => {
+    expect(agendaSource).toContain("from './ShiftRow'");
+  });
+
+  it('resolves children and carer colour onto ShiftRow from maps it already holds', () => {
+    expect(agendaSource).toContain('assignedChildren=');
+    expect(agendaSource).toContain('carerColour=');
+    expect(agendaSource).toContain('childrenById.get');
+  });
+
   it('wires the shift list testID', () => {
     expect(viewSource).toContain('testID="schedule-shifts-list"');
   });

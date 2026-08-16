@@ -117,6 +117,7 @@ describe('AgendaView carer names', () => {
     );
 
     expect(queryByTestId('schedule-shift-carer-shift-1')).toBeNull();
+    expect(queryByTestId('schedule-shift-avatar-shift-1')).toBeNull();
   });
 
   it("shows each shift carer's first name once the household has 2+ carers, and nothing for a null carer_id", () => {
@@ -149,6 +150,8 @@ describe('AgendaView carer names', () => {
     expect(getByTestId('schedule-shift-carer-shift-1').props.children).toBe(
       'Amara'
     );
+    expect(getByTestId('schedule-shift-avatar-shift-1')).toBeTruthy();
     expect(queryByTestId('schedule-shift-carer-shift-2')).toBeNull();
+    expect(queryByTestId('schedule-shift-avatar-shift-2')).toBeNull();
   });
 });
