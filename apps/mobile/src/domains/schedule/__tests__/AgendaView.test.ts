@@ -47,6 +47,11 @@ describe('AgendaView source', () => {
     expect(viewSource).toContain('paddingBottom: tabBarScrollPadding');
   });
 
+  it('renders day headers through the shared DayHeader', () => {
+    expect(viewSource).toContain("from '@/src/components/ui/day-header'");
+    expect(viewSource).toContain('<DayHeader');
+  });
+
   it('REGRESSION: extraHref uses utcIsoToWallClockHHMM for 24h start/end query params (A9)', () => {
     expect(viewSource).toMatch(
       /const extraHref = \(\(\) => \{[\s\S]*?utcIsoToWallClockHHMM\(window\.startsAt[\s\S]*?utcIsoToWallClockHHMM\(window\.endsAt/

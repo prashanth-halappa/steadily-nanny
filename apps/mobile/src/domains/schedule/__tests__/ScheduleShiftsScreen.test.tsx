@@ -579,6 +579,30 @@ describe('ScheduleShiftsScreen', () => {
       expect(queryByText('shifts.nannySubtitle')).toBeNull();
     });
 
+    it('renders the lead line for the nanny and the parent', () => {
+      mockUseShiftsRange.mockImplementation(() => ({
+        data: [],
+        isLoading: false,
+        isError: false,
+        error: null,
+      }));
+
+      mockUseIsOnboarded.mockImplementation(() => ({
+        role: 'nanny',
+        status: 'onboarded',
+      }));
+      const nanny = render(<ScheduleShiftsScreen />);
+      expect(nanny.getByTestId('schedule-lead')).toBeTruthy();
+      nanny.unmount();
+
+      mockUseIsOnboarded.mockImplementation(() => ({
+        role: 'parent',
+        status: 'onboarded',
+      }));
+      const parent = render(<ScheduleShiftsScreen />);
+      expect(parent.getByTestId('schedule-lead')).toBeTruthy();
+    });
+
     it('gives a helper the PARENT voice, not a third one — helper sees the household schedule same as a parent', () => {
       mockUseIsOnboarded.mockImplementation(() => ({
         role: 'helper',
