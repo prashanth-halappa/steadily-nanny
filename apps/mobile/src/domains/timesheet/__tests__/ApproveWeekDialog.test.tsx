@@ -151,7 +151,133 @@ beforeEach(() => {
   capturedTCalls.length = 0;
 });
 
+type DialogProps = Parameters<
+  typeof import('../components/ApproveWeekDialog').ApproveWeekDialog
+>[0];
+
+const BASE_PROPS: DialogProps = {
+  open: true,
+  onOpenChange: () => {},
+  onConfirm: () => {},
+  isSubmitting: false,
+  weekRangeLabel: '3 – 9 August',
+  hoursLabel: '41h 00m',
+  grossLabel: '£236.12',
+  earningsStatus: 'ok',
+  carerName: 'Amara',
+  adjustmentLabel: null,
+};
+
+function renderDialog(overrides: Partial<DialogProps> = {}) {
+  return render(<ApproveWeekDialog {...BASE_PROPS} {...overrides} />);
+}
+
+function tCall(key: string) {
+  return capturedTCalls.find(c => c.key === key);
+}
+
 describe('ApproveWeekDialog', () => {
+  it('titles the dialog with the carer name and her hours', () => {
+    renderDialog();
+
+    const call = tCall('approveDialog.title');
+    expect(call).toBeDefined();
+    expect(call?.options).toEqual(
+      expect.objectContaining({
+        name: 'Amara',
+        hours: '41h 00m',
+      })
+    );
+  });
+
+  it.each([
+    {
+      variant: 'plain',
+      overrides: {},
+      key: 'approveDialog.body',
+      present: { range: '3 – 9 August', gross: '£236.12' },
+      absent: ['adjustment'] as const,
+    },
+    {
+      variant: 'nothingUnusual',
+      overrides: { nothingUnusual: true },
+      key: 'approveDialog.bodyNothingUnusual',
+      present: { range: '3 – 9 August', gross: '£236.12' },
+      absent: ['adjustment'] as const,
+    },
+    {
+      variant: 'noArrangement',
+      overrides: {
+        grossLabel: null,
+        earningsStatus: 'no_arrangement' as const,
+      },
+      key: 'approveDialog.bodyNoArrangement',
+      present: { range: '3 – 9 August' },
+      absent: ['gross', 'adjustment'] as const,
+    },
+    {
+      variant: 'currencyChange',
+      overrides: {
+        grossLabel: null,
+        earningsStatus: 'currency_change' as const,
+      },
+      key: 'approveDialog.bodyCurrencyChange',
+      present: { range: '3 – 9 August' },
+      absent: ['gross', 'adjustment'] as const,
+    },
+    {
+      variant: 'adjustmentAdded',
+      overrides: {
+        grossLabel: '£251.12',
+        adjustmentLabel: '£15.00',
+        adjustmentDirection: 'added' as const,
+      },
+      key: 'approveDialog.bodyAdjustmentAdded',
+      present: {
+        range: '3 – 9 August',
+        gross: '£251.12',
+        adjustment: '£15.00',
+      },
+      absent: [] as const,
+    },
+    {
+      variant: 'adjustmentDeducted',
+      overrides: {
+        grossLabel: '£216.12',
+        adjustmentLabel: '£20.00',
+        adjustmentDirection: 'deducted' as const,
+      },
+      key: 'approveDialog.bodyAdjustmentDeducted',
+      present: {
+        range: '3 – 9 August',
+        gross: '£216.12',
+        adjustment: '£20.00',
+      },
+      absent: [] as const,
+    },
+  ])('$variant body uses $key with range plus gross/adjustment where they belong', ({
+    overrides,
+    key,
+    present,
+    absent,
+  }) => {
+    renderDialog(overrides);
+
+    const call = tCall(key);
+    expect(call).toBeDefined();
+    expect(call?.options).toEqual(expect.objectContaining(present));
+    for (const field of absent) {
+      expect(call?.options?.[field]).toBeUndefined();
+    }
+  });
+
+  it('uses the nested cancel and confirm keys', () => {
+    renderDialog();
+
+    expect(tCall('approveDialog.cancel')).toBeDefined();
+    expect(tCall('approveDialog.confirm')).toBeDefined();
+  });
+
   it('shows hours + gross as text in the body when an arrangement exists', () => {
     const { getByTestId } = render(
       <ApproveWeekDialog
@@ -169,10 +295,10 @@ describe('ApproveWeekDialog', () => {
     );
 
     expect(getByTestId('hours-approve-dialog-title').props.children).toBe(
-      'approveDialogTitle'
+      'approveDialog.title'
     );
     const body = getByTestId('hours-approve-dialog-body').props.children;
-    expect(body).toBe('approveDialogBody');
+    expect(body).toBe('approveDialog.body');
   });
 
   it('renders the no-arrangement body variant when grossLabel is null', () => {
@@ -192,7 +318,7 @@ describe('ApproveWeekDialog', () => {
     );
 
     expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
-      'approveDialogBodyNoArrangement'
+      'approveDialog.bodyNoArrangement'
     );
   });
 
@@ -213,7 +339,7 @@ describe('ApproveWeekDialog', () => {
     );
 
     expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
-      'approveDialogBodyCurrencyChange'
+      'approveDialog.bodyCurrencyChange'
     );
   });
 
@@ -234,8 +360,8 @@ describe('ApproveWeekDialog', () => {
       />
     );
 
-    expect(getByText('approveDialogCancel')).toBeTruthy();
-    expect(getByText('approveDialogConfirm')).toBeTruthy();
+    expect(getByText('approveDialog.cancel')).toBeTruthy();
+    expect(getByText('approveDialog.confirm')).toBeTruthy();
 
     fireEvent.press(getByTestId('hours-approve-dialog-confirm'));
     expect(onConfirm).toHaveBeenCalledTimes(1);
@@ -281,7 +407,7 @@ describe('ApproveWeekDialog', () => {
     );
 
     expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
-      'approveDialogBodyNothingUnusual'
+      'approveDialog.bodyNothingUnusual'
     );
   });
 
@@ -303,7 +429,7 @@ describe('ApproveWeekDialog', () => {
     );
 
     expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
-      'approveDialogBody'
+      'approveDialog.body'
     );
   });
 
@@ -328,7 +454,7 @@ describe('ApproveWeekDialog', () => {
     // The staged adjustment is decided THIS approval — the server's
     // nothing_unusual read predates it and cannot know about it.
     expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
-      'approveDialogBodyAdjustmentDeducted'
+      'approveDialog.bodyAdjustmentDeducted'
     );
   });
 
@@ -350,7 +476,7 @@ describe('ApproveWeekDialog', () => {
     );
 
     expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
-      'approveDialogBodyNoArrangement'
+      'approveDialog.bodyNoArrangement'
     );
   });
 
@@ -469,7 +595,7 @@ describe('ApproveWeekDialog — a staged adjustment', () => {
     const { getByTestId } = renderWithAdjustment();
 
     expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
-      'approveDialogBodyAdjustmentDeducted'
+      'approveDialog.bodyAdjustmentDeducted'
     );
   });
 
@@ -481,7 +607,7 @@ describe('ApproveWeekDialog — a staged adjustment', () => {
     });
 
     expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
-      'approveDialogBodyAdjustmentAdded'
+      'approveDialog.bodyAdjustmentAdded'
     );
   });
 
@@ -489,7 +615,7 @@ describe('ApproveWeekDialog — a staged adjustment', () => {
     renderWithAdjustment();
 
     const call = capturedTCalls.find(
-      c => c.key === 'approveDialogBodyAdjustmentDeducted'
+      c => c.key === 'approveDialog.bodyAdjustmentDeducted'
     );
     expect(call?.options?.gross).toBe('£216.12');
     // The verb carries the sign — a minus here would say it twice.
@@ -505,9 +631,9 @@ describe('ApproveWeekDialog — a staged adjustment', () => {
     });
 
     expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
-      'approveDialogBody'
+      'approveDialog.body'
     );
-    const call = capturedTCalls.find(c => c.key === 'approveDialogBody');
+    const call = capturedTCalls.find(c => c.key === 'approveDialog.body');
     expect(call?.options?.gross).toBe('£236.12');
     expect(call?.options?.adjustment).toBeUndefined();
   });
@@ -519,7 +645,7 @@ describe('ApproveWeekDialog — a staged adjustment', () => {
     });
 
     expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
-      'approveDialogBodyNoArrangement'
+      'approveDialog.bodyNoArrangement'
     );
   });
 });
