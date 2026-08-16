@@ -7,6 +7,12 @@
     "parentNamePlaceholder": "e.g. Ana Ruiz",
     "householdNameLabel": "Family name",
     "householdNamePlaceholder": "e.g. The Ruiz family",
+    "phoneLabel": "Your mobile number",
+    "phoneHint": "Your nanny will see this. It's how she reaches you during the day.",
+    "phoneHintNanny": "The family will see this. It's how they reach you.",
+    "phonePlaceholder": "e.g. 07700 900123",
+    "phoneRequired": "Please enter your mobile number.",
+    "phoneInvalid": "That doesn't look like a phone number.",
     "continueButton": "Continue",
     "saveButton": "Save",
     "householdNameHint": "This is the name {{nannyName}} sees."
