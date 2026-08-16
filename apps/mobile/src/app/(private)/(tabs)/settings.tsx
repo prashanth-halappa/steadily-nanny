@@ -56,6 +56,7 @@ import { useInboxItems } from '@/src/domains/inbox';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useDeleteAccount } from '@/src/hooks/mutations/useDeleteAccount';
 import { useUpdatePreferredLocale } from '@/src/hooks/mutations/useUpdatePreferredLocale';
+import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
 import { SUPPORTED_LANGUAGES } from '@/src/i18n/constants';
@@ -193,6 +194,7 @@ export default function SettingsScreen() {
   // in-flight wizard UI state and can be empty/stale here (see
   // useIsOnboarded's header comment / TodayScreen for the same pattern).
   const onboarding = useIsOnboarded();
+  const members = useHouseholdMembers(onboarding.householdId);
   const inbox = useInboxItems();
   const inboxBadge =
     inbox.items.length > 0 ? String(inbox.items.length) : undefined;
@@ -223,6 +225,7 @@ export default function SettingsScreen() {
   const identityName = savedName || accountEmail;
   const showIdentitySkeleton = profile.isPending;
   const showIdentity = accountEmail || onboarding.role;
+  const member = (members.data ?? []).find(m => m.user_id === user?.id);
 
   return (
     <View className="flex-1 bg-background">
@@ -257,7 +260,11 @@ export default function SettingsScreen() {
             className="mt-4 flex-row items-center gap-3"
             testID="settings-identity"
           >
-            <PersonAvatar name={identityName} size="md" />
+            <PersonAvatar
+              name={identityName}
+              colour={member?.colour ?? undefined}
+              size="md"
+            />
             <View className="flex-1 gap-1">
               <H4 testID="settings-identity-name">{identityName}</H4>
               {savedName && accountEmail ? (

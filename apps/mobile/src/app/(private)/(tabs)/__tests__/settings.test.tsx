@@ -185,4 +185,25 @@ describe('SettingsScreen', () => {
     expect(joinIdx).toBeGreaterThan(parentArmEnd);
     expect(joinIdx).toBeGreaterThan(carerArmEnd);
   });
+
+  // The Settings hero is the one place the app shows you yourself. Carer
+  // profile already colours PersonAvatar from the member record; this
+  // identity block must do the same, not sit on a plain muted ground.
+  it('passes the signed-in member colour to the identity avatar', () => {
+    expect(screenSource).toContain('useHouseholdMembers');
+    expect(screenSource).toContain(
+      'useHouseholdMembers(onboarding.householdId)'
+    );
+    expect(screenSource).toContain('m.user_id === user?.id');
+    expect(screenSource).toContain('colour={member?.colour ?? undefined}');
+  });
+
+  it('still renders the identity block when no membership colour is available', () => {
+    expect(screenSource).toContain('testID="settings-identity"');
+    expect(screenSource).toContain(
+      'const showIdentity = accountEmail || onboarding.role'
+    );
+    expect(screenSource).toContain('colour={member?.colour ?? undefined}');
+    expect(screenSource).not.toMatch(/showIdentity\s*&&\s*.*colour/);
+  });
 });
