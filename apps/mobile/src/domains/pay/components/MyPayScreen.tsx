@@ -301,6 +301,14 @@ function MyPayHouseholdCard({
                     message={t('ack.recordFailed')}
                   />
                 ) : null}
+                {ackTerms.isSuccess ? (
+                  <Small
+                    testID={`my-pay-ack-recorded-${household.id}`}
+                    className="text-muted-strong"
+                  >
+                    {t('ack.recordedNow')}
+                  </Small>
+                ) : null}
               </View>
             ) : null}
             <View className="flex-row items-baseline gap-1">
@@ -325,6 +333,14 @@ function MyPayHouseholdCard({
             >
               {ackStateWord}
             </Small>
+            {dissentTerms.isSuccess ? (
+              <Small
+                testID={`my-pay-dissent-recorded-${household.id}`}
+                className="text-muted-strong"
+              >
+                {t('dissent.recordedNow')}
+              </Small>
+            ) : null}
             <Button
               testID={`my-pay-history-toggle-${household.id}`}
               variant="ghost"
