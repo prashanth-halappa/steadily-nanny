@@ -671,9 +671,28 @@ real, which is exactly the convention `previewInvite`'s header protects.
 
 **Rows are the full terms document, in the same order and the same words as the
 app** — `screens-pay-terms.md` §3's inventory and §4's group order, not the six
-rows `termRows.ts:59–138` builds today. `valueWhenNull` is preserved: "No
-cancellation pay" is an agreement, "Not set" is a blank. Never a fabricated
-`$0.00` (T16). The weekly figure is the same server-computed
+rows `termRows.ts:59–138` builds today. Never a fabricated `$0.00` (T16).
+
+> **AMENDED (2026-08-16) — only terms that are SET are rendered.** A row whose
+> underlying value is `null` is omitted from the document entirely rather than
+> printed as "Not set". A first-time draft typically carries a rate, a guarantee
+> and a start date, and the original rule buried those three real terms under
+> eleven blank lines — on the public `/t/:code` page, that is a family's first
+> impression of the product. `valueWhenNull` goes with it: the cancellations row
+> is dropped when its window is null, so "No cancellation pay" no longer appears
+> on these surfaces.
+>
+> **The M22 tradeoff is knowingly reversed here.** The original rule existed so a
+> parent could not later say a term was slipped past him; the cost of the
+> amendment is that he can no longer tell "there is no overtime tier" from
+> "overtime was not part of this document". Accepted by the owner. Everything
+> that IS set still renders in full, in the same order, on all four surfaces.
+>
+> The mock above still shows the pre-amendment rows (`Mileage · Not set`); read
+> those cells as "omitted". Implemented by the filter in
+> `TermsDocumentRows.tsx` and in the API's `renderTermRows.ts`. Deliberately NOT
+> applied to `buildTermRows` itself — `termsDiff.ts`, `PayTermsGroups.tsx` and
+> the nanny's own draft card all still need the null rows. The weekly figure is the same server-computed
 `weekly_equivalent_minor` as §7.2, with §10's even-spread caveat when daily
 overtime is set.
 
@@ -1287,7 +1306,10 @@ code is redeemed. All three are now specified and the coupling is recorded in
 §6.2; taking any of them re-opens the decision. Her second correction was
 sharper and is folded in §7.2: a review screen showing six term rows out of an
 eighteen-term inventory would make *her* the nanny who snuck something in, which
-is the accusation this feature exists to make impossible.
+is the accusation this feature exists to make impossible. (Amended 2026-08-16 —
+see §6.2: unset terms are now omitted rather than printed as "Not set". Her
+correction still holds for every term that HAS a value; what changed is that a
+blank is no longer a row.)
 
 **David.** Two moments matter and both are in §6. He gets a link, not a code —
 the link shows him a real number and a real name in about four seconds, which is

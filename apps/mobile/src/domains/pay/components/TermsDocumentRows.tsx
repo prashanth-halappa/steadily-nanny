@@ -12,6 +12,17 @@
  * screen brings only its own testID namespace; nothing else about the rows is
  * a screen's decision.
  *
+ * Only terms that are set are rendered. A `null` value means the term is
+ * absent from the document entirely — a nanny sharing her terms with a family
+ * should not bury three real terms under eleven lines of "Not set". The
+ * filter lives here, not in `buildTermRows`, because three other consumers
+ * still need the null rows: `termsDiff.ts` (a term going set→unset must still
+ * diff), `PayTermsGroups.tsx` (the edit form's collapsed summaries, where
+ * "Not set" is the affordance to go fill it in), and `DraftHomeScreen.tsx`
+ * (the nanny's own pre-share draft). `value: ''` is not null — that is the
+ * PTO-balance row while its ledger query is in flight — so it still renders
+ * blank rather than popping in on resolve.
+ *
  * `subLineByKey` is §7.6's diff affordance — "was $28.00/hr" under each
  * CHANGED row on a counter. It overrides the row's own second line (only the
  * PTO-balance caption has one), because on a counter the question the reader
@@ -46,16 +57,18 @@ export function TermsDocumentRows({
 
   return (
     <View className="gap-3">
-      {buildTermRows(arrangement, t, balance).map(row => (
-        <AmountRow
-          key={row.key}
-          testID={`${testIDPrefix}-${row.key}`}
-          label={row.label}
-          value={row.value}
-          valueWhenNull={row.valueWhenNull}
-          subLine={subLineByKey?.[row.key] ?? row.subLine}
-        />
-      ))}
+      {buildTermRows(arrangement, t, balance)
+        .filter(row => row.value !== null)
+        .map(row => (
+          <AmountRow
+            key={row.key}
+            testID={`${testIDPrefix}-${row.key}`}
+            label={row.label}
+            value={row.value}
+            valueWhenNull={row.valueWhenNull}
+            subLine={subLineByKey?.[row.key] ?? row.subLine}
+          />
+        ))}
     </View>
   );
 }

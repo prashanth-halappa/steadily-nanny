@@ -137,23 +137,29 @@ describe('ProposalTermsDocument', () => {
     );
   });
 
-  it('renders the whole §3 inventory, not a subset', () => {
-    const { getByTestId } = renderDocument(round1);
+  it('renders only the terms that are set — unset rows are absent', () => {
+    const { getByTestId, queryByTestId } = renderDocument(round1);
+    for (const key of ['overtime', 'dailyOvertime', 'guaranteedHours']) {
+      expect(getByTestId(`proposal-term-${key}`)).toBeTruthy();
+    }
+    // Every OTHER row of the inventory, not a sample of three — round1 sets
+    // only a rate, the two overtime tiers and the guarantee, so this is the
+    // exhaustive remainder. A row added to the document without a value must
+    // fail here rather than slip onto the page as "Not set".
     for (const key of [
-      'overtime',
-      'dailyOvertime',
       'doubletime',
       'seventhDay',
-      'guaranteedHours',
       'pto',
       'workedHolidayPremium',
+      'paidHolidayHours',
       'cancellations',
       'mileage',
       'paySchedule',
       'outsideWages',
       'inWriting',
+      'ptoBalance',
     ]) {
-      expect(getByTestId(`proposal-term-${key}`)).toBeTruthy();
+      expect(queryByTestId(`proposal-term-${key}`)).toBeNull();
     }
   });
 

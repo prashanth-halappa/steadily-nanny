@@ -27,11 +27,13 @@
  *     the §6.2 and §7.2 mocks close the terms card with it.
  *
  * T16 SURVIVES THE FLATTENING. `RenderedTermRow.value` is a plain non-empty
- * string, so the mobile builder's `value: null` + `valueWhenNull` pair is
- * RESOLVED here rather than passed on: "No cancellation pay" is an explicit
- * agreement, "Not set" is a blank, and a fabricated `$0.00` never appears.
- * Resolving it here is the point — the worker must not be the thing deciding
- * what a missing term means.
+ * string, so a null underlying value is RESOLVED here rather than passed on:
+ * the row is simply absent. T16's two null meanings — "No cancellation pay"
+ * as an explicit agreement, and "Not set" as a blank — now collapse to that
+ * one outcome; the cancellations row is dropped when its window is null,
+ * the same as every other unset term. A fabricated `$0.00` still never
+ * appears. The worker needs no change: it prints the rows it is given,
+ * verbatim, and a missing row is a row it was never given.
  *
  * NO JURISDICTION IS EVER NAMED (owner decision, §4.1.1). Prefilled values
  * read as common starting points, never as a named state's preset.
@@ -63,10 +65,6 @@ export interface RenderedTermsHeader {
    */
   weeklyLine: string | null;
 }
-
-/** T16's two null meanings, and the only two this module knows. */
-const NOT_SET = 'Not set';
-const NO_CANCELLATION_PAY = 'No cancellation pay';
 
 /** The documentary fields "In writing" counts against (`termRows.ts`). */
 const IN_WRITING_FIELD_COUNT = 5;
@@ -243,7 +241,7 @@ export function renderTermRows(
   const bag = terms.terms;
   const guarantee = terms.guaranteed_minutes_per_week;
 
-  const rows: [string, string | null, string?][] = [
+  const rows: [string, string | null][] = [
     [
       'Overtime',
       terms.overtime_threshold_minutes == null
@@ -297,8 +295,6 @@ export function renderTermRows(
       terms.cancellation_paid_within_hours == null
         ? null
         : `Paid if within ${terms.cancellation_paid_within_hours}h of the start`,
-      // The one row whose null is an AGREEMENT rather than a gap (T16).
-      NO_CANCELLATION_PAY,
     ],
     [
       'Mileage',
@@ -312,10 +308,9 @@ export function renderTermRows(
     ['Starts', startDate(terms.valid_from)],
   ];
 
-  return rows.map(([label, value, whenNull]) => ({
-    label,
-    value: value ?? whenNull ?? NOT_SET,
-  }));
+  return rows
+    .filter((row): row is [string, string] => row[1] !== null)
+    .map(([label, value]) => ({ label, value }));
 }
 
 /** 078's seventh-day rule: one tier, or two. */

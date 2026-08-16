@@ -50,8 +50,8 @@ const PREVIEW = {
   weekly_equivalent_minor: 154_000,
   rows: [
     { label: 'Overtime', value: 'After 40h at 1.5x · after 8h a day' },
-    { label: 'Cancellations', value: 'No cancellation pay' },
-    { label: 'Mileage', value: 'Not set' },
+    { label: 'Cancellations', value: 'Paid if within 24h of the start' },
+    { label: 'Mileage', value: '$0.67 a mile' },
     { label: 'Starts', value: 'Monday Aug 17' },
   ],
 };
@@ -104,9 +104,10 @@ describe('/t/:code — the happy path renders the API’s strings verbatim', () 
     }
   });
 
-  // T16 survives the trip: the API resolves null into an explicit word, and
-  // the worker must not "improve" either of them into a fabricated $0.00.
-  it('passes T16’s null words through untouched', async () => {
+  // The worker formats NOTHING: a real cancellation window and a real
+  // mileage rate arrive pre-rendered, and it must not "improve" either of
+  // them into a fabricated $0.00.
+  it('prints a set cancellation window and mileage rate, never a fabricated $0.00', async () => {
     const { restore } = withStubbedFetch(() =>
       Response.json({ success: true, data: PREVIEW })
     );
@@ -116,8 +117,8 @@ describe('/t/:code — the happy path renders the API’s strings verbatim', () 
     ).text();
     restore();
 
-    expect(html).toContain('No cancellation pay');
-    expect(html).toContain('Not set');
+    expect(html).toContain('Paid if within 24h of the start');
+    expect(html).toContain('$0.67 a mile');
     expect(html).not.toContain('$0.00');
   });
 

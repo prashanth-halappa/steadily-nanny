@@ -258,11 +258,11 @@ describe('MyPayScreen', () => {
     expect(getByTestId(`my-pay-household-${HOUSEHOLD_B}`)).toBeTruthy();
     // The card appears as soon as the household list resolves, but its terms
     // come from a separate `payCurrent` query — await that too rather than
-    // racing it.
+    // racing it. The default fixture has every term unset, so no
+    // `my-pay-term-*` row will render; the history toggle is the signal the
+    // arrangement itself has arrived.
     await waitFor(() =>
-      expect(
-        getByTestId(`my-pay-term-${HOUSEHOLD_A}-cancellations`)
-      ).toBeTruthy()
+      expect(getByTestId(`my-pay-history-toggle-${HOUSEHOLD_A}`)).toBeTruthy()
     );
 
     await waitFor(() =>
@@ -306,15 +306,13 @@ describe('MyPayScreen', () => {
     );
   });
 
-  it('no entitlement set: the balance row reads "Not set" and never fetches a balance', async () => {
-    const { getByTestId } = renderWithProviders(<MyPayScreen />);
+  it('no entitlement set: the balance row is absent and never fetches a balance', async () => {
+    const { getByTestId, queryByTestId } = renderWithProviders(<MyPayScreen />);
 
     await waitFor(() =>
-      expect(
-        getByTestId(`my-pay-term-${HOUSEHOLD_A}-ptoBalance-value`).props
-          .children
-      ).toBe('notSet')
+      expect(getByTestId(`my-pay-history-toggle-${HOUSEHOLD_A}`)).toBeTruthy()
     );
+    expect(queryByTestId(`my-pay-term-${HOUSEHOLD_A}-ptoBalance`)).toBeNull();
     expect(ptoBalanceMock).not.toHaveBeenCalled();
   });
 
