@@ -64,6 +64,8 @@ four sections with no visual differentiation between "change my name" and
 └
 ```
 
+The identity `PersonAvatar` takes the signed-in household member's `colour` (same source as CarerProfileScreen) and still renders when none is set.
+
 ### 2.1 The grouped card — the one structural change
 
 Replace *n* individually-elevated rows with **one `Card tone="default"` per
