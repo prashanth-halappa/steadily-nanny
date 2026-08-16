@@ -22,6 +22,14 @@ export interface RedeemInviteVariables {
    * path, and never a change to a household that already exists.
    */
   weekStartsOn?: number;
+  /**
+   * §8.2c "join & close" (`HouseholdDecisionSheet`): a parent who already
+   * owns a live household picked the destructive option over the escape
+   * hatch. Set only by that sheet's confirm — the server archives this
+   * household (caller's own membership -> removed) atomically with the
+   * redeem.
+   */
+  archiveHouseholdId?: string;
 }
 
 /**
@@ -35,8 +43,18 @@ export function useRedeemInvite() {
   const { t } = useTranslation('errors');
 
   return useMutation<HouseholdMember, Error, RedeemInviteVariables>({
-    mutationFn: ({ code, targetHouseholdId, weekStartsOn }) =>
-      householdApi.redeemInvite(code, targetHouseholdId, weekStartsOn),
+    mutationFn: ({
+      code,
+      targetHouseholdId,
+      weekStartsOn,
+      archiveHouseholdId,
+    }) =>
+      householdApi.redeemInvite(
+        code,
+        targetHouseholdId,
+        weekStartsOn,
+        archiveHouseholdId
+      ),
     onSuccess: membership => {
       setHouseholdId(membership.household_id);
       // Defer invalidation so `CodeEntryScreen` can persist role/step and
@@ -44,7 +62,22 @@ export function useRedeemInvite() {
       // flips the onboarding layout to `loading`, unmounts the wizard Stack,
       // and remounts CODE with empty local state while the invite is gone.
       queueMicrotask(() => {
-        queryClient.invalidateQueries({ queryKey: queryKeys.household.all });
+        // EXCLUDES `invitePreview`: this `onSuccess` runs BEFORE
+        // `mutateAsync()`'s own promise resolves for the caller, so this
+        // microtask can run before `CodeEntryScreen`'s
+        // `await redeemInvite.mutateAsync(...)` continuation has set its own
+        // `hasRedeemed` lock — a plain `invalidateQueries` on the whole
+        // `household.*` tree would then refetch the preview against the
+        // code THIS mutation just consumed and 404 it, tearing down the
+        // join UI the caller means to keep showing
+        // (`CodeEntryScreen.redeemStability.test.tsx`). The preview has
+        // nothing to gain from this invalidation anyway — the code is spent
+        // either way — so excluding it is correct, not just convenient.
+        queryClient.invalidateQueries({
+          predicate: query =>
+            query.queryKey[0] === queryKeys.household.all[0] &&
+            query.queryKey[1] !== 'invitePreview',
+        });
         queryClient.invalidateQueries({
           queryKey: queryKeys.user.memberships(),
         });

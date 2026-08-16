@@ -38,13 +38,15 @@
  * correctable in place, or the only recovery is reinstalling the app.
  */
 import {
+  HOUSEHOLD_INVITE_ROLES,
+  HOUSEHOLD_MEMBER_STATUSES,
   HOUSEHOLD_ROLES,
   HOUSEHOLD_STATES,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { type Href, useRouter } from 'expo-router';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { Share, View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { FieldError } from '@/src/components/ui/field-error';
@@ -53,7 +55,9 @@ import { Input } from '@/src/components/ui/input';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Body, H3 } from '@/src/components/ui/typography';
+import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { AbsorptionConfirmSheet } from '@/src/domains/setup/components/AbsorptionConfirmSheet';
+import { HouseholdDecisionSheet } from '@/src/domains/setup/components/HouseholdDecisionSheet';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import {
   getNextSetupStep,
@@ -64,10 +68,12 @@ import {
   SETUP_ROLES,
   SETUP_STEPS,
 } from '@/src/domains/setup/types';
+import { useCreateInvite } from '@/src/hooks/mutations/useCreateInvite';
 import { useRedeemInvite } from '@/src/hooks/mutations/useRedeemInvite';
 import { useUpdateName } from '@/src/hooks/mutations/useUpdateName';
 import { useUpsertProfile } from '@/src/hooks/mutations/useUpsertProfile';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
+import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useInvitePreview } from '@/src/hooks/queries/useInvitePreview';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
@@ -76,6 +82,7 @@ import {
   deriveBootstrapName,
 } from '@/src/lib/bootstrapUserProfile';
 import { getDeviceRegion } from '@/src/lib/deviceLocale';
+import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { useAuthStore } from '@/src/store/auth';
 import { usePendingDeepLinkStore } from '@/src/store/pendingDeepLinkStore';
 import { useSetupProgressStore } from '@/src/store/setupProgress';
@@ -176,7 +183,13 @@ export function CodeEntryScreen({
   const households = useHouseholds();
   const isJoining =
     redeemInvite.isPending || upsertProfile.isPending || updateName.isPending;
-  const lockInvitePreview = hasRedeemed || isJoining;
+  // `redeemInvite.isSuccess` closes the gap between the mutation settling
+  // and `setHasRedeemed(true)` (a few lines into `runJoin`'s success branch)
+  // actually committing — belt-and-suspenders alongside
+  // `useRedeemInvite`'s own predicate-scoped invalidation, which is what
+  // actually keeps a post-redeem refetch from hitting the now-consumed code
+  // (`CodeEntryScreen.redeemStability.test.tsx`).
+  const lockInvitePreview = hasRedeemed || isJoining || redeemInvite.isSuccess;
   const preview = useInvitePreview(submittedCode ?? '', {
     enabled: !lockInvitePreview,
   });
@@ -230,8 +243,64 @@ export function CodeEntryScreen({
     invitePreview?.household_state === HOUSEHOLD_STATES.DRAFT &&
     liveHouseholds.length > 0;
 
-  /** The actual redemption. `targetHouseholdId` is set only by the sheet. */
-  const runJoin = (targetHouseholdId?: string) => {
+  /**
+   * §8c (direction workstream 8 / plan §S6) — the OTHER shape of "he already
+   * has a household": redeeming a SECOND parent-role invite to a LIVE
+   * household, rather than absorbing a nanny's draft. Offer the escape hatch
+   * BEFORE either outcome, every time — never during first onboarding (no
+   * existing household), never for a nanny/helper invite (those never
+   * collide with "one household per parent").
+   */
+  const existingLiveHousehold = liveHouseholds[0] ?? null;
+  const needsHouseholdDecision =
+    invitePreview?.household_state === HOUSEHOLD_STATES.LIVE &&
+    invitePreview.role === HOUSEHOLD_INVITE_ROLES.PARENT &&
+    !!existingLiveHousehold;
+  const [isDecisionSheetOpen, setDecisionSheetOpen] = useState(false);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
+  const existingMembers = useHouseholdMembers(existingLiveHousehold?.id);
+  const attachedNanny = (existingMembers.data ?? []).find(
+    member =>
+      member.role === HOUSEHOLD_ROLES.NANNY &&
+      member.status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE
+  );
+  const nannyName = attachedNanny
+    ? resolveCarerName(attachedNanny, tHousehold('invite.absorb.carerFallback'))
+    : null;
+  const createExistingInvite = useCreateInvite(existingLiveHousehold?.id ?? '');
+  const { t: tErrors } = useTranslation('errors');
+
+  /**
+   * The escape hatch: mint a parent invite for the household she already
+   * owns instead of the one on the code, share it, then land on the
+   * waiting-for-them state — the same screen a first invite lands on.
+   */
+  const onInviteInstead = () => {
+    if (!existingLiveHousehold) return;
+    void (async () => {
+      try {
+        setDecisionError(null);
+        const invite = await createExistingInvite.mutateAsync({
+          role: HOUSEHOLD_INVITE_ROLES.PARENT,
+        });
+        await Share.share({
+          message: tHousehold('decision.shareMessage', {
+            code: invite.code,
+            nannyName: nannyName ?? tHousehold('invite.absorb.carerFallback'),
+          }),
+        });
+        setDecisionSheetOpen(false);
+        router.replace('/settings/invite' as Href);
+      } catch (error) {
+        setDecisionError(getLocalizedErrorMessage(error, tErrors));
+      }
+    })();
+  };
+
+  /** The actual redemption. `targetHouseholdId` is set only by the
+   * absorption sheet; `archiveHouseholdId` only by the decision sheet's
+   * "join & close". */
+  const runJoin = (targetHouseholdId?: string, archiveHouseholdId?: string) => {
     if (!submittedCode) return;
     const trimmedName = name.trim();
 
@@ -260,6 +329,7 @@ export function CodeEntryScreen({
         const membership = await redeemInvite.mutateAsync({
           code: submittedCode,
           ...(targetHouseholdId ? { targetHouseholdId } : {}),
+          ...(archiveHouseholdId ? { archiveHouseholdId } : {}),
           // D-8: a US-region device gets a Sunday-start pay week. Only the
           // server's INSTANTIATE branch reads it (096) — the case where a
           // parent with no household redeems a nanny's draft code and the
@@ -322,6 +392,14 @@ export function CodeEntryScreen({
     })();
   };
 
+  /** The destructive fallback: redeem the code AND archive the household
+   * she already owns, atomically, server-side. */
+  const onJoinAndClose = () => {
+    if (!existingLiveHousehold) return;
+    setDecisionError(null);
+    runJoin(undefined, existingLiveHousehold.id);
+  };
+
   const onJoin = () => {
     if (!submittedCode) return;
     if (!onJoined && !name.trim()) {
@@ -330,6 +408,11 @@ export function CodeEntryScreen({
     }
     if (needsAbsorptionConfirm) {
       setAbsorptionSheetOpen(true);
+      return;
+    }
+    if (needsHouseholdDecision) {
+      setDecisionError(null);
+      setDecisionSheetOpen(true);
       return;
     }
     runJoin();
@@ -485,6 +568,22 @@ export function CodeEntryScreen({
           // time `runJoin` read it, and absorbing into the wrong family is
           // not a mistake a re-render can take back.
           runJoin(householdId);
+        }}
+      />
+      <HouseholdDecisionSheet
+        visible={isDecisionSheetOpen}
+        existingName={
+          existingLiveHousehold?.name ?? tHousehold('untitledDraft')
+        }
+        otherName={invitePreview?.household_name ?? ''}
+        nannyName={nannyName}
+        isBusy={createExistingInvite.isPending || isJoining}
+        errorMessage={decisionError}
+        onInviteInstead={onInviteInstead}
+        onJoinAndClose={onJoinAndClose}
+        onCancel={() => {
+          setDecisionSheetOpen(false);
+          setDecisionError(null);
         }}
       />
     </SetupScreenShell>

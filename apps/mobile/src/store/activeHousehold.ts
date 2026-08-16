@@ -20,8 +20,10 @@ import { createPersistedStore } from './createPersistedStore';
 export interface ActiveHouseholdState {
   /** The user's last-chosen household id, or null before any choice is made. */
   preferredHouseholdId: string | null;
-  /** Record a new preferred household (e.g. picked from the switcher). */
-  setPreferredHouseholdId: (householdId: string) => void;
+  /** Record a new preferred household (e.g. picked from the switcher), or
+   * `null` to clear it (§S6 item 6 — after archiving a draft with no other
+   * live household to fall back to). */
+  setPreferredHouseholdId: (householdId: string | null) => void;
   /** Reset back to no preference (e.g. on account switch). */
   reset: () => void;
 }

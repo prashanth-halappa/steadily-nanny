@@ -7,7 +7,9 @@
     "parentNamePlaceholder": "p. ej. Ana Ruiz",
     "householdNameLabel": "Nombre de la familia",
     "householdNamePlaceholder": "p. ej. La familia Ruiz",
-    "continueButton": "Continuar"
+    "continueButton": "Continuar",
+    "saveButton": "Guardar",
+    "householdNameHint": "Este es el nombre que ve {{nannyName}}."
   },
   "switcher": {
     "triggerLabel": "Cambiar de hogar",
@@ -90,6 +92,15 @@
       "confirmButton": "Añadir a {{name}}",
       "carerFallback": "esta niñera"
     }
+  },
+  "decision": {
+    "title": "Ya tienes configurado {{existingName}}",
+    "bodyCarer": "{{nannyName}} está en él, y su horario, sus horas y su historial de pagos están ahí. Unirte a otra familia cerraría este hogar.",
+    "bodyNoCarer": "Unirte a {{otherName}} cerraría {{existingName}}. No se elimina nada — simplemente ya no podrás añadir más cosas a él.",
+    "wallLine": "Para unirte a otra familia, primero tendrías que eliminar a {{nannyName}} de {{existingName}}. Sus horas quedan registradas de todos modos.",
+    "inviteInsteadButton": "Invítalos a {{existingName}} en su lugar",
+    "joinAndCloseButton": "Unirme a {{otherName}} y cerrar {{existingName}}",
+    "shareMessage": "Únete a nuestra familia en Steadily. Código: {{code}}. Así el horario, las horas y el historial de pagos de {{nannyName}} quedan en un solo lugar para los dos."
   },
   "availability": {
     "wizardTitle": "¿Cuándo estás disponible?",

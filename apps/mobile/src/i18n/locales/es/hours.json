@@ -1,5 +1,9 @@
 {
   "title": "Horas",
+  "draftEmpty": {
+    "title": "Aún no hay nada que registrar",
+    "description": "Las horas empiezan cuando una familia acepta tus condiciones."
+  },
   "previousWeek": "Semana anterior",
   "nextWeek": "Semana siguiente",
   "yourWeek": "Tu semana",

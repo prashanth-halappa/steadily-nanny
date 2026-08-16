@@ -41,8 +41,19 @@ const upsertProfileMock = mock(
     Promise.resolve({ user_id: 'user-1', name: 'Ana' })
 );
 
+const listMembersMock = mock((): Promise<unknown[]> => Promise.resolve([]));
+const updateHouseholdMock = mock(
+  (_householdId: string, _input: { name?: string }) =>
+    Promise.resolve({ id: 'household-9', name: 'The Ahmeds' })
+);
+
 mock.module('@/src/api/endpoints/household', () => ({
-  householdApi: { list: listHouseholdsMock, create: createHouseholdMock },
+  householdApi: {
+    list: listHouseholdsMock,
+    create: createHouseholdMock,
+    listMembers: listMembersMock,
+    update: updateHouseholdMock,
+  },
 }));
 mock.module('@/src/api/endpoints/user', () => ({
   userApi: { getProfile: getProfileMock, upsertProfile: upsertProfileMock },
@@ -62,6 +73,12 @@ beforeEach(() => {
   createHouseholdMock.mockClear();
   getProfileMock.mockClear();
   upsertProfileMock.mockClear();
+  listMembersMock.mockClear();
+  updateHouseholdMock.mockClear();
+  listMembersMock.mockImplementation(() => Promise.resolve([]));
+  updateHouseholdMock.mockImplementation(() =>
+    Promise.resolve({ id: 'household-9', name: 'The Ahmeds (renamed)' })
+  );
   listHouseholdsMock.mockImplementation(() => Promise.resolve([]));
   getProfileMock.mockImplementation(() =>
     Promise.resolve({ user_id: 'user-1', name: 'Ana' })
@@ -189,5 +206,117 @@ describe('HouseholdScreen — a screen of its own for the two names', () => {
     );
     fireEvent.press(screen.getByTestId('household-screen-back'));
     expect(mockReplace).toHaveBeenCalledWith('/onboarding/start');
+  });
+});
+
+// §8a (direction workstream 8 / plan §S6) — a parent who already owns a
+// LIVE household must RENAME it here, never mint a second one. CTA reads
+// "Save", not "Continue"/"Create"; the hint names the nanny who sees it.
+describe('HouseholdScreen — rename mode for an existing LIVE household (§8a)', () => {
+  it('shows "Save" as the CTA and prefills the current name', async () => {
+    listHouseholdsMock.mockImplementation(() =>
+      Promise.resolve([
+        { id: 'household-9', name: 'The Ahmeds', state: 'live' },
+      ])
+    );
+    const screen = renderWithProviders(<HouseholdScreen />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('household-name-input').props.value).toBe(
+        'The Ahmeds'
+      )
+    );
+    expect(screen.getByText('setup.saveButton')).toBeTruthy();
+  });
+
+  it('shows the hint naming the first active nanny on the household', async () => {
+    listHouseholdsMock.mockImplementation(() =>
+      Promise.resolve([
+        { id: 'household-9', name: 'The Ahmeds', state: 'live' },
+      ])
+    );
+    listMembersMock.mockImplementation(() =>
+      Promise.resolve([
+        {
+          id: 'member-1',
+          household_id: 'household-9',
+          role: 'nanny',
+          status: 'active',
+          profile_name: 'Marisol',
+        },
+      ])
+    );
+    const screen = renderWithProviders(<HouseholdScreen />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('household-name-hint')).toBeTruthy()
+    );
+  });
+
+  it('omits the hint entirely when there is no active nanny yet', async () => {
+    listHouseholdsMock.mockImplementation(() =>
+      Promise.resolve([
+        { id: 'household-9', name: 'The Ahmeds', state: 'live' },
+      ])
+    );
+    listMembersMock.mockImplementation(() => Promise.resolve([]));
+    const screen = renderWithProviders(<HouseholdScreen />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('household-name-input')).toBeTruthy()
+    );
+    expect(screen.queryByTestId('household-name-hint')).toBeNull();
+  });
+
+  it('PATCHes only the name when it changed, then advances — never creates', async () => {
+    listHouseholdsMock.mockImplementation(() =>
+      Promise.resolve([
+        { id: 'household-9', name: 'The Ahmeds', state: 'live' },
+      ])
+    );
+    const screen = renderWithProviders(<HouseholdScreen />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('household-name-input').props.value).toBe(
+        'The Ahmeds'
+      )
+    );
+    fireEvent.changeText(
+      screen.getByTestId('household-name-input'),
+      'The Ahmed Family'
+    );
+    fireEvent.press(screen.getByTestId('household-screen-cta'));
+
+    await waitFor(() => expect(updateHouseholdMock).toHaveBeenCalledTimes(1));
+    expect(updateHouseholdMock).toHaveBeenCalledWith('household-9', {
+      name: 'The Ahmed Family',
+    });
+    expect(createHouseholdMock).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(useSetupProgressStore.getState().householdId).toBe('household-9')
+    );
+    expect(mockPush).toHaveBeenCalledWith('/onboarding/children');
+  });
+
+  it('does not PATCH when the name is unchanged', async () => {
+    listHouseholdsMock.mockImplementation(() =>
+      Promise.resolve([
+        { id: 'household-9', name: 'The Ahmeds', state: 'live' },
+      ])
+    );
+    const screen = renderWithProviders(<HouseholdScreen />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('household-name-input').props.value).toBe(
+        'The Ahmeds'
+      )
+    );
+    fireEvent.press(screen.getByTestId('household-screen-cta'));
+
+    await waitFor(() =>
+      expect(useSetupProgressStore.getState().householdId).toBe('household-9')
+    );
+    expect(updateHouseholdMock).not.toHaveBeenCalled();
+    expect(createHouseholdMock).not.toHaveBeenCalled();
   });
 });
