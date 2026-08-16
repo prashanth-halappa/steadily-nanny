@@ -1144,6 +1144,20 @@ households keep their cards with the header reading **"Ended Aug 30"** — the p
 she is still owed by a family she left is exactly what this screen is for
 (`MyPayScreen.tsx:156–163` already gets this right; do not regress it).
 
+### 9.1 Arrival from an accepted proposal
+
+Agreeing terms is the most consequential act in this product. It used to close
+the accept sheet and `router.replace` straight onto My pay (nanny) or Pay &
+terms (parent) — the least feedback of any moment in the app, a silent
+teleport onto a settings page.
+
+Accept now stays on `ProposalReviewScreen` and swaps the review body for a
+`MomentCard` (`pay:moments.termsAgreed.*`, illustration `emptyPay`,
+`testID="terms-agreed-moment"`). The card names the counterparty, the rate, and
+the start date. The CTA (`testID="terms-agreed-continue"`) is what continues to
+My pay / Pay & terms. This is in-screen state, not a new route: a failed accept
+never shows the moment, and the sheet stays open with the box still checked.
+
 ---
 
 ## 10. Salary framing (D-6) — and the trap in it
@@ -1542,6 +1556,7 @@ the household rather than silently omitting the buttons.
 | **Offline** | `OfflineBanner` above the header. The document reads from cache in full. The change footer is disabled with "You're offline — this'll save when you're back." No terms write is ever queued optimistically: an arrangement that appears to be saved and is not is a wage dispute with a timestamp. |
 | **Submit refused** | Inline error inside the review sheet, never a toast (GOLDEN #40), and every typed field survives — the existing `ClockOutSheet` discipline (`PayChangeSheet.tsx:15` documents it; keep it). |
 | **Ack write fails** | The button returns to its unpressed state with an inline error. Never optimistic: "seen" is a legal-ish fact about a person and must not be claimed before the server has it. |
+| **Terms just agreed** | Accepting a proposal no longer `replace`s straight to My pay / Pay & terms. The same screen swaps to a `MomentCard` naming the counterparty, the rate, and the start date (§9.1). The CTA then continues to the role's terms surface. A failed accept never shows it. |
 
 ---
 

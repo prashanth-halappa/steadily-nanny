@@ -28,6 +28,27 @@ import { renderWithProviders } from '@/src/test-utils';
 
 let ProposalReviewScreen: typeof import('../ProposalReviewScreen').ProposalReviewScreen;
 
+// Same key-echo contract as bun.setup.ts, plus a capture of interpolation
+// arguments — the only way to see that the terms-agreed moment names the
+// counterparty, since the echo mock otherwise drops options. Technique from
+// `ApproveWeekDialog.test.tsx`.
+const capturedTCalls: Array<{
+  key: string;
+  options?: Record<string, unknown>;
+}> = [];
+
+mock.module('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) => {
+      capturedTCalls.push({ key, options });
+      return key;
+    },
+    i18n: { language: 'en', changeLanguage: () => Promise.resolve() },
+  }),
+  Trans: ({ children }: { children: unknown }) => children,
+  initReactI18next: { type: '3rdParty', init: () => {} },
+}));
+
 const PARENT_ID = 'parent-1';
 const NANNY_ID = 'carer-1';
 const HOUSEHOLD_ID = 'hh-1';
@@ -158,6 +179,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  capturedTCalls.length = 0;
   track.mockClear();
   routerReplace.mockClear();
   acceptMutateAsync.mockClear();
@@ -257,8 +279,9 @@ describe('ProposalReviewScreen', () => {
     });
     await waitFor(() => expect(trackedNames()).toContain('proposal_accepted'));
     await waitFor(() =>
-      expect(routerReplace).toHaveBeenCalledWith('/settings/pay')
+      expect(getByTestId('terms-agreed-moment')).toBeTruthy()
     );
+    expect(routerReplace).not.toHaveBeenCalled();
   });
 
   it("a carer's accept lands on my-pay, not the parent-only pay screen (B1)", async () => {
@@ -292,8 +315,66 @@ describe('ProposalReviewScreen', () => {
     fireEvent.press(getByTestId('proposal-accept-checkbox'));
     fireEvent.press(getByTestId('proposal-accept-confirm'));
     await waitFor(() =>
-      expect(routerReplace).toHaveBeenCalledWith('/settings/my-pay')
+      expect(getByTestId('terms-agreed-moment')).toBeTruthy()
     );
+    expect(routerReplace).not.toHaveBeenCalled();
+    fireEvent.press(getByTestId('terms-agreed-continue'));
+    expect(routerReplace).toHaveBeenCalledWith('/settings/my-pay');
+  });
+
+  it('a parent who accepts sees the moment and then continues to /settings/pay', async () => {
+    const { getByTestId } = renderWithProviders(<ProposalReviewScreen />);
+    await waitFor(() =>
+      expect(getByTestId('proposal-agree-button')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('proposal-agree-button'));
+    fireEvent.press(getByTestId('proposal-accept-checkbox'));
+    fireEvent.press(getByTestId('proposal-accept-confirm'));
+    await waitFor(() =>
+      expect(getByTestId('terms-agreed-moment')).toBeTruthy()
+    );
+    expect(routerReplace).not.toHaveBeenCalled();
+    fireEvent.press(getByTestId('terms-agreed-continue'));
+    expect(routerReplace).toHaveBeenCalledWith('/settings/pay');
+  });
+
+  it('the moment names the counterparty', async () => {
+    const { getByTestId } = renderWithProviders(<ProposalReviewScreen />);
+    await waitFor(() =>
+      expect(getByTestId('proposal-agree-button')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('proposal-agree-button'));
+    fireEvent.press(getByTestId('proposal-accept-checkbox'));
+    fireEvent.press(getByTestId('proposal-accept-confirm'));
+    await waitFor(() =>
+      expect(getByTestId('terms-agreed-moment')).toBeTruthy()
+    );
+    const titleCall = capturedTCalls.find(
+      call => call.key === 'moments.termsAgreed.title'
+    );
+    expect(titleCall).toBeDefined();
+    expect(titleCall?.options).toEqual(
+      expect.objectContaining({ name: 'Marisol' })
+    );
+  });
+
+  it('a failed accept never shows the moment', async () => {
+    acceptMutateAsync.mockImplementation(() =>
+      Promise.reject(new Error('accept failed'))
+    );
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <ProposalReviewScreen />
+    );
+    await waitFor(() =>
+      expect(getByTestId('proposal-agree-button')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('proposal-agree-button'));
+    fireEvent.press(getByTestId('proposal-accept-checkbox'));
+    fireEvent.press(getByTestId('proposal-accept-confirm'));
+    await waitFor(() => expect(acceptMutateAsync).toHaveBeenCalled());
+    expect(queryByTestId('terms-agreed-moment')).toBeNull();
+    expect(getByTestId('proposal-accept-sheet-modal').props.visible).toBe(true);
+    expect(routerReplace).not.toHaveBeenCalled();
   });
 
   it('does not claim an acceptance the server did not make an arrangement for', async () => {

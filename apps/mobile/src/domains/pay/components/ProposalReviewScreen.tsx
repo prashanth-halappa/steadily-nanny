@@ -36,6 +36,7 @@ import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
+import { MomentCard } from '@/src/components/ui/moment-card';
 import { SkeletonShimmer } from '@/src/components/ui/skeleton-shimmer';
 import { Text } from '@/src/components/ui/text';
 import { Body, H1 } from '@/src/components/ui/typography';
@@ -52,8 +53,10 @@ import { useTermsProposals } from '@/src/hooks/queries/useTermsProposals';
 import { analytics } from '@/src/lib/analytics/analytics';
 import { ANALYTICS_EVENTS } from '@/src/lib/analytics/events';
 import { localDateInZone } from '@/src/lib/localDate';
+import { formatMoney } from '@/src/lib/money';
 import { useIsOnline } from '@/src/lib/network';
 import { useAuthStore } from '@/src/store/auth';
+import { formatDisplayDateWithYear } from '../utils/payArrangementForm';
 import {
   arrangementFromProposal,
   buildProposalChain,
@@ -111,6 +114,7 @@ export function ProposalReviewScreen() {
   const [acceptOpen, setAcceptOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
   const [declineOpen, setDeclineOpen] = useState(false);
+  const [agreed, setAgreed] = useState(false);
   const openedAt = useRef(Date.now());
 
   const household = activeHousehold.household;
@@ -202,11 +206,7 @@ export function ProposalReviewScreen() {
           });
         }
         setAcceptOpen(false);
-        // `/settings/pay` is the PARENT's management surface — a carer is
-        // gated to `pay-not-available` there (PayArrangementScreen's
-        // `isParentEditorRole` check). A carer who just accepted (the B1
-        // path) lands on her own read-only surface instead.
-        router.replace(isNanny ? '/settings/my-pay' : '/settings/pay');
+        setAgreed(true);
       })
       // The failure is already rendered inline in the sheet, which stays open
       // with the box still checked (§12). A second report here would be the
@@ -226,6 +226,38 @@ export function ProposalReviewScreen() {
       })
       .catch(() => undefined);
   };
+
+  if (agreed) {
+    // `/settings/pay` is the PARENT's management surface — a carer is
+    // gated to `pay-not-available` there (PayArrangementScreen's
+    // `isParentEditorRole` check). A carer who just accepted (the B1
+    // path) lands on her own read-only surface instead.
+    const continueToTerms = () =>
+      router.replace(isNanny ? '/settings/my-pay' : '/settings/pay');
+    return (
+      <ScrollView
+        testID="proposal-review-screen"
+        className="flex-1 bg-background"
+        contentContainerStyle={SCREEN_CONTENT_STYLE}
+      >
+        <MomentCard
+          testID="terms-agreed-moment"
+          illustration="emptyPay"
+          title={t('moments.termsAgreed.title', { name: counterpartyName })}
+          body={t('moments.termsAgreed.body', {
+            rate: formatMoney(arrangement.rate_minor, arrangement.currency),
+            date: formatDisplayDateWithYear(arrangement.valid_from),
+          })}
+          action={{
+            label: t('moments.termsAgreed.cta'),
+            onPress: continueToTerms,
+            testID: 'terms-agreed-continue',
+          }}
+          momentKey={`termsAgreed:${data.id}`}
+        />
+      </ScrollView>
+    );
+  }
 
   return (
     <ScrollView
