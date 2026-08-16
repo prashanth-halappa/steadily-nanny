@@ -16,7 +16,7 @@ import { ErrorState } from '@/src/components/custom/ErrorState';
 import { BackButton } from '@/src/components/ui/back-button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { Body, H1, Small } from '@/src/components/ui/typography';
+import { Body, H1, MetadataLabel, Small } from '@/src/components/ui/typography';
 import { useInboxItems } from '@/src/domains/inbox/hooks/useInboxItems';
 import {
   hrefForItem,
@@ -76,6 +76,9 @@ export function InboxScreen() {
             </View>
           ) : (
             <View testID="inbox-list" className="gap-3">
+              <Body testID="inbox-lead" className="text-muted-foreground">
+                {t('lead', { count: items.length })}
+              </Body>
               {items.map(item => (
                 <Pressable
                   key={`${item.kind}-${item.id}`}
@@ -85,6 +88,12 @@ export function InboxScreen() {
                   className="gap-1 rounded-row bg-card p-4"
                   style={elevation.row}
                 >
+                  <MetadataLabel
+                    testID={`inbox-item-kind-${item.kind}`}
+                    className="text-muted-foreground"
+                  >
+                    {t(`kinds.${item.kind}`)}
+                  </MetadataLabel>
                   <Body weight="semibold">
                     {titleForItem(item, t, timeZone)}
                   </Body>

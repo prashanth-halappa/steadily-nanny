@@ -30,7 +30,9 @@ N12) is not in the registry** — deferred punch-list item; see §1.6.
    owner the same way.
 3. **The inbox deep-links; it never resolves in place** (B7). A card says what
    is waiting and routes to the surface that can settle it. No card in this
-   spec grows an Accept button.
+   spec grows an Accept button. The inbox list itself leads with a count
+   (`inbox:lead_*`) and each row a kind eyebrow (`inbox:kinds.*`) so an
+   approval and a terms review do not look the same.
 
 **The central design call of §2, stated up front:** every new obligation this
 build creates becomes an **inbox item kind**, not a new Today card. That keeps
