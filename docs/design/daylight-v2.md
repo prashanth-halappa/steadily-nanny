@@ -434,6 +434,33 @@ reads as a static grey block. Widen to `skeletonBase #EDE5EA` (`secondary`) →
 tinted block, an L3 skeleton is a white card, an L4 skeleton is two bare rows.
 Loading state that lies about hierarchy is why apps feel like they "pop" on load.
 
+### 6.10 `MomentCard` and `ReceiptCard`
+
+Toolkit cards for later streams. Do not invent a third delight surface.
+
+**MomentCard** (`src/components/ui/moment-card.tsx`) — the L1 celebration.
+Default-tone `Card`, illustration on a `chipPlum` circle at 1.6× the art
+width (same ground as EmptyState), `Achievement` title, `Body`, optional
+`Button size="lg"`. Confetti is owned by `useMilestone('moment', key)`.
+
+**ReceiptCard** (`src/components/ui/receipt-card.tsx`) — the calm confirmation.
+`Card tone="positive"`, `IconChip tone="hours"` with `CircleCheck`, `H3`
+title, optional `Body`, optional `dots` slot. Haptic owned by
+`useMilestone('receipt', key)`. New receipts go through this component so
+the haptic has exactly one owner.
+
+Motion tiers (`lib/animations/useMilestone.ts`):
+
+| Tier | Haptic (`HAPTIC_PATTERNS`) | Easing | Confetti |
+|---|---|---|---|
+| `silent` | none | none | no |
+| `acknowledged` | `encouragement` | `gentleRise` | no |
+| `receipt` | `achievement` | `gentleRise` | no |
+| `moment` | `milestone` | `celebrationPop` | yes (off under reduced motion) |
+
+`useMilestone` fires the haptic once per key (module-scope set) and returns
+`{ easing, showConfetti }`. A `null` key or the `silent` tier fires nothing.
+
 ---
 
 ## 7. Motion

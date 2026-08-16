@@ -148,7 +148,7 @@ Never merge elevation styles onto a Reanimated `Animated.View` that also carries
 | T3 — Routine | the default, everyday card | `tone="default"` (or omit `tone`) | `bg-card` | `card` |
 | T4 — Reference | present but not asking for attention | *(not a `Card` tone)* — use `bg-muted` directly | `bg-muted` | none |
 
-`tone="attention"` and `tone="positive"` tint with opaque hex (`surfaceAttention` / `surfacePositive`), never a translucent `bg-*/NN` class (GOLDEN-FIXES #19 — a shadow over a translucent ground reads wrong on device). `tone="positive"` keeps the plain `card` elevation, not `cardProminent` — it's a calm confirmation, not an alert.
+`tone="attention"` and `tone="positive"` tint with opaque hex (`surfaceAttention` / `surfacePositive`), never a translucent `bg-*/NN` class (GOLDEN-FIXES #19 — a shadow over a translucent ground reads wrong on device). `tone="positive"` keeps the plain `card` elevation, not `cardProminent` — it's a calm confirmation, not an alert. `tone="positive"` means "receipt"; use `ReceiptCard` for a new receipt so the haptic has exactly one owner.
 
 `Card` no longer has an `accent` prop. It used to draw a 4px inset bar down the card's left edge; removed after user feedback on device ("you don't need the left border") and a genuine rendering defect (a 4px-wide element can't carry the card's own 20px corner radius — the radius degenerates and the bar poked past the rounded corners). The tinted ground alone now carries the tier.
 
