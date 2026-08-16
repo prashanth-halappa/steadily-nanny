@@ -15,10 +15,17 @@
  * pre-translated from `PaymentsScreen`, which owns the client-side join
  * against the timesheet list; a null field here means the screen had nothing
  * true to say, and the line is simply omitted rather than filled in.
+ *
+ * An optional leading `PersonAvatar` is the same contract: the screen names
+ * a person or it does not. The avatar sits on the LEFT; the right-hand
+ * `Figure` + `CHEVRON_SLOT` group is untouched, so amounts still land in
+ * one column. The avatar's own accent is a name-hash, not a row tone —
+ * the row stays `bg-card`.
  */
 import { ChevronRight } from 'lucide-react-native';
 import { Pressable, View } from 'react-native';
 import { Icon } from '@/lib/icons/iconWithClassName';
+import { PersonAvatar } from '@/src/components/ui/person-avatar';
 import { Figure, MetadataLabel, Small } from '@/src/components/ui/typography';
 import { useElevation } from '~/lib/design-tokens/elevation';
 import { CHEVRON_SLOT } from './TimeEntryRow';
@@ -40,6 +47,9 @@ export interface PaymentRowData {
   /** `payments.rowEnteredLate`. Null unless the entry trails the money by
    * more than one day. */
   enteredLateLabel: string | null;
+  /** Named person this row belongs to. Null when the screen had nothing
+   * true to say — a nanny with one household, a parent, an untitled draft. */
+  person: { name: string } | null;
 }
 
 interface PaymentRowProps {
@@ -60,6 +70,13 @@ export function PaymentRow({ row, onPress }: PaymentRowProps) {
       style={[elevation.row, { minHeight: ROW_MIN_HEIGHT }]}
     >
       <View className="flex-row items-center justify-between gap-3">
+        {row.person ? (
+          <PersonAvatar
+            name={row.person.name}
+            size="sm"
+            testID={`${testID}-avatar`}
+          />
+        ) : null}
         <View className="min-w-0 flex-1 gap-1">
           <MetadataLabel
             testID={`${testID}-date`}

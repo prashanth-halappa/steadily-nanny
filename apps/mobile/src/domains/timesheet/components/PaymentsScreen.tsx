@@ -242,6 +242,17 @@ export function PaymentsScreen() {
   }, [timesheets.data]);
 
   const items = useMemo<PaymentsItem[]>(() => {
+    // A nanny who works for two families reads this ledger row by row to
+    // work out which money came from whom. One household — or any parent-side
+    // viewer — has nothing true to name, so the row stays a bare record.
+    const householdCount =
+      (active.households?.length ?? 0) + (active.pastHouseholds?.length ?? 0);
+    const familyName = active.household?.name ?? null;
+    const rowPerson =
+      !isParentSide && householdCount >= 2 && familyName
+        ? { name: familyName }
+        : null;
+
     const list: PaymentsItem[] = [];
     for (const group of groupPaymentsByMonth(payments.data ?? [])) {
       list.push({
@@ -279,12 +290,21 @@ export function PaymentsScreen() {
                   date: formatEarningsLongDate(payment.created_at.slice(0, 10)),
                 })
               : null,
+            person: rowPerson,
           },
         });
       }
     }
     return list;
-  }, [payments.data, attributionByTimesheetId, isParentSide, t]);
+  }, [
+    payments.data,
+    attributionByTimesheetId,
+    isParentSide,
+    active.households,
+    active.pastHouseholds,
+    active.household?.name,
+    t,
+  ]);
 
   // Same join `items` uses, flattened in the same newest-first order the
   // list renders — the CSV performs no sorting of its own (`paymentsCsv.ts`).
