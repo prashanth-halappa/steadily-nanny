@@ -151,6 +151,32 @@ other row. TestID: `schedule-now-line`.
 The screen hero band also carries a role-forked lead line under the subtitle
 (`schedule:lead.nanny` / `schedule:lead.parent`, testID `schedule-lead`).
 
+### 3.4 What a shift row carries
+
+The row is still the same three visual modes (parent-cover / resolved / live)
+at the same padding and rungs. What it was missing is **who is with whom**.
+A parent opening their week used to see `09:00 – 17:00` and a status pill —
+nothing that named the children or the carer.
+
+`ShiftRow` now carries, left to right, without a new query:
+
+- **Time range** — unchanged (`Figure` tabular, struck through when resolved).
+- **Child chips** — one `ChildChip` per resolved `shift.shift_children`
+  entry, coloured with that child's swatch. `AgendaView` already fetches
+  `useChildren` for uncovered rows; it looks up `childrenById` and passes
+  `{ id, name, colour }[]`. A shift with no children (or children the map
+  cannot resolve) renders no chip row, so the height stays as it was.
+- **Carer** — first name, as before, only once the household has 2+
+  nanny/helper members. The same gate now also shows a small `PersonAvatar`
+  beside the name, coloured from `membersByUserId`. A single-carer household
+  still needs neither.
+- **Status / live** — `StatusPill` or `LiveDot`, unchanged.
+
+TestIDs: `schedule-shift-children-${id}`, `schedule-shift-avatar-${id}`,
+plus the load-bearing set the extraction preserved
+(`schedule-shift-${id}`, `-status-`, `-short-notice-`, `-live-`, `-carer-`,
+`schedule-parent-cover-undo-${id}`).
+
 ---
 
 ## 4. Personas

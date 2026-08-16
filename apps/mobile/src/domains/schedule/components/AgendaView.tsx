@@ -555,6 +555,20 @@ export function AgendaView({
           if (item.type !== 'shift') {
             return null;
           }
+          const assignedChildren = (item.shift.shift_children ?? []).flatMap(
+            link => {
+              const child = childrenById.get(link.child_id);
+              return child
+                ? [
+                    {
+                      id: child.id,
+                      name: child.name,
+                      colour: child.colour,
+                    },
+                  ]
+                : [];
+            }
+          );
           return (
             <ShiftRow
               shift={item.shift}
@@ -562,6 +576,13 @@ export function AgendaView({
               carerName={
                 showCarerNames ? carerFirstName(item.shift.carer_id) : null
               }
+              carerColour={
+                showCarerNames && item.shift.carer_id
+                  ? (membersByUserId.get(item.shift.carer_id)?.colour ??
+                    undefined)
+                  : undefined
+              }
+              assignedChildren={assignedChildren}
               currentUserId={currentUserId}
               membersByUserId={membersByUserId}
               memberLabels={memberLabels}

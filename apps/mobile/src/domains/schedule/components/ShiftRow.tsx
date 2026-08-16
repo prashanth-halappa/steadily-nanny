@@ -13,7 +13,9 @@ import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { cn } from '@/lib/utils';
+import { ChildChip } from '@/src/components/ui/child-chip';
 import { LiveDot } from '@/src/components/ui/live-dot';
+import { PersonAvatar } from '@/src/components/ui/person-avatar';
 import {
   StatusPill,
   type StatusPillProps,
@@ -47,10 +49,18 @@ const STATUS_TO_LABEL_KEY: Record<Shift['status'], string> = {
   completed: 'shifts.statusCompleted',
 };
 
+interface ShiftRowChild {
+  id: string;
+  name: string;
+  colour: string | null;
+}
+
 export function ShiftRow({
   shift,
   displayTimeZone,
   carerName,
+  carerColour,
+  assignedChildren,
   currentUserId,
   membersByUserId,
   memberLabels,
@@ -62,6 +72,12 @@ export function ShiftRow({
    * 2+ nanny/helper members (see `AgendaView`'s `showCarerNames`); a
    * single-carer household leaves this row exactly as it was before. */
   carerName?: string | null;
+  /** Member colour for the avatar. Same gate as `carerName` — omitted
+   * when the household has a single carer. */
+  carerColour?: string | null;
+  /** Resolved from `shift.shift_children` + the household children map.
+   * Empty/absent means the row shows time and status only, as before. */
+  assignedChildren?: ShiftRowChild[];
   currentUserId: string | null;
   membersByUserId: Map<string, HouseholdMember>;
   memberLabels: {
@@ -116,6 +132,8 @@ export function ShiftRow({
   })();
 
   const TimeText = isResolved || isParentCover ? Body : Figure;
+  const childChips =
+    assignedChildren && assignedChildren.length > 0 ? assignedChildren : null;
 
   const rowBody = (
     <>
@@ -133,15 +151,38 @@ export function ShiftRow({
         {parentCoverLabel ? (
           <Small className="text-muted-foreground">{parentCoverLabel}</Small>
         ) : null}
+        {childChips ? (
+          <View
+            testID={`schedule-shift-children-${shift.id}`}
+            className="flex-row flex-wrap gap-1"
+          >
+            {childChips.map(child => (
+              <ChildChip
+                key={child.id}
+                name={child.name}
+                colour={child.colour ?? undefined}
+                testID={`schedule-shift-child-${child.id}`}
+              />
+            ))}
+          </View>
+        ) : null}
       </View>
       {carerName ? (
-        <Small
-          testID={`schedule-shift-carer-${shift.id}`}
-          className="flex-1 text-muted-foreground"
-          numberOfLines={1}
-        >
-          {carerName}
-        </Small>
+        <View className="min-w-0 flex-1 flex-row items-center gap-1.5">
+          <PersonAvatar
+            name={carerName}
+            colour={carerColour ?? undefined}
+            size="sm"
+            testID={`schedule-shift-avatar-${shift.id}`}
+          />
+          <Small
+            testID={`schedule-shift-carer-${shift.id}`}
+            className="flex-1 text-muted-foreground"
+            numberOfLines={1}
+          >
+            {carerName}
+          </Small>
+        </View>
       ) : null}
       {!isParentCover ? (
         <View className="flex-row items-center gap-2">

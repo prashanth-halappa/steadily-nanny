@@ -25,6 +25,12 @@ describe('AgendaView source', () => {
     expect(agendaSource).toContain("from './ShiftRow'");
   });
 
+  it('resolves children and carer colour onto ShiftRow from maps it already holds', () => {
+    expect(agendaSource).toContain('assignedChildren=');
+    expect(agendaSource).toContain('carerColour=');
+    expect(agendaSource).toContain('childrenById.get');
+  });
+
   it('wires the shift list testID', () => {
     expect(viewSource).toContain('testID="schedule-shifts-list"');
   });
