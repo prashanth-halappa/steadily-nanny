@@ -254,5 +254,33 @@
       "termsBlock": "Terms block today's shift",
       "pendingShift": "Shift needs an answer"
     }
+  },
+  "moments": {
+    "nannyJoined": {
+      "title": "{{name}} has joined the {{family}}",
+      "body": "She can see the week and clock in from now on.",
+      "cta": "See {{name}}'s profile"
+    },
+    "firstClockIn": {
+      "title": "Your first clock-in with the {{family}}!",
+      "body": "From here every hour you work is on record — and on the family's Hours tab as it happens."
+    },
+    "firstWeekApproved": {
+      "title": "Your first week — approved!",
+      "body": "{{household}} approved {{hours}} on {{date}}. Your pay is on the Hours tab."
+    }
+  },
+  "lead": {
+    "parent": {
+      "here": "{{name}} is here.",
+      "done": "Today's care is done.",
+      "quiet": "Nothing scheduled today."
+    },
+    "nanny": {
+      "here": "On the clock since {{time}}.",
+      "scheduled": "Today you're with the {{family}}, {{start}} – {{end}}.",
+      "done": "Clocked out {{time}} — {{duration}} today.",
+      "quiet": "Nothing scheduled today."
+    }
   }
 }

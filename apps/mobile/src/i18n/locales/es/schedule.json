@@ -40,7 +40,7 @@
     "reviewDaysCount_other": "{{count}} días a la semana",
     "reviewHoursTotal": "{{hours}} horas en total",
     "reviewSendCta": "Enviar semana",
-    "sendSuccessTitle": "¡Enviado!",
+    "sendSuccessTitle": "Enviado.",
     "sendSuccessBody": "{{carerName}} recibirá un aviso para revisarlo."
   },
   "pending": {
@@ -119,7 +119,7 @@
     "declineConfirmConfirm": "Rechazar",
     "declineMessageLabel": "Motivo (opcional)",
     "declineMessagePlaceholder": "p. ej. Puedo por las mañanas pero no días completos",
-    "acceptedToast": "¡Aceptado! Los turnos se añadieron a tu calendario.",
+    "acceptedToast": "Aceptado — los turnos están en tu calendario.",
     "declinedToast": "Rechazado.",
     "childWindow": "{{childName}} {{start}}–{{end}}",
     "structuralNoteLabelled": "Es más corto que un día completo por “{{label}}”.",
@@ -340,5 +340,9 @@
       "declined": "{{start}} – {{end}} sigue sin cubrir. {{carerName}} no puede cubrir este turno.",
       "expired": "{{start}} – {{end}} sigue sin cubrir. La solicitud a {{carerName}} venció el {{expiredDay}}."
     }
+  },
+  "lead": {
+    "nanny": "{{count}} turnos esta semana, {{hours}} en total.",
+    "parent": "{{name}} está con los niños {{count}} días esta semana."
   }
 }

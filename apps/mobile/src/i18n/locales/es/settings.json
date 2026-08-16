@@ -19,11 +19,16 @@
   "getHelp": "Obtener ayuda",
   "appVersion": "Versión {{version}}",
   "carerAvailability": "Disponibilidad de la niñera",
+  "carerAvailability.summary": "{{days}} días a la semana · {{hours}}h",
   "carerAvailabilityEmpty": "Aún no hay niñera en este hogar",
   "carerAvailabilityNone": "{{name}} aún no ha indicado su disponibilidad.",
   "carerTimeOff": "Ausencias de la niñera",
   "carerTimeOffHint": "Ausencias reservadas — solo estado; la aprobación aún no está en la app.",
   "carerTimeOffEmpty": "No hay ausencias reservadas",
+  "householdTimeOff": {
+    "summary_one": "{{count}} día libre a la vista · el próximo {{date}}",
+    "summary_other": "{{count}} días libres a la vista · el próximo {{date}}"
+  },
   "role": {
     "owner": "Padre/madre (titular)",
     "parent": "Padre/madre",

@@ -254,13 +254,15 @@
     "seen": "Leído el {{date}}",
     "notSeenYet": "Aún sin leer",
     "disagreed": "En desacuerdo el {{date}}",
-    "historySeen": "Leído el {{date}}"
+    "historySeen": "Leído el {{date}}",
+    "recordedNow": "Registrado."
   },
   "dissent": {
     "title": "Diles qué está mal",
     "placeholder": "¿Qué no cuadra?",
     "hint": "Esto se registra con la fecha y tu familia lo ve. No cambia las condiciones ni impide que se apliquen: deja tu versión por escrito.",
-    "submit": "Registrar"
+    "submit": "Registrar",
+    "recordedNow": "Tu desacuerdo queda registrado."
   },
   "scheduledChange": {
     "title": "Las nuevas condiciones empiezan el {{date}}",
@@ -340,6 +342,13 @@
       "body": "Se les avisará de que estas condiciones fueron rechazadas. Cualquiera de las partes puede iniciar una nueva ronda en cualquier momento.",
       "cancel": "Cancelar",
       "confirm": "Rechazar"
+    }
+  },
+  "moments": {
+    "termsAgreed": {
+      "title": "¡Condiciones acordadas con {{name}}!",
+      "body": "{{rate}} la hora, desde el {{date}}. Ambas partes pueden leer el mismo documento en cualquier momento.",
+      "cta": "Ver las condiciones"
     }
   }
 }

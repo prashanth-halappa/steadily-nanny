@@ -40,7 +40,7 @@
     "reviewDaysCount_other": "{{count}} days a week",
     "reviewHoursTotal": "{{hours}} hours total",
     "reviewSendCta": "Send week",
-    "sendSuccessTitle": "Sent!",
+    "sendSuccessTitle": "Sent.",
     "sendSuccessBody": "{{carerName}} will be notified to review it."
   },
   "pending": {
@@ -119,7 +119,7 @@
     "declineConfirmConfirm": "Decline",
     "declineMessageLabel": "Reason (optional)",
     "declineMessagePlaceholder": "e.g. I can do mornings but not full days",
-    "acceptedToast": "Accepted! Shifts have been added to your calendar.",
+    "acceptedToast": "Accepted — the shifts are on your calendar.",
     "declinedToast": "Declined.",
     "childWindow": "{{childName}} {{start}}–{{end}}",
     "structuralNoteLabelled": "Shorter than a full day because “{{label}}”.",
@@ -340,5 +340,9 @@
       "declined": "{{start}} – {{end}} is still uncovered. {{carerName}} can't cover this one.",
       "expired": "{{start}} – {{end}} is still uncovered. The ask to {{carerName}} expired {{expiredDay}}."
     }
+  },
+  "lead": {
+    "nanny": "{{count}} shifts this week, {{hours}} in all.",
+    "parent": "{{name}} is with the children {{count}} days this week."
   }
 }

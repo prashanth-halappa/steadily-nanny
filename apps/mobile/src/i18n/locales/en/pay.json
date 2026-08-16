@@ -254,13 +254,15 @@
     "seen": "Read {{date}}",
     "notSeenYet": "Not read yet",
     "disagreed": "Disagreed {{date}}",
-    "historySeen": "Read {{date}}"
+    "historySeen": "Read {{date}}",
+    "recordedNow": "Recorded."
   },
   "dissent": {
     "title": "Tell them what's wrong",
     "placeholder": "What doesn't look right?",
     "hint": "This is recorded with the date and your family sees it. It doesn't change the terms, and it doesn't stop them applying — it puts your side on the record.",
-    "submit": "Record this"
+    "submit": "Record this",
+    "recordedNow": "Your disagreement is recorded."
   },
   "scheduledChange": {
     "title": "New terms start {{date}}",
@@ -340,6 +342,13 @@
       "body": "They'll be told these terms were declined. Either side can start a new round any time.",
       "cancel": "Cancel",
       "confirm": "Decline"
+    }
+  },
+  "moments": {
+    "termsAgreed": {
+      "title": "Terms agreed with {{name}}!",
+      "body": "{{rate}} an hour, from {{date}}. Both of you can read the same document any time.",
+      "cta": "See the terms"
     }
   }
 }

@@ -125,6 +125,17 @@
   "approveDialogBodyAdjustmentDeducted": "You're approving {{hours}} and {{gross}} gross for {{name}}, after taking off {{adjustment}}. Approving locks both figures — if hours change later, the week reopens and the total is worked out again.",
   "approveDialogCancel": "Not yet",
   "approveDialogConfirm": "Approve the week",
+  "approveDialog": {
+    "title": "{{name}} worked {{hours}}",
+    "body": "{{gross}} gross for {{range}}. Approving locks both figures — if hours change later, the week reopens and the total is worked out again.",
+    "bodyNothingUnusual": "{{gross}} gross for {{range}}. Nothing unusual this week.",
+    "bodyNoArrangement": "For {{range}}. No pay rate is set, so Steadily can't total the pay for this week.",
+    "bodyCurrencyChange": "For {{range}}. The pay currency changed during this week, so Steadily can't total the pay. You can still approve the hours.",
+    "bodyAdjustmentAdded": "{{gross}} gross for {{range}}, after adding {{adjustment}}. Approving locks both figures — if hours change later, the week reopens and the total is worked out again.",
+    "bodyAdjustmentDeducted": "{{gross}} gross for {{range}}, after taking off {{adjustment}}. Approving locks both figures — if hours change later, the week reopens and the total is worked out again.",
+    "cancel": "Not yet",
+    "confirm": "Approve the week"
+  },
   "reopenWeek": "Reopen the week",
   "reopenDialogTitle": "Reopen {{range}}?",
   "reopenDialogBody": "The approved total will stop being final — hours can be corrected and the figure can change.",
@@ -249,5 +260,23 @@
       "appendOnly": "Payments can't be edited or removed. A correction is recorded as another payment.",
       "correctAction": "Correct this payment"
     }
-  }
+  },
+  "timeline": {
+    "logged": "Hours logged",
+    "opened": "Opened by {{household}} on {{date}}",
+    "notOpened": "Not opened by {{household}} yet",
+    "waiting": "Waiting for approval"
+  },
+  "receipts": {
+    "weekClosed": {
+      "title": "That's your week — {{hours}}.",
+      "body": "With the {{household}} now. You'll see here when they open it."
+    }
+  },
+  "lead": {
+    "nanny": "{{hours}} so far this week with the {{family}}.",
+    "parent": "{{name}} has {{hours}} this week."
+  },
+  "entryCorrectedToast": "Correction saved.",
+  "entryRemovedToast": "Entry removed."
 }
