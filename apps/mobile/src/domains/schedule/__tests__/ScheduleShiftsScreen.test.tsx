@@ -14,7 +14,7 @@
  * boilerplate (mock.module must be registered before the module that
  * depends on it is imported).
  */
-import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, render, within } from '@testing-library/react-native';
 import {
   CALENDAR_VIEWS,
@@ -65,6 +65,7 @@ mock.module('@/src/hooks/queries/useHouseholdTimeOff', () => ({
     isLoading: false,
     isError: false,
     error: null,
+    refetch: mock(() => Promise.resolve()),
   }),
 }));
 
@@ -75,14 +76,33 @@ mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
   useHouseholdMembers: () => ({ data: [], isLoading: false }),
 }));
 
+// Mutable so the deep-link cases below can put a `householdId` on the link;
+// every other case in this file renders with no params, as before.
+let mockSearchParams: Record<string, unknown> = {};
+
 mock.module('expo-router', () => ({
-  useRouter: () => ({ push: mock(), back: mock() }),
-  useLocalSearchParams: () => ({}),
+  useRouter: () => ({ push: mock(), back: mock(), replace: mock() }),
+  useLocalSearchParams: () => mockSearchParams,
   router: { push: mock(), replace: mock(), back: mock() },
 }));
 
+const mockShowInfoToast = mock();
+mock.module('@/src/lib/toast', () => ({
+  showInfoToast: mockShowInfoToast,
+  showSuccessToast: mock(),
+  showErrorToast: mock(),
+  showWarningToast: mock(),
+  useToast: () => ({ show: mock() }),
+}));
+
+const mockClosuresRefetch = mock(() => Promise.resolve());
 mock.module('@/src/hooks/queries/useHouseholdClosures', () => ({
-  useHouseholdClosures: () => ({ data: [], isLoading: false, isError: false }),
+  useHouseholdClosures: () => ({
+    data: [],
+    isLoading: false,
+    isError: false,
+    refetch: mockClosuresRefetch,
+  }),
 }));
 
 mock.module('@/src/hooks/queries/useChildren', () => ({
@@ -90,7 +110,12 @@ mock.module('@/src/hooks/queries/useChildren', () => ({
 }));
 
 mock.module('@/src/domains/schedule/hooks/useHouseholdCarers', () => ({
-  useHouseholdCarers: () => ({ data: [], isLoading: false }),
+  useHouseholdCarers: () => ({
+    data: [],
+    isLoading: false,
+    isError: false,
+    refetch: mock(() => Promise.resolve()),
+  }),
 }));
 
 mock.module('@/src/hooks/mutations/useCreateParentCover', () => ({
@@ -116,6 +141,7 @@ let mockUseUserProfile: ReturnType<typeof mock>;
 let mockUseHouseholdCommitments: ReturnType<typeof mock>;
 
 const HOUSEHOLD_ID = '11111111-1111-4111-8111-111111111111';
+const OTHER_HOUSEHOLD_ID = '99999999-9999-4999-8999-999999999999';
 const CHILD_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const COMMITMENT_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
@@ -180,6 +206,7 @@ beforeAll(async () => {
     household: { id: HOUSEHOLD_ID, week_starts_on: 1 },
     householdId: HOUSEHOLD_ID,
     households: [{ id: HOUSEHOLD_ID }],
+    pastHouseholds: [],
     setActiveHouseholdId: mock(),
     isLoading: false,
   }));
@@ -214,6 +241,12 @@ beforeAll(async () => {
 
   const mod = await import('../components/ScheduleShiftsScreen');
   ScheduleShiftsScreen = mod.ScheduleShiftsScreen;
+});
+
+beforeEach(() => {
+  // Every case but the deep-link ones renders with a bare link.
+  mockSearchParams = {};
+  mockShowInfoToast.mockClear();
 });
 
 describe('ScheduleShiftsScreen', () => {
@@ -1093,5 +1126,116 @@ describe('"Add a one-off shift" is a control, not the loudest thing beside the H
       );
       node = node.parent;
     }
+  });
+});
+
+// Pattern A NAVIGATION-TIME (`docs/CROSS-CUTTING-DEFECT-PATTERNS.md` §A):
+// the Schedule TAB can only ever show one household, so a push landing here
+// with `householdId` on the link must move the switcher (announced) rather
+// than silently open the wrong family's week.
+describe('Pattern A: a deep link carrying householdId', () => {
+  function mockHouseholds(households: unknown[]) {
+    const setActiveHouseholdId = mock();
+    mockUseActiveHousehold.mockImplementation(() => ({
+      household: { id: HOUSEHOLD_ID, week_starts_on: 1 },
+      householdId: HOUSEHOLD_ID,
+      households,
+      pastHouseholds: [],
+      setActiveHouseholdId,
+      isLoading: false,
+      isError: false,
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+    return setActiveHouseholdId;
+  }
+
+  it('switches the active household and says so, when the link names a DIFFERENT household she belongs to', () => {
+    const setActiveHouseholdId = mockHouseholds([
+      { id: HOUSEHOLD_ID, name: 'The Active Family' },
+      { id: OTHER_HOUSEHOLD_ID, name: 'The Other Family' },
+    ]);
+    mockSearchParams = { householdId: OTHER_HOUSEHOLD_ID };
+
+    const { queryByTestId } = render(<ScheduleShiftsScreen />);
+
+    expect(setActiveHouseholdId).toHaveBeenCalledWith(OTHER_HOUSEHOLD_ID);
+    expect(mockShowInfoToast).toHaveBeenCalled();
+    expect(queryByTestId('schedule-deep-link-not-member')).toBeNull();
+  });
+
+  it('renders the not-a-member ErrorState and switches NOTHING when the link names a household she is not in', () => {
+    const setActiveHouseholdId = mockHouseholds([
+      { id: HOUSEHOLD_ID, name: 'The Active Family' },
+    ]);
+    mockSearchParams = { householdId: OTHER_HOUSEHOLD_ID };
+
+    const { getByTestId, queryByTestId } = render(<ScheduleShiftsScreen />);
+
+    expect(getByTestId('schedule-deep-link-not-member')).toBeTruthy();
+    expect(setActiveHouseholdId).not.toHaveBeenCalled();
+    expect(mockShowInfoToast).not.toHaveBeenCalled();
+    // Short-circuits the normal branches — no empty state underneath it.
+    expect(queryByTestId('schedule-shifts-empty')).toBeNull();
+    expect(queryByTestId('schedule-shifts-list')).toBeNull();
+  });
+});
+
+// Pattern B (`docs/CROSS-CUTTING-DEFECT-PATTERNS.md` §B): `commitments` is
+// an INPUT to `computeUncoveredWeek`, read as `?? []`. When that read fails
+// the uncovered windows silently become zero, `hasUncoveredForViewer` goes
+// false and `showEmpty` goes true — so a failed read rendered as "no shifts
+// yet, you're set up" when the truth was "we do not know".
+describe('Pattern B: a failed cover input never renders as "you are set up"', () => {
+  it('withholds the empty state and offers a retry when the commitments read fails', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'parent',
+      status: 'onboarded',
+    }));
+    mockUseActiveHousehold.mockImplementation(() => ({
+      household: { id: HOUSEHOLD_ID, week_starts_on: 1 },
+      householdId: HOUSEHOLD_ID,
+      households: [{ id: HOUSEHOLD_ID }],
+      pastHouseholds: [],
+      setActiveHouseholdId: mock(),
+      isLoading: false,
+      isError: false,
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+    const refetch = mock(() => Promise.resolve());
+    mockUseHouseholdCommitments.mockImplementation(() => ({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      refetch,
+    }));
+
+    const { getByTestId, queryByTestId, queryByText } = render(
+      <ScheduleShiftsScreen pattern={{ status: 'accepted' } as never} />
+    );
+
+    expect(queryByTestId('schedule-shifts-empty')).toBeNull();
+    expect(queryByText('shifts.empty')).toBeNull();
+    expect(getByTestId('schedule-cover-retry')).toBeTruthy();
+
+    fireEvent.press(getByTestId('schedule-cover-retry-button'));
+    expect(refetch).toHaveBeenCalled();
+
+    // Restore the default so later files/tests don't inherit a stuck error.
+    mockUseHouseholdCommitments.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      refetch: mock(() => Promise.resolve()),
+    }));
   });
 });

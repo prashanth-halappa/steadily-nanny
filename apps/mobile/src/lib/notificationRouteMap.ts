@@ -45,7 +45,11 @@ const hoursHref: NotificationRouteResolver = data =>
     timesheetId: asString(data.timesheetId),
   });
 
-const shiftDetailHref: NotificationRouteResolver = data => {
+/**
+ * Exported so `inboxItemCopy.ts`'s `hrefForItem` can reuse it directly —
+ * inbox and push must land on the byte-identical shift-detail destination.
+ */
+export const shiftDetailHref: NotificationRouteResolver = data => {
   const shiftId = asString(data.shiftId);
   if (!shiftId) return null;
   return appendQuery(`/(private)/schedule/shifts/${shiftId}`, {
@@ -68,7 +72,7 @@ const scheduleTabHref: NotificationRouteResolver = data =>
     householdId: asString(data.householdId),
   });
 
-const shiftsCalendarHref: NotificationRouteResolver = data =>
+export const shiftsCalendarHref: NotificationRouteResolver = data =>
   appendQuery('/(private)/schedule/shifts', {
     patternId: asString(data.patternId),
     householdId: asString(data.householdId),

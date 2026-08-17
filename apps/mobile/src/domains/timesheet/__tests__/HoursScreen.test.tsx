@@ -72,6 +72,25 @@ mock.module('@/src/domains/timesheet/components/EarningsBreakdownSheet', () => {
   };
 });
 
+// Pattern A (navigation-time): the deep-link household switch announces
+// itself with an info toast, and `HouseholdSwitcher` renders a real
+// `BottomSheetBase` this file cannot mount (same reason as QueryNoteSheet
+// above) — both stubbed so the switch itself can be asserted.
+const mockShowInfoToast = mock((_message: string) => {});
+mock.module('@/src/lib/toast', () => ({
+  showInfoToast: mockShowInfoToast,
+  showSuccessToast: mock(() => {}),
+  showErrorToast: mock(() => {}),
+  showWarningToast: mock(() => {}),
+}));
+mock.module('@/src/domains/household/components/HouseholdSwitcher', () => {
+  const React = require('react');
+  return {
+    HouseholdSwitcher: () =>
+      React.createElement('View', { testID: 'household-switcher-stub' }),
+  };
+});
+
 mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
   useHouseholdMembers: () => ({
     data: [
@@ -295,6 +314,9 @@ let mockUseUpdateTimeEntry: ReturnType<typeof mock>;
 let mockUseVoidTimeEntry: ReturnType<typeof mock>;
 let mockUseLocalSearchParams: ReturnType<typeof mock>;
 let mockSetParams: ReturnType<typeof mock>;
+// Stable across renders — the per-render `mock()` in the default household
+// implementation below cannot record a call made on an earlier render.
+const mockSetActiveHouseholdId = mock((_id: string) => {});
 
 beforeAll(async () => {
   mockUseActiveHousehold = mock(() => ({
@@ -426,6 +448,8 @@ beforeEach(() => {
     isLoading: false,
   }));
   mockUseLocalSearchParams.mockImplementation(() => ({}));
+  mockSetActiveHouseholdId.mockClear();
+  mockShowInfoToast.mockClear();
   mockUseWeekTimeEntries.mockClear();
   mockUseWeekTimesheet.mockClear();
   mockSetParams.mockClear();
@@ -1133,5 +1157,125 @@ describe('HoursScreen — deep-link breakdown', () => {
 
     await waitFor(() => expect(second.getByTestId('hours-total')).toBeTruthy());
     expect(second.queryByTestId('earnings-breakdown-stub')).toBeNull();
+  });
+});
+
+// WP-A2 step 3 — Pattern A NAVIGATION-TIME (`docs/CROSS-CUTTING-DEFECT-
+// PATTERNS.md` §A). A push about family B used to open family A's week and
+// say nothing about it: `householdId` rode the URL and this tab ignored it.
+describe('HoursScreen — deep-link householdId (Pattern A)', () => {
+  const OTHER_HOUSEHOLD_ID = 'e1c9f2a4-0f6b-4d3a-9a1e-77c0b5d21f34';
+
+  const multiHousehold =
+    (activeId: string, weekStartsOn = 1) =>
+    () => {
+      const households = [
+        {
+          id: HOUSEHOLD_ID,
+          name: 'The Smiths',
+          timezone: TIMEZONE,
+          week_starts_on: 1,
+        },
+        {
+          id: OTHER_HOUSEHOLD_ID,
+          name: 'The Patels',
+          timezone: TIMEZONE,
+          week_starts_on: weekStartsOn,
+        },
+      ];
+      return {
+        household: households.find(h => h.id === activeId) ?? null,
+        householdId: activeId,
+        households,
+        pastHouseholds: [],
+        setActiveHouseholdId: mockSetActiveHouseholdId,
+        isLoading: false,
+        isError: false,
+      };
+    };
+
+  it('switches to the household the push names, once, and says so', async () => {
+    mockUseActiveHousehold.mockImplementation(multiHousehold(HOUSEHOLD_ID));
+    mockUseLocalSearchParams.mockImplementation(() => ({
+      householdId: OTHER_HOUSEHOLD_ID,
+    }));
+
+    const { rerender } = render(<HoursScreen />);
+
+    await waitFor(() =>
+      expect(mockSetActiveHouseholdId).toHaveBeenCalledWith(OTHER_HOUSEHOLD_ID)
+    );
+    expect(mockShowInfoToast).toHaveBeenCalledTimes(1);
+
+    // The tab never unmounts — a re-render must not re-fire either.
+    rerender(<HoursScreen />);
+    expect(mockSetActiveHouseholdId).toHaveBeenCalledTimes(1);
+    expect(mockShowInfoToast).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not switch when the push names the household already showing', async () => {
+    mockUseActiveHousehold.mockImplementation(multiHousehold(HOUSEHOLD_ID));
+    mockUseLocalSearchParams.mockImplementation(() => ({
+      householdId: HOUSEHOLD_ID,
+    }));
+
+    const { getByTestId } = render(<HoursScreen />);
+
+    await waitFor(() => expect(getByTestId('hours-hero-band')).toBeTruthy());
+    expect(mockSetActiveHouseholdId).not.toHaveBeenCalled();
+    expect(mockShowInfoToast).not.toHaveBeenCalled();
+  });
+
+  it('renders the not-a-member error state, and switches nothing, for a household she is not in', () => {
+    mockUseActiveHousehold.mockImplementation(multiHousehold(HOUSEHOLD_ID));
+    mockUseLocalSearchParams.mockImplementation(() => ({
+      householdId: 'a-household-she-was-never-in',
+    }));
+
+    const { getByTestId, queryByTestId } = render(<HoursScreen />);
+
+    expect(getByTestId('hours-not-member')).toBeTruthy();
+    expect(queryByTestId('hours-hero-band')).toBeNull();
+    expect(mockSetActiveHouseholdId).not.toHaveBeenCalled();
+    expect(mockShowInfoToast).not.toHaveBeenCalled();
+  });
+
+  // THE ordering bug. `weekStart` is absolute; the offset it becomes is
+  // measured against the ACTIVE household's week anchor (its timezone AND its
+  // `week_starts_on`). Consumed before the switch lands it anchors on the
+  // wrong family and then clears the param, destroying the evidence.
+  it('waits for the switch to land before turning weekStart into an offset', async () => {
+    // The target household starts its week on SUNDAY — an offset measured
+    // against the current household's Monday anchor cannot land on it.
+    const sundayAnchor = getWeekStartISO(new Date(), TIMEZONE, 0);
+    const targetWeek = addWeeks(sundayAnchor, -3);
+    mockUseActiveHousehold.mockImplementation(multiHousehold(HOUSEHOLD_ID, 0));
+    mockUseLocalSearchParams.mockImplementation(() => ({
+      householdId: OTHER_HOUSEHOLD_ID,
+      weekStart: targetWeek,
+    }));
+
+    const { rerender, getByTestId } = render(<HoursScreen />);
+
+    // Still on the old household: nothing consumed, nothing cleared.
+    expect(mockSetParams).not.toHaveBeenCalled();
+
+    mockUseActiveHousehold.mockImplementation(
+      multiHousehold(OTHER_HOUSEHOLD_ID, 0)
+    );
+    rerender(<HoursScreen />);
+
+    await waitFor(() => expect(mockSetParams).toHaveBeenCalled());
+    expect(getByTestId(`hours-active-week-${targetWeek}`)).toBeTruthy();
+  });
+
+  // P4: a nanny in two families must be able to move between them from the
+  // tab she is standing on, without losing the week she is reading.
+  it('mounts the household switcher', () => {
+    mockUseActiveHousehold.mockImplementation(multiHousehold(HOUSEHOLD_ID));
+
+    const { getByTestId } = render(<HoursScreen />);
+
+    expect(getByTestId('household-switcher-stub')).toBeTruthy();
   });
 });

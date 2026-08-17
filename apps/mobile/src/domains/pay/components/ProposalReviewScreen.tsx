@@ -23,11 +23,24 @@
  * deliberately not part of the loading gate: the figure paints as soon as the
  * proposal lands, and the history fills in behind it.
  *
+ * **THE HOUSEHOLD COMES OFF THE ROW TOO** (Pattern A,
+ * `docs/CROSS-CUTTING-DEFECT-PATTERNS.md` §A). The family's name, timezone and
+ * week start are resolved from the proposal's OWN `household_id` via
+ * `useHouseholdById` — never from the switcher, which answers "which household
+ * is she looking at right now" and is only accidentally the same one. A nanny
+ * in family A opening family B's proposal read family A's name and zone
+ * against family B's money. This screen resolves; it never switches.
+ *
  * Loading follows §12: the back row and the title render immediately from the
  * route, and the body is a card-shaped skeleton — never a centred spinner on
  * a screen someone opened from a push notification about money.
  */
 
+import {
+  HOUSEHOLD_MEMBER_STATUSES,
+  HOUSEHOLD_ROLES,
+  type HouseholdRole,
+} from '@steadily-nanny/shared-types/schemas/household.schema';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -48,7 +61,9 @@ import { useCounterTerms } from '@/src/hooks/mutations/useCounterTerms';
 import { useDeclineTerms } from '@/src/hooks/mutations/useDeclineTerms';
 import { useMarkProposalViewed } from '@/src/hooks/mutations/useMarkProposalViewed';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
+import { useHouseholdById } from '@/src/hooks/queries/useHouseholdById';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { useMyMemberships } from '@/src/hooks/queries/useMyMemberships';
 import { useTermsProposal } from '@/src/hooks/queries/useTermsProposal';
 import { useTermsProposals } from '@/src/hooks/queries/useTermsProposals';
 import { analytics } from '@/src/lib/analytics/analytics';
@@ -69,6 +84,19 @@ import { PayChangeSheet } from './PayChangeSheet';
 import { ProposalTermsDocument } from './ProposalTermsDocument';
 
 const MILLIS_PER_HOUR = 3_600_000;
+
+/**
+ * F19 — who has payroll standing in a household, and so may answer terms.
+ *
+ * A HELPER has none at all (B5 / D-21): she is not shown a disabled Agree, she
+ * is not offered one. A POSITIVE list, like every role set in
+ * `household.schema.ts` — a role added tomorrow is excluded by construction.
+ */
+const RESPONDING_ROLES: readonly HouseholdRole[] = [
+  HOUSEHOLD_ROLES.OWNER,
+  HOUSEHOLD_ROLES.PARENT,
+  HOUSEHOLD_ROLES.NANNY,
+];
 
 function normalizeParam(value: string | string[] | undefined): string | null {
   if (value == null) return null;
@@ -105,6 +133,12 @@ export function ProposalReviewScreen() {
   const chainRows =
     useTermsProposals(data?.household_id ?? null, data?.carer_id ?? null)
       .data ?? [];
+  // Pattern A: the household comes off the ROW, like the (household, carer)
+  // pair above it. `useMyMemberships` is already in flight for this screen —
+  // `useIsOnboarded` reads the same query — so this is a cache hit, not a
+  // second round trip.
+  const target = useHouseholdById(data?.household_id);
+  const memberships = useMyMemberships().data;
   const accept = useAcceptTerms(proposalId);
   const counter = useCounterTerms(
     data?.household_id ?? '',
@@ -119,7 +153,17 @@ export function ProposalReviewScreen() {
   const [agreed, setAgreed] = useState(false);
   const openedAt = useRef(Date.now());
 
-  const household = activeHousehold.household;
+  // The proposal's household, ALWAYS. `?? activeHousehold.household` covers
+  // only the one render between the proposal landing and the households list
+  // resolving — it is a gap-filler, never a policy of reading the switcher.
+  const household = target.household ?? activeHousehold.household;
+  // The reader's row in the PROPOSAL's household. `onboarding.role` and
+  // `onboarding.isPastMember` both answer for the ACTIVE one, which is a
+  // different household the moment a deep link is involved.
+  const myMembership =
+    memberships?.find(
+      m => m.household_id === data?.household_id && m.user_id === userId
+    ) ?? null;
   const chain = data ? buildProposalChain(chainRows, data) : [];
   const round = chain.length;
 
@@ -176,6 +220,23 @@ export function ProposalReviewScreen() {
     );
   }
 
+  // A push naming a household she is in neither list for. Showing her the
+  // household she IS on would answer a different question than the push asked
+  // — with money on it.
+  if (target.notMember) {
+    return (
+      <View testID="proposal-not-member" className="flex-1 bg-background">
+        <ErrorState
+          variant="notFound"
+          title={tCommon('deepLink.notMember.title')}
+          message={tCommon('deepLink.notMember.message')}
+          secondaryLabel={tCommon('deepLink.notMember.action')}
+          onSecondaryAction={() => router.replace('/(private)/(tabs)/home')}
+        />
+      </View>
+    );
+  }
+
   const arrangement = arrangementFromProposal(data);
   // The reader's counterparty: a parent reads the nanny's name, a nanny reads
   // the family's. No extra query — both names are already on hand.
@@ -183,12 +244,16 @@ export function ProposalReviewScreen() {
     ? (household?.name ?? t('proposal.theFamily'))
     : data.carer_display_name;
   // The owner flips with every counter: whoever wrote the round on screen is
-  // waiting, and the other side acts. A past member acts on nothing.
+  // waiting, and the other side acts. A past member acts on nothing, and a
+  // helper never had standing to begin with (F19) — both asked of the
+  // PROPOSAL's household, not the switcher's.
   const canRespond =
     data.status === 'proposed' &&
     userId !== null &&
     data.proposed_by !== userId &&
-    !onboarding.isPastMember;
+    myMembership !== null &&
+    myMembership.status !== HOUSEHOLD_MEMBER_STATUSES.REMOVED &&
+    RESPONDING_ROLES.includes(myMembership.role);
 
   const handleAgree = () => {
     accept

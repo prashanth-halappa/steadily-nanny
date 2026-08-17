@@ -44,6 +44,8 @@ import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
+import { ErrorState } from '@/src/components/custom/ErrorState';
+import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { Button } from '@/src/components/ui/button';
 import { FieldLabel } from '@/src/components/ui/field-label';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -58,6 +60,7 @@ import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholdCommitments } from '@/src/hooks/queries/useHouseholdCommitments';
 import { useSchedulePattern } from '@/src/hooks/queries/useSchedulePattern';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
+import { shiftsCalendarHref } from '@/src/lib/notificationRouteMap';
 import { showSuccessToast } from '@/src/lib/toast';
 import { getWeekdayOrder } from '@/src/lib/weekdayOrder';
 import { useElevation } from '~/lib/design-tokens/elevation';
@@ -111,25 +114,42 @@ export function ScheduleRespondScreen({
   // `isOutsideAvailability` treats a null bound as "no constraint on that
   // side", NOT as a clash — a nanny marked available with no hours set yet
   // is a real row, not equivalent to `is_available: false`.
-  const availabilityRows: AvailabilityRow[] = (availability.data ?? []).map(
-    row => ({
+  // Pattern B: `undefined` while the read is unknown (in flight OR failed) —
+  // never `[]`. `isOutsideAvailability` treats a missing row as a clash, so a
+  // `?? []` fallback painted the amber "outside your hours" warning across
+  // EVERY day of a perfectly fine schedule whenever the read failed. Mirrors
+  // the `availability !== undefined` guard WeekBlocksEditor already uses.
+  const availabilityRows: AvailabilityRow[] | undefined =
+    availability.data?.map(row => ({
       weekday: row.weekday,
       is_available: row.is_available,
       earliest_start: row.earliest_start,
       latest_finish: row.latest_finish,
-    })
-  );
+    }));
+  const availabilityUnknown =
+    availabilityRows === undefined && !availability.isLoading;
   const childrenById = new Map(
     (children.data ?? []).map(child => [child.id, child])
   );
 
-  if (pattern.isLoading || !pattern.data) {
+  if (pattern.isLoading) {
     return (
       <View
         testID="schedule-respond-screen"
         className="flex-1 items-center justify-center bg-background"
       >
         <LoadingIndicator />
+      </View>
+    );
+  }
+
+  // Pattern C2: on a failed (or settled-empty) pattern read `isLoading` is
+  // false and `data` is undefined — the old combined guard held the spinner
+  // forever with no way out. Same shape as ProposalReviewScreen.
+  if (pattern.isError || !pattern.data) {
+    return (
+      <View testID="schedule-respond-error" className="flex-1 bg-background">
+        <ErrorState variant="network" onRetry={() => pattern.refetch()} />
       </View>
     );
   }
@@ -154,6 +174,7 @@ export function ScheduleRespondScreen({
   }
   const maxDayHours = Math.max(0, ...Array.from(hoursPerWeekday.values()));
   const householdCommitments = commitments.data ?? [];
+  const patternHouseholdId = pattern.data.household_id;
 
   const handleAccept = async () => {
     if (hasRespondedRef.current || respond.isPending) return;
@@ -166,7 +187,11 @@ export function ScheduleRespondScreen({
     }
     showSuccessToast(t('respond.acceptedToast'));
     setHasResponded(true);
-    router.replace('/(private)/schedule/shifts' as Href);
+    // The PATTERN's own household, not the switcher's active one — a nanny
+    // accepting family B's week while family A is selected was landing on
+    // family A's calendar.
+    const href = shiftsCalendarHref({ householdId: patternHouseholdId });
+    router.replace((href ?? '/(private)/schedule/shifts') as Href);
   };
 
   const handleDecline = async () => {
@@ -200,8 +225,17 @@ export function ScheduleRespondScreen({
         </Body>
 
         <View className="mt-6 gap-4">
+          {availabilityUnknown ? (
+            <InlineRetry
+              testID="schedule-respond-availability-retry"
+              message={t('respond.availabilityLoadFailed')}
+              onRetry={() => void availability.refetch()}
+            />
+          ) : null}
           {days.map(day => {
-            const outsideHours = isOutsideAvailability(day, availabilityRows);
+            const outsideHours =
+              availabilityRows !== undefined &&
+              isOutsideAvailability(day, availabilityRows);
             const weekdayHours = hoursPerWeekday.get(day.weekday) ?? 0;
             const isShorterDay = weekdayHours < maxDayHours;
             const noteLabel = isShorterDay

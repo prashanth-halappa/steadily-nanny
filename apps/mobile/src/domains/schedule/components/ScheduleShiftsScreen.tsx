@@ -30,6 +30,7 @@ import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
+import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
 import { EmptyState } from '@/src/components/ui/empty-state';
@@ -80,6 +81,7 @@ import {
   useShiftsRange,
 } from '@/src/hooks/queries/useShiftsRange';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
+import { useDeepLinkHousehold } from '@/src/hooks/useDeepLinkHousehold';
 import { wallClockToUtcIso } from '@/src/lib/wallClock';
 import { CALENDAR_VIEWS } from '@/src/store/calendarViewStore';
 import { parseDateOnlyLocal } from '@/src/utils/parseDateOnlyLocal';
@@ -120,6 +122,14 @@ export function ScheduleShiftsScreen({
     householdId?: string;
   }>();
   const activeHousehold = useActiveHousehold();
+  // Pattern A NAVIGATION-TIME: a push that lands on this TAB carrying a
+  // `householdId` moves the switcher (announced by the hook's toast) — a tab
+  // can only show one household, so opening family A's week for a link about
+  // family B would be the lie. A target she isn't in gets no switch and the
+  // not-a-member state below.
+  const { notMember: deepLinkNotMember } = useDeepLinkHousehold(
+    params.householdId
+  );
   const onboarding = useIsOnboarded();
   const profile = useUserProfile();
   const canAddExtra =
@@ -197,7 +207,24 @@ export function ScheduleShiftsScreen({
   const isLoading =
     activeHousehold.isLoading ||
     shiftsQuery.isLoading ||
-    (canViewCover && (commitmentsQuery.isLoading || patternLoading));
+    // `timeOff` feeds `weekHasAway` and `closures` feeds `computeUncoveredWeek`
+    // — both read as `?? []`, so a PENDING read is an empty week to every
+    // predicate below. Wait for them rather than let the gap render as a fact.
+    timeOffQuery.isLoading ||
+    (canViewCover &&
+      (commitmentsQuery.isLoading ||
+        closuresQuery.isLoading ||
+        patternLoading));
+  // Pattern B: the same reads, FAILED. `?? []` turns a failed cover input
+  // into "zero uncovered windows / nobody away", which `showEmpty` then
+  // reports as "no shifts yet, you're set up". We do not know that. Withhold
+  // the claim and offer the read again instead.
+  // `carersQuery` is deliberately NOT here: it only supplies a first name in
+  // the lead sentence, never a coverage claim, so failing it must not blank
+  // the week. It IS refetched by the retry below, since that is free.
+  const coverInputsFailed =
+    timeOffQuery.isError ||
+    (canViewCover && (commitmentsQuery.isError || closuresQuery.isError));
   // 404 "route not built yet" stays a calm empty — every other query error
   // must offer retry (network blip ≠ "check back soon").
   const routeUnavailable =
@@ -300,6 +327,25 @@ export function ScheduleShiftsScreen({
       ),
     [timeOff, weekDates, timeZone]
   );
+  // Short-circuits every content/empty/loading branch below: she is not in
+  // the household this link names, so there is no week here to show her.
+  // Placed after the last hook call so the hook order never varies.
+  if (deepLinkNotMember) {
+    return (
+      <View testID="schedule-deep-link-not-member" style={{ flex: 1 }}>
+        <ErrorState
+          variant="notFound"
+          title={tCommon('deepLink.notMember.title')}
+          message={tCommon('deepLink.notMember.message')}
+          secondaryLabel={tCommon('deepLink.notMember.action')}
+          onSecondaryAction={() => {
+            router.replace('/(private)/(tabs)/home' as Href);
+          }}
+        />
+      </View>
+    );
+  }
+
   // P0: uncovered windows used to belong to NEITHER predicate — with 0
   // shifts and N uncovered windows, showEmpty won and AgendaView (the only
   // renderer of uncovered rows and their actions) never mounted, so the
@@ -311,6 +357,7 @@ export function ScheduleShiftsScreen({
     !isLoading &&
     !showUnavailable &&
     !showQueryError &&
+    !coverInputsFailed &&
     shifts.length === 0 &&
     !weekHasAway &&
     !hasUncoveredForViewer;
@@ -431,6 +478,18 @@ export function ScheduleShiftsScreen({
         </Figure28>
       </View>
       {patternBanner}
+      {coverInputsFailed ? (
+        <InlineRetry
+          testID="schedule-cover-retry"
+          message={t('cover.loadFailed')}
+          onRetry={() => {
+            void commitmentsQuery.refetch();
+            void closuresQuery.refetch();
+            void timeOffQuery.refetch();
+            void carersQuery.refetch();
+          }}
+        />
+      ) : null}
       {canViewCover && uncoveredWeek.totalCount > 0 && !bannerAlreadySaysIt ? (
         <Pressable
           testID="schedule-cover-week-summary"

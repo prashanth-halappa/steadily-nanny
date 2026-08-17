@@ -67,5 +67,13 @@
   },
   "moments": {
     "continue": "Continue"
+  },
+  "deepLink": {
+    "switched": "Now showing {{name}}",
+    "notMember": {
+      "title": "This is for a family you're no longer part of.",
+      "message": "Ask them to add you back if that seems wrong.",
+      "action": "Go to Today"
+    }
   }
 }

@@ -13,7 +13,16 @@
  * screen is reached by `shiftId` alone (deep link, push notification, or a
  * list elsewhere), and the shift always belongs to a specific household
  * regardless of which one a nanny with several currently has selected.
+ *
+ * The READER'S ROLE follows the same rule (Pattern A): it comes from her
+ * membership row in the SHIFT's household (`membersQuery`), never from
+ * `useIsOnboarded().role`, which answers about the active household. While it
+ * is still unknown, Accept/Decline are disabled with a reason rather than
+ * hidden. A failed read of either the shift or her memberships gets an
+ * `ErrorState` with a retry — never a spinner, never "this shift doesn't
+ * exist" (C4).
  */
+import type { HouseholdRole } from '@steadily-nanny/shared-types/schemas/household.schema';
 import type {
   Shift,
   ShiftChild,
@@ -25,6 +34,7 @@ import { useTranslation } from 'react-i18next';
 import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
+import { ErrorState } from '@/src/components/custom/ErrorState';
 import { RestrictedActionButton } from '@/src/components/custom/RestrictedActionButton';
 import {
   AlertDialog,
@@ -61,7 +71,11 @@ import {
 import { isCoverAskUrgent } from '@/src/domains/schedule/utils/coverAskDeadline';
 import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { localDateToWeekday } from '@/src/domains/schedule/utils/shiftGrouping';
-import { isParentEditorRole, SETUP_ROLES } from '@/src/domains/setup/types';
+import {
+  isParentEditorRole,
+  SETUP_ROLES,
+  type SetupRole,
+} from '@/src/domains/setup/types';
 import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useAcceptShift } from '@/src/hooks/mutations/useAcceptShift';
@@ -96,6 +110,18 @@ const KNOWN_EVENT_TYPES = new Set([
   'pattern_conflict',
   'uncovered_care',
 ]);
+
+/**
+ * The reader's raw membership role in the SHIFT's household -> the setup role
+ * the rest of this screen branches on. `owner` and `parent` collapse, exactly
+ * as `useIsOnboarded` collapses them — this screen only asks "may she edit".
+ */
+const HOUSEHOLD_ROLE_TO_SETUP_ROLE: Record<HouseholdRole, SetupRole> = {
+  owner: SETUP_ROLES.PARENT,
+  parent: SETUP_ROLES.PARENT,
+  nanny: SETUP_ROLES.NANNY,
+  helper: SETUP_ROLES.HELPER,
+};
 
 type ShiftStatusVariant = NonNullable<StatusPillProps['variant']>;
 
@@ -172,10 +198,36 @@ export function ShiftDetailScreen() {
   });
 
   const shift = shiftQuery.data;
-  const isParent = isParentEditorRole(onboarding.role);
-  const isNanny = onboarding.role === SETUP_ROLES.NANNY;
+  // Pattern A. The role that decides what this screen offers is the reader's
+  // role IN THE SHIFT'S HOUSEHOLD — never `useIsOnboarded().role`, which is
+  // resolved against whichever household the SWITCHER has selected. This
+  // screen is reached by `shiftId` alone (push, deep link), so a nanny with
+  // memberships in two families who followed a push about family B was
+  // rendered with family A's role: parent edit fields on a shift she is the
+  // carer for, and no Accept.
+  //
+  // `membersQuery` is already loaded for the shift's household and already
+  // holds her own row — the same lookup `useRestrictedAction` does. The
+  // fallback mirrors that hook exactly: `onboarding` is consulted ONLY when
+  // the shift is in the active household, where both answers are about the
+  // same family by definition.
+  const readerHouseholdRole =
+    membersQuery.data?.find(member => member.user_id === currentUserId)?.role ??
+    (shift !== undefined && shift.household_id === onboarding.householdId
+      ? onboarding.membershipRole
+      : null);
+  const readerRole = readerHouseholdRole
+    ? HOUSEHOLD_ROLE_TO_SETUP_ROLE[readerHouseholdRole]
+    : null;
+  /** Neither source has answered: we do not yet know what she may do here. */
+  const isRoleResolving = readerRole === null;
+  const isParent = isParentEditorRole(readerRole);
+  const isNanny = readerRole === SETUP_ROLES.NANNY;
+  // `carer_id` only ever points at a carer, so while the role is still
+  // resolving the id alone is enough to keep her answer form on screen —
+  // disabled with a reason rather than hidden (§7).
   const isAssignedCarer =
-    isNanny &&
+    (isNanny || isRoleResolving) &&
     currentUserId !== null &&
     shift?.carer_id !== null &&
     shift?.carer_id === currentUserId;
@@ -287,6 +339,26 @@ export function ShiftDetailScreen() {
     setHydratedFor(null);
   };
 
+  // C4 — a FAILED read is neither a spinner nor "this shift doesn't exist".
+  // `useIsOnboarded` reports a failed memberships query as `status: 'loading'`
+  // plus `membershipsError`, so without this branch that failure spun forever
+  // with no way back; and a `shiftQuery` error fell through to the notFound
+  // copy below, which tells the reader her shift was deleted when the network
+  // merely blipped. Both are recoverable, so both get the retry.
+  if (shiftQuery.isError || onboarding.membershipsError) {
+    return (
+      <View testID="shift-detail-error" className="flex-1 bg-background">
+        <ErrorState
+          variant="network"
+          onRetry={() => {
+            if (shiftQuery.isError) void shiftQuery.refetch();
+            if (onboarding.membershipsError) onboarding.retryMemberships();
+          }}
+        />
+      </View>
+    );
+  }
+
   if (shiftQuery.isLoading || onboarding.status === 'loading') {
     return (
       <View
@@ -298,6 +370,8 @@ export function ShiftDetailScreen() {
     );
   }
 
+  // SETTLED null only: the error and loading branches above already returned,
+  // so reaching here means the read succeeded and there is genuinely no shift.
   if (!shift) {
     return (
       <View testID="shift-detail-missing" className="flex-1 bg-background p-6">
@@ -572,28 +646,36 @@ export function ShiftDetailScreen() {
                   }}
                 />
                 <View className="flex-row flex-wrap gap-2">
+                  {/* Disabled WITH A REASON, never hidden, while her role in
+                    this household is still unknown — a vanished Accept is
+                    indistinguishable from a bug (§7). */}
                   {canAcceptPending ? (
-                    <Button
+                    <RestrictedActionButton
                       testID="shift-detail-accept"
+                      size="default"
+                      label={t('detail.accept')}
+                      reason={
+                        isRoleResolving ? t('detail.roleResolving') : null
+                      }
                       disabled={acceptShift.isPending}
                       onPress={() =>
                         void acceptShift.mutateAsync({ shiftId: shift.id })
                       }
-                    >
-                      <Text>{t('detail.accept')}</Text>
-                    </Button>
+                    />
                   ) : null}
                   {canAcceptPending ? (
-                    <Button
+                    <RestrictedActionButton
                       testID="shift-detail-decline"
                       variant="outline"
+                      size="default"
+                      destructive
+                      label={t('today:shiftDetail.declineCta')}
+                      reason={
+                        isRoleResolving ? t('detail.roleResolving') : null
+                      }
                       disabled={declineShift.isPending}
                       onPress={() => setDeclineConfirmOpen(true)}
-                    >
-                      <Text className="text-destructive">
-                        {t('today:shiftDetail.declineCta')}
-                      </Text>
-                    </Button>
+                    />
                   ) : null}
                   <Button
                     testID="shift-detail-counter"

@@ -306,7 +306,11 @@ describe('NeedsAttentionCard', () => {
     const { getByTestId } = render(<NeedsAttentionCard />);
     fireEvent.press(getByTestId('today-needs-attention-cta'));
 
-    expect(mockPush).toHaveBeenCalledWith('/(private)/schedule/shifts/shift-1');
+    // Same destination the SHIFT_CHANGE_REQUESTED push resolves to — one
+    // contract, both surfaces (WP-A2, §A).
+    expect(mockPush).toHaveBeenCalledWith(
+      '/(private)/schedule/shifts/shift-1?changeRequestId=cr-1'
+    );
   });
 
   it('deep-links "see all" to /inbox', () => {
@@ -341,8 +345,10 @@ describe('NeedsAttentionCard', () => {
     ).toBeTruthy();
     expect(queryByText(/moreItems/)).toBeNull();
     fireEvent.press(getByTestId('today-needs-attention-cta'));
+    // The Hours TAB can only show one household — the href carries the id
+    // it has to switch to (WP-A2 HYBRID contract, §A).
     expect(mockPush).toHaveBeenCalledWith(
-      '/(private)/(tabs)/hours?weekStart=2026-07-28'
+      '/(private)/(tabs)/hours?weekStart=2026-07-28&householdId=hh-1'
     );
   });
 

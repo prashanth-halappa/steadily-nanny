@@ -131,7 +131,18 @@ export function weeksBetween(
   const [toYear, toMonth, toDay] = toWeekStartISO.split('-').map(Number);
   const fromMs = Date.UTC(fromYear ?? 0, (fromMonth ?? 1) - 1, fromDay ?? 1);
   const toMs = Date.UTC(toYear ?? 0, (toMonth ?? 1) - 1, toDay ?? 1);
-  return Math.round((toMs - fromMs) / (DAYS_IN_WEEK * 24 * 60 * 60 * 1000));
+  const weeks = (toMs - fromMs) / (DAYS_IN_WEEK * 24 * 60 * 60 * 1000);
+  // Both arguments are supposed to be week-start anchors. A mid-week date
+  // rounds to a plausible-looking offset and says nothing — which is exactly
+  // how a deep link lands on the wrong week and looks like a data bug. Warn
+  // in dev only; never throw and never change the number, because a caller
+  // shipping today with a sloppy anchor must keep behaving identically.
+  if (__DEV__ && Number.isFinite(weeks) && !Number.isInteger(weeks)) {
+    console.warn(
+      `weeksBetween: ${fromWeekStartISO} → ${toWeekStartISO} is ${weeks} weeks apart — not whole weeks. One of these is not a week start; rounding to ${Math.round(weeks)}.`
+    );
+  }
+  return Math.round(weeks);
 }
 
 /** The 7 consecutive ISO dates making up the week starting `weekStartISO` — whichever weekday that anchor falls on. */

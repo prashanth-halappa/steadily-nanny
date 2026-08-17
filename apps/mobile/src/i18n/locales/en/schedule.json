@@ -133,7 +133,8 @@
     "declinedToast": "Declined.",
     "childWindow": "{{childName}} {{start}}–{{end}}",
     "structuralNoteLabelled": "Shorter than a full day because “{{label}}”.",
-    "structuralNote": "These hours repeat every week — the family set them deliberately."
+    "structuralNote": "These hours repeat every week — the family set them deliberately.",
+    "availabilityLoadFailed": "We couldn't load your availability, so nothing here is flagged against it."
   },
   "shifts": {
     "screenTitle": "Shifts",
@@ -240,7 +241,8 @@
     "childrenTitle": "Who you have",
     "childWindow": "{{start}}–{{end}}",
     "childWholeShift": "Whole shift",
-    "childrenEmpty": "Not specified — check with a parent if you're unsure."
+    "childrenEmpty": "Not specified — check with a parent if you're unsure.",
+    "roleResolving": "Checking what you can do in this family."
   },
   "change": {
     "requestedToast": "Change requested",
@@ -374,7 +376,8 @@
       "pending": "{{start}} – {{end}} is still uncovered. You asked {{carerName}} {{askedDay}}.",
       "declined": "{{start}} – {{end}} is still uncovered. {{carerName}} can't cover this one.",
       "expired": "{{start}} – {{end}} is still uncovered. The ask to {{carerName}} expired {{expiredDay}}."
-    }
+    },
+    "loadFailed": "We couldn't load this family's care hours, so this week's cover is unknown."
   },
   "lead": {
     "nanny_one": "{{count}} shift this week, {{hours}} in all.",

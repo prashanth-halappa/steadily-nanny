@@ -25,23 +25,35 @@ import {
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { localDateInZone } from '@/src/lib/localDate';
 import { formatMoney, formatRate } from '@/src/lib/money';
+import { shiftDetailHref } from '@/src/lib/notificationRouteMap';
 
 export type InboxItemT = (key: string, opts?: Record<string, string>) => string;
 
 export function hrefForItem(item: InboxItem): Href {
   switch (item.kind) {
+    // Same destination the push notification produces (SHIFT_CHANGE_REQUESTED
+    // carries `changeRequestId` too) — one contract, both surfaces.
     case 'change_request':
-      return `/(private)/schedule/shifts/${item.shiftId}` as Href;
+      return (shiftDetailHref({
+        shiftId: item.shiftId,
+        changeRequestId: item.id,
+      }) ?? '/(private)/(tabs)/schedule') as Href;
     case 'pending_pattern':
       return `/(private)/schedule/respond/${item.patternId}` as Href;
+    // The Hours TAB can only show one household at a time (HYBRID contract,
+    // §A) — every href landing on it must carry `householdId` so the tab can
+    // switch to the right one.
     case 'queried_week':
-      return `/(private)/(tabs)/hours?weekStart=${item.weekStart}` as Href;
+      return `/(private)/(tabs)/hours?weekStart=${item.weekStart}&householdId=${item.householdId}` as Href;
     case 'submitted_week':
-      return `/(private)/(tabs)/hours?weekStart=${item.weekStart}` as Href;
+      return `/(private)/(tabs)/hours?weekStart=${item.weekStart}&householdId=${item.householdId}` as Href;
     case 'stale_submitted_week':
-      return `/(private)/(tabs)/hours?weekStart=${item.weekStart}` as Href;
+      return `/(private)/(tabs)/hours?weekStart=${item.weekStart}&householdId=${item.householdId}` as Href;
     case 'pending_shift':
-      return `/(private)/schedule/shifts/${item.id}` as Href;
+      return (shiftDetailHref({
+        shiftId: item.id,
+        householdId: item.householdId,
+      }) ?? '/(private)/(tabs)/schedule') as Href;
     // §7.2 — the review screen IS the proposal, in view mode.
     case 'terms_proposal':
     // A7 — the same screen, in view mode: it is where a sent proposal lives
@@ -51,7 +63,7 @@ export function hrefForItem(item: InboxItem): Href {
     case 'terms_ack':
       return '/(private)/settings/my-pay' as Href;
     case 'reimbursement_owed':
-      return `/(private)/(tabs)/hours?weekStart=${item.weekStart}` as Href;
+      return `/(private)/(tabs)/hours?weekStart=${item.weekStart}&householdId=${item.householdId}` as Href;
   }
 }
 

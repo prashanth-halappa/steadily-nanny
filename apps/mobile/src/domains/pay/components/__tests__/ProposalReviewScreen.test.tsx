@@ -52,7 +52,38 @@ mock.module('react-i18next', () => ({
 const PARENT_ID = 'parent-1';
 const NANNY_ID = 'carer-1';
 const HOUSEHOLD_ID = 'hh-1';
+/** The household a proposal belongs to when it is NOT the active one. Its
+ * zone is a day ahead of the active household's UTC at `now`, which is what
+ * makes "whose timezone did the document use?" visible in one assertion. */
+const HOUSEHOLD_B_ID = 'hh-2';
 const now = '2026-08-10T15:00:00.000Z';
+
+const HOUSEHOLD_A = {
+  id: HOUSEHOLD_ID,
+  name: 'The Ahmeds',
+  timezone: 'UTC',
+  cancellation_paid_within_hours: 24,
+  week_starts_on: 1,
+};
+const HOUSEHOLD_B = {
+  id: HOUSEHOLD_B_ID,
+  name: 'The Okonkwos',
+  timezone: 'Pacific/Auckland',
+  cancellation_paid_within_hours: 48,
+  week_starts_on: 0,
+};
+
+const membership = (overrides: Record<string, unknown> = {}) => ({
+  id: 'mem-1',
+  household_id: HOUSEHOLD_ID,
+  user_id: PARENT_ID,
+  role: 'parent',
+  can_edit: true,
+  status: 'active',
+  display_name_override: null,
+  colour: null,
+  ...overrides,
+});
 
 const proposal = (overrides: Record<string, unknown> = {}) => ({
   id: 'prop-1',
@@ -166,12 +197,25 @@ mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
     isPastMember: false,
   }),
 }));
+/** The switcher's answer. `useHouseholdById` — deliberately NOT mocked, so
+ * the real resolver runs — reads the two lists off this same hook. */
+let households: Array<Record<string, unknown>> = [HOUSEHOLD_A];
+let pastHouseholds: Array<Record<string, unknown>> = [];
 mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
   useActiveHousehold: () => ({
     householdId: HOUSEHOLD_ID,
-    household: { id: HOUSEHOLD_ID, name: 'The Ahmeds', timezone: 'UTC' },
+    household: HOUSEHOLD_A,
+    households,
+    pastHouseholds,
     isLoading: false,
+    isError: false,
   }),
+}));
+/** The reader's membership rows, ALL households — the only per-household
+ * role/status the client has. */
+let memberships: Array<Record<string, unknown>> = [];
+mock.module('@/src/hooks/queries/useMyMemberships', () => ({
+  useMyMemberships: () => ({ data: memberships }),
 }));
 
 beforeAll(async () => {
@@ -202,6 +246,12 @@ beforeEach(() => {
   chain = [proposal()];
   counterIsError = false;
   onboardedRole = 'parent';
+  households = [HOUSEHOLD_A];
+  pastHouseholds = [];
+  memberships = [
+    membership(),
+    membership({ id: 'mem-2', user_id: NANNY_ID, role: 'nanny' }),
+  ];
   useAuthStore.setState({
     session: { user: { id: PARENT_ID } } as unknown as never,
     user: { id: PARENT_ID } as unknown as never,
@@ -463,6 +513,107 @@ describe('ProposalReviewScreen', () => {
     expect(queryByTestId('proposal-agree-button')).toBeNull();
     expect(queryByTestId('proposal-counter-button')).toBeNull();
     expect(queryByTestId('proposal-decline-button')).toBeNull();
+  });
+
+  // Pattern A (`docs/CROSS-CUTTING-DEFECT-PATTERNS.md` §A). A detail screen
+  // resolves the entity's OWN household. Reading the switcher's household
+  // showed a nanny in family A her family-A name, zone and week-start against
+  // family B's money.
+  describe("the proposal's own household", () => {
+    function openProposalFromB() {
+      onboardedRole = 'nanny';
+      households = [HOUSEHOLD_A, HOUSEHOLD_B];
+      memberships = [
+        membership({
+          id: 'mem-b',
+          household_id: HOUSEHOLD_B_ID,
+          user_id: NANNY_ID,
+          role: 'nanny',
+        }),
+      ];
+      const fromB = proposal({
+        household_id: HOUSEHOLD_B_ID,
+        direction: 'parent',
+        proposed_by: PARENT_ID,
+      });
+      proposalResult = {
+        data: fromB,
+        isPending: false,
+        isError: false,
+        refetch: mock(),
+      };
+      chain = [fromB];
+      useAuthStore.setState({
+        session: { user: { id: NANNY_ID } } as unknown as never,
+        user: { id: NANNY_ID } as unknown as never,
+        isInitialized: true,
+      } as never);
+    }
+
+    it("names the proposal's family, not the active one", async () => {
+      openProposalFromB();
+      const { getByTestId } = renderWithProviders(<ProposalReviewScreen />);
+      await waitFor(() => expect(getByTestId('proposal-title')).toBeTruthy());
+      const titleCall = capturedTCalls.find(
+        call => call.key === 'proposal.reviewTitleFamily'
+      );
+      expect(titleCall?.options).toEqual(
+        expect.objectContaining({ name: 'The Okonkwos' })
+      );
+    });
+
+    it("dates the terms document in the proposal household's zone", async () => {
+      openProposalFromB();
+      const { getByTestId } = renderWithProviders(<ProposalReviewScreen />);
+      await waitFor(() => expect(getByTestId('proposal-rate')).toBeTruthy());
+      // 15:00Z on Aug 10 is Aug 11 in Pacific/Auckland and Aug 10 in the
+      // ACTIVE household's UTC — the one character that tells them apart.
+      const stateCall = capturedTCalls.find(
+        call => call.key === 'proposal.state.proposed'
+      );
+      expect(String(stateCall?.options?.date)).toContain('11');
+    });
+
+    it('renders the not-a-member state for a household in neither list', async () => {
+      const elsewhere = proposal({ household_id: 'hh-not-hers' });
+      proposalResult = {
+        data: elsewhere,
+        isPending: false,
+        isError: false,
+        refetch: mock(),
+      };
+      chain = [elsewhere];
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <ProposalReviewScreen />
+      );
+      await waitFor(() =>
+        expect(getByTestId('proposal-not-member')).toBeTruthy()
+      );
+      expect(queryByTestId('proposal-agree-button')).toBeNull();
+      expect(queryByTestId('proposal-rate')).toBeNull();
+    });
+  });
+
+  // F19 — a helper has no payroll standing at all (B5 / D-21). A deep link
+  // must not hand her Agree / Counter / Decline on the family's money.
+  it('offers no answer to a helper, and the full set to a parent, in the same household', async () => {
+    memberships = [membership({ role: 'helper' })];
+    const helper = renderWithProviders(<ProposalReviewScreen />);
+    await waitFor(() =>
+      expect(helper.getByTestId('proposal-title')).toBeTruthy()
+    );
+    expect(helper.queryByTestId('proposal-agree-button')).toBeNull();
+    expect(helper.queryByTestId('proposal-counter-button')).toBeNull();
+    expect(helper.queryByTestId('proposal-decline-button')).toBeNull();
+    helper.unmount();
+
+    memberships = [membership({ role: 'parent' })];
+    const parent = renderWithProviders(<ProposalReviewScreen />);
+    await waitFor(() =>
+      expect(parent.getByTestId('proposal-agree-button')).toBeTruthy()
+    );
+    expect(parent.getByTestId('proposal-counter-button')).toBeTruthy();
+    expect(parent.getByTestId('proposal-decline-button')).toBeTruthy();
   });
 
   // OPENED is automatic; ANSWERED is the tap. This line sits under the
