@@ -86,15 +86,18 @@ mock.module('@/src/domains/schedule', () => {
     ScheduleShiftsScreen: ({
       showBack,
       patternBanner,
+      pattern,
     }: {
       showBack?: boolean;
       patternBanner?: unknown;
+      pattern?: { status: string } | null;
     }) =>
       React.createElement(
         'View',
         {
           testID: 'schedule-shifts-screen-mock',
           accessibilityLabel: showBack === false ? 'no-back' : 'with-back',
+          accessibilityHint: pattern?.status ?? 'none',
         },
         patternBanner
       ),
@@ -242,6 +245,30 @@ describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
     expect(queryByTestId('schedule-pending-screen-mock')).toBeNull();
   });
 
+  // P0 0.2: a nanny's empty-state copy needs to know whether an accepted
+  // pattern exists too ("the family hasn't set your schedule yet" vs "no
+  // shifts this week") — so `useSchedulePatterns` can no longer be gated to
+  // non-nanny roles only, and the result must reach ScheduleShiftsScreen.
+  it('fetches schedule patterns for a NANNY too (not gated to null), and passes the pattern down', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'onboarded' as const,
+      role: 'nanny' as const,
+      householdId: 'h1',
+      membershipsError: false,
+      retryMemberships: mockRetryMemberships,
+    }));
+    mockUseSchedulePatterns.mockImplementation(() => ({
+      data: [{ status: 'accepted', id: 'p1' }],
+    }));
+
+    const { getByTestId } = render(<ScheduleRoute />);
+
+    expect(mockUseSchedulePatterns).toHaveBeenCalledWith('h1');
+    expect(
+      getByTestId('schedule-shifts-screen-mock').props.accessibilityHint
+    ).toBe('accepted');
+  });
+
   // REGRESSION (WS-G): a full-screen SchedulePendingScreen used to fork on
   // pattern status — only `accepted` got the calendar, every other state
   // (pending/draft/declined/withdrawn/none) hid it, along with any
@@ -275,6 +302,9 @@ describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
 
     const banner = getByTestId('schedule-pattern-banner-status');
     expect(banner.children[0]).toBe(pattern?.status ?? 'none');
+    expect(
+      getByTestId('schedule-shifts-screen-mock').props.accessibilityHint
+    ).toBe(pattern?.status ?? 'none');
   });
 
   // NOTE: the accepted-banner "Change it resumes by ?patternId=" regression

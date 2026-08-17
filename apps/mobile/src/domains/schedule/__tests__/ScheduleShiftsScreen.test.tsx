@@ -15,7 +15,7 @@
  * depends on it is imported).
  */
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, within } from '@testing-library/react-native';
 import {
   CALENDAR_VIEWS,
   useCalendarViewStore,
@@ -81,14 +81,6 @@ mock.module('expo-router', () => ({
   router: { push: mock(), replace: mock(), back: mock() },
 }));
 
-mock.module('@/src/hooks/queries/useHouseholdCommitments', () => ({
-  useHouseholdCommitments: () => ({
-    data: [],
-    isLoading: false,
-    isError: false,
-  }),
-}));
-
 mock.module('@/src/hooks/queries/useHouseholdClosures', () => ({
   useHouseholdClosures: () => ({ data: [], isLoading: false, isError: false }),
 }));
@@ -121,8 +113,32 @@ let mockUseActiveHousehold: ReturnType<typeof mock>;
 let mockIsShiftsRouteUnavailable: ReturnType<typeof mock>;
 let mockUseIsOnboarded: ReturnType<typeof mock>;
 let mockUseUserProfile: ReturnType<typeof mock>;
+let mockUseHouseholdCommitments: ReturnType<typeof mock>;
 
 const HOUSEHOLD_ID = '11111111-1111-4111-8111-111111111111';
+const CHILD_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const COMMITMENT_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+
+// A commitment covering every weekday, matching no shift — the "07:00-13:00
+// every weekday, nothing booked" shape from the trust-breaker bug report.
+function makeCommitment(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: COMMITMENT_ID,
+    child_id: CHILD_ID,
+    household_id: HOUSEHOLD_ID,
+    kind: 'other',
+    label: null,
+    rrule: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+    start_time: '07:00:00',
+    end_time: '13:00:00',
+    starts_on: null,
+    ends_on: null,
+    exdates: [],
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
 
 function makeShift(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -169,6 +185,14 @@ beforeAll(async () => {
   }));
   mockIsShiftsRouteUnavailable = mock(() => false);
   mockUseIsOnboarded = mock(() => ({ role: 'parent', status: 'onboarded' }));
+  mockUseHouseholdCommitments = mock(() => ({
+    data: [],
+    isLoading: false,
+    isError: false,
+  }));
+  mock.module('@/src/hooks/queries/useHouseholdCommitments', () => ({
+    useHouseholdCommitments: mockUseHouseholdCommitments,
+  }));
 
   mock.module('@/src/hooks/queries/useShiftsRange', () => ({
     useShiftsRange: mockUseShiftsRange,
@@ -682,5 +706,283 @@ describe('ScheduleShiftsScreen', () => {
     expect(queryByTestId('calendar-cross-family-view')).toBeNull();
 
     useCalendarViewStore.getState().reset();
+  });
+});
+
+// P0 (refactored-mapping-fox plan): the Schedule tab used to show "5 times
+// this week with no one booked" directly above "No shifts yet" — the same
+// week disagreeing with itself, because uncovered windows sat in NEITHER
+// the showEmpty nor the showContent predicate. Fixed by folding
+// `canViewCover && uncoveredWeek.totalCount > 0` into showContent (and out
+// of showEmpty) — see ScheduleShiftsScreen.tsx.
+describe('P0: uncovered windows join the agenda, never the contradicting empty state', () => {
+  it('renders the agenda with uncovered rows, not the empty state, when commitments exist but zero shifts are booked (the trust-breaker contradiction)', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'parent',
+      status: 'onboarded',
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+    mockUseHouseholdCommitments.mockImplementation(() => ({
+      data: [makeCommitment()],
+      isLoading: false,
+      isError: false,
+    }));
+
+    const { getByTestId, getAllByTestId, queryByTestId } = render(
+      <ScheduleShiftsScreen />
+    );
+
+    // The two lines that used to disagree now agree: the summary is
+    // visible AND the agenda (not the empty state) is what's mounted.
+    expect(getByTestId('schedule-cover-week-summary')).toBeTruthy();
+    expect(queryByTestId('schedule-shifts-empty')).toBeNull();
+    expect(getByTestId('schedule-shifts-list')).toBeTruthy();
+    expect(getAllByTestId(/^schedule-uncovered-/).length).toBeGreaterThan(0);
+  });
+
+  it('does NOT flip a nanny into the agenda via uncovered windows — canViewCover already forces totalCount to 0 for her', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'nanny',
+      status: 'onboarded',
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+    mockUseHouseholdCommitments.mockImplementation(() => ({
+      data: [makeCommitment()],
+      isLoading: false,
+      isError: false,
+    }));
+
+    const { getByTestId, queryByTestId } = render(<ScheduleShiftsScreen />);
+
+    expect(getByTestId('schedule-shifts-empty')).toBeTruthy();
+    expect(queryByTestId('schedule-shifts-list')).toBeNull();
+  });
+
+  it('does not flash the contradicting empty state while commitments are still loading for a cover-viewing role', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'parent',
+      status: 'onboarded',
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+    mockUseHouseholdCommitments.mockImplementation(() => ({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+    }));
+
+    const { getByTestId, queryByTestId } = render(<ScheduleShiftsScreen />);
+
+    expect(getByTestId('loading-indicator-container')).toBeTruthy();
+    expect(queryByTestId('schedule-shifts-empty')).toBeNull();
+    expect(queryByTestId('schedule-shifts-list')).toBeNull();
+
+    // Restore the default so later tests in this file don't inherit a
+    // stuck "commitments still loading" mock.
+    mockUseHouseholdCommitments.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+    }));
+  });
+});
+
+// 0.2: both empty states must name their cause — a shared "No shifts yet"
+// read as "you have nothing on" to a nanny when the truth was "nobody has
+// done their part". Fork on viewer role x whether an accepted pattern
+// exists (passed down as the `pattern` prop from the tab route).
+describe('P0 0.2: empty state names its cause (viewer x pattern-accepted fork)', () => {
+  it('nanny + no accepted pattern: explains the family has not set the schedule, not "no shifts"', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'nanny',
+      status: 'onboarded',
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+
+    const { getByText, queryByText } = render(
+      <ScheduleShiftsScreen pattern={null} />
+    );
+
+    expect(getByText('shifts.emptyPatternPendingTitle')).toBeTruthy();
+    expect(getByText('shifts.emptyPatternPendingBody')).toBeTruthy();
+    expect(queryByText('shifts.empty')).toBeNull();
+  });
+
+  it('nanny + accepted pattern, week just empty: plain "no shifts this week", not the pattern-pending copy', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'nanny',
+      status: 'onboarded',
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+
+    const { getByText, queryByText } = render(
+      <ScheduleShiftsScreen pattern={{ status: 'accepted' } as never} />
+    );
+
+    expect(getByText('shifts.empty')).toBeTruthy();
+    expect(queryByText('shifts.emptyPatternPendingTitle')).toBeNull();
+  });
+
+  it('parent + no accepted pattern: confirms his work saved and offers Build the usual week, without claiming the week is built', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'parent',
+      status: 'onboarded',
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+
+    const { getByText, queryByText } = render(
+      <ScheduleShiftsScreen pattern={null} />
+    );
+
+    expect(getByText('shifts.emptyBuildParentTitle')).toBeTruthy();
+    // No carer on record in this file's default mocks — the no-carer body,
+    // not an interpolated-with-empty-string name.
+    expect(getByText('shifts.emptyBuildParentBodyNoCarer')).toBeTruthy();
+    expect(getByText('shifts.emptyBuildParentCta')).toBeTruthy();
+    expect(queryByText('shifts.empty')).toBeNull();
+  });
+
+  it('parent + no accepted pattern + past member: no CTA (building a week is a live-parent action)', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'parent',
+      status: 'onboarded',
+      isPastMember: true,
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+
+    const { queryByText } = render(<ScheduleShiftsScreen pattern={null} />);
+
+    expect(queryByText('shifts.emptyBuildParentCta')).toBeNull();
+  });
+
+  it('parent + accepted pattern, week just empty: plain "no shifts this week", no CTA', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'parent',
+      status: 'onboarded',
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+
+    const { getByText, queryByText } = render(
+      <ScheduleShiftsScreen pattern={{ status: 'accepted' } as never} />
+    );
+
+    expect(getByText('shifts.empty')).toBeTruthy();
+    expect(queryByText('shifts.emptyBuildParentTitle')).toBeNull();
+    expect(queryByText('shifts.emptyBuildParentCta')).toBeNull();
+  });
+});
+
+// 0.3: the empty-state illustration must not centre against the tab bar's
+// height. `variant="inline"` — content-sized, not a self-centering flex:1
+// box — is the fix every other illustrated empty state in this app uses.
+describe('P0 0.3: empty/unavailable states use the inline EmptyState variant', () => {
+  it('uses the inline (content-sized) container, not the default flex-1 self-centering one, for the empty state', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'parent',
+      status: 'onboarded',
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+
+    const { getByTestId } = render(
+      <ScheduleShiftsScreen pattern={{ status: 'accepted' } as never} />
+    );
+
+    const container = within(
+      getByTestId('schedule-shifts-empty')
+    ).UNSAFE_getByProps({ accessibilityRole: 'text' });
+    expect(String(container.props.className)).toContain('px-4 py-8');
+    expect(String(container.props.className)).not.toContain('flex-1');
+  });
+
+  it('uses the inline (content-sized) container for the unavailable state too', () => {
+    const notFoundError = { response: { status: 404 } };
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: notFoundError,
+      refetch: mock(() => Promise.resolve()),
+    }));
+    mockIsShiftsRouteUnavailable.mockImplementation(
+      (error: unknown) => error === notFoundError
+    );
+
+    const { getByTestId } = render(<ScheduleShiftsScreen />);
+
+    const container = within(
+      getByTestId('schedule-shifts-unavailable')
+    ).UNSAFE_getByProps({ accessibilityRole: 'text' });
+    expect(String(container.props.className)).toContain('px-4 py-8');
+    expect(String(container.props.className)).not.toContain('flex-1');
+
+    mockIsShiftsRouteUnavailable.mockImplementation(() => false);
+  });
+
+  // ErrorState (unlike EmptyState) has no `inline` variant to switch to —
+  // other callers depend on its self-centering flex-1 layout — so the error
+  // branch reserves tab-bar space directly via useTabBarScrollPadding
+  // instead (56 + 34 mocked inset + 24 = 114, per bun.setup.ts's
+  // useSafeAreaInsets mock).
+  it("reserves tab-bar space (paddingBottom) on the error branch, the one EmptyState variant can't fix", () => {
+    const networkError = { response: { status: 500 } };
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: networkError,
+      refetch: mock(() => Promise.resolve()),
+    }));
+    mockIsShiftsRouteUnavailable.mockImplementation(() => false);
+
+    const { getByTestId } = render(<ScheduleShiftsScreen />);
+
+    const wrapper = flattenStyle(
+      getByTestId('schedule-shifts-error').props.style
+    );
+    expect(wrapper.paddingBottom).toBe(114);
   });
 });

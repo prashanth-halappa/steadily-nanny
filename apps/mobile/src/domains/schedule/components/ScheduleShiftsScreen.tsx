@@ -13,6 +13,7 @@
 
 import type { FlashListRef } from '@shopify/flash-list';
 import { MATERIALISATION_HORIZON_WEEKS } from '@steadily-nanny/shared-types';
+import type { SchedulePattern } from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import { uncoveredKey } from '@steadily-nanny/shared-types/uncoveredCare';
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import {
@@ -27,6 +28,7 @@ import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE, spacing } from '@/lib/design-tokens';
+import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { BackButton } from '@/src/components/ui/back-button';
 import { EmptyState } from '@/src/components/ui/empty-state';
@@ -89,11 +91,24 @@ type ScheduleShiftsScreenProps = {
   showBack?: boolean;
   /** Optional banner above the week nav (accepted-pattern context for parents). */
   patternBanner?: ReactNode;
+  /**
+   * The household's active (non-ended) schedule pattern, if any — fetched
+   * by the tab route for the banner and passed down here too, purely to
+   * fork the empty-state copy (0.2): "no accepted pattern yet" reads very
+   * differently from "accepted, this particular week is just empty".
+   */
+  pattern?: SchedulePattern | null;
+  /** True while `pattern` above is still resolving — folded into the
+   * loading gate for cover-viewing roles so the empty state doesn't flash
+   * the wrong fork before it settles. */
+  patternLoading?: boolean;
 };
 
 export function ScheduleShiftsScreen({
   showBack = true,
   patternBanner,
+  pattern = null,
+  patternLoading = false,
 }: ScheduleShiftsScreenProps) {
   const { t } = useTranslation('schedule');
   const { t: tCommon } = useTranslation('common');
@@ -122,6 +137,11 @@ export function ScheduleShiftsScreen({
   const [scrollToUncoveredKey, setScrollToUncoveredKey] = useState<
     string | null
   >(null);
+  // Only the error branch needs this — `showUnavailable`/`showEmpty` moved to
+  // EmptyState's `inline` variant instead (0.3), which is content-sized, not
+  // a self-centering flex:1 box. `ErrorState` has no such variant (other
+  // callers depend on it), so its wrapper reserves the space directly.
+  const tabBarScrollPadding = useTabBarScrollPadding();
 
   const timeZone =
     activeHousehold.household?.timezone ?? profile.data?.timezone ?? 'UTC';
@@ -170,7 +190,13 @@ export function ScheduleShiftsScreen({
   const carersQuery = useHouseholdCarers(activeHousehold.householdId);
   const timeOff = timeOffQuery.data ?? [];
 
-  const isLoading = activeHousehold.isLoading || shiftsQuery.isLoading;
+  // Folding commitments/pattern loading in for cover-viewing roles only —
+  // otherwise a parent sees the empty state flash before `uncoveredWeek`
+  // (below) has real data to flip it into the agenda (P0 known nit).
+  const isLoading =
+    activeHousehold.isLoading ||
+    shiftsQuery.isLoading ||
+    (canViewCover && (commitmentsQuery.isLoading || patternLoading));
   // 404 "route not built yet" stays a calm empty — every other query error
   // must offer retry (network blip ≠ "check back soon").
   const routeUnavailable =
@@ -273,17 +299,25 @@ export function ScheduleShiftsScreen({
       ),
     [timeOff, weekDates, timeZone]
   );
+  // P0: uncovered windows used to belong to NEITHER predicate — with 0
+  // shifts and N uncovered windows, showEmpty won and AgendaView (the only
+  // renderer of uncovered rows and their actions) never mounted, so the
+  // week-summary line above pointed at a screen that then said "No shifts
+  // yet" right below it. Fold uncovered-for-this-viewer into showContent
+  // and out of showEmpty so the two lines can't disagree.
+  const hasUncoveredForViewer = canViewCover && uncoveredWeek.totalCount > 0;
   const showEmpty =
     !isLoading &&
     !showUnavailable &&
     !showQueryError &&
     shifts.length === 0 &&
-    !weekHasAway;
+    !weekHasAway &&
+    !hasUncoveredForViewer;
   const showContent =
     !isLoading &&
     !showUnavailable &&
     !showQueryError &&
-    (shifts.length > 0 || weekHasAway);
+    (shifts.length > 0 || weekHasAway || hasUncoveredForViewer);
   // S12: "Schedule" means "my shifts this week" to a nanny and "the
   // household's weekly pattern" to a parent — the tab label stays uniform
   // (direction doc §11a) but the voice forks here, inside the screen. A
@@ -312,6 +346,34 @@ export function ScheduleShiftsScreen({
       : t('lead.parentNoCarer', {
           count: coveringDayCount,
         });
+
+  // P0 0.2: a shared "No shifts yet" read as "you have nothing on" to a
+  // nanny when the truth was "nobody has done their part yet" — fork by
+  // viewer voice x whether an accepted pattern exists. An accepted pattern
+  // with a genuinely empty week gets the plain, honest line for both.
+  const hasAcceptedPattern = pattern?.status === 'accepted';
+  const emptyState = hasAcceptedPattern
+    ? { title: t('shifts.empty'), description: '' }
+    : isNannyVoice
+      ? {
+          title: t('shifts.emptyPatternPendingTitle', { familyName }),
+          description: t('shifts.emptyPatternPendingBody'),
+        }
+      : {
+          title: t('shifts.emptyBuildParentTitle'),
+          description: nannyFirstName
+            ? t('shifts.emptyBuildParentBody', { name: nannyFirstName })
+            : t('shifts.emptyBuildParentBodyNoCarer'),
+          // Building a usual week is a parent-editor action, same gate as
+          // "Add a one-off shift" above — a helper or a past member gets
+          // the copy with no action to take.
+          action: canAddExtra
+            ? () => router.push('/(private)/schedule/build' as Href)
+            : undefined,
+          actionLabel: canAddExtra
+            ? t('shifts.emptyBuildParentCta')
+            : undefined,
+        };
 
   const showCrossFamily =
     calendarView === CALENDAR_VIEWS.CROSS_FAMILY &&
@@ -446,9 +508,14 @@ export function ScheduleShiftsScreen({
       ) : null}
 
       {showUnavailable ? (
+        // 0.3: `inline` — content-sized, not a self-centering flex:1 box —
+        // is the pattern every other illustrated empty state in this app
+        // uses. `default` centres against the FULL screen height, but React
+        // Navigation overlays the tab bar rather than shrinking content for
+        // it, so the box was centring ~80px low of the visible area.
         <View testID="schedule-shifts-unavailable" style={{ flex: 1 }}>
           <EmptyState
-            variant="default"
+            variant="inline"
             title={t('shifts.screenTitle')}
             description={t('shifts.unavailable')}
           />
@@ -456,7 +523,10 @@ export function ScheduleShiftsScreen({
       ) : null}
 
       {showQueryError ? (
-        <View testID="schedule-shifts-error" style={{ flex: 1 }}>
+        <View
+          testID="schedule-shifts-error"
+          style={{ flex: 1, paddingBottom: tabBarScrollPadding }}
+        >
           <ErrorState
             variant="network"
             onRetry={() => {
@@ -469,10 +539,12 @@ export function ScheduleShiftsScreen({
       {showEmpty && calendarView !== CALENDAR_VIEWS.CROSS_FAMILY ? (
         <View testID="schedule-shifts-empty" style={{ flex: 1 }}>
           <EmptyState
-            variant="default"
+            variant="inline"
             image={illustrations.emptySchedule}
-            title={t('shifts.empty')}
-            description=""
+            title={emptyState.title}
+            description={emptyState.description}
+            action={emptyState.action}
+            actionLabel={emptyState.actionLabel}
           />
         </View>
       ) : null}

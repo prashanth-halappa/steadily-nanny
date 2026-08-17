@@ -31,9 +31,12 @@ export default function ScheduleRoute() {
   const { t } = useTranslation('schedule');
   const onboarding = useIsOnboarded();
   const activeHousehold = useActiveHousehold();
-  const patterns = useSchedulePatterns(
-    onboarding.role !== SETUP_ROLES.NANNY ? onboarding.householdId : null
-  );
+  // Fetched for every role now, not just parent/helper (for the banner) —
+  // a nanny's empty-state copy (P0 0.2) needs to know whether an accepted
+  // pattern exists too: "the family hasn't set your schedule yet" reads
+  // very differently from "no shifts this week".
+  const patterns = useSchedulePatterns(onboarding.householdId);
+  const pattern = (patterns.data ?? []).find(p => p.status !== 'ended') ?? null;
 
   if (onboarding.membershipsError) {
     return (
@@ -79,14 +82,20 @@ export default function ScheduleRoute() {
   }
 
   if (onboarding.role === SETUP_ROLES.NANNY) {
-    return <ScheduleShiftsScreen showBack={false} />;
+    return (
+      <ScheduleShiftsScreen
+        showBack={false}
+        pattern={pattern}
+        patternLoading={patterns.isLoading}
+      />
+    );
   }
-
-  const pattern = (patterns.data ?? []).find(p => p.status !== 'ended') ?? null;
 
   return (
     <ScheduleShiftsScreen
       showBack={false}
+      pattern={pattern}
+      patternLoading={patterns.isLoading}
       patternBanner={
         <SchedulePatternBanner
           pattern={pattern}
