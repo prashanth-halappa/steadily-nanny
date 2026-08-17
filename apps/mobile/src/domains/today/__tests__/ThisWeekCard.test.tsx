@@ -51,6 +51,10 @@ beforeAll(async () => {
       selector({ session: { user: { id: 'carer-week-1' } } }),
   }));
   mock.module('@/src/domains/schedule', () => ({
+    // Both no-schedule cards render null on an ordinary day; stubbed so this
+    // suite's subject is the only thing under test.
+    WeeklyHoursNotSetCard: () => null,
+    NoWeekYetCard: () => null,
     ThisWeeksShiftsCard: marker('this-weeks-shifts-stub'),
   }));
 

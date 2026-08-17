@@ -265,7 +265,9 @@
       "bodyYouSent": "{{name}} can see the week now. She can clock in as soon as she agrees to the terms you sent.",
       "ctaSetTerms": "Set the pay terms",
       "ctaSeeTerms": "See the terms you sent",
-      "cta": "See {{name}}'s profile"
+      "cta": "See {{name}}'s profile",
+      "bodyAgreedNoWeek": "{{name}} can see the week now. Nothing's scheduled yet — send her the days and times you need.",
+      "ctaSetWeek": "Set her weekly hours"
     },
     "firstClockIn": {
       "title": "Your first clock-in with the {{family}}!",

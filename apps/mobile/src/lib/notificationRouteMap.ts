@@ -247,4 +247,13 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   // 3-U3 (N17, D-32 extension): the carer's own week, same destination as
   // every other timesheet push.
   [PUSH_NOTIFICATION_TYPES.WEEK_BELOW_GUARANTEE]: hoursHref,
+
+  // The builder, NOT `scheduleTabHref`. The defect this push exists to fix is
+  // that nothing points at the builder after terms are agreed — landing her
+  // on the tab she has already failed to find her way out of would reproduce
+  // the bug inside the fix.
+  [PUSH_NOTIFICATION_TYPES.SCHEDULE_NOT_SET]: data =>
+    appendQuery('/(private)/schedule/build', {
+      householdId: asString(data.householdId),
+    }),
 };

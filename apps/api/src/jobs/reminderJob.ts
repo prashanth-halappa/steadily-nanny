@@ -90,6 +90,19 @@ const TIMESHEET_NUDGE_HOUR = 9;
 const TIMESHEET_SUBMITTED_DAYS = 3;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 /**
+ * Stays an EQUALITY, like `TIMESHEET_NUDGE_HOUR` and unlike the shift window.
+ * The key is undated, so the ledger would swallow a wider window's extra
+ * hours anyway — but an equality says out loud that this fires at nine, once,
+ * rather than looking like a retry policy that isn't one.
+ */
+const SCHEDULE_NOT_SET_HOUR = 9;
+/**
+ * Day 0 is not a stall. Terms are usually agreed the same day the family has
+ * already talked the week through out loud, so the arrangement has to have
+ * survived a night before its silence means anything.
+ */
+const SCHEDULE_NOT_SET_MIN_AGE_MS = MS_PER_DAY;
+/**
  * Nag-cap (A7 / D-27, §1.5 of the design spec): 3 consecutive daily nudges
  * from the entry threshold, then weekly. No counter table — the age of the
  * row already carries the count, so the gate is a pure function of
@@ -117,6 +130,7 @@ export interface ReminderRuleStats {
 export interface ReminderJobResult {
   shiftReminder: ReminderRuleStats;
   timesheetAwaitingApproval: ReminderRuleStats;
+  scheduleNotSet: ReminderRuleStats;
   errorCount: number;
   message: string;
 }
@@ -149,11 +163,25 @@ export type TimesheetReminderCandidate = Pick<
   'id' | 'household_id' | 'week_start' | 'updated_at'
 >;
 
+/**
+ * A household/carer pair whose pay terms are agreed and whose week has never
+ * been started. Everything that makes it a candidate is decided in
+ * `listScheduleNotSet` — by the time a row exists here, conditions 1–5 hold
+ * and only the parent's local hour is left to check.
+ */
+export interface ScheduleNotSetCandidate {
+  household_id: string;
+  carer_id: string;
+  /** What this family calls her; null when nothing resolved. */
+  carer_display_name: string | null;
+}
+
 export interface ReminderCandidateSource {
   listShiftReminders(now: Date): Promise<ShiftReminderCandidate[]>;
   listTimesheetAwaitingApproval(
     now: Date
   ): Promise<TimesheetReminderCandidate[]>;
+  listScheduleNotSet(now: Date): Promise<ScheduleNotSetCandidate[]>;
 }
 
 export interface ReminderLogClaim {
@@ -276,7 +304,42 @@ export function buildTimesheetAwaitingApprovalKey(
   return `timesheet_awaiting_approval:${timesheetId}:${localSendDate}`;
 }
 
-class DefaultReminderCandidateSource implements ReminderCandidateSource {
+/**
+ * UNDATED, so it fires once ever per relationship — the opposite of
+ * `buildTimesheetAwaitingApprovalKey`, whose date segment is what makes that
+ * one re-nudge daily. "Nobody has sent her a schedule" is a fact about a
+ * relationship, not about a day, and a family that has decided to run on text
+ * messages should not be asked about it every morning for a year.
+ */
+export function buildScheduleNotSetKey(
+  householdId: string,
+  carerId: string
+): string {
+  return `schedule_not_set:${householdId}:${carerId}`;
+}
+
+/** `household_id::carer_id`, the grain both the key and the query work at. */
+function pairKey(householdId: string, carerId: string): string {
+  return `${householdId}::${carerId}`;
+}
+
+/** Narrow rows the `schedule_not_set` query joins in JS. */
+interface ActiveNannyRow {
+  household_id: string;
+  user_id: string;
+  display_name_override: string | null;
+}
+interface ArrangementPairRow {
+  household_id: string;
+  carer_id: string | null;
+  carer_display_name: string | null;
+}
+interface PatternPairRow {
+  household_id: string;
+  carer_id: string | null;
+}
+
+export class DefaultReminderCandidateSource implements ReminderCandidateSource {
   async listShiftReminders(now: Date): Promise<ShiftReminderCandidate[]> {
     const windowStart = new Date(
       now.getTime() - 12 * 60 * 60 * 1000
@@ -341,6 +404,118 @@ class DefaultReminderCandidateSource implements ReminderCandidateSource {
     }
 
     return (data ?? []) as TimesheetReminderCandidate[];
+  }
+
+  /**
+   * Terms agreed, no week ever started. Three cheap queries joined in JS
+   * rather than one clever embed, because the three tables have no FK path
+   * between them that PostgREST can walk (`household_members` → `households`
+   * is the only join here) and none of the three sets is large: the outer one
+   * is "every active nanny in a live household".
+   *
+   * Conditions, in query order:
+   *  1/2. live household + active nanny  — the `households!inner` embed.
+   *  3/5. a pay arrangement at least a day old — since `9fa858e` an
+   *       arrangement can only be minted by terms acceptance, so its
+   *       existence IS "terms agreed".
+   *  4.   no `schedule_patterns` row, IN ANY STATUS. There is deliberately no
+   *       status filter below: starting the builder proves she found it, and
+   *       `draft` is exactly the status a half-built week sits in.
+   */
+  async listScheduleNotSet(now: Date): Promise<ScheduleNotSetCandidate[]> {
+    const { data: memberData, error: memberError } = await supabaseService
+      .from('household_members')
+      .select(
+        'household_id, user_id, display_name_override, households!inner(state)'
+      )
+      .eq('role', HOUSEHOLD_ROLES.NANNY)
+      .eq('status', 'active')
+      .eq('households.state', 'live');
+
+    if (memberError) {
+      throw new DatabaseError(
+        'Failed to list schedule-not-set nannies',
+        'DATABASE_ERROR',
+        { details: memberError.message }
+      );
+    }
+
+    const nannies = (memberData ?? []) as ActiveNannyRow[];
+    if (nannies.length === 0) {
+      return [];
+    }
+
+    const carerIds = [...new Set(nannies.map(row => row.user_id))];
+    const householdIds = [...new Set(nannies.map(row => row.household_id))];
+    const cutoff = new Date(
+      now.getTime() - SCHEDULE_NOT_SET_MIN_AGE_MS
+    ).toISOString();
+
+    const [arrangements, patterns] = await Promise.all([
+      supabaseService
+        .from('pay_arrangements')
+        .select('household_id, carer_id, carer_display_name')
+        .in('household_id', householdIds)
+        .in('carer_id', carerIds)
+        .lte('created_at', cutoff),
+      supabaseService
+        .from('schedule_patterns')
+        .select('household_id, carer_id')
+        .in('household_id', householdIds),
+    ]);
+
+    if (arrangements.error || patterns.error) {
+      throw new DatabaseError(
+        'Failed to list schedule-not-set candidates',
+        'DATABASE_ERROR',
+        {
+          details:
+            arrangements.error?.message ?? patterns.error?.message ?? 'unknown',
+        }
+      );
+    }
+
+    const agreedNames = new Map<string, string | null>();
+    for (const row of (arrangements.data ?? []) as ArrangementPairRow[]) {
+      if (!row.carer_id) continue;
+      agreedNames.set(
+        pairKey(row.household_id, row.carer_id),
+        row.carer_display_name
+      );
+    }
+
+    const startedPairs = new Set<string>();
+    const startedHouseholds = new Set<string>();
+    for (const row of (patterns.data ?? []) as PatternPairRow[]) {
+      // 014's column comment: a parent can sketch a usual week before any
+      // nanny exists, leaving `carer_id` null. That week is still proof the
+      // builder was found, so it suppresses every carer in the household —
+      // nagging a family that already did the thing is the worse failure.
+      if (row.carer_id) {
+        startedPairs.add(pairKey(row.household_id, row.carer_id));
+      } else {
+        startedHouseholds.add(row.household_id);
+      }
+    }
+
+    const candidates: ScheduleNotSetCandidate[] = [];
+    for (const nanny of nannies) {
+      const pair = pairKey(nanny.household_id, nanny.user_id);
+      if (!agreedNames.has(pair)) continue;
+      if (startedHouseholds.has(nanny.household_id)) continue;
+      if (startedPairs.has(pair)) continue;
+
+      candidates.push({
+        household_id: nanny.household_id,
+        carer_id: nanny.user_id,
+        // Same precedence `resolveCarerDisplayName` uses across the pay
+        // domain: the per-household override is what this family calls her.
+        carer_display_name:
+          nanny.display_name_override ?? agreedNames.get(pair) ?? null,
+      });
+    }
+
+    return candidates;
   }
 }
 
@@ -676,6 +851,99 @@ async function processTimesheetReminders(
   return stats;
 }
 
+/**
+ * The push that closes the post-acceptance gap: terms are agreed, an
+ * arrangement exists, and nobody has ever sent her a week.
+ *
+ * NO FIGURE IN THE BODY, same house rule as the pay domain — a lock screen is
+ * a public surface. And when no name resolved, the title names NOBODY rather
+ * than printing a placeholder: "Someone doesn't know when she's working" reads
+ * like a bug, and "Carer" reads like a database column.
+ */
+async function processScheduleNotSet(
+  candidates: ScheduleNotSetCandidate[],
+  deps: {
+    log: ReminderLogClaim;
+    timezone: UserTimezoneResolver;
+    parents: ReminderParentLister;
+    push: ReminderPushService;
+    now: Date;
+  }
+): Promise<ReminderRuleStats> {
+  const stats = emptyRuleStats();
+  stats.candidates = candidates.length;
+
+  for (const candidate of candidates) {
+    try {
+      const parentIds = await deps.parents.listParentUserIds(
+        candidate.household_id
+      );
+      if (parentIds.length === 0) {
+        stats.skipped++;
+        continue;
+      }
+
+      const title = candidate.carer_display_name
+        ? `${candidate.carer_display_name} doesn't know when she's working yet`
+        : "Your nanny doesn't know when she's working yet";
+      const reminderKey = buildScheduleNotSetKey(
+        candidate.household_id,
+        candidate.carer_id
+      );
+
+      for (const parentId of parentIds) {
+        try {
+          const timeZone = await deps.timezone.resolve(parentId);
+          const clock =
+            getLocalClock(deps.now, timeZone) ?? getLocalClock(deps.now, 'UTC');
+          if (!clock) {
+            stats.skipped++;
+            continue;
+          }
+
+          if (clock.hour !== SCHEDULE_NOT_SET_HOUR) {
+            stats.skipped++;
+            continue;
+          }
+
+          await claimAndSend(
+            deps,
+            parentId,
+            reminderKey,
+            {
+              title,
+              body: 'Send her the days and times you need each week.',
+              data: {
+                type: PUSH_NOTIFICATION_TYPES.SCHEDULE_NOT_SET,
+                householdId: candidate.household_id,
+                carerId: candidate.carer_id,
+              },
+            },
+            stats
+          );
+        } catch (error) {
+          stats.errors++;
+          logger.error('Reminder job failed to send schedule-not-set nudge', {
+            householdId: candidate.household_id,
+            carerId: candidate.carer_id,
+            parentId,
+            error,
+          });
+        }
+      }
+    } catch (error) {
+      stats.errors++;
+      logger.error('Reminder job failed to resolve schedule-not-set parents', {
+        householdId: candidate.household_id,
+        carerId: candidate.carer_id,
+        error,
+      });
+    }
+  }
+
+  return stats;
+}
+
 export async function runReminderJob(
   candidates: ReminderCandidateSource = new DefaultReminderCandidateSource(),
   log: ReminderLogClaim = new ReminderLogRepository(),
@@ -692,10 +960,12 @@ export async function runReminderJob(
   // failed sweep must not stop this run from sending anything.
   await log.sweepStaleClaims();
 
-  const [shiftCandidates, timesheetCandidates] = await Promise.all([
-    candidates.listShiftReminders(now),
-    candidates.listTimesheetAwaitingApproval(now),
-  ]);
+  const [shiftCandidates, timesheetCandidates, scheduleNotSetCandidates] =
+    await Promise.all([
+      candidates.listShiftReminders(now),
+      candidates.listTimesheetAwaitingApproval(now),
+      candidates.listScheduleNotSet(now),
+    ]);
 
   const shiftReminder = await processShiftReminders(shiftCandidates, {
     log,
@@ -715,13 +985,26 @@ export async function runReminderJob(
     }
   );
 
-  const errorCount = shiftReminder.errors + timesheetAwaitingApproval.errors;
+  const scheduleNotSet = await processScheduleNotSet(scheduleNotSetCandidates, {
+    log,
+    timezone,
+    parents,
+    push,
+    now,
+  });
 
-  const sentTotal = shiftReminder.sent + timesheetAwaitingApproval.sent;
+  const errorCount =
+    shiftReminder.errors +
+    timesheetAwaitingApproval.errors +
+    scheduleNotSet.errors;
+
+  const sentTotal =
+    shiftReminder.sent + timesheetAwaitingApproval.sent + scheduleNotSet.sent;
 
   return {
     shiftReminder,
     timesheetAwaitingApproval,
+    scheduleNotSet,
     errorCount,
     message: `Reminders job sent ${sentTotal} push(es)`,
   };

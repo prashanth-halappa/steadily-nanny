@@ -220,6 +220,14 @@ export const PUSH_NOTIFICATION_TYPES = {
   // hears nothing. This is the parent-audience twin, emitted instead of
   // TERMS_PROPOSAL_ACCEPTED when the ACCEPTER is the carer.
   TERMS_OFFER_ACCEPTED: 'terms_offer_accepted',
+
+  // Terms are agreed and a `pay_arrangements` row exists, but no schedule has
+  // ever been started for that carer — `termsProposalCommandService.accept()`
+  // is a money-only transition and nothing downstream asks for a week. Fired
+  // by `reminderJob` on an UNDATED key, so it lands once per relationship and
+  // then never again. NOT quiet-hours exempt: a missing schedule can wait
+  // until the morning, and the exemption list is a closed child-safety set.
+  SCHEDULE_NOT_SET: 'schedule_not_set',
 } as const;
 
 export type PushNotificationType =
@@ -324,4 +332,7 @@ export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
   // when the ACCEPTER is the carer so the family (who authored the offer)
   // hears it instead of the type going nowhere.
   [PUSH_NOTIFICATION_TYPES.TERMS_OFFER_ACCEPTED]: 'parent',
+  // Only the family can answer "when do you need her" — `reminderJob` sends
+  // it through `listParentUserIds`, so 'parent' by the header's rule.
+  [PUSH_NOTIFICATION_TYPES.SCHEDULE_NOT_SET]: 'parent',
 } as const;

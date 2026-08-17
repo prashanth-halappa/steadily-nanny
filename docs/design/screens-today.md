@@ -182,20 +182,92 @@ exactly what L4 should be. **Do not touch it**, except:
 `TodayScreen.tsx` already forks on `canViewParentSchedule(onboarding.role)` and
 `SETUP_ROLES.NANNY`. The rungs differ, the layout does not.
 
+Above both feeds sits `CrossFamilyStrip` — outside the ScrollView's card
+column, never a `Card`, and null on the common day. Below it, `PinnedSlot`
+holds at most one item, chosen by `resolveSlotOccupant`. Everything named
+below that is not the slot occupant renders in the feed at default tone; most
+of these cards gate themselves and render `null` on an ordinary day, so the
+list is the order they appear in, not the number of cards anyone sees.
+
 **Parent / helper** — hero band, child chips, **nanny-joined moment** (when a
 nanny joined in the last 7 days and the parent has not seen it — both sides of
-the relationship get a moment, not a push-and-silence), `NeedsAttentionCard`,
-`PendingScheduleCard`, `TodayCoverage`, `HandoffChipsCard` (morning),
-`ThisWeeksShiftsCard`. L1 candidates: uncovered care (`TodayCoverage` gap),
+the relationship get a moment, not a push-and-silence), `InviteWaitingCard`
+(live household, no active nanny), **`WeeklyHoursNotSetCard`**,
+`NeedsAttentionCard`, `PendingOfferCard` (a live offer he wrote),
+`TermsProposalCard`, `PendingScheduleCard`, `SendMyTermsCard`,
+`EmergencyContactPromptCard`, `ThisWeekCard`, `TodayCoverage` (with
+`HandoffChipsCard` folded in as its footer, morning). L1 candidates: uncovered
+care (`TodayCoverage` gap), a blocking sent offer, terms awaiting an answer,
 inbox. The joined moment is a feed card, never a slot occupant.
 
 **Nanny** — hero band, **no child chips** (the chip row is parent-gated at
-`:132`, correct), `JoinedHouseholdCard` (her arrival), first clock-in moment
+`:543`, correct), `JoinedHouseholdCard` (her arrival), first clock-in moment
 (on the clock, joined recently, unseen), first week-approved moment (exactly
 one of her timesheets is approved, unseen), `NeedsAttentionCard`,
-`PendingScheduleCard`, `ClockInCard`,
-`AddMissedHoursCard`, `HandoffChipsCard` (evening), `ThisWeeksShiftsCard`.
-L1 candidates: overdue clock-out, inbox. Moment cards are feed-only.
+`TermsProposalCard`, `PendingScheduleCard`, **`NoWeekYetCard`**,
+`SendMyTermsCard`, `EmergencyContactPromptCard`, `ClockInCard`,
+`ThisWeekCard`, `HandoffChipsCard` (evening). L1 candidates: the clock-in
+block, overdue clock-out, inbox. Moment cards are feed-only.
+
+`AddMissedHoursCard` and `ThisWeeksShiftsCard` are no longer top-level cards
+on either side. They are children of `ThisWeekCard`, which is #9's merge as a
+composition: it labels them with one eyebrow and decides which a given viewer
+sees (her week is her pay → Hours; his is the plan → Schedule). The nanny-only
+children drop for a past member, for the same reason `ClockInCard` does.
+
+**The two schedule-gap cards.** `WeeklyHoursNotSetCard` (parent) and
+`NoWeekYetCard` (nanny) are the two halves of one fact: terms are agreed and
+no usual week exists. Both live in `domains/schedule/components/`, both are
+`Card tone="default"` at L3, both take no props and render `null` on an
+ordinary day, and — this is the load-bearing part — **neither is a slot
+occupant.** Nothing is blocked and nobody is waiting on a reply, so neither
+touches `attentionOwner.ts` or `slotOccupant.ts`: per that module's rule for
+the next rung, *a rung that displaces nothing is not a rung, it belongs in the
+feed.* Promoting either one would displace an overdue clock-out or an
+uncovered child, and neither is worth that.
+
+- `WeeklyHoursNotSetCard` is `InviteWaitingCard`'s successor **in its feed
+  slot**: that card hides the instant a nanny is active and this one requires
+  it, so the two are mutually exclusive by construction and the parent's eye
+  lands in the same place at the same point in the story. It is suppressed on
+  the render `NannyJoinedMomentCard` fires — the moment gets that screen to
+  itself. Three variants (`setup` / `draft` / `declined`). Dismiss key
+  `weeklyHoursNotSet:{householdId}:{carerUserId}:{reason}`, and the reason
+  token is the re-arm mechanism: dismissing `none` must not suppress a later
+  `declined`, because "you haven't set a week" and "she declined the week you
+  sent" are different facts. No time decay — the parent is the only actor
+  here, so there is nobody for it to be waiting on. There is no "Not now":
+  there are exactly two honest answers to "when does she work?", and the
+  ghost button is the second one — it records the dismissal *and* opens the
+  one-off shift screen in the same tap.
+- `NoWeekYetCard` sits beside `PendingScheduleCard` and is mutually exclusive
+  with it (a `pending` pattern is that card's to speak for). It is purely
+  informational and **has no "nudge the family" button**, deliberately:
+  `attention-and-notifications.md` §2.3(c) already refused a push for this
+  exact reason ("a buzz about her employer's inaction is a nudge she cannot
+  act on"), and §2.4(a) names the failure mode as "the app manufactured a
+  story where I'm flaky". Its CTAs are both `ghost` — a filled plum button is
+  the grammar of "you owe someone this", and she owes nobody anything. The one
+  that does work is about her **own** availability; the other only hides the
+  card. It is gated on **zero shifts assigned to her in the next 14 days**, so
+  a household genuinely running on one-off shifts never sees it. Dismiss key
+  `noWeekNanny:{householdId}:{weekStartISO}` — hiding it holds for that week
+  only, so it reappears at most once a week. It never counts and never
+  escalates: the moment it counts it is a grievance meter.
+
+`NannyJoinedMomentCard` forks on the same fact — its `bodyAgreed` used to
+promise "She can clock in from her first shift" when there was neither a week
+nor a first shift, so an agreed-but-unscheduled relationship now gets
+`bodyAgreedNoWeek` and a `ctaSetWeek`. `ThisWeeksShiftsCard`'s empty line forks
+by persona and by whether a schedule was ever sent — that line is the
+permanent quiet tier, the thing still true once the dismissible card is gone.
+
+**Vocabulary.** "The usual week" stays the in-flow noun. Only the ~6 discovery
+strings changed, and they name the *act* ("Set the weekly hours") rather than
+the object. Renaming the feature to "weekly schedule" was considered and
+rejected: the tab is already called Schedule, so that would put three things
+called schedule on one screen, and "weekly" is a lie about the shipped
+fortnightly option (`INTERVAL=2`, "Every other week").
 
 `ClockInCard` is the nanny's anchor and is already the best-tuned card in the
 app — the off-clock hero is an `H3` invitation, the on-clock state is the

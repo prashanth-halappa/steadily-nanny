@@ -75,6 +75,7 @@ const PUSH_TYPE_GROUP: Record<PushNotificationType, NotificationGroup> = {
   pto_usage_reversed: 'hoursAndPay',
   reimbursement_settled: 'hoursAndPay',
   running_late: 'schedule',
+  schedule_not_set: 'schedule',
   schedule_pattern_amended: 'schedule',
   schedule_pattern_responded: 'schedule',
   schedule_pattern_sent: 'schedule',

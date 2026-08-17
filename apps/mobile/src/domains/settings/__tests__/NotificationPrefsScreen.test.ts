@@ -119,4 +119,10 @@ describe('NotificationPrefsScreen', () => {
     expect(source).toContain('notificationPrefs.groups.household');
     expect(source).toContain('notification-prefs-group-');
   });
+  // A missing schedule is a schedule fact, so it sits with the other
+  // `schedule` toggles rather than under Hours and pay — `PUSH_TYPE_GROUP` is
+  // a total Record, so a miss here would not compile.
+  it('groups schedule_not_set under Schedule', () => {
+    expect(source).toContain("schedule_not_set: 'schedule'");
+  });
 });

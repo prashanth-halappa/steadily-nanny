@@ -76,6 +76,7 @@ export const JobController = {
         errorCount: result.errorCount,
         shiftReminder: result.shiftReminder,
         timesheetAwaitingApproval: result.timesheetAwaitingApproval,
+        scheduleNotSet: result.scheduleNotSet,
       }),
     }
   ),

@@ -69,7 +69,11 @@ import {
   useInboxItems,
 } from '@/src/domains/inbox';
 import { usePendingOffer } from '@/src/domains/inbox/hooks/usePendingOffer';
-import { PendingScheduleCard } from '@/src/domains/schedule';
+import {
+  NoWeekYetCard,
+  PendingScheduleCard,
+  WeeklyHoursNotSetCard,
+} from '@/src/domains/schedule';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { localDateToWeekday } from '@/src/domains/schedule/utils/shiftGrouping';
 import { canViewParentSchedule, SETUP_ROLES } from '@/src/domains/setup/types';
@@ -606,6 +610,14 @@ export function TodayScreen() {
                 hasActiveNanny={hasNannyMember}
               />
             ) : null}
+            {/* InviteWaitingCard's successor, in its slot: that card hides the
+                instant a nanny is active and this one requires it, so the two
+                are mutually exclusive by construction and the parent's eye
+                lands in the same place at the same point in the story. Feed
+                only, never a slot occupant — nothing decays and nobody is
+                waiting on an answer, so per `attentionOwner`'s module doc it
+                displaces nothing and is therefore not a rung. */}
+            <WeeklyHoursNotSetCard />
             {slotOccupant === 'inbox' ? null : <NeedsAttentionCard />}
             {/* Quiet on every day it is not blocking, which is nearly all of
                 them — it renders nothing at all when there is no live offer
@@ -619,6 +631,11 @@ export function TodayScreen() {
               <TermsProposalCard />
             )}
             <PendingScheduleCard />
+            {/* The other half of the same fact, for the other side: a week
+                that was never sent. Mutually exclusive with the card above —
+                a `pending` pattern is PendingScheduleCard's to speak for —
+                so the two share this one place in the feed. */}
+            <NoWeekYetCard />
 
             {/* §9.2 — an L3, non-urgent, one-time offer. Below the attention
                 group on purpose, and never a slot occupant. Self-contained —

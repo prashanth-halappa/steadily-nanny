@@ -211,4 +211,15 @@ describe('notification.schema push types', () => {
       expect(PUSH_TYPE_AUDIENCE[type]).toBeDefined();
     }
   });
+  // The gap this closes: `termsProposalCommandService.accept()` is a
+  // money-only transition — it activates the membership, mints the
+  // arrangement, and creates NO schedule. Nothing has ever told the parent
+  // the nanny still does not know when she is working. Parent-audience
+  // because only the family can answer it, and `reminderJob` sends it via
+  // `listParentUserIds`.
+  it('registers schedule_not_set as a parent-audience type', () => {
+    expect(PUSH_NOTIFICATION_TYPES.SCHEDULE_NOT_SET).toBe('schedule_not_set');
+    expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('schedule_not_set');
+    expect(PUSH_TYPE_AUDIENCE.schedule_not_set).toBe('parent');
+  });
 });

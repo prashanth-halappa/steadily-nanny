@@ -119,6 +119,7 @@
       "timesheet_reopened": "Timesheet reopened",
       "schedule_pattern_sent": "Schedule pattern sent",
       "schedule_pattern_responded": "Schedule pattern response",
+      "schedule_not_set": "Schedule not set",
       "schedule_pattern_amended": "Schedule pattern amended",
       "shift_change_requested": "Shift change requested",
       "change_request_accepted": "Change request accepted",

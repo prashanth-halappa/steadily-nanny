@@ -119,6 +119,7 @@
       "timesheet_reopened": "Hoja de horas reabierta",
       "schedule_pattern_sent": "Patrón de horario enviado",
       "schedule_pattern_responded": "Respuesta al patrón de horario",
+      "schedule_not_set": "Horario sin definir",
       "schedule_pattern_amended": "Patrón de horario modificado",
       "shift_change_requested": "Cambio de turno solicitado",
       "change_request_accepted": "Cambio aceptado",
