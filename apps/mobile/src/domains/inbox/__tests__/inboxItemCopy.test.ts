@@ -44,9 +44,9 @@ describe('stale_submitted_week copy', () => {
     expect(ctaForItem(staleItem, t)).toBe('items.staleSubmittedWeek.cta');
   });
 
-  it('opens the week it is about', () => {
+  it('opens the week it is about, carrying its household', () => {
     expect(hrefForItem(staleItem)).toBe(
-      '/(private)/(tabs)/hours?weekStart=2026-08-04'
+      '/(private)/(tabs)/hours?weekStart=2026-08-04&householdId=hh-1'
     );
   });
 
@@ -61,6 +61,48 @@ describe('stale_submitted_week copy', () => {
       expect(copy.title.toLowerCase()).not.toContain('overdue');
       expect(copy.title.toLowerCase()).not.toContain('late');
     }
+  });
+});
+
+describe('change_request href', () => {
+  it('opens shift detail via shiftDetailHref, carrying the change request id — byte-identical to the push destination', () => {
+    const item: InboxItem = {
+      kind: 'change_request',
+      id: 'cr-1',
+      shiftId: 'shift-1',
+      requestKind: 'time_change',
+    };
+    expect(hrefForItem(item)).toBe(
+      '/(private)/schedule/shifts/shift-1?changeRequestId=cr-1'
+    );
+  });
+});
+
+describe('hours-tab hrefs carry householdId (HYBRID contract)', () => {
+  it('queried_week', () => {
+    const item: InboxItem = {
+      kind: 'queried_week',
+      id: 'ts-2',
+      householdId: 'hh-9',
+      weekStart: '2026-07-28',
+      queryNote: null,
+    };
+    expect(hrefForItem(item)).toBe(
+      '/(private)/(tabs)/hours?weekStart=2026-07-28&householdId=hh-9'
+    );
+  });
+
+  it('submitted_week', () => {
+    const item: InboxItem = {
+      kind: 'submitted_week',
+      id: 'ts-3',
+      householdId: 'hh-9',
+      weekStart: '2026-07-28',
+      carerDisplayName: 'Test Nanny',
+    };
+    expect(hrefForItem(item)).toBe(
+      '/(private)/(tabs)/hours?weekStart=2026-07-28&householdId=hh-9'
+    );
   });
 });
 
@@ -86,6 +128,7 @@ describe('pending_shift copy', () => {
     return {
       kind: 'pending_shift',
       id: 'shift-1',
+      householdId: 'hh-1',
       localDate: '2026-08-26',
       startsAt: '2026-08-26T08:00:00.000Z',
       endsAt: '2026-08-26T13:00:00.000Z',
@@ -95,8 +138,10 @@ describe('pending_shift copy', () => {
     } as InboxItem;
   }
 
-  it('opens the shift it is about', () => {
-    expect(hrefForItem(makeItem())).toBe('/(private)/schedule/shifts/shift-1');
+  it('opens the shift it is about, carrying its household — same shiftDetailHref the push notification uses', () => {
+    expect(hrefForItem(makeItem())).toBe(
+      '/(private)/schedule/shifts/shift-1?householdId=hh-1'
+    );
   });
 
   it('has title/subtitle/cta keys', () => {
@@ -357,9 +402,9 @@ describe('reimbursement_owed copy (§2.2 rank 8)', () => {
     currency: 'GBP',
   };
 
-  it('deep-links to the Hours week it is about', () => {
+  it('deep-links to the Hours week it is about, carrying its household', () => {
     expect(hrefForItem(item)).toBe(
-      '/(private)/(tabs)/hours?weekStart=2026-08-17'
+      '/(private)/(tabs)/hours?weekStart=2026-08-17&householdId=hh-1'
     );
   });
 

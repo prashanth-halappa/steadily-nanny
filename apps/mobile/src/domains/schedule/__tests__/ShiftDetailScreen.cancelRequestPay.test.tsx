@@ -132,7 +132,13 @@ beforeAll(async () => {
     useShiftChangeRequests: mockUseShiftChangeRequests,
   }));
   mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
-    useIsOnboarded: () => ({ role: 'nanny', status: 'onboarded' }),
+    useIsOnboarded: () => ({
+      role: 'nanny',
+      status: 'onboarded',
+      // Pattern A: role is resolved against the SHIFT's household.
+      membershipRole: 'nanny',
+      householdId: HOUSEHOLD_ID,
+    }),
   }));
   mock.module('@/src/hooks/queries/useUserProfile', () => ({
     useUserProfile: () => ({

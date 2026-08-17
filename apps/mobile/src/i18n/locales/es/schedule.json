@@ -133,7 +133,8 @@
     "declinedToast": "Rechazado.",
     "childWindow": "{{childName}} {{start}}–{{end}}",
     "structuralNoteLabelled": "Es más corto que un día completo por “{{label}}”.",
-    "structuralNote": "Estas horas se repiten cada semana: la familia las definió así a propósito."
+    "structuralNote": "Estas horas se repiten cada semana: la familia las definió así a propósito.",
+    "availabilityLoadFailed": "No pudimos cargar tu disponibilidad, así que aquí no se marca nada según ella."
   },
   "shifts": {
     "screenTitle": "Turnos",
@@ -240,7 +241,8 @@
     "childrenTitle": "A quién cuidas",
     "childWindow": "{{start}}–{{end}}",
     "childWholeShift": "Todo el turno",
-    "childrenEmpty": "Sin especificar: pregunta a una madre o un padre si tienes dudas."
+    "childrenEmpty": "Sin especificar: pregunta a una madre o un padre si tienes dudas.",
+    "roleResolving": "Comprobando qué puedes hacer en esta familia."
   },
   "change": {
     "requestedToast": "Cambio solicitado",
@@ -374,7 +376,8 @@
       "pending": "{{start}} – {{end}} sigue sin cubrir. Se lo pediste a {{carerName}} el {{askedDay}}.",
       "declined": "{{start}} – {{end}} sigue sin cubrir. {{carerName}} no puede cubrir este turno.",
       "expired": "{{start}} – {{end}} sigue sin cubrir. La solicitud a {{carerName}} venció el {{expiredDay}}."
-    }
+    },
+    "loadFailed": "No pudimos cargar las horas de cuidado de esta familia, así que la cobertura de esta semana es desconocida."
   },
   "lead": {
     "nanny_one": "{{count}} turno esta semana, {{hours}} en total.",

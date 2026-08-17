@@ -124,10 +124,22 @@ describe('inbox route', () => {
 
 describe('inboxItemCopy source', () => {
   it('deep-links each pending-work kind to an existing screen', () => {
-    expect(copySource).toContain('schedule/shifts/');
+    // The shift-detail path is no longer spelled out here: WP-A2 routes both
+    // shift kinds through `shiftDetailHref`, the SAME resolver the push
+    // notification uses, so the inbox and the notification cannot drift to
+    // two destinations for one fact.
+    expect(copySource).toContain('shiftDetailHref');
     expect(copySource).toContain('schedule/respond/');
     expect(copySource).toContain('(tabs)/hours');
     expect(copySource).toContain('weekStart=');
+  });
+
+  // HYBRID contract (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §A): a TAB can
+  // only ever show ONE household, so every href that lands on one carries
+  // the id the tab has to switch to. Detail screens resolve it from the
+  // entity instead and carry it only so the two surfaces agree.
+  it('carries householdId on every href that lands on the Hours tab', () => {
+    expect(copySource).toContain('householdId=');
   });
 
   it('exports titleForItem, subtitleForItem, hrefForItem and ctaForItem', () => {

@@ -7,7 +7,7 @@
  * week boundaries" / "household week_starts_on" blocks below, which pin the
  * exact bug classes this guards against (GOLDEN-FIXES #21, #25).
  */
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, spyOn } from 'bun:test';
 import {
   addWeeks,
   DEFAULT_WEEK_STARTS_ON,
@@ -307,6 +307,34 @@ describe('weeksBetween', () => {
     const from = '2026-08-03';
     for (const delta of [-4, -1, 0, 1, 4]) {
       expect(weeksBetween(from, addWeeks(from, delta))).toBe(delta);
+    }
+  });
+});
+
+// `Math.round` silently swallows a non-week-aligned delta — a caller that
+// hands in a mid-week date gets a plausible-looking offset and no clue that
+// its anchor was wrong. Dev-only warn: it must not throw and must not change
+// the number, or every deep link that already works would start behaving
+// differently in dev.
+describe('weeksBetween — non-week-aligned anchors (__DEV__ guard)', () => {
+  it('warns, without throwing or changing the value, when the delta is not whole weeks', () => {
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(weeksBetween('2026-08-03', '2026-08-06')).toBe(0);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]?.[0])).toContain('2026-08-06');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('stays silent for a whole-week delta', () => {
+    const warn = spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(weeksBetween('2026-08-03', '2026-07-13')).toBe(-3);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
     }
   });
 });

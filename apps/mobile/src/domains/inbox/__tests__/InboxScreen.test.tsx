@@ -174,7 +174,11 @@ describe('InboxScreen', () => {
     const row = getByTestId('inbox-item-change_request-cr-1');
     expect(row).toBeTruthy();
     fireEvent.press(row);
-    expect(mockPush).toHaveBeenCalledWith('/(private)/schedule/shifts/shift-1');
+    // Same destination the SHIFT_CHANGE_REQUESTED push resolves to — one
+    // contract, both surfaces (WP-A2, §A).
+    expect(mockPush).toHaveBeenCalledWith(
+      '/(private)/schedule/shifts/shift-1?changeRequestId=cr-1'
+    );
   });
 
   it('renders a pending-pattern row that deep-links to respond', () => {
@@ -218,8 +222,10 @@ describe('InboxScreen', () => {
     const { getByTestId } = render(<InboxScreen />);
     const row = getByTestId('inbox-item-queried_week-ts-1');
     fireEvent.press(row);
+    // The Hours TAB can only show one household — the href carries the id
+    // it has to switch to (WP-A2 HYBRID contract, §A).
     expect(mockPush).toHaveBeenCalledWith(
-      '/(private)/(tabs)/hours?weekStart=2026-07-28'
+      '/(private)/(tabs)/hours?weekStart=2026-07-28&householdId=hh-1'
     );
   });
 
@@ -273,7 +279,7 @@ describe('InboxScreen', () => {
     const row = getByTestId('inbox-item-submitted_week-ts-2');
     fireEvent.press(row);
     expect(mockPush).toHaveBeenCalledWith(
-      '/(private)/(tabs)/hours?weekStart=2026-08-04'
+      '/(private)/(tabs)/hours?weekStart=2026-08-04&householdId=hh-1'
     );
   });
 

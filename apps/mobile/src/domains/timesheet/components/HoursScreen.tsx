@@ -21,6 +21,15 @@
  * three weeks back opens THAT week, not weekOffset=0. Schedule-route params
  * are not read here.
  *
+ * `householdId` on that same link is Pattern A NAVIGATION-TIME
+ * (`docs/CROSS-CUTTING-DEFECT-PATTERNS.md` §A): a tab can only ever show ONE
+ * household, so a push about family B has to MOVE the switcher — see
+ * `useDeepLinkHousehold`. ORDER MATTERS: `weekStart` is absolute and the
+ * offset it becomes is measured against the ACTIVE household's week anchor
+ * (its timezone AND its `week_starts_on`), so the consume effect below must
+ * wait for the switch to land — it would otherwise anchor on the wrong
+ * family and then clear the param, destroying the evidence.
+ *
  * `weekStart` is one-shot: applied into local week state, then cleared from
  * the route via `router.setParams`. The Hours tab does not unmount on blur,
  * so a sticky search param would otherwise reopen that old week on every
@@ -50,15 +59,18 @@ import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
+import { ErrorState } from '@/src/components/custom/ErrorState';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { ScreenWash } from '@/src/components/ui/screen-wash';
 import { H1 } from '@/src/components/ui/typography';
+import { HouseholdSwitcher } from '@/src/domains/household/components/HouseholdSwitcher';
 import {
   canViewParentSchedule,
   isParentEditorRole,
 } from '@/src/domains/setup/types';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { useDeepLinkHousehold } from '@/src/hooks/useDeepLinkHousehold';
 import {
   addWeeks,
   DEFAULT_WEEK_STARTS_ON,
@@ -116,6 +128,7 @@ function weekOffsetFromSearchParam(
 
 export function HoursScreen() {
   const { t } = useTranslation('hours');
+  const { t: tCommon } = useTranslation('common');
   const router = useRouter();
   // Same tab-bar dead-zone fix as Settings (BUG1) — the floating tab bar
   // overlays this screen's content instead of reserving its own layout
@@ -137,13 +150,18 @@ export function HoursScreen() {
   const timezone = household?.timezone ?? 'UTC';
   const weekStartsOn = household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON;
 
-  // Only `weekStart` is consumed from the hours deep link. `householdId` /
-  // `timesheetId` may be on the URL (from `hoursHref`) but household comes
-  // from `useActiveHousehold`; timesheet is resolved by week query.
+  // `weekStart`, `breakdown` and `householdId` are all consumed from the
+  // hours deep link — `householdId` moves the switcher (Pattern A, see the
+  // module header). `timesheetId` may also ride the URL and is ignored: the
+  // week query resolves the timesheet.
   const searchParams = useLocalSearchParams<{
     weekStart?: string | string[];
     breakdown?: string | string[];
+    householdId?: string | string[];
   }>();
+  const householdIdFromRoute = normalizeSearchParam(searchParams.householdId);
+  // ABOVE the weekStart consume effect on purpose — see the module header.
+  const { notMember } = useDeepLinkHousehold(searchParams.householdId);
   const weekStartFromRoute = normalizeSearchParam(searchParams.weekStart);
   const wantsBreakdown = normalizeSearchParam(searchParams.breakdown) === '1';
   const validWeekStart =
@@ -184,6 +202,19 @@ export function HoursScreen() {
   // back to the current week immediately after the deep link lands.
   useEffect(() => {
     if (!validWeekStart && !wantsBreakdown) return;
+    // The deep-linked household has not landed yet: `currentWeekStartISO`
+    // still belongs to the household she was on, so an offset taken now
+    // would be measured off the wrong anchor — and clearing the param would
+    // leave nothing to recompute from. Re-runs on `activeHousehold.householdId`
+    // once the switch lands. Cannot stall forever: a target she is not a
+    // member of never switches, but that case returns the not-a-member
+    // ErrorState below, so no week is ever shown from a stale offset.
+    if (
+      householdIdFromRoute &&
+      householdIdFromRoute !== activeHousehold.householdId
+    ) {
+      return;
+    }
     if (validWeekStart) {
       setUserWeekOffset(
         weekOffsetFromSearchParam(validWeekStart, currentWeekStartISO)
@@ -191,7 +222,14 @@ export function HoursScreen() {
     }
     if (wantsBreakdown) setOpenBreakdownSignal(signal => signal + 1);
     router.setParams({ weekStart: undefined, breakdown: undefined });
-  }, [validWeekStart, wantsBreakdown, currentWeekStartISO, router]);
+  }, [
+    validWeekStart,
+    wantsBreakdown,
+    currentWeekStartISO,
+    router,
+    householdIdFromRoute,
+    activeHousehold.householdId,
+  ]);
 
   // Leaving the tab drops local paging so the next focus (with no weekStart)
   // lands on the current week. A new push can set weekStart again and the
@@ -248,6 +286,24 @@ export function HoursScreen() {
   // on the first frame — only the figure and the day rows are ever a
   // skeleton. The `LoadingIndicator` this replaces blanked the whole tab,
   // title included, on every household/role resolution.
+  // A push naming a household she is not in. No switch happened (see
+  // `useDeepLinkHousehold`) and showing her the household she IS on would
+  // silently answer a different question than the one the push asked.
+  if (notMember) {
+    return (
+      <View testID="hours-not-member" className="flex-1 bg-background">
+        <ScreenWash kind="brand" />
+        <ErrorState
+          variant="notFound"
+          title={tCommon('deepLink.notMember.title')}
+          message={tCommon('deepLink.notMember.message')}
+          secondaryLabel={tCommon('deepLink.notMember.action')}
+          onSecondaryAction={() => router.replace('/(private)/(tabs)/home')}
+        />
+      </View>
+    );
+  }
+
   if (onboarding.status === 'loading' || activeHousehold.isLoading) {
     return (
       <View testID="hours-screen" className="flex-1 bg-background">
@@ -328,6 +384,15 @@ export function HoursScreen() {
         accessible={false}
         importantForAccessibility="no"
       />
+      {/* P4: a nanny in two families moves between them from the tab she is
+          standing on — `userWeekOffset` is relative, so the week she is
+          reading survives the switch. Above the week view rather than inside
+          the hero band because the band lives in the role views. */}
+      {activeHousehold.households.length > 1 ? (
+        <View className="px-5 pt-3">
+          <HouseholdSwitcher />
+        </View>
+      ) : null}
       {canViewParentSchedule(onboarding.role) ? (
         <ParentWeekView
           householdId={activeHousehold.householdId}

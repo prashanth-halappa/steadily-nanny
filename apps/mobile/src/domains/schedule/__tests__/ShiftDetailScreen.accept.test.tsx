@@ -72,6 +72,10 @@ beforeAll(async () => {
   mockUseIsOnboarded = mock(() => ({
     role: 'nanny',
     status: 'onboarded',
+    // Pattern A: the screen resolves the role against the SHIFT's
+    // household, so these two must be present for it to land here.
+    membershipRole: 'nanny',
+    householdId: HOUSEHOLD_ID,
   }));
   mockUseAuthStore = mock((selector: (s: unknown) => unknown) =>
     selector({ session: { user: { id: CARER_ID } } })
@@ -177,6 +181,10 @@ beforeEach(() => {
   mockUseIsOnboarded.mockImplementation(() => ({
     role: 'nanny',
     status: 'onboarded',
+    // Pattern A: the screen resolves the role against the SHIFT's
+    // household, so these two must be present for it to land here.
+    membershipRole: 'nanny',
+    householdId: HOUSEHOLD_ID,
   }));
   mockUseAuthStore.mockImplementation((selector: (s: unknown) => unknown) =>
     selector({ session: { user: { id: CARER_ID } } })
@@ -196,6 +204,8 @@ describe('ShiftDetailScreen accept + reconfirm', () => {
     mockUseIsOnboarded.mockImplementation(() => ({
       role: 'parent',
       status: 'onboarded',
+      membershipRole: 'owner',
+      householdId: HOUSEHOLD_ID,
     }));
     mockUseAuthStore.mockImplementation((selector: (s: unknown) => unknown) =>
       selector({ session: { user: { id: OTHER_USER_ID } } })
@@ -302,6 +312,8 @@ describe('ShiftDetailScreen accept + reconfirm', () => {
     mockUseIsOnboarded.mockImplementation(() => ({
       role: 'parent',
       status: 'onboarded',
+      membershipRole: 'owner',
+      householdId: HOUSEHOLD_ID,
     }));
     mockUseAuthStore.mockImplementation((selector: (s: unknown) => unknown) =>
       selector({ session: { user: { id: OTHER_USER_ID } } })
@@ -317,6 +329,8 @@ describe('ShiftDetailScreen accept + reconfirm', () => {
     mockUseIsOnboarded.mockImplementation(() => ({
       role: 'parent',
       status: 'onboarded',
+      membershipRole: 'owner',
+      householdId: HOUSEHOLD_ID,
     }));
     mockUseAuthStore.mockImplementation((selector: (s: unknown) => unknown) =>
       selector({ session: { user: { id: OTHER_USER_ID } } })

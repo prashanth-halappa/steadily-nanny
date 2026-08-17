@@ -161,6 +161,61 @@ describe('ScheduleRespondScreen source', () => {
     expect(source).toMatch(/router\.replace\(/);
   });
 
+  it("REGRESSION: accept lands on the PATTERN's own household calendar, not the switcher's active one", () => {
+    // `/(private)/schedule/shifts` with no householdId resolves its household
+    // from the switcher — a nanny accepting family B's pattern while family A
+    // is active was dropped on family A's calendar.
+    expect(source).toContain('shiftsCalendarHref');
+    const arg =
+      source.match(
+        /shiftsCalendarHref\(\{\s*householdId:\s*([A-Za-z0-9_.]+)/
+      )?.[1] ?? '';
+    expect(arg.length).toBeGreaterThan(0);
+    // Whatever is handed over must originate from the pattern record itself,
+    // never from the household switcher.
+    expect(source).toMatch(
+      new RegExp(
+        `${arg}\\s*=\\s*pattern\\.data\\.household_id|^pattern\\.data\\.household_id$`
+      )
+    );
+    expect(source).not.toMatch(
+      /router\.replace\(\s*'\/\(private\)\/schedule\/shifts'\s+as Href\s*\)/
+    );
+    // The resolver returns `string | null`; handled with `??`, never a `!`.
+    expect(source).not.toMatch(/shiftsCalendarHref\([\s\S]{0,80}?\)\s*!/);
+  });
+
+  it('VERIFIED: decline still goes back — it is NOT a calendar-navigation twin of accept', () => {
+    const declineBody =
+      source.match(/const handleDecline[\s\S]*?\n {2}};/)?.[0] ?? '';
+    expect(declineBody).toContain('router.back()');
+    expect(declineBody).not.toContain('shiftsCalendarHref');
+    expect(declineBody).not.toContain('router.replace');
+  });
+
+  it('C2: a failed pattern read renders a retryable ErrorState, never a forever spinner', () => {
+    expect(source).toContain('pattern.isError');
+    expect(source).toContain('pattern.refetch()');
+    expect(source).toContain('ErrorState');
+    expect(source).toContain('variant="network"');
+    expect(source).toContain('testID="schedule-respond-error"');
+    // The spinner branch must no longer swallow the settled/errored cases.
+    expect(source).not.toMatch(
+      /if \(pattern\.isLoading \|\| !pattern\.data\) \{/
+    );
+  });
+
+  it('B: an unknown availability read flags NO days and offers an inline retry', () => {
+    // `?? []` made `isOutsideAvailability` return true for every day, painting
+    // an amber warning across a schedule that may be perfectly fine.
+    expect(source).not.toMatch(/\(availability\.data \?\? \[\]\)/);
+    expect(source).toContain('availability.refetch()');
+    expect(source).toContain('InlineRetry');
+    expect(source).toContain('respond.availabilityLoadFailed');
+    // Mirrors WeekBlocksEditor: only check the clash when rows are known.
+    expect(source).toMatch(/availabilityRows !== undefined/);
+  });
+
   it('shows per-child windows on each day using the pattern payload', () => {
     expect(source).toContain('respond.childWindow');
     expect(source).toContain('start_time');
