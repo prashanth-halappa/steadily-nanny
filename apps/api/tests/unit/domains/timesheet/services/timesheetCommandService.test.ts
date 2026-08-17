@@ -1,4 +1,4 @@
-import { describe, expect, it, mock } from 'bun:test';
+import { afterEach, describe, expect, it, mock } from 'bun:test';
 
 /**
  * The terms gate, stubbed to "agreed", registered BEFORE the service is
@@ -18,6 +18,27 @@ mock.module('../../../../../src/domains/pay/services/termsGateService', () => ({
   termsGateService: { assertAgreed: mock(async () => undefined) },
   TermsGateService: class {},
 }));
+
+/**
+ * The ledger read `reopen` consults before it un-approves a week (102, gap
+ * P1), stubbed for the same reason the gate above is: the service's default
+ * constructor argument is a real `PaymentRepository` on a real Supabase
+ * client, and this file constructs the service positionally 121 times without
+ * ever passing one. Default is "no payments", so every pre-102 reopen test
+ * still describes the week it always described; the paid case sets
+ * `paymentsOnWeek` and clears it again.
+ */
+let paymentsOnWeek: unknown[] = [];
+mock.module(
+  '../../../../../src/domains/pay/repositories/paymentRepository',
+  () => ({
+    PaymentRepository: class {
+      async listForTimesheet(): Promise<unknown[]> {
+        return paymentsOnWeek;
+      }
+    },
+  })
+);
 
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type { WeekEarnings } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
@@ -181,6 +202,22 @@ function makeTimesheetRepo(overrides: Record<string, unknown> = {}): any {
         earnings_computed_at: null,
       })
     ),
+    // The roll-up's one write (102). Defaulted to the UNPAID answer — demote
+    // and clear — because that is what `roll_up_timesheet_hours` returns for
+    // a week nobody has paid, which is every week in this file unless a test
+    // says otherwise. The paid answer is staged per test.
+    rollUpHours: mock(async (_id: string, totalMinutes: number) => ({
+      ...timesheet,
+      total_minutes: totalMinutes,
+      status: 'submitted',
+      approved_by: null,
+      approved_at: null,
+      gross_minor: null,
+      currency: null,
+      earnings: null,
+      earnings_computed_at: null,
+      hours_changed_after_payment_at: null,
+    })),
     ...overrides,
   };
 }
@@ -918,10 +955,7 @@ describe('TimesheetCommandService.clockOut', () => {
     });
 
     expect(timesheetRepo.create).not.toHaveBeenCalled();
-    expect(timesheetRepo.update).toHaveBeenCalledWith(
-      'ts1',
-      expect.objectContaining({ total_minutes: 750 })
-    );
+    expect(timesheetRepo.rollUpHours).toHaveBeenCalledWith('ts1', 750);
   });
 
   it('reflects ALL of the week entries in the total, not just the newest one', async () => {
@@ -982,9 +1016,9 @@ describe('TimesheetCommandService.clockOut', () => {
       clock_out_at: '2026-08-03T16:00:00.000Z',
     });
 
-    expect(timesheetRepo.update).toHaveBeenCalledTimes(2);
-    for (const call of timesheetRepo.update.mock.calls) {
-      expect(call[1]).toEqual(expect.objectContaining({ total_minutes: 450 }));
+    expect(timesheetRepo.rollUpHours).toHaveBeenCalledTimes(2);
+    for (const call of timesheetRepo.rollUpHours.mock.calls) {
+      expect(call[1]).toBe(450);
     }
   });
 
@@ -1009,13 +1043,14 @@ describe('TimesheetCommandService.clockOut', () => {
       clock_out_at: '2026-08-03T16:00:00.000Z',
     });
 
-    expect(timesheetRepo.update).toHaveBeenCalledWith(
-      'ts1',
-      expect.objectContaining({
-        total_minutes: 450,
-        status: 'submitted',
-      })
-    );
+    // The status decision moved into `roll_up_timesheet_hours` (102): an
+    // unpaid week still lands on 'submitted' with the snapshot cleared, but
+    // that clause is now pinned against the SQL by
+    // `tests/unit/migration102PaidWeekGuards.test.ts` and executed for real
+    // by `tests/integration/reopenWithPayments.integration.test.ts`. What is
+    // testable HERE is that the service delegates rather than deciding.
+    expect(timesheetRepo.rollUpHours).toHaveBeenCalledWith('ts1', 450);
+    expect(timesheetRepo.update).not.toHaveBeenCalled();
   });
 
   it('re-opens an approved timesheet, clears its approval, AND sets the freshly derived total when new hours land on it', async () => {
@@ -1044,15 +1079,8 @@ describe('TimesheetCommandService.clockOut', () => {
       clock_out_at: '2026-08-03T16:00:00.000Z',
     });
 
-    expect(timesheetRepo.update).toHaveBeenCalledWith(
-      'ts1',
-      expect.objectContaining({
-        total_minutes: 750,
-        status: 'submitted',
-        approved_by: null,
-        approved_at: null,
-      })
-    );
+    expect(timesheetRepo.rollUpHours).toHaveBeenCalledWith('ts1', 750);
+    expect(timesheetRepo.update).not.toHaveBeenCalled();
   });
 
   it('re-opens a queried timesheet and clears its approval when new hours land on it', async () => {
@@ -1080,15 +1108,8 @@ describe('TimesheetCommandService.clockOut', () => {
       clock_out_at: '2026-08-03T16:00:00.000Z',
     });
 
-    expect(timesheetRepo.update).toHaveBeenCalledWith(
-      'ts1',
-      expect.objectContaining({
-        total_minutes: 450,
-        status: 'submitted',
-        approved_by: null,
-        approved_at: null,
-      })
-    );
+    expect(timesheetRepo.rollUpHours).toHaveBeenCalledWith('ts1', 450);
+    expect(timesheetRepo.update).not.toHaveBeenCalled();
   });
 
   it('rejects clocking out an entry that is not running', async () => {
@@ -1763,10 +1784,7 @@ describe('TimesheetCommandService.updateEntry (P0-2)', () => {
       't1',
       expect.objectContaining({ break_minutes: 0 })
     );
-    expect(timesheetRepo.update).toHaveBeenCalledWith(
-      'ts1',
-      expect.objectContaining({ total_minutes: 480, status: 'submitted' })
-    );
+    expect(timesheetRepo.rollUpHours).toHaveBeenCalledWith('ts1', 480);
   });
 
   it('leaves untouched fields alone — an omitted field is not a null', async () => {
@@ -1974,10 +1992,7 @@ describe('TimesheetCommandService.createRetroactiveEntry', () => {
       })
     );
     expect(result.status).toBe('submitted');
-    expect(timesheetRepo.update).toHaveBeenCalledWith(
-      'ts1',
-      expect.objectContaining({ total_minutes: 900, status: 'submitted' })
-    );
+    expect(timesheetRepo.rollUpHours).toHaveBeenCalledWith('ts1', 900);
   });
 
   it('rejects a session that crosses a week boundary', async () => {
@@ -2109,10 +2124,7 @@ describe('recordCancellationPaidEntry', () => {
       })
     );
     // 450 (finishedEntryA) + 480 (cancellation) = 930
-    expect(timesheetRepo.update).toHaveBeenCalledWith(
-      'ts1',
-      expect.objectContaining({ total_minutes: 930 })
-    );
+    expect(timesheetRepo.rollUpHours).toHaveBeenCalledWith('ts1', 930);
   });
 
   it('records a FUTURE paid-cancel shift (starts in 6h) — the production case', async () => {
@@ -3015,17 +3027,15 @@ describe('TimesheetCommandService.rollUpIntoTimesheet — reopen clears the earn
       clock_out_at: '2026-08-03T16:00:00.000Z',
     });
 
-    expect(timesheetRepo.update).toHaveBeenCalledTimes(1);
-    expect(timesheetRepo.update).toHaveBeenCalledWith('ts1', {
-      total_minutes: 750,
-      status: 'submitted',
-      approved_by: null,
-      approved_at: null,
-      gross_minor: null,
-      currency: null,
-      earnings: null,
-      earnings_computed_at: null,
-    });
+    // ONE write, and the service cannot make it two: `rollUpHours` takes the
+    // minutes and nothing else, so status, approval stamp and all four
+    // snapshot columns are decided inside `roll_up_timesheet_hours` in the
+    // same statement (102). The clause itself is pinned against the SQL by
+    // `tests/unit/migration102PaidWeekGuards.test.ts` and executed for real
+    // by `tests/integration/reopenWithPayments.integration.test.ts`.
+    expect(timesheetRepo.rollUpHours).toHaveBeenCalledTimes(1);
+    expect(timesheetRepo.rollUpHours).toHaveBeenCalledWith('ts1', 750);
+    expect(timesheetRepo.update).not.toHaveBeenCalled();
   });
 
   it('clears the snapshot when a QUERIED week reopens too', async () => {
@@ -3053,15 +3063,8 @@ describe('TimesheetCommandService.rollUpIntoTimesheet — reopen clears the earn
       clock_out_at: '2026-08-03T16:00:00.000Z',
     });
 
-    expect(timesheetRepo.update).toHaveBeenCalledWith(
-      'ts1',
-      expect.objectContaining({
-        gross_minor: null,
-        currency: null,
-        earnings: null,
-        earnings_computed_at: null,
-      })
-    );
+    expect(timesheetRepo.rollUpHours).toHaveBeenCalledWith('ts1', 450);
+    expect(timesheetRepo.update).not.toHaveBeenCalled();
   });
 
   it('writes the SAME cleared columns on an ordinary submitted-week roll-up', async () => {
@@ -3091,16 +3094,8 @@ describe('TimesheetCommandService.rollUpIntoTimesheet — reopen clears the earn
       clock_out_at: '2026-08-03T16:00:00.000Z',
     });
 
-    expect(timesheetRepo.update).toHaveBeenCalledWith('ts1', {
-      total_minutes: 450,
-      status: 'submitted',
-      approved_by: null,
-      approved_at: null,
-      gross_minor: null,
-      currency: null,
-      earnings: null,
-      earnings_computed_at: null,
-    });
+    expect(timesheetRepo.rollUpHours).toHaveBeenCalledWith('ts1', 450);
+    expect(timesheetRepo.update).not.toHaveBeenCalled();
   });
 });
 
@@ -3293,16 +3288,8 @@ describe('TimesheetCommandService.rollUpIntoTimesheet — any revert to submitte
       clock_out_at: '2026-08-03T16:00:00.000Z',
     });
 
-    expect(timesheetRepo.update).toHaveBeenCalledWith('ts1', {
-      total_minutes: 450,
-      status: 'submitted',
-      approved_by: null,
-      approved_at: null,
-      gross_minor: null,
-      currency: null,
-      earnings: null,
-      earnings_computed_at: null,
-    });
+    expect(timesheetRepo.rollUpHours).toHaveBeenCalledWith('ts1', 450);
+    expect(timesheetRepo.update).not.toHaveBeenCalled();
   });
 
   it('clears the snapshot on an OPEN week too — every write that lands on submitted does', async () => {
@@ -3326,18 +3313,8 @@ describe('TimesheetCommandService.rollUpIntoTimesheet — any revert to submitte
       clock_out_at: '2026-08-03T16:00:00.000Z',
     });
 
-    expect(timesheetRepo.update).toHaveBeenCalledWith(
-      'ts1',
-      expect.objectContaining({
-        status: 'submitted',
-        approved_by: null,
-        approved_at: null,
-        gross_minor: null,
-        currency: null,
-        earnings: null,
-        earnings_computed_at: null,
-      })
-    );
+    expect(timesheetRepo.rollUpHours).toHaveBeenCalledWith('ts1', 450);
+    expect(timesheetRepo.update).not.toHaveBeenCalled();
   });
 
   it('still preserves query_note — the D1 rule that the disagreement survives', async () => {
@@ -3365,11 +3342,11 @@ describe('TimesheetCommandService.rollUpIntoTimesheet — any revert to submitte
       clock_out_at: '2026-08-03T16:00:00.000Z',
     });
 
-    const [, patch] = timesheetRepo.update.mock.calls[0] as [
-      string,
-      Record<string, unknown>,
-    ];
-    expect(patch).not.toHaveProperty('query_note');
+    // Stronger than the old assertion, not weaker: the roll-up call carries
+    // the minutes and NOTHING ELSE, so there is no patch in which a
+    // `query_note` clear could ever appear. D1's rule — the disagreement
+    // survives a roll-up — is now structural.
+    expect(timesheetRepo.rollUpHours.mock.calls[0]).toEqual(['ts1', 450]);
   });
 });
 
@@ -6471,7 +6448,7 @@ describe('TimesheetCommandService.voidEntry', () => {
 
     expect(first.status).toBe('voided');
     expect(second.status).toBe('voided');
-    expect(timesheetRepo.update).toHaveBeenCalledTimes(1);
+    expect(timesheetRepo.rollUpHours).toHaveBeenCalledTimes(1);
   });
 
   it('keeps a voided entry voided when a later updateEntry roll-up runs (resurrection site — rollUpIntoTimesheet create at :1882)', async () => {
@@ -6723,10 +6700,7 @@ describe('069 money invariants — a voided entry did not happen', () => {
 
     await svc.voidEntry('carer-1', 't-other');
 
-    expect(timesheetRepo.update).toHaveBeenCalledWith(
-      'ts1',
-      expect.objectContaining({ total_minutes: 450 })
-    );
+    expect(timesheetRepo.rollUpHours).toHaveBeenCalledWith('ts1', 450);
   });
 });
 
@@ -7463,5 +7437,202 @@ describe('workweek start: the retroactive-entry week-crossing guard', () => {
     });
 
     expect(timeEntryRepo.createSubmitted).toHaveBeenCalled();
+  });
+});
+
+/**
+ * 102 — a week that has been PAID (`docs/AS-BUILT-PAYMENT.md` §7 P1).
+ *
+ * The ledger is bounded by the week's frozen `gross_minor`, and both ways out
+ * of `approved` used to clear that gross without ever asking whether money had
+ * moved against it. The two paths get different answers because the two acts
+ * are different: a manual reopen is a decision someone is making right now, in
+ * front of a screen that already shows what has been paid, so it is REFUSED; a
+ * clock-out is not a decision at all — the hours already happened — so it is
+ * recorded, the approval and snapshot are KEPT, and the week is flagged.
+ */
+describe('TimesheetCommandService — paid weeks (102)', () => {
+  const approvedPaidTimesheet = {
+    ...timesheet,
+    status: 'approved',
+    approved_by: 'parent-1',
+    approved_at: '2026-08-04T18:00:00.000Z',
+    gross_minor: 14_800,
+    currency: 'GBP',
+    earnings: { status: 'ok', gross_minor: 14_800 },
+    earnings_computed_at: '2026-08-04T18:00:00.000Z',
+  };
+
+  const paymentRow = {
+    id: 'pay-1',
+    timesheet_id: 'ts1',
+    amount_minor: 14_800,
+    currency: 'GBP',
+    kind: 'payment',
+  };
+
+  afterEach(() => {
+    paymentsOnWeek = [];
+  });
+
+  function makeReopenSvc(timesheetRepo: any, eventRepo: any): any {
+    return new TimesheetCommandService(
+      makeTimeEntryRepo(),
+      timesheetRepo,
+      makeParentMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries({
+        getOwnedTimesheet: mock(async () => approvedPaidTimesheet),
+      }),
+      makeUserService(),
+      makePush(),
+      makeEarnings(),
+      eventRepo
+    );
+  }
+
+  it('REFUSES a manual reopen of a week that has payment rows, before any write', async () => {
+    paymentsOnWeek = [paymentRow];
+    const timesheetRepo = makeTimesheetRepo();
+    const eventRepo = { insertMany: mock(async () => []) };
+    const svc = makeReopenSvc(timesheetRepo, eventRepo);
+
+    await expect(
+      svc.reopen('parent-1', 'ts1', { reason: 'Thursday hours were wrong' })
+    ).rejects.toBeInstanceOf(TimesheetNotActionableError);
+
+    // Refused BEFORE the write, not rolled back after it: `payments` is
+    // append-only, so a reopen that got as far as clearing the gross would
+    // leave rows nothing can take back.
+    expect(timesheetRepo.reopenFromApproved).not.toHaveBeenCalled();
+    expect(eventRepo.insertMany).not.toHaveBeenCalled();
+  });
+
+  it('carries has_payments so the sheet can name the ledger instead of saying "conflict"', async () => {
+    paymentsOnWeek = [paymentRow];
+    const svc = makeReopenSvc(makeTimesheetRepo(), {
+      insertMany: mock(async () => []),
+    });
+
+    const error = await svc
+      .reopen('parent-1', 'ts1', { reason: 'wrong' })
+      .catch((e: any) => e);
+
+    // `ConflictError` puts the domain code in `metadata.reason` and stamps
+    // the envelope's own `code` as 'CONFLICT'. The client therefore branches
+    // on `metadata.status`, which is where the reason a parent can act on
+    // lives — the same slot the ordinary status refusal uses.
+    expect(error.statusCode).toBe(409);
+    expect(error.metadata).toEqual(
+      expect.objectContaining({
+        reason: 'TIMESHEET_NOT_ACTIONABLE',
+        timesheetId: 'ts1',
+        status: 'has_payments',
+      })
+    );
+  });
+
+  it('still reopens a week nobody has paid', async () => {
+    const timesheetRepo = makeTimesheetRepo();
+    const svc = makeReopenSvc(timesheetRepo, {
+      insertMany: mock(async () => []),
+    });
+
+    const reopened = await svc.reopen('parent-1', 'ts1', { reason: 'wrong' });
+
+    expect(reopened.status).toBe('submitted');
+    expect(timesheetRepo.reopenFromApproved).toHaveBeenCalled();
+  });
+
+  it('rolls a clock-out through the RPC, never the generic update', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [finishedEntryA, finishedEntryB]),
+    });
+    const timesheetRepo = makeTimesheetRepo({
+      findByWeek: mock(async () => ({ ...approvedPaidTimesheet })),
+    });
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      timesheetRepo,
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService()
+    );
+
+    await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
+
+    // The whole decision is one locked statement in Postgres. A read here
+    // followed by a conditional update would be the same TOCTOU one level up.
+    expect(timesheetRepo.rollUpHours).toHaveBeenCalledWith('ts1', 750);
+    expect(timesheetRepo.update).not.toHaveBeenCalled();
+  });
+
+  it('keeps the approval and pushes the parents when the RPC says the week was paid', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [finishedEntryA, finishedEntryB]),
+    });
+    const timesheetRepo = makeTimesheetRepo({
+      findByWeek: mock(async () => ({ ...approvedPaidTimesheet })),
+      // What `roll_up_timesheet_hours` answers for a PAID week: minutes
+      // recorded, status/approver/snapshot untouched, the flag stamped.
+      rollUpHours: mock(async (_id: string, totalMinutes: number) => ({
+        ...approvedPaidTimesheet,
+        total_minutes: totalMinutes,
+        hours_changed_after_payment_at: '2026-08-05T09:00:00.000Z',
+      })),
+    });
+    const push = makePush();
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      timesheetRepo,
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      push
+    );
+
+    await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
+
+    // The service must not second-guess the row it got back: the RPC decided.
+    expect(timesheetRepo.update).not.toHaveBeenCalled();
+    // "Logged hours for this week" is still true, and the banner the flag
+    // raises explains the rest. No new push type for a fact a note carries.
+    expect(push.notifyHouseholdParents).toHaveBeenCalled();
+  });
+
+  it('does not push on a mid-week clock-out onto a week that was already submitted', async () => {
+    const timeEntryRepo = makeTimeEntryRepo({
+      listForCarerWeek: mock(async () => [finishedEntryA]),
+    });
+    const timesheetRepo = makeTimesheetRepo({
+      findByWeek: mock(async () => ({ ...timesheet, status: 'submitted' })),
+    });
+    const push = makePush();
+    const svc = new TimesheetCommandService(
+      timeEntryRepo,
+      timesheetRepo,
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      makeShiftRepo(),
+      makeQueries(),
+      makeUserService(),
+      push
+    );
+
+    await svc.clockOut('carer-1', 't1', {
+      clock_out_at: '2026-08-03T16:00:00.000Z',
+    });
+
+    expect(timesheetRepo.rollUpHours).toHaveBeenCalledWith('ts1', 450);
+    expect(push.notifyHouseholdParents).not.toHaveBeenCalled();
   });
 });

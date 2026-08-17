@@ -381,6 +381,9 @@ beforeAll(async () => {
   // The approved week's undo — same reason as the two above.
   mock.module('@/src/hooks/mutations/useReopenTimesheet', () => ({
     useReopenTimesheet: mockUseReopenTimesheet,
+    // Named export ParentWeekView imports too — omitting it makes the whole
+    // module fail to link, not just this hook.
+    isPaidWeekReopenRefusal: () => false,
   }));
   // The nanny week's correction path (Daylight UX P0-2) — mocked for the
   // same reason as the two above: a real `useMutation` needs a

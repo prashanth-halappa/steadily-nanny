@@ -142,9 +142,20 @@ describe('100 — timesheets parent_viewed_at trigger (live Postgres)', () => {
       throw new Error(`CAS viewed stamp failed: ${stampErr.message}`);
     }
 
+    // The snapshot rides the same statement, exactly as
+    // `approveSubmittedWithEarnings` writes it — since 102 an approved week
+    // with a null gross is refused by `timesheets_approved_has_snapshot`, so
+    // a status-only stand-in would now fail for a reason that has nothing to
+    // do with the compare-and-swap this test is about.
     const { data, error } = await service
       .from('timesheets')
-      .update({ status: 'approved' })
+      .update({
+        status: 'approved',
+        gross_minor: 14_800,
+        currency: 'GBP',
+        earnings: { status: 'ok', gross_minor: 14_800 },
+        earnings_computed_at: VIEWED_AT,
+      })
       .eq('id', timesheetId)
       .eq('status', 'submitted')
       .eq('updated_at', version)

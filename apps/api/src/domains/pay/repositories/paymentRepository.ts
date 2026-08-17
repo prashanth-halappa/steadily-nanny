@@ -8,13 +8,13 @@
  * explicitly, because a bypassed-RLS query with no filter of its own reads
  * across households.
  *
- * There is deliberately NO update or delete helper. A payment row is a fact
+ * There is deliberately NO update or delete PATH. A payment row is a fact
  * about money that already moved outside the app, not app state under review:
- * 067 gives it no `updated_at` and no trigger, and immutability in this stack
- * is the ABSENCE of a write path, not a database rule. Inheriting
- * `BaseRepository.update`/`delete` is the same known, accepted wart
- * `payArrangementRepository` documents — nothing in the domain calls them and
- * nothing should start.
+ * 067 gives it no `updated_at` and no trigger. The inherited
+ * `BaseRepository.update`/`delete` used to be a known, accepted wart — real,
+ * callable, service-role methods that RLS could not stop, with "nothing calls
+ * them" as the entire guarantee (gap P8). They are now OVERRIDDEN TO THROW,
+ * below. The way back into a wrong payment is a `correction` row (085).
  *
  * @module domains/pay/repositories/paymentRepository
  */
@@ -35,6 +35,14 @@ export interface RecordPaymentEntry {
   /** Explicit null, never omitted — "the parent said nothing about how". */
   method_note: string | null;
   recorded_by: string;
+  /**
+   * The client's uuid for ONE payment INTENT (102), or absent. Not a request
+   * id: it is minted when the record-payment sheet opens and reused across
+   * every retry of that intent, so a double-tapped POST or a retry after a
+   * response the phone never saw resolves to the row the first attempt wrote
+   * rather than a second real payment on an append-only ledger.
+   */
+  idempotency_key?: string;
 }
 
 /**
@@ -110,6 +118,37 @@ interface RecordCorrectionRpcPayload {
 export class PaymentRepository extends BaseRepository<Payment> {
   constructor() {
     super('payments');
+  }
+
+  /**
+   * APPEND-ONLY, STRUCTURALLY (`docs/AS-BUILT-PAYMENT.md` §7 P8).
+   *
+   * The module header used to say there was "deliberately no update or delete
+   * helper" and that inheriting `BaseRepository`'s was "a known, accepted
+   * wart". It was not accepted so much as unenforced: both methods were
+   * inherited, callable, and run as service role, where RLS cannot stop them.
+   * Append-only was true only because nobody had written the call.
+   *
+   * These two make it true because nobody CAN. A payment is a fact about money
+   * that already moved outside the app, and the way back is a `correction`
+   * row (085) that leaves the original at its full amount forever — never an
+   * edit, and never an erasure. Throwing here rather than deleting the methods
+   * because they exist on the base class: a subclass that simply omits them
+   * still inherits working ones.
+   *
+   * Refused before any query, so the guarantee does not depend on the database
+   * being reachable or a policy being present.
+   */
+  async update(_id: string, _data: Partial<Payment>): Promise<Payment> {
+    throw new Error(
+      'payments is append-only: record a correction (085), never an edit'
+    );
+  }
+
+  async delete(_id: string): Promise<void> {
+    throw new Error(
+      'payments is append-only: record a correction (085), never a delete'
+    );
   }
 
   /**
@@ -216,6 +255,10 @@ export class PaymentRepository extends BaseRepository<Payment> {
         p_paid_at: entry.paid_at,
         p_method_note: entry.method_note,
         p_recorded_by: entry.recorded_by,
+        // Explicit null rather than omitted: 102's sixth parameter is
+        // DEFAULTED, so a missing key would bind the default silently. Saying
+        // it out loud keeps "this client sent no intent key" readable.
+        p_idempotency_key: entry.idempotency_key ?? null,
       }
     );
 

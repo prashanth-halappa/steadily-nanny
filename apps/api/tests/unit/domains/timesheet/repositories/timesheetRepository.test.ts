@@ -31,7 +31,12 @@ function createMockQueryChain(
 
 beforeAll(async () => {
   mock.module('../../../../../src/config/supabase', () => {
-    const obj = { from: mock(() => createMockQueryChain()) };
+    const obj = {
+      from: mock(() => createMockQueryChain()),
+      // `roll_up_timesheet_hours` (102) is reached through `.rpc(...).single()`,
+      // so the stub has to be the same chain shape a PostgREST builder is.
+      rpc: mock(() => createMockQueryChain()),
+    };
     return { supabase: obj, supabaseService: obj };
   });
 
@@ -45,6 +50,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   mockSupabaseService.from.mockClear?.();
+  mockSupabaseService.rpc.mockClear?.();
 });
 
 describe('TimesheetRepository.findByWeek', () => {
@@ -189,6 +195,7 @@ describe('TimesheetRepository.approveSubmittedWithEarnings', () => {
       status: 'approved',
       query_note: null,
       reopen_reason: null,
+      hours_changed_after_payment_at: null,
       approved_by: 'parent-1',
       approved_at: FIXTURE_SNAPSHOT_AT,
       gross_minor: 14_800,
@@ -196,6 +203,30 @@ describe('TimesheetRepository.approveSubmittedWithEarnings', () => {
       earnings: { status: 'ok', gross_minor: 14_800 },
       earnings_computed_at: FIXTURE_SNAPSHOT_AT,
     });
+  });
+
+  it('clears hours_changed_after_payment_at — this approval covers the added hours (102)', async () => {
+    // Same stale-note class as `query_note` and `reopen_reason`: the flag says
+    // "the approved total no longer covers every hour worked", and the parent
+    // has just looked at the new total and signed it off. Leaving it set would
+    // keep both week views telling a story about a figure that now includes
+    // those hours.
+    const chain = createMockQueryChain({
+      data: { id: 'ts1', status: 'approved' },
+      error: null,
+    });
+    mockSupabaseService.from.mockImplementation(() => chain);
+
+    await new TimesheetRepository().approveSubmittedWithEarnings(
+      'ts1',
+      snapshotPatch,
+      READ_VERSION
+    );
+
+    expect(chain.update.mock.calls[0][0]).toHaveProperty(
+      'hours_changed_after_payment_at',
+      null
+    );
   });
 
   it('clears reopen_reason on approval — display state, not the audit trail', async () => {
@@ -644,5 +675,87 @@ describe('TimesheetRepository.stampParentViewed — one-way', () => {
     const already = createMockQueryChain({ data: null, error: null });
     mockSupabaseService.from.mockImplementation(() => already);
     expect(await repo.stampParentViewed('ts1', VIEWED_AT)).toBeNull();
+  });
+});
+
+/**
+ * 102 — the clock-out's one write. What is testable here is the seam: the real
+ * function name and the real two `p_*` parameter names, asserted verbatim
+ * against what `102_paid_week_guards.sql` declares (D53) — a mock-shaped name
+ * would pass this file and 500 in production. The function's own behaviour
+ * (lock, then ask whether the week is paid, then one conditional update) lives
+ * behind a row lock no unit test can reach: it is pinned against the SQL
+ * source by `tests/unit/migration102PaidWeekGuards.test.ts` and executed for
+ * real by `tests/integration/reopenWithPayments.integration.test.ts`.
+ */
+describe('TimesheetRepository.rollUpHours', () => {
+  it('calls the REAL function name with the REAL two parameter names', async () => {
+    mockSupabaseService.rpc.mockImplementation(() =>
+      createMockQueryChain({
+        data: { id: 'ts1', status: 'submitted' },
+        error: null,
+      })
+    );
+
+    await new TimesheetRepository().rollUpHours('ts1', 750);
+
+    expect(mockSupabaseService.rpc).toHaveBeenCalledWith(
+      'roll_up_timesheet_hours',
+      { p_timesheet_id: 'ts1', p_total_minutes: 750 }
+    );
+  });
+
+  it('sends NOTHING that decides the outcome — the locked function does', async () => {
+    // No status, no snapshot, no "was it paid". A patch assembled here would
+    // be a decision taken from a pre-read, which is the race 102 closes.
+    mockSupabaseService.rpc.mockImplementation(() =>
+      createMockQueryChain({ data: { id: 'ts1' }, error: null })
+    );
+
+    await new TimesheetRepository().rollUpHours('ts1', 450);
+
+    const args = mockSupabaseService.rpc.mock.calls[0][1] as Record<
+      string,
+      unknown
+    >;
+    expect(Object.keys(args)).toEqual(['p_timesheet_id', 'p_total_minutes']);
+  });
+
+  it('returns the row the function answered with, so the caller reads the decision off it', async () => {
+    const row = {
+      id: 'ts1',
+      status: 'approved',
+      total_minutes: 750,
+      hours_changed_after_payment_at: '2026-08-05T09:00:00.000Z',
+    };
+    mockSupabaseService.rpc.mockImplementation(() =>
+      createMockQueryChain({ data: row, error: null })
+    );
+
+    expect(await new TimesheetRepository().rollUpHours('ts1', 750)).toEqual(
+      row
+    );
+  });
+
+  it('throws a DatabaseError when the RPC fails', async () => {
+    mockSupabaseService.rpc.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: { message: 'boom' } })
+    );
+
+    await expect(
+      new TimesheetRepository().rollUpHours('ts1', 750)
+    ).rejects.toThrow('Failed to roll hours into timesheet');
+  });
+
+  it('throws rather than returning nothing when the row vanished mid-write', async () => {
+    // A roll-up that matched no row is a real failure, not a race to absorb:
+    // the caller has already found this timesheet.
+    mockSupabaseService.rpc.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: null })
+    );
+
+    await expect(
+      new TimesheetRepository().rollUpHours('ts1', 750)
+    ).rejects.toThrow('Failed to roll hours into timesheet');
   });
 });

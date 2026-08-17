@@ -48,6 +48,7 @@ import {
   notifyUser,
 } from '../../notification/services/householdPush';
 import type { PushPayload } from '../../notification/types';
+import { PaymentRepository } from '../../pay/repositories/paymentRepository';
 import {
   type TermsGateService,
   termsGateService,
@@ -468,7 +469,15 @@ export class TimesheetCommandService {
     private readonly termsGate: Pick<
       TermsGateService,
       'assertAgreed'
-    > = termsGateService
+    > = termsGateService,
+    // The settlement ledger, read-only, and read for exactly one thing:
+    // `reopen` must know whether money has moved before it clears the gross
+    // that money was bounded by (102, gap P1). LAST parameter and defaulted,
+    // so every existing positional construction keeps working.
+    private readonly payments: Pick<
+      PaymentRepository,
+      'listForTimesheet'
+    > = new PaymentRepository()
   ) {}
 
   /**
@@ -2151,6 +2160,26 @@ export class TimesheetCommandService {
       throw new TimesheetNotActionableError(timesheetId, timesheet.status);
     }
 
+    // A WEEK WITH PAYMENTS IS NOT REOPENABLE (102, gap P1). Every payment
+    // against this week was bounded by the `gross_minor` this write is about
+    // to null, and `payments` is APPEND-ONLY — there is no edit path back, so
+    // the balance simply goes negative and stays there. Refused rather than
+    // absorbed: the parent is standing in front of a screen that already
+    // shows what has been paid, and "adjust it in the next payment" is a
+    // thing she can actually do, unlike un-paying a week.
+    //
+    // The SAME 409 the status refusal above raises, with `has_payments` in
+    // the `status` slot, so the client branches on one error shape rather
+    // than learning a second one. This read is unlocked and cannot be
+    // otherwise from here — migration 102's `timesheets_refuse_reopen_when_paid`
+    // trigger closes the window underneath it, inside the writing
+    // transaction; this check exists so the ordinary case answers with a
+    // message someone can act on instead of a raw constraint violation.
+    const recorded = await this.payments.listForTimesheet(timesheetId);
+    if (recorded.length > 0) {
+      throw new TimesheetNotActionableError(timesheetId, 'has_payments');
+    }
+
     const updated = await this.timesheetRepo.reopenFromApproved(
       timesheetId,
       timesheet.updated_at,
@@ -2566,54 +2595,72 @@ export class TimesheetCommandService {
 
     // A fresh 'open' timesheet becomes 'submitted' on its first hours and
     // stays 'submitted' as more entries roll in. A timesheet a parent has
-    // already acted on ('approved' or 'queried') is a terminal state: it
-    // must never absorb new minutes silently. Re-open it to 'submitted' —
-    // clearing the approval — so the parent is forced to look again rather
-    // than being recorded as having approved hours they never saw.
+    // already acted on ('approved' or 'queried') must never absorb new
+    // minutes silently — and what happens next now depends on ONE MORE FACT
+    // than it used to: whether money has already moved against this week.
     //
-    // The earnings snapshot goes with it, in the SAME update. A frozen gross
-    // figure that outlived the hours it was computed from is the identical
-    // class of bug D1 fixed for `approved_by`/`approved_at`, and strictly
-    // worse: it is a number someone gets paid against
-    // (`docs/11-MONEY.md` §3, migration 042's header). One update, so there
-    // is no window in which the row claims a settled amount for hours that
-    // have already changed.
+    // WHY THE WHOLE DECISION MOVED INTO POSTGRES (migration 102,
+    // `roll_up_timesheet_hours`; `docs/AS-BUILT-PAYMENT.md` §7 P1).
     //
-    // THE CLEAR IS UNCONDITIONAL, not gated on "was it terminal?" (Phase 2
-    // review, finding 1). `existing.status` is a PRE-READ, and an approve
-    // landing between that read and this write would make it lie: the flag
-    // would say `submitted` → nothing to clear, while the row the write
-    // actually lands on is `approved` with a frozen gross and an approver on
-    // it. The result is a `submitted` row wearing a settled amount — exactly
-    // the invariant 042's header says these columns keep, broken by a race.
+    // The old write was unconditional: status 'submitted', approval cleared,
+    // `CLEARED_EARNINGS_SNAPSHOT` over all four money columns. That is still
+    // exactly right for a week nobody has paid, and it is still what the RPC
+    // does for one — a frozen gross that outlived the hours it was computed
+    // from is a number someone gets paid against (D1, 042's header,
+    // `docs/11-MONEY.md` §3).
     //
-    // Stating it unconditionally is not a wider write, it is the invariant
-    // itself: EVERY write here sets `status = 'submitted'`, and a submitted
-    // week has no snapshot and no approver, full stop. Writing nulls over
-    // nulls is idempotent and depends on nothing that was read earlier, so
-    // there is no window left to race. The alternatives both only narrow the
-    // window rather than closing it — a re-read is still a separate statement
-    // from the write (the same TOCTOU one level down), and CASing this write
-    // would turn a clock-out into something that can FAIL because a parent
-    // tapped Approve, which it must never be: the hours happened and have to
-    // be recorded.
+    // It is WRONG for a week that has been paid. Every payment row against
+    // this week was bounded by that `gross_minor` (077 sums and refuses under
+    // a lock on this very row), and `payments` is APPEND-ONLY: clear the
+    // gross and the balance goes negative with nothing able to take the rows
+    // back. So a paid week now RECORDS THE MINUTES and keeps everything else
+    // — status, approver, all four snapshot columns — and raises
+    // `hours_changed_after_payment_at`, which both week views render. The
+    // approved total stays true to what was approved and paid; the flag is
+    // what says it no longer covers every hour worked.
     //
+    // THE CONDITION CANNOT BE EVALUATED HERE, and that is why this is an RPC
+    // rather than an `if`. `existing.status` is a PRE-READ and so would any
+    // payments read from this method be: a payment committing between the
+    // read and the write is invisible, which is the identical TOCTOU the
+    // unconditional clear was introduced to close (Phase 2 review, finding
+    // 1). Even in SQL an `exists` subquery inside an UPDATE reads the
+    // STATEMENT snapshot — taken before the row lock is granted — so it would
+    // miss the same payment. Only plpgsql AFTER `select ... for update` sees
+    // what the winner committed. 077's rule, applied to the other side of the
+    // same lock.
+    //
+    // WHAT DID NOT CHANGE. The write is still ONE statement, so there is no
+    // window in which the row claims a settled amount for hours that have
+    // already changed. It still cannot FAIL for a lost race: a clock-out that
+    // can be refused because a parent tapped Approve is the one thing this
+    // path must never be — the hours happened and have to be recorded.
     // `query_note` is still preserved (D1): it records what was disputed,
     // which is not a stale approval claim.
     //
     // `reopening`/`newlySubmitted` survive only to decide whether to push.
     // A best-effort notification may be judged on a pre-read; a money column
     // may not.
+
     const reopening = TERMINAL_STATUSES.has(existing.status);
     const newlySubmitted = existing.status !== 'submitted';
-    await this.timesheetRepo.update(existing.id, {
-      total_minutes: totalMinutes,
-      status: 'submitted',
-      approved_by: null,
-      approved_at: null,
-      ...CLEARED_EARNINGS_SNAPSHOT,
-    });
-    if (newlySubmitted || reopening) {
+    const rolled = await this.timesheetRepo.rollUpHours(
+      existing.id,
+      totalMinutes
+    );
+
+    // The returned row is the DECISION, and the service does not second-guess
+    // it. An unpaid week comes back `submitted` with the snapshot cleared —
+    // what this method has always done. A PAID week comes back still
+    // `approved`, and the push is still sent: "logged hours for this week" is
+    // true either way, and the note the flag raises explains the rest, so
+    // there is no new push type for a fact a banner already carries.
+    //
+    // `reopening`/`newlySubmitted` are still judged on the PRE-READ, which is
+    // fine for a best-effort notification and always was. The RETURNED status
+    // adds the one case a pre-read cannot see: an approve that landed between
+    // the read and this write, on a week that had already been paid.
+    if (rolled.status === 'approved' || newlySubmitted || reopening) {
       this.notifyParentsOfSubmission(entry, weekStart, existing.id);
     }
   }

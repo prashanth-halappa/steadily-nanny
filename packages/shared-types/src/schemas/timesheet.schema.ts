@@ -264,6 +264,22 @@ export const TimesheetSchema = z.object({
    * to an older API still parses (same reasoning as `household_member_id`).
    */
   parent_viewed_at: z.iso.datetime({ offset: true }).nullable().optional(),
+  /**
+   * Set when hours rolled into this week AFTER money had already been
+   * recorded against it (migration 102's `roll_up_timesheet_hours`). The week
+   * KEEPS its approved status, its approver and its frozen snapshot — the
+   * payments were bounded by that gross and reopening the week under them is
+   * the P1 race — so this timestamp is the only thing that tells either side
+   * the approved total no longer covers every hour worked. Both week views
+   * render a note from it; `approve` clears it.
+   *
+   * Optional so a client talking to an older API still parses (same reasoning
+   * as `parent_viewed_at`).
+   */
+  hours_changed_after_payment_at: z.iso
+    .datetime({ offset: true })
+    .nullable()
+    .optional(),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
 });

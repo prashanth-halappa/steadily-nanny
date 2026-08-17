@@ -26,11 +26,12 @@
  * Caller API stays `open`/`onOpenChange` (ParentWeekView owns the flag);
  * gating (approved week + parent only) stays in the caller.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { Button } from '@/src/components/ui/button';
+import { InlineError } from '@/src/components/ui/inline-error';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { Body, H4, Small } from '@/src/components/ui/typography';
@@ -44,6 +45,10 @@ interface ReopenWeekDialogProps {
   /** Formatted total already recorded against this week — when set, the
    * dialog warns that those payments stay on record. */
   paidToDateLabel?: string | null;
+  /** The server's refusal, already localized. Rendered inline and the dialog
+   * stays open holding it — a toast over a `BottomSheetBase` is invisible
+   * (GOLDEN-FIXES #40). */
+  refusal?: string | null;
 }
 
 export function ReopenWeekDialog({
@@ -53,6 +58,7 @@ export function ReopenWeekDialog({
   isSubmitting,
   weekRangeLabel,
   paidToDateLabel = null,
+  refusal = null,
 }: ReopenWeekDialogProps) {
   const { t } = useTranslation('hours');
   const [reason, setReason] = useState('');
@@ -60,22 +66,27 @@ export function ReopenWeekDialog({
   const trimmed = reason.trim();
   const canConfirm = trimmed.length > 0 && !isSubmitting;
 
-  const handleOpenChange = (next: boolean) => {
-    if (!next) setReason('');
-    onOpenChange(next);
-  };
+  // The reset hangs off CLOSING, not off confirming. Since the dialog now
+  // survives a refusal it has to keep what the parent typed through a failed
+  // attempt — and `ParentWeekView` closes it on success by flipping `open`
+  // rather than by calling `onOpenChange`, so a reset wired to the cancel
+  // handler alone would prefill next week's reopen with last week's reason.
+  // That reason is written to the append-only `timesheet_reopened` event: a
+  // stale one is a wrong entry on the household's permanent record.
+  useEffect(() => {
+    if (!open) setReason('');
+  }, [open]);
 
   const handleConfirm = () => {
     if (!canConfirm) return;
     onConfirm(trimmed);
-    setReason('');
   };
 
   return (
     <BottomSheetBase
       sheetId="hours-reopen"
       visible={open}
-      onDismiss={() => handleOpenChange(false)}
+      onDismiss={() => onOpenChange(false)}
       testID="hours-reopen-dialog"
       fitContent
       showCloseButton
@@ -98,6 +109,9 @@ export function ReopenWeekDialog({
             {t('reopenDialogBodyPaidWarning', { paid: paidToDateLabel })}
           </Body>
         ) : null}
+        {refusal ? (
+          <InlineError testID="hours-reopen-dialog-refusal" message={refusal} />
+        ) : null}
         <Textarea
           testID="hours-reopen-dialog-reason"
           accessibilityLabel={t('reopenDialogReasonPlaceholder')}
@@ -115,7 +129,7 @@ export function ReopenWeekDialog({
           <Button
             testID="hours-reopen-dialog-cancel"
             variant="outline"
-            onPress={() => handleOpenChange(false)}
+            onPress={() => onOpenChange(false)}
           >
             <Text>{t('reopenDialogCancel')}</Text>
           </Button>

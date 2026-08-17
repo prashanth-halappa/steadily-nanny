@@ -632,6 +632,14 @@ export function NannyWeekView({
               householdName={activeHousehold.household?.name ?? null}
               earningsReopened={reopened}
               earningsReopenReason={timesheet?.reopen_reason ?? null}
+              // 102: hours she added after the week was paid. Same caption
+              // slot as the parent's, worded from her side — the family can
+              // already see them, and nothing else on this screen says so.
+              hoursChangedAfterPaymentNote={
+                timesheet?.hours_changed_after_payment_at
+                  ? t('paidWeek.hoursAddedNanny')
+                  : null
+              }
             />
             {showWeekClosedReceipt ? (
               <ReceiptCard

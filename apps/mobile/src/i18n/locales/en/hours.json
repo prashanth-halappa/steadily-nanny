@@ -137,6 +137,13 @@
   "reopenDialogCancel": "Not yet",
   "reopenDialogConfirm": "Reopen the week",
   "reopenedToast": "Week reopened",
+  "reopen": {
+    "refusedPaid": "You've paid {{amount}} on this week. Adjust it in the next payment."
+  },
+  "paidWeek": {
+    "hoursAdded": "{{name}} added hours on {{date}}, after this week was paid. The approved total and payments haven't changed. Include them in the next payment.",
+    "hoursAddedNanny": "You added hours after this week was paid. The family can see them."
+  },
   "widgets": {
     "title": "This week",
     "scheduled": "of {{duration}} scheduled",

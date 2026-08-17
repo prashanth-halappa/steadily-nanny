@@ -91,6 +91,24 @@ function makeTimesheetRepo(overrides: Record<string, unknown> = {}): any {
       id,
       ...patch,
     })),
+    // The roll-up's one write (102). Answers the way
+    // `roll_up_timesheet_hours` does for an UNPAID week — demote and clear —
+    // which is every week in this file: the push decision is what is under
+    // test here, and the paid branch has its own cases in
+    // `timesheetCommandService.test.ts`.
+    rollUpHours: mock(async (id: string, totalMinutes: number) => ({
+      ...submittedTimesheet,
+      id,
+      total_minutes: totalMinutes,
+      status: 'submitted',
+      approved_by: null,
+      approved_at: null,
+      gross_minor: null,
+      currency: null,
+      earnings: null,
+      earnings_computed_at: null,
+      hours_changed_after_payment_at: null,
+    })),
     ...overrides,
   };
 }
@@ -288,9 +306,9 @@ describe('rollUpIntoTimesheet — TIMESHEET_SUBMITTED push on the way INTO submi
     const entry = (await clockOut(svc)) as { status: string };
 
     expect(entry.status).toBe('submitted');
-    expect(timesheetRepo.update).toHaveBeenCalledWith(
+    expect(timesheetRepo.rollUpHours).toHaveBeenCalledWith(
       'ts-approved',
-      expect.objectContaining({ status: 'submitted', approved_by: null })
+      expect.any(Number)
     );
   });
 });

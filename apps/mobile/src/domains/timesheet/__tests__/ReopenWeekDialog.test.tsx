@@ -181,6 +181,103 @@ describe('ReopenWeekDialog', () => {
     expect(queryByTestId('hours-reopen-dialog-paid-warning')).toBeNull();
   });
 
+  // WP-P1(B): the server's refusal is rendered HERE, in the dialog, because
+  // a toast over a BottomSheetBase is invisible (GOLDEN-FIXES #40).
+  it('renders the refusal inline and keeps the typed reason', () => {
+    const { getByTestId } = render(
+      <ReopenWeekDialog
+        open
+        onOpenChange={() => {}}
+        onConfirm={() => {}}
+        isSubmitting={false}
+        weekRangeLabel="3 – 9 August"
+        refusal="reopen.refusedPaid"
+      />
+    );
+
+    fireEvent.changeText(
+      getByTestId('hours-reopen-dialog-reason'),
+      'Thursday hours were wrong'
+    );
+    fireEvent.press(getByTestId('hours-reopen-dialog-confirm'));
+
+    expect(getByTestId('hours-reopen-dialog-refusal')).toBeTruthy();
+    // Confirming must not wipe the field — the dialog now stays open through
+    // a refusal, and retyping a reason you already gave is the whole bug.
+    expect(getByTestId('hours-reopen-dialog-reason').props.value).toBe(
+      'Thursday hours were wrong'
+    );
+  });
+
+  it('renders no refusal band when there is nothing to refuse', () => {
+    const { queryByTestId } = render(
+      <ReopenWeekDialog
+        open
+        onOpenChange={() => {}}
+        onConfirm={() => {}}
+        isSubmitting={false}
+        weekRangeLabel="3 – 9 August"
+      />
+    );
+
+    expect(queryByTestId('hours-reopen-dialog-refusal')).toBeNull();
+  });
+
+  it('forgets the typed reason once the dialog closes, however it closed', () => {
+    // The dialog now survives a refusal, so `handleConfirm` can no longer
+    // clear the field — it has to survive one. The reset therefore hangs off
+    // CLOSING, and it has to cover the success path too: `ParentWeekView`
+    // closes the sheet by flipping `open`, not by calling `onOpenChange`, so
+    // a reset wired only to the cancel handler would prefill next week's
+    // reopen with last week's reason. That reason is written to the
+    // append-only `timesheet_reopened` event, so a stale one is a wrong entry
+    // on the household's permanent record, not just an untidy field.
+    const { getByTestId, rerender, queryByTestId } = render(
+      <ReopenWeekDialog
+        open
+        onOpenChange={() => {}}
+        onConfirm={() => {}}
+        isSubmitting={false}
+        weekRangeLabel="3 – 9 August"
+      />
+    );
+
+    fireEvent.changeText(
+      getByTestId('hours-reopen-dialog-reason'),
+      'Thursday hours were wrong'
+    );
+    expect(getByTestId('hours-reopen-dialog-confirm').props.disabled).toBe(
+      false
+    );
+
+    // Closed the way the success path closes it: the `open` prop, nothing else.
+    rerender(
+      <ReopenWeekDialog
+        open={false}
+        onOpenChange={() => {}}
+        onConfirm={() => {}}
+        isSubmitting={false}
+        weekRangeLabel="3 – 9 August"
+      />
+    );
+    expect(queryByTestId('hours-reopen-dialog-reason')).toBeNull();
+
+    rerender(
+      <ReopenWeekDialog
+        open
+        onOpenChange={() => {}}
+        onConfirm={() => {}}
+        isSubmitting={false}
+        weekRangeLabel="10 – 16 August"
+      />
+    );
+
+    expect(getByTestId('hours-reopen-dialog-reason').props.value).toBe('');
+    expect(getByTestId('hours-reopen-dialog-confirm').props.disabled).toBe(
+      true
+    );
+  });
+
   it('cancel dismisses via onOpenChange without confirming', () => {
     const onOpenChange = mock();
     const onConfirm = mock();

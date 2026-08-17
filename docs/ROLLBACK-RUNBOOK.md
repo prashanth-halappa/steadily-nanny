@@ -193,6 +193,67 @@ them as orphans and cancels/deletes them: a second, separate blast radius).
 **So the real rollback remains "revert the app code and leave the index
 alone."** 101's own header carries the full two-step SQL and the same warning.
 
+### Migration 102 — paid-week guards — NOT YET APPLIED
+
+`102_paid_week_guards.sql` closes `docs/AS-BUILT-PAYMENT.md` §7 P1/P2/P8 in
+one file: an `idempotency_key` on `payments` with a PARTIAL unique index,
+`record_timesheet_payment` re-issued with a sixth defaulted parameter,
+`timesheets.hours_changed_after_payment_at`, the new
+`roll_up_timesheet_hours` RPC, the `timesheets_refuse_reopen_when_paid`
+trigger, and the `timesheets_approved_has_snapshot` CHECK.
+
+**Deploy order: MIGRATION FIRST, then the API.** The API's roll-up calls
+`roll_up_timesheet_hours`, so deploying the server against the old schema
+makes **every clock-out 500** — the same shape as 088's trap, and worse,
+because a clock-out is the one write this codebase has said repeatedly must
+never fail. Everything else in 102 is invisible to the old server: a defaulted
+sixth parameter it does not send, two nullable columns it does not read, a
+trigger that only fires on a reopen of a week with payments (which the old
+server should have been refused on anyway), and a CHECK the old approve path
+already satisfies.
+
+**PRE-FLIGHT, and it is not optional.** Both constraints are added WITHOUT
+`not valid`, so they validate every existing row:
+
+```sql
+select count(*) from public.timesheets where status = 'approved'
+  and (gross_minor is null or currency is null
+       or earnings is null or earnings_computed_at is null);   -- must be 0
+select count(*) from public.payments;                          -- 0 at time of writing
+```
+
+If the first is ever non-zero the migration FAILS at apply time. Add the
+constraint `not valid`, repair the rows, then `validate constraint`. **Do not
+relax the CHECK to fit the data** — an approved week without its frozen
+snapshot is a number somebody gets paid against.
+
+**Rollback — safe today, and the ORDER matters.** Revert the API first (it is
+the only caller of `roll_up_timesheet_hours`), then, per 102's header:
+
+```sql
+drop trigger if exists timesheets_refuse_reopen_when_paid on public.timesheets;
+drop function if exists public.timesheets_refuse_reopen_when_paid();
+alter table public.timesheets drop constraint if exists timesheets_approved_has_snapshot;
+drop function if exists public.roll_up_timesheet_hours(uuid, integer);
+drop index if exists public.payments_idempotency_key_uidx;
+alter table public.payments drop column if exists idempotency_key;
+alter table public.timesheets drop column if exists hours_changed_after_payment_at;
+drop function if exists public.record_timesheet_payment(uuid, integer, date, text, uuid, text);
+-- then re-run 085's record_timesheet_payment block verbatim.
+```
+
+That last pair is the D46 trap in reverse: 102 **dropped** 077/085's five-arg
+signature before re-issuing, so rolling back means dropping the SIX-arg
+function and restoring the five-arg one. Skipping the drop leaves two live
+overloads, and PostgREST will pick whichever matches the body it is sent.
+
+**Dropping `hours_changed_after_payment_at` is lossy** the moment any week has
+worn it: the flag is the ONLY record that a paid week's approved total stopped
+covering every hour worked (the append-only `shift_events` thread does not
+carry it). Today that is zero weeks. Older clients tolerate both new fields
+because `TimesheetSchema.hours_changed_after_payment_at` and
+`CreatePaymentSchema.idempotency_key` are both optional.
+
 ---
 
 ## §6 Behavior changes with NO switch
@@ -209,6 +270,7 @@ server revert. Know them before you ship.
 | `week_below_guarantee` REPLACES `timesheet_approved` | One act, one push (A8 discipline). | Older clients fall back to the route-map default on an unknown type — a silent no-op tap, not a crash. |
 | `schedule_not_set` push (parent, group `schedule`, **not** quiet-hours exempt) | Emitted inside `reminderJob` at local 09:00, not by a job of its own. `cron.unschedule('reminders-hourly')` would also kill shift reminders and the timesheet-approval nudge, so §2's strongest switch is unavailable here. Server revert is the only lever. | Worst case is push noise, **once ever** per relationship: `buildScheduleNotSetKey` (`reminderJob.ts:314`) is undated (`schedule_not_set:<householdId>:<carerId>`), so the ledger caps it at one send however many mornings pass. Fires only when the household is live, an active nanny has a current arrangement ≥1 day old, and **no** pattern has ever existed for that carer in any status — an abandoned `draft` suppresses it forever, deliberately. Older clients fall back to the route-map default on an unknown type — a silent no-op tap, not a crash. |
 | Query supersede / withdraw-query exit (D-19) | Status machine change. | Server revert. |
+| Paid-week guards (migration 102) | Trigger + CHECK + a new RPC on the write path. No job, no push, no flag. A parent whose week has payments simply cannot reopen it. | Revert the API first (sole caller of `roll_up_timesheet_hours`), then run 102's rollback block in §5 — including restoring 085's five-arg `record_timesheet_payment`. Older clients tolerate the two new optional wire fields. |
 | Timesheet `parent_viewed_at` receipt (migration 100) | Column + own `updated_at` trigger on `timesheets`. No job, no push, no flag. | Drop the trigger, recreate 017's `set_timesheets_updated_at` using `public.set_updated_at()`, then drop the column. Older clients tolerate the missing field because `TimesheetSchema.parent_viewed_at` is optional. **Never** edit the shared `public.set_updated_at` as a rollback shortcut. |
 
 ---

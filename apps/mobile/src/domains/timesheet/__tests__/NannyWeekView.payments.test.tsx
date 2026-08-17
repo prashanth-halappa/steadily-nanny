@@ -693,6 +693,37 @@ describe('NannyWeekView — opening a payment from the week', () => {
   });
 });
 
+// WP-P1(C). Her side of the same fact the parent is told: the week stays
+// approved and the payments stand, so nothing on this screen would otherwise
+// tell her that the hours she added after payday are visible to anyone.
+describe('NannyWeekView — hours added after the week was paid', () => {
+  it('says the family can see the late hours', async () => {
+    getWeekMock.mockImplementation(() =>
+      Promise.resolve([
+        makeTimesheetWeek({
+          hours_changed_after_payment_at: '2026-08-12T09:00:00.000Z',
+        }),
+      ])
+    );
+
+    const { getByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-changed-after-payment-note')).toBeTruthy()
+    );
+    expect(getByTestId('hours-changed-after-payment-note').props.children).toBe(
+      'paidWeek.hoursAddedNanny'
+    );
+  });
+
+  it('says nothing when the server did not flag it', async () => {
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() => expect(getByTestId('hours-week-total')).toBeTruthy());
+    expect(queryByTestId('hours-changed-after-payment-note')).toBeNull();
+  });
+});
+
 // The one field that exists purely for trust, in the one window where it is
 // cheapest to get wrong. `recordedByName ?? t('recordedByGone')` means every
 // "I don't know yet" prints as "No longer in this household" — a false
