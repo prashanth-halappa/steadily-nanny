@@ -22,6 +22,7 @@ import {
   SchedulePatternBanner,
   ScheduleShiftsScreen,
 } from '@/src/domains/schedule';
+import { resolveActivePattern } from '@/src/domains/schedule/utils/patternPrecedence';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
@@ -36,7 +37,10 @@ export default function ScheduleRoute() {
   // pattern exists too: "the family hasn't set your schedule yet" reads
   // very differently from "no shifts this week".
   const patterns = useSchedulePatterns(onboarding.householdId);
-  const pattern = (patterns.data ?? []).find(p => p.status !== 'ended') ?? null;
+  // Not `.find(p => p.status !== 'ended')` — that let whichever non-ended
+  // row the API listed first win, so a stale `withdrawn` could outrank a
+  // week genuinely sitting with the nanny. See `patternPrecedence.ts`.
+  const pattern = resolveActivePattern(patterns.data ?? []);
 
   if (onboarding.membershipsError) {
     return (

@@ -330,6 +330,59 @@ describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
     expect(queryByTestId('schedule-pending-screen-mock')).toBeNull();
   });
 
+  // REGRESSION: the route took `.find(p => p.status !== 'ended')`, so
+  // whichever non-ended row the API listed first won. A household holding a
+  // stale `withdrawn` plus a freshly-sent `pending` rendered "You withdrew
+  // your usual week" while a week was genuinely with the nanny. Precedence
+  // now lives in `resolveActivePattern` (patternPrecedence.ts).
+  it.each([
+    [
+      'withdrawn listed first',
+      [{ status: 'withdrawn' }, { status: 'pending' }],
+    ],
+    ['pending listed first', [{ status: 'pending' }, { status: 'withdrawn' }]],
+  ])('picks the pending pattern regardless of list order (%s)', (_label, data) => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'onboarded' as const,
+      role: 'parent' as const,
+      householdId: 'h1',
+      membershipsError: false,
+      retryMemberships: mockRetryMemberships,
+    }));
+    mockUseSchedulePatterns.mockImplementation(() => ({ data }));
+
+    const { getByTestId } = render(<ScheduleRoute />);
+
+    expect(getByTestId('schedule-pattern-banner-status').children[0]).toBe(
+      'pending'
+    );
+    expect(
+      getByTestId('schedule-shifts-screen-mock').props.accessibilityHint
+    ).toBe('pending');
+  });
+
+  // `ended` used to be filtered out, so a household whose week had run its
+  // course fell through to the "no usual week yet" copy — wrong, and it
+  // erased the fact that there had ever been one.
+  it('passes an ENDED pattern through rather than filtering it to null', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'onboarded' as const,
+      role: 'parent' as const,
+      householdId: 'h1',
+      membershipsError: false,
+      retryMemberships: mockRetryMemberships,
+    }));
+    mockUseSchedulePatterns.mockImplementation(() => ({
+      data: [{ status: 'ended' }],
+    }));
+
+    const { getByTestId } = render(<ScheduleRoute />);
+
+    expect(getByTestId('schedule-pattern-banner-status').children[0]).toBe(
+      'ended'
+    );
+  });
+
   it('routes helper role to the calendar too, never the full-screen pending takeover', () => {
     mockUseIsOnboarded.mockImplementation(() => ({
       status: 'onboarded' as const,

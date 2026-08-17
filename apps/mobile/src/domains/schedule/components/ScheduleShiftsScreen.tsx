@@ -27,10 +27,11 @@ import {
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
-import { SCREEN_CONTENT_STYLE, spacing } from '@/lib/design-tokens';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { BackButton } from '@/src/components/ui/back-button';
+import { Button } from '@/src/components/ui/button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { ScreenWash } from '@/src/components/ui/screen-wash';
@@ -364,16 +365,24 @@ export function ScheduleShiftsScreen({
           description: nannyFirstName
             ? t('shifts.emptyBuildParentBody', { name: nannyFirstName })
             : t('shifts.emptyBuildParentBodyNoCarer'),
-          // Building a usual week is a parent-editor action, same gate as
-          // "Add a one-off shift" above — a helper or a past member gets
-          // the copy with no action to take.
-          action: canAddExtra
-            ? () => router.push('/(private)/schedule/build' as Href)
-            : undefined,
-          actionLabel: canAddExtra
-            ? t('shifts.emptyBuildParentCta')
-            : undefined,
+          // No CTA. It used to offer "Build the usual week" here, but it
+          // lived inside the `showEmpty` branch — which goes false the
+          // moment `uncoveredWeek.totalCount > 0`, i.e. the moment the
+          // parent types any care hours. The offer appeared once and then
+          // disappeared. `SchedulePatternBanner` above now carries that act
+          // in every pattern state, so a copy here is the same act offered
+          // twice, one of them conditionally.
         };
+
+  // The banner and the week-summary line state the same fact — nothing is
+  // scheduled, therefore care hours are uncovered — one line apart, in two
+  // colours. Where the banner already carries it, the summary is a second
+  // telling. Per-day uncovered rows in the agenda are a different thing
+  // (which day, which hours) and stay.
+  const bannerAlreadySaysIt =
+    pattern === null ||
+    pattern.status === 'withdrawn' ||
+    pattern.status === 'ended';
 
   const showCrossFamily =
     calendarView === CALENDAR_VIEWS.CROSS_FAMILY &&
@@ -407,27 +416,7 @@ export function ScheduleShiftsScreen({
         />
       ) : null}
       <View className="gap-1">
-        <View className="flex-row items-center justify-between gap-2">
-          <H1>{heading}</H1>
-          {canAddExtra ? (
-            // Small/14/600, not a ghost Button (16 @600) — it was reading
-            // as heavy as the H1 beside it.
-            <Pressable
-              testID="schedule-shifts-add-extra"
-              accessibilityRole="button"
-              hitSlop={8}
-              style={{ minHeight: spacing.minTouchTarget }}
-              className="justify-center"
-              onPress={() =>
-                router.push('/(private)/schedule/shifts/extra' as Href)
-              }
-            >
-              <Small weight="semibold" className="text-primary">
-                {t('shifts.addExtra')}
-              </Small>
-            </Pressable>
-          ) : null}
-        </View>
+        <H1>{heading}</H1>
         <Small className="text-muted-strong">{subtitle}</Small>
         <Small testID="schedule-lead" className="text-muted-strong">
           {lead}
@@ -442,7 +431,7 @@ export function ScheduleShiftsScreen({
         </Figure28>
       </View>
       {patternBanner}
-      {canViewCover && uncoveredWeek.totalCount > 0 ? (
+      {canViewCover && uncoveredWeek.totalCount > 0 && !bannerAlreadySaysIt ? (
         <Pressable
           testID="schedule-cover-week-summary"
           accessibilityRole="button"
@@ -473,6 +462,25 @@ export function ScheduleShiftsScreen({
         labelTestID="schedule-week-label"
       />
       <CalendarViewSwitcher value={calendarView} onChange={setCalendarView} />
+      {canAddExtra ? (
+        // Was a `Small semibold text-primary` pressable beside the H1 — the
+        // highest-status slot on the screen, holding the lesser of the two
+        // acts a parent takes here (the greater one is the usual week, which
+        // the banner above owns). `docs/design/screens-schedule.md` §2 puts
+        // this in the FOOTER — it sits at the end of the shared header
+        // instead because a real list footer needs a `listFooter` prop on
+        // AgendaView / WeekRibbonView / CrossFamilyRhythmView, and the three
+        // of them own their own scrollers. Move it when that prop exists.
+        <Button
+          testID="schedule-shifts-add-extra"
+          variant="secondary"
+          onPress={() =>
+            router.push('/(private)/schedule/shifts/extra' as Href)
+          }
+        >
+          {t('shifts.addExtra')}
+        </Button>
+      ) : null}
     </View>
   );
   // Agenda's FlashList has no horizontal padding of its own; the two
@@ -543,8 +551,6 @@ export function ScheduleShiftsScreen({
             image={illustrations.emptySchedule}
             title={emptyState.title}
             description={emptyState.description}
-            action={emptyState.action}
-            actionLabel={emptyState.actionLabel}
           />
         </View>
       ) : null}

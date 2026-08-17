@@ -6,12 +6,22 @@
  * renders for EVERY pattern state (including none) — this banner is the
  * only thing that changes per state, one line + one action:
  *
- *  - no pattern    -> "No usual week yet" / "Build one"
+ *  - no pattern    -> "You haven't set {{name}}'s weekly hours" / "Set the weekly hours"
+ *  - no nanny yet  -> "No weekly hours set yet" / "Invite a nanny"
  *  - draft         -> "isn't sent yet" / "Finish it"
  *  - pending       -> "is with {{name}}" / "See it"
- *  - accepted      -> "is accepted" / "Change it"
+ *  - accepted      -> "{{name}}'s usual week is set" / "Change"
  *  - declined      -> "{{name}} declined" / "See why"
- *  - withdrawn     -> "You withdrew" / "Build one"
+ *  - withdrawn     -> "You withdrew" / "Set the weekly hours"
+ *  - ended         -> "has ended" / "Set the weekly hours"
+ *
+ * Only `accepted` is settled. Every other state — INCLUDING no pattern at
+ * all — gets the L1 attention arm. The old fork read
+ * `pattern?.status ? NEEDS_ACTION.has(status) : false`, so a household with
+ * no usual week short-circuited to `false` and rendered the settled L4 arm:
+ * a 13px grey line with a small text link, beside a louder "Add a one-off
+ * shift". The emptiest state in the product was the quietest thing on the
+ * screen.
  *
  * A non-editor role (helper) gets the message with no action, in every
  * state — same gate `SchedulePendingScreen` uses.
@@ -19,23 +29,15 @@
 import type { SchedulePattern } from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { Pressable, View } from 'react-native';
-import { spacing } from '@/lib/design-tokens';
+import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
-import { Body, H3, MetadataLabel } from '@/src/components/ui/typography';
+import { H3, MetadataLabel } from '@/src/components/ui/typography';
 import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useAuthStore } from '@/src/store/auth';
-
-/** Statuses that still need a human — T1, the attention-toned Card. */
-const NEEDS_ACTION_STATUSES = new Set<NonNullable<SchedulePattern['status']>>([
-  'pending',
-  'declined',
-  'draft',
-]);
 
 type SchedulePatternBannerProps = {
   pattern: SchedulePattern | null;
@@ -54,11 +56,17 @@ export function SchedulePatternBanner({
   const onboarding = useIsOnboarded();
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
   const membersQuery = useHouseholdMembers(householdId);
+  const members = membersQuery.data ?? [];
   const membersByUserId = new Map(
-    (membersQuery.data ?? []).map(member => [member.user_id, member])
+    members.map(member => [member.user_id, member])
   );
+  // With no pattern there is no `carer_id` to name, so fall back to the
+  // household's nanny — "You haven't set Priya's weekly hours" beats
+  // "...someone's weekly hours", which is worse than saying nothing at all
+  // (the no-carer copy below).
+  const nannyMember = members.find(member => member.role === 'nanny');
   const carerName = resolveMemberDisplayName(
-    pattern?.carer_id,
+    pattern?.carer_id ?? nannyMember?.user_id,
     currentUserId,
     membersByUserId,
     {
@@ -83,12 +91,13 @@ export function SchedulePatternBanner({
     switch (pattern?.status) {
       case 'accepted':
         return {
-          message: t('pending.patternBannerAccepted'),
+          message: t('pending.patternBannerAccepted', { name: carerName }),
           actionLabel: t('pending.patternBannerChange'),
-          onAction: () =>
-            router.push(
-              `/(private)/schedule/build?patternId=${pattern.id}` as Href
-            ),
+          // NOT `/schedule/build?patternId=` — "Change" silently picked one
+          // of two different edits, and a parent skipping a single school
+          // holiday landed in a full rebuild of the pattern. The detail
+          // screen is the one that can reach `AdjustSchedulePatternSheet`.
+          onAction: () => router.push('/(private)/schedule/usual-week' as Href),
         };
       case 'pending':
         return {
@@ -117,24 +126,34 @@ export function SchedulePatternBanner({
           actionLabel: t('pending.patternBannerBuildAction'),
           onAction: () => router.push('/(private)/schedule/build' as Href),
         };
-      default:
+      case 'ended':
         return {
-          message: t('pending.patternBannerNone'),
+          message: t('pending.patternBannerEnded', { name: carerName }),
           actionLabel: t('pending.patternBannerBuildAction'),
           onAction: () => router.push('/(private)/schedule/build' as Href),
         };
+      default:
+        // No nanny on record: the honest next act is the invite, and the
+        // copy says nothing about a person rather than naming "someone".
+        return nannyMember === undefined
+          ? {
+              message: t('pending.patternBannerNoneNoCarer'),
+              actionLabel: t('pending.patternBannerNoneNoCarerAction'),
+              onAction: () => router.push('/(private)/settings/invite' as Href),
+            }
+          : {
+              message: t('pending.patternBannerNone', { name: carerName }),
+              actionLabel: t('pending.patternBannerBuildAction'),
+              onAction: () => router.push('/(private)/schedule/build' as Href),
+            };
     }
   })();
 
-  // pending/declined/draft still need a human — L1, an attention-toned Card
-  // with an H3 title and a full-width filled action (daylight-v2 §5.1).
-  // accepted/withdrawn/no-pattern are settled — L4, no card surface at all,
-  // a bare MetadataLabel line on the ground.
-  const needsAction = pattern?.status
-    ? NEEDS_ACTION_STATUSES.has(pattern.status)
-    : false;
-
-  if (needsAction) {
+  // Only `accepted` is settled — L4, no card surface at all, a bare
+  // MetadataLabel line on the ground. Everything else, no pattern included,
+  // still needs a human: L1, an attention-toned Card with an H3 title and a
+  // full-width filled action (daylight-v2 §5.1).
+  if (pattern?.status !== 'accepted') {
     return (
       <Card
         testID="schedule-pattern-banner"
@@ -170,17 +189,18 @@ export function SchedulePatternBanner({
         {message}
       </MetadataLabel>
       {canEdit ? (
-        <Pressable
+        // A ghost Button, not a bare Pressable wrapping coloured Body text —
+        // it has to read as a control, and Button already carries the 44pt
+        // touch target (`size="sm"` -> `native:h-12`).
+        <Button
           testID="schedule-pattern-banner-action"
-          accessibilityRole="button"
+          variant="ghost"
+          size="sm"
           accessibilityLabel={`${message}. ${actionLabel}`}
-          hitSlop={8}
-          style={{ minHeight: spacing.minTouchTarget }}
-          className="justify-center"
           onPress={onAction}
         >
-          <Body className="text-primary">{actionLabel}</Body>
-        </Pressable>
+          {actionLabel}
+        </Button>
       ) : null}
     </View>
   );
