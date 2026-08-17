@@ -213,6 +213,9 @@
     "daysEveryDay": "Every day",
     "daysEveryWeekday": "Every weekday",
     "rowPrimary": "{{start}}–{{end}} · {{daysSummary}}",
+    "confirmWeekBody": "Got it — now confirm this as your usual week so it shows up on the calendar.",
+    "confirmWeekCta": "Confirm this as the usual week",
+    "weekPendingBody": "The usual week you sent is with your nanny to accept. These hours show on the calendar once it's accepted.",
     "form": {
       "addTitle": "Add hours for {{childName}}",
       "intro": "These are the recurring hours you need your nanny each week. We'll tell you when any of them aren't scheduled or confirmed yet.",

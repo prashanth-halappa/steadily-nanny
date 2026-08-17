@@ -16,6 +16,7 @@ import {
   calculateWeekTotalHours,
   formatWallClockTime,
   hydrateDraftPattern,
+  hydrateFromCommitments,
   isOutsideAvailability,
   parseWeeklyRruleInterval,
   sendScheduleWeek,
@@ -748,5 +749,105 @@ describe('sendScheduleWeek', () => {
 
       expect(onPatternCreated).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('hydrateFromCommitments', () => {
+  /** `child_commitments` come off the wire with Postgres `time` seconds. */
+  const commitment = (
+    child_id: string,
+    rrule: string,
+    start_time: string,
+    end_time: string
+  ) => ({ child_id, rrule, start_time, end_time });
+
+  it('unions the days of every commitment, sorted numerically', () => {
+    const hydrated = hydrateFromCommitments([
+      commitment('child-1', 'FREQ=WEEKLY;BYDAY=WE,MO', '09:00:00', '13:00:00'),
+      commitment('child-2', 'FREQ=WEEKLY;BYDAY=SU,FR', '10:00:00', '12:00:00'),
+    ]);
+    // 0=Sunday sorts FIRST even though WeekStrip renders it last.
+    expect(hydrated.selectedDays).toEqual([0, 1, 3, 5]);
+  });
+
+  it('takes the earliest start and latest end across overlapping windows on the same day', () => {
+    const hydrated = hydrateFromCommitments([
+      commitment('child-1', 'FREQ=WEEKLY;BYDAY=MO', '07:00:00', '13:00:00'),
+      commitment('child-2', 'FREQ=WEEKLY;BYDAY=MO', '12:00:00', '18:00:00'),
+    ]);
+    expect(hydrated.dayTimes[1]).toEqual({ start: '07:00', end: '18:00' });
+  });
+
+  it('spans a gap when two children have disjoint windows on the same day', () => {
+    const hydrated = hydrateFromCommitments([
+      commitment('child-1', 'FREQ=WEEKLY;BYDAY=TU', '08:00:00', '09:00:00'),
+      commitment('child-2', 'FREQ=WEEKLY;BYDAY=TU', '16:00:00', '18:00:00'),
+    ]);
+    // A single continuous block is the only shape the wizard can express —
+    // the disclosure copy exists precisely because this exceeds both windows.
+    expect(hydrated.dayTimes[2]).toEqual({ start: '08:00', end: '18:00' });
+  });
+
+  it('lists each day only the children with a commitment on THAT day, without duplicates', () => {
+    const hydrated = hydrateFromCommitments([
+      commitment('child-1', 'FREQ=WEEKLY;BYDAY=MO,TU', '09:00:00', '13:00:00'),
+      commitment('child-1', 'FREQ=WEEKLY;BYDAY=MO', '15:00:00', '17:00:00'),
+      commitment('child-2', 'FREQ=WEEKLY;BYDAY=TU', '09:00:00', '13:00:00'),
+    ]);
+    expect(hydrated.dayChildren[1]).toEqual(['child-1']);
+    expect(hydrated.dayChildren[2]).toEqual(['child-1', 'child-2']);
+  });
+
+  it('leaves days with no commitment out entirely — no empty entries', () => {
+    const hydrated = hydrateFromCommitments([
+      commitment('child-1', 'FREQ=WEEKLY;BYDAY=MO', '09:00:00', '13:00:00'),
+    ]);
+    expect(hydrated.selectedDays).toEqual([1]);
+    expect(Object.keys(hydrated.dayTimes)).toEqual(['1']);
+    expect(Object.keys(hydrated.dayChildren)).toEqual(['1']);
+  });
+
+  it('returns an empty week for an empty list', () => {
+    expect(hydrateFromCommitments([])).toEqual({
+      selectedDays: [],
+      dayTimes: {},
+      dayChildren: {},
+    });
+  });
+
+  it('ignores a non-weekly commitment rather than scheduling its BYDAY', () => {
+    const hydrated = hydrateFromCommitments([
+      commitment('child-1', 'FREQ=MONTHLY;BYDAY=MO', '09:00:00', '13:00:00'),
+      commitment('child-2', 'FREQ=WEEKLY;BYDAY=TU', '09:00:00', '13:00:00'),
+    ]);
+    expect(hydrated.selectedDays).toEqual([2]);
+  });
+
+  it('ignores an RRULE with no BYDAY at all, and never throws', () => {
+    expect(
+      hydrateFromCommitments([
+        commitment('c', 'FREQ=WEEKLY', '09:00:00', '13:00:00'),
+      ])
+    ).toEqual({
+      selectedDays: [],
+      dayTimes: {},
+      dayChildren: {},
+    });
+  });
+
+  it('ignores a commitment whose times are unparseable rather than reading them as midnight', () => {
+    const hydrated = hydrateFromCommitments([
+      commitment('child-1', 'FREQ=WEEKLY;BYDAY=MO', 'not-a-time', '13:00:00'),
+      commitment('child-2', 'FREQ=WEEKLY;BYDAY=MO', '09:00:00', '15:00:00'),
+    ]);
+    expect(hydrated.dayTimes[1]).toEqual({ start: '09:00', end: '15:00' });
+    expect(hydrated.dayChildren[1]).toEqual(['child-2']);
+  });
+
+  it('accepts already-trimmed HH:MM times as well as HH:MM:SS', () => {
+    const hydrated = hydrateFromCommitments([
+      commitment('child-1', 'FREQ=WEEKLY;BYDAY=MO', '07:30', '13:00'),
+    ]);
+    expect(hydrated.dayTimes[1]).toEqual({ start: '07:30', end: '13:00' });
   });
 });

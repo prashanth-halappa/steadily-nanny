@@ -213,6 +213,9 @@
     "daysEveryDay": "Todos los días",
     "daysEveryWeekday": "Todos los días laborables",
     "rowPrimary": "{{start}}–{{end}} · {{daysSummary}}",
+    "confirmWeekBody": "Listo — ahora confirma esto como tu semana habitual para que aparezca en el calendario.",
+    "confirmWeekCta": "Confirmar como la semana habitual",
+    "weekPendingBody": "La semana habitual que enviaste está pendiente de que tu niñera la acepte. Estas horas aparecerán en el calendario cuando se acepte.",
     "form": {
       "addTitle": "Añadir horas para {{childName}}",
       "intro": "Estas son las horas recurrentes cada semana en las que necesitas a tu niñera. Te avisaremos cuando alguna no esté programada o confirmada todavía.",

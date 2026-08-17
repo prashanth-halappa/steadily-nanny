@@ -11,6 +11,7 @@
  * reports and the API expects. Never re-derive it from display order.
  */
 
+import { parseWeeklyDays } from '@/src/domains/setup/utils/commitmentRrule';
 import { formatNominalWallClockDisplay } from '@/src/lib/wallClock';
 
 /**
@@ -218,6 +219,90 @@ export function hydrateDraftPattern(
     dayChildren,
     intervalWeeks: parseWeeklyRruleInterval(pattern.rrule),
   };
+}
+
+/** The subset of `ChildCommitment` (`child.schema`) the builder's prefill needs — kept minimal and dependency-free, like `DraftPatternForHydration` above. */
+export interface CommitmentForHydration {
+  child_id: string;
+  rrule: string;
+  start_time: string;
+  end_time: string;
+}
+
+/** `hydrateDraftPattern`'s shape minus the pattern-only fields (carer, interval) — a stated need names neither. */
+export type HydratedCommitmentWeek = Pick<
+  HydratedDraftState,
+  'selectedDays' | 'dayTimes' | 'dayChildren'
+>;
+
+/**
+ * Derives a starting "usual week" for ScheduleBuildScreen from the care
+ * hours a parent already stated (`child_commitments`), so the builder opens
+ * on the week they just typed instead of a hard-coded 09:00-17:00.
+ *
+ * This is a PREFILLED FORM and nothing more. Commitments still never become
+ * shifts (`docs/12-NEED-COVERAGE.md` §9) — only an accepted `schedule_pattern`
+ * does. Nothing here is persisted or inferred; the parent confirms every day.
+ *
+ * Per day, the window is the earliest start and the latest end across every
+ * commitment on that day, because the wizard can only express ONE continuous
+ * block per day. That union can exceed any single child's stated window
+ * (07:00-13:00 plus 12:00-18:00 becomes 07:00-18:00), and can span a gap
+ * between two disjoint windows — which is why the hours/review steps disclose
+ * where these times came from rather than presenting them as read back.
+ *
+ * Days come from the SAME `parseWeeklyDays` the care-hours UI writes with, so
+ * the Postgres `extract(dow)` convention has exactly one implementation. A
+ * commitment that isn't `FREQ=WEEKLY`, carries no BYDAY, or has an
+ * unparseable time is skipped entirely: a stated need we can't read is better
+ * dropped than silently scheduled on the wrong day or read as midnight.
+ */
+export function hydrateFromCommitments(
+  commitments: CommitmentForHydration[]
+): HydratedCommitmentWeek {
+  const dayMinutes: Record<number, { start: number; end: number }> = {};
+  const dayChildren: Record<number, string[]> = {};
+
+  for (const commitment of commitments) {
+    if (!/(?:^|;)FREQ=WEEKLY(?:;|$)/i.test(commitment.rrule)) continue;
+    const start = timeToMinutes(commitment.start_time);
+    const end = timeToMinutes(commitment.end_time);
+    if (start === null || end === null) continue;
+    for (const day of parseWeeklyDays(commitment.rrule)) {
+      const existing = dayMinutes[day];
+      dayMinutes[day] = existing
+        ? {
+            start: Math.min(existing.start, start),
+            end: Math.max(existing.end, end),
+          }
+        : { start, end };
+      const children = dayChildren[day] ?? [];
+      if (!children.includes(commitment.child_id)) {
+        children.push(commitment.child_id);
+      }
+      dayChildren[day] = children;
+    }
+  }
+
+  const selectedDays = Object.keys(dayMinutes)
+    .map(Number)
+    .sort((a, b) => a - b);
+  const dayTimes: Record<number, { start: string; end: string }> = {};
+  for (const day of selectedDays) {
+    const window = dayMinutes[day];
+    if (!window) continue;
+    dayTimes[day] = {
+      start: minutesToWallClock(window.start),
+      end: minutesToWallClock(window.end),
+    };
+  }
+  return { selectedDays, dayTimes, dayChildren };
+}
+
+/** Inverse of `timeToMinutes` for the wizard's "HH:MM" form values. */
+function minutesToWallClock(minutes: number): string {
+  const hours = String(Math.floor(minutes / 60)).padStart(2, '0');
+  return `${hours}:${String(minutes % 60).padStart(2, '0')}`;
 }
 
 /** Formats a Date as a "YYYY-MM-DD" calendar date (local components, no TZ math). */

@@ -53,6 +53,20 @@
  *     until it does). Two recoveries are offered: retry the fetch, or
  *     abandon hydration and build the week by hand against the same draft.
  *
+ * CARE-HOURS PREFILL (P3.2): a fresh wizard (no `?patternId=`) opens on the
+ * week the parent already stated as care hours rather than a hard-coded
+ * 09:00-17:00 — `hydrateFromCommitments` (`../utils`, unit-tested) unions
+ * `child_commitments` into selected days, a per-day earliest-start /
+ * latest-end window, and per-day children. With exactly one active nanny and
+ * a usable derived week it opens straight at 'review', so the parent sees the
+ * week they just typed with her name on it and confirms it once.
+ *
+ * This is a PREFILLED FORM and nothing else: nothing is persisted, no
+ * commitment becomes a shift, and `docs/12-NEED-COVERAGE.md` §9's decoupling
+ * is untouched — the parent simply never has to learn it exists. Because the
+ * per-day union can EXCEED any single child's stated window, both the 'hours'
+ * and 'review' steps disclose where the times came from.
+ *
  * Wave B: `householdId` comes from `useActiveHousehold`, not
  * `useIsOnboarded().householdId` — a parent (Wave 1: owns exactly one
  * household) gets the identical id either way, but this keeps every
@@ -87,6 +101,7 @@ import { useSendSchedulePattern } from '@/src/hooks/mutations/useSendSchedulePat
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useAvailabilityForCarer } from '@/src/hooks/queries/useAvailabilityForCarer';
 import { useChildren } from '@/src/hooks/queries/useChildren';
+import { useHouseholdCommitments } from '@/src/hooks/queries/useHouseholdCommitments';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useSchedulePattern } from '@/src/hooks/queries/useSchedulePattern';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
@@ -97,6 +112,7 @@ import {
   buildWeeklyRrule,
   calculateWeekTotalHours,
   hydrateDraftPattern,
+  hydrateFromCommitments,
   isOutsideAvailability,
   sendScheduleWeek,
   todayIsoDate,
@@ -142,6 +158,13 @@ export function ScheduleBuildScreen({
   const carers = useHouseholdCarers(householdId);
   const children = useChildren(householdId);
   const existingPattern = useSchedulePattern(resumePatternId);
+  // P3.2: the care hours the parent already stated. Read-only — nothing here
+  // is ever written back, and a commitment still never becomes a shift
+  // (`docs/12-NEED-COVERAGE.md` §9). Not fetched at all when resuming a
+  // draft, whose own saved days are the truth instead.
+  const householdCommitments = useHouseholdCommitments(
+    resumePatternId ? null : householdId
+  );
 
   const [selectedCarerId, setSelectedCarerId] = useState<string | null>(null);
   // D25: fetched as soon as a carer is selected (before the 'hours' step is
@@ -161,6 +184,12 @@ export function ScheduleBuildScreen({
   );
   const [isSending, setIsSending] = useState(false);
   const [hasHydratedDraft, setHasHydratedDraft] = useState(!resumePatternId);
+  // P3.2: a resumed draft carries its own days, so the care-hours seed is
+  // already "done" in that case and must never run over them.
+  const [hasSeededCareHours, setHasSeededCareHours] = useState(
+    !!resumePatternId
+  );
+  const [prefilledFromCareHours, setPrefilledFromCareHours] = useState(false);
 
   const createPattern = useCreateSchedulePattern(householdId ?? undefined);
   const replaceDays = useReplaceSchedulePatternDays();
@@ -212,6 +241,45 @@ export function ScheduleBuildScreen({
     setStep('loading');
   };
 
+  // P3.2: seed the wizard from the care hours the parent already stated, so
+  // "07:00-13:00 every weekday" isn't something they have to type twice. Runs
+  // at most once (`hasSeededCareHours`), so a background refetch can never
+  // stomp on a day they've since changed — the same guard shape as the draft
+  // hydrate effect above.
+  //
+  // Only a fully VALID derived week is seeded: `prefilledFromCareHours` is
+  // both "we filled this in" and "it's usable", which is what the step-advance
+  // effect below keys the review shortcut on. Each commitment's own end is
+  // after its own start (DB check), and the per-day union only ever widens
+  // that, so an invalid day is close to unreachable — but seeding one would
+  // leave the parent on a form with a permanently disabled CTA, so it falls
+  // back to the ordinary hard-coded defaults instead.
+  useEffect(() => {
+    if (hasSeededCareHours || !householdId) return;
+    if (householdCommitments.isLoading) return;
+    setHasSeededCareHours(true);
+    const seeded = hydrateFromCommitments(householdCommitments.data ?? []);
+    const isUsable =
+      seeded.selectedDays.length > 0 &&
+      seeded.selectedDays.every(day => {
+        const times = seeded.dayTimes[day];
+        return times !== undefined && isEndAfterStart(times.start, times.end);
+      });
+    if (!isUsable) return;
+    setSelectedDays(seeded.selectedDays);
+    // Seeded values go UNDER `prev`, so anything already set wins — and the
+    // default-fill effect below still only writes days with no entry, so a
+    // pre-seed composes with it rather than fighting it.
+    setDayTimes(prev => ({ ...seeded.dayTimes, ...prev }));
+    setDayChildren(prev => ({ ...seeded.dayChildren, ...prev }));
+    setPrefilledFromCareHours(true);
+  }, [
+    hasSeededCareHours,
+    householdId,
+    householdCommitments.isLoading,
+    householdCommitments.data,
+  ]);
+
   // Advance out of 'loading' once carers (and, when resuming, the draft's
   // own days) have resolved. A single carer is auto-selected and skips the
   // carer-picker step entirely (the common case — one nanny per household
@@ -220,6 +288,9 @@ export function ScheduleBuildScreen({
   useEffect(() => {
     if (step !== 'loading' || carers.isLoading) return;
     if (resumePatternId && !hasHydratedDraft) return;
+    // P3.2: decide only once the care-hours seed has resolved, or the wizard
+    // opens on 'days' and then jumps to 'review' under the parent.
+    if (!hasSeededCareHours) return;
     const rows = carers.data ?? [];
     if (rows.length === 0) {
       setStep('no-carer');
@@ -227,7 +298,12 @@ export function ScheduleBuildScreen({
       setStep(selectedDays.length > 0 ? 'review' : 'days');
     } else if (rows.length === 1) {
       setSelectedCarerId(rows[0]?.user_id ?? null);
-      setStep('days');
+      // P3.2: exactly one nanny AND a usable week derived from the care
+      // hours means we can show the parent the week they just typed, with
+      // her name on it, and ask for one confirmation. More than one nanny
+      // (the carer picker is a real question) or no usable week falls back
+      // to the wizard's normal first step.
+      setStep(prefilledFromCareHours ? 'review' : 'days');
     } else {
       setStep('carer');
     }
@@ -237,12 +313,17 @@ export function ScheduleBuildScreen({
     carers.data,
     resumePatternId,
     hasHydratedDraft,
+    hasSeededCareHours,
+    prefilledFromCareHours,
     selectedCarerId,
     selectedDays.length,
   ]);
 
   // New days default to 09:00-17:00, covering every current child — synced
-  // whenever the selection changes rather than re-derived at send time.
+  // whenever the selection changes rather than re-derived at send time. Days
+  // the care-hours seed above already filled are left alone (`!next[day]`),
+  // so the two compose: seeded days keep the parent's stated hours, days they
+  // add by hand afterwards still get the plain defaults.
   useEffect(() => {
     setDayTimes(prev => {
       const next = { ...prev };
@@ -518,6 +599,14 @@ export function ScheduleBuildScreen({
           {...cancelProps}
         >
           <View className="gap-6">
+            {prefilledFromCareHours ? (
+              <Body
+                testID="schedule-build-prefill-note"
+                className="text-muted-foreground"
+              >
+                {t('build.prefilledFromCareHours')}
+              </Body>
+            ) : null}
             {displayOrder
               .filter(day => selectedDays.includes(day))
               .map(day => {
@@ -632,6 +721,17 @@ export function ScheduleBuildScreen({
           {...cancelProps}
         >
           <View className="gap-4">
+            {/* The parent lands HERE directly when the week was prefilled and
+                there is one nanny, so the disclosure has to be on this step
+                too — a note only on 'hours' would be one they never see. */}
+            {prefilledFromCareHours ? (
+              <Body
+                testID="schedule-review-prefill-note"
+                className="text-muted-foreground"
+              >
+                {t('build.prefilledFromCareHours')}
+              </Body>
+            ) : null}
             <Body testID="schedule-review-days-count" tabular>
               {t('build.reviewDaysCount', { count: selectedDays.length })}
             </Body>

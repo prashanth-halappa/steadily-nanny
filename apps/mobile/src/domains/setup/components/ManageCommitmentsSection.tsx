@@ -2,11 +2,25 @@
  * @module domains/setup/components/ManageCommitmentsSection
  *
  * List/add/delete recurring care hours for one child.
+ *
+ * P3.3: once hours exist here, this is also where the parent is offered the
+ * next step — confirming them as the usual week, which is the ONLY thing
+ * that produces shifts (`docs/12-NEED-COVERAGE.md` §9: commitments never
+ * become shifts by themselves, and that stays true). The builder opens
+ * prefilled from these same hours, so the parent never has to retype them
+ * and never has to learn that the two are separate records.
+ *
+ * The active-nanny gate is load-bearing, not defensive: during onboarding
+ * `INVITE` is the step AFTER this one, so with nobody hired the builder has
+ * no carer to propose a week to and the button would dead-end on its carer
+ * picker. Before a nanny exists, this renders nothing.
  */
 import {
   CHILD_COMMITMENT_KINDS,
   type ChildCommitment,
 } from '@steadily-nanny/shared-types/schemas/child.schema';
+import { SCHEDULE_PATTERN_STATUSES } from '@steadily-nanny/shared-types/schemas/schedule.schema';
+import { type Href, useRouter } from 'expo-router';
 import { Trash2 } from 'lucide-react-native';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -16,6 +30,7 @@ import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
 import { Body, H3, Small } from '@/src/components/ui/typography';
+import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
 import {
   buildWeeklyRrule,
   CommitmentFormSheet,
@@ -26,6 +41,7 @@ import { parseWeeklyDays } from '@/src/domains/setup/utils/commitmentRrule';
 import { useCreateCommitment } from '@/src/hooks/mutations/useCreateCommitment';
 import { useDeleteCommitment } from '@/src/hooks/mutations/useDeleteCommitment';
 import { useCommitments } from '@/src/hooks/queries/useCommitments';
+import { useSchedulePatterns } from '@/src/hooks/queries/useSchedulePatterns';
 
 interface ManageCommitmentsSectionProps {
   householdId: string;
@@ -81,13 +97,35 @@ export function ManageCommitmentsSection({
   childName,
 }: ManageCommitmentsSectionProps) {
   const { t } = useTranslation('household');
+  const router = useRouter();
   const commitments = useCommitments(householdId, childId);
+  const carers = useHouseholdCarers(householdId);
+  const patterns = useSchedulePatterns(householdId);
   const createCommitment = useCreateCommitment(householdId, childId);
   const deleteCommitment = useDeleteCommitment(householdId, childId);
   const [formVisible, setFormVisible] = useState(false);
 
   const commitmentList = commitments.data ?? [];
   const isEmpty = commitmentList.length === 0;
+
+  const hasActiveNanny = (carers.data ?? []).length > 0;
+  // PENDING counts as much as ACCEPTED: a week already sent and waiting on
+  // the nanny means "confirm this as your usual week" is untrue, and tapping
+  // it would walk the parent into building a SECOND week over the first.
+  const openPattern = (patterns.data ?? []).find(
+    pattern =>
+      pattern.status === SCHEDULE_PATTERN_STATUSES.ACCEPTED ||
+      pattern.status === SCHEDULE_PATTERN_STATUSES.PENDING
+  );
+  // Both gating queries must have resolved first, or the offer flashes in
+  // and then disappears on a household that already has a week.
+  const canOfferWeek =
+    !isEmpty && !carers.isLoading && !patterns.isLoading && hasActiveNanny;
+  const showConfirmWeek = canOfferWeek && !openPattern;
+  // Say where the week got to rather than going silent — the parent has just
+  // added hours and is owed the reason they aren't on the calendar yet.
+  const showWeekPending =
+    canOfferWeek && openPattern?.status === SCHEDULE_PATTERN_STATUSES.PENDING;
 
   const handleSubmit = (values: CommitmentFormValues) => {
     createCommitment.mutate(
@@ -134,6 +172,33 @@ export function ManageCommitmentsSection({
       >
         <Text>{t('careHours.addButton')}</Text>
       </Button>
+
+      {showConfirmWeek ? (
+        <View
+          testID={`commitment-confirm-week-${childId}`}
+          className="gap-2 border-border border-t pt-3"
+        >
+          <Small className="text-muted-foreground">
+            {t('careHours.confirmWeekBody')}
+          </Small>
+          <Button
+            testID={`commitment-confirm-week-cta-${childId}`}
+            size="sm"
+            onPress={() => router.push('/(private)/schedule/build' as Href)}
+          >
+            <Text>{t('careHours.confirmWeekCta')}</Text>
+          </Button>
+        </View>
+      ) : null}
+
+      {showWeekPending ? (
+        <Small
+          testID={`commitment-week-pending-${childId}`}
+          className="border-border border-t pt-3 text-muted-foreground"
+        >
+          {t('careHours.weekPendingBody')}
+        </Small>
+      ) : null}
 
       <CommitmentFormSheet
         visible={formVisible}

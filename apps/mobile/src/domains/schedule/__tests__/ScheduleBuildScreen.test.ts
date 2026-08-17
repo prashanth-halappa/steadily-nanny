@@ -273,3 +273,65 @@ describe('ScheduleBuildScreen source', () => {
     expect(source).toContain("t('build.notAvailableDescription')");
   });
 });
+
+describe('ScheduleBuildScreen care-hours prefill (P3.2)', () => {
+  it('seeds the week from the household’s stated care hours via the pure helper, never re-deriving the day/time union inline', () => {
+    // The bug: the parent typed 07:00-13:00 every weekday into care hours,
+    // then the builder opened on a hard-coded 09:00-17:00 and made them
+    // type it all again.
+    expect(source).toContain('useHouseholdCommitments');
+    expect(source).toContain('hydrateFromCommitments');
+    expect(source).not.toContain('parseWeeklyDays');
+  });
+
+  it('seeds ONCE and lets the parent’s own edits win afterwards', () => {
+    // A background refetch of the commitments query must never stomp on a
+    // day the parent has since changed — same guard shape as the draft
+    // hydrate effect's `hasHydratedDraft`.
+    expect(source).toContain('hasSeededCareHours');
+    expect(source).toContain('setHasSeededCareHours(true)');
+  });
+
+  it('never seeds over a resumed draft — the draft’s own days are the truth there', () => {
+    expect(source).toMatch(/resumePatternId[\s\S]{0,400}hasSeededCareHours/);
+  });
+
+  it('composes with the default-fill effect rather than fighting it: that effect still only writes days with NO entry', () => {
+    const defaultFill = source.match(
+      /setDayTimes\(prev => \{[\s\S]*?return next;\s*\}\);/
+    );
+    expect(defaultFill?.[0]).toContain('if (!next[day])');
+  });
+
+  it('opens at review only when there is exactly one nanny AND the derived week is usable', () => {
+    // More than one nanny, or a week we could not derive, falls back to the
+    // wizard's normal first step.
+    expect(source).toContain('prefilledFromCareHours');
+    expect(source).toMatch(
+      /rows\.length === 1[\s\S]{0,600}setStep\(\s*prefilledFromCareHours \? 'review' : 'days'/
+    );
+  });
+
+  it('waits for the care-hours seed before choosing a step, so it cannot open at "days" and then jump', () => {
+    const advanceEffect = source.match(
+      /useEffect\(\(\) => \{\s*if \(step !== 'loading'[\s\S]*?\n {2}\}, \[[\s\S]*?\]\);/
+    );
+    const body = advanceEffect?.[0] ?? '';
+    expect(body).toContain('hasSeededCareHours');
+    expect(advanceEffect?.[0]).toContain('prefilledFromCareHours');
+  });
+
+  it('discloses on the hours AND review steps that the times came from the care hours', () => {
+    // The per-day union can exceed any single child's stated window, so the
+    // parent must be told where these times came from wherever they see
+    // them — including the review step they land on directly.
+    expect(source).toContain("t('build.prefilledFromCareHours')");
+    expect(source).toContain('testID="schedule-build-prefill-note"');
+    expect(source).toContain('testID="schedule-review-prefill-note"');
+  });
+
+  it('persists nothing derived — no commitment ever becomes a shift or a write', () => {
+    expect(source).not.toContain('useCreateCommitment');
+    expect(source).not.toContain('useUpdateCommitment');
+  });
+});
