@@ -41,6 +41,7 @@ const LIVE_HOUSEHOLD = {
   state: 'live',
   created_by: 'someone-else',
   timezone: 'America/New_York',
+  currency: 'GBP',
   cancellation_paid_within_hours: 24,
   week_starts_on: 1,
 };
@@ -307,6 +308,23 @@ describe('SendMyTermsCard — seeding and confirmation', () => {
       STALE_DRAFT_VALID_FROM
     );
     expect(props.currentArrangement.valid_from).toBe(props.todayISO);
+  });
+
+  // Pattern A (render-time): `arrangementFromProposal` carries `currency`
+  // and `cancellation_paid_within_hours` from the DRAFT's own terms — a
+  // US-drafted arrangement proposed to a GBP household must not silently
+  // seed USD, and must not carry a cancellation window that was never
+  // agreed with THIS family.
+  it("overrides currency and cancellation_paid_within_hours with the LIVE household's own values, not the draft's", () => {
+    render(<SendMyTermsCard />);
+    const props = lastSheetProps as {
+      currentArrangement: {
+        currency: string;
+        cancellation_paid_within_hours: number | null;
+      };
+    };
+    expect(props.currentArrangement.currency).toBe('GBP');
+    expect(props.currentArrangement.cancellation_paid_within_hours).toBe(24);
   });
 
   it('does not pass initialEffectiveDateISO (would re-carry the stale date)', () => {

@@ -36,6 +36,7 @@ import { Body, H3, Small } from '@/src/components/ui/typography';
 import { useInboxItems } from '@/src/domains/inbox/hooks/useInboxItems';
 import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
+import { useHouseholdLookup } from '@/src/hooks/queries/useHouseholdById';
 import { useMeShifts } from '@/src/hooks/queries/useMeShifts';
 import { useRunningTimeEntry } from '@/src/hooks/queries/useRunningTimeEntry';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
@@ -71,18 +72,50 @@ export function CrossFamilyStrip() {
   const activeHousehold = households.find(h => h.id === activeHouseholdId);
   const timeZone = activeHousehold?.timezone ?? 'UTC';
   const today = localDateInZone(timeZone);
-  // Same window `useInboxItems` already queries `useMeShifts` with — one
-  // shared cache entry, not a second network round-trip.
-  const from = wallClockToUtcIso(addLocalDays(today, -7), '00:00', timeZone);
-  const to = wallClockToUtcIso(addLocalDays(today, 21), '00:00', timeZone);
+  // Shared resolver (Pattern A) — same households source and fallback this
+  // hand-rolled map used before it existed.
+  const { timeZoneFor } = useHouseholdLookup();
+  const todayLocalDateFor = (householdId: string) =>
+    localDateInZone(timeZoneFor(householdId));
+
+  // Same window `useInboxItems` queries `useMeShifts` with — one shared
+  // cache entry, not a second network round-trip — so it is widened the
+  // SAME way: the union of every household's own window, never clipped to
+  // the active household's alone (Pattern A — see `useInboxItems.ts`).
+  const { from, to } =
+    households.length === 0
+      ? {
+          from: wallClockToUtcIso(addLocalDays(today, -7), '00:00', timeZone),
+          to: wallClockToUtcIso(addLocalDays(today, 21), '00:00', timeZone),
+        }
+      : households.reduce(
+          (bounds, h) => {
+            const hTimeZone = timeZoneFor(h.id);
+            const hToday = localDateInZone(hTimeZone);
+            const hFrom = wallClockToUtcIso(
+              addLocalDays(hToday, -7),
+              '00:00',
+              hTimeZone
+            );
+            const hTo = wallClockToUtcIso(
+              addLocalDays(hToday, 21),
+              '00:00',
+              hTimeZone
+            );
+            return {
+              from: hFrom < bounds.from ? hFrom : bounds.from,
+              to: hTo > bounds.to ? hTo : bounds.to,
+            };
+          },
+          {
+            from: wallClockToUtcIso(addLocalDays(today, -7), '00:00', timeZone),
+            to: wallClockToUtcIso(addLocalDays(today, 21), '00:00', timeZone),
+          }
+        );
 
   const inbox = useInboxItems();
   const runningEntry = useRunningTimeEntry();
   const meShiftsQuery = useMeShifts(from, to);
-
-  const householdTimeZoneById = new Map(
-    households.map(h => [h.id, h.timezone])
-  );
 
   const alerts = resolveCrossFamilyAlerts({
     items: inbox.items,
@@ -95,7 +128,7 @@ export function CrossFamilyStrip() {
     activeHouseholdId,
     households,
     meShifts: meShiftsQuery.data ?? [],
-    todayLocalDate: today,
+    todayLocalDateFor,
   });
 
   if (alerts.length === 0) return null;
@@ -107,10 +140,7 @@ export function CrossFamilyStrip() {
     if (alert.kind === 'runningClock' && alert.since) {
       return t(lineCopyKey(alert.kind), {
         familyName: alert.familyName,
-        time: formatClockTime(
-          alert.since,
-          householdTimeZoneById.get(alert.householdId) ?? 'UTC'
-        ),
+        time: formatClockTime(alert.since, timeZoneFor(alert.householdId)),
       });
     }
     return t(lineCopyKey(alert.kind), { familyName: alert.familyName });
@@ -119,10 +149,7 @@ export function CrossFamilyStrip() {
   const sheetReasonFor = (alert: CrossFamilyAlert): string => {
     if (alert.kind === 'runningClock' && alert.since) {
       return t(sheetReasonKey(alert.kind), {
-        time: formatClockTime(
-          alert.since,
-          householdTimeZoneById.get(alert.householdId) ?? 'UTC'
-        ),
+        time: formatClockTime(alert.since, timeZoneFor(alert.householdId)),
       });
     }
     return t(sheetReasonKey(alert.kind));

@@ -26,6 +26,12 @@ const TERMS_PROPOSAL: InboxItem = {
   currency: 'USD',
 };
 
+const OTHER_HOUSEHOLD_TERMS_PROPOSAL: InboxItem = {
+  ...TERMS_PROPOSAL,
+  id: 'prop-2',
+  householdId: 'hh-2',
+};
+
 const CHANGE_REQUEST: InboxItem = {
   kind: 'change_request',
   id: 'cr-1',
@@ -71,9 +77,10 @@ beforeAll(async () => {
   }));
   mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
     useActiveHousehold: () => ({
-      household: { timezone: 'UTC' },
+      household: { id: 'hh-1', name: 'Household One', timezone: 'UTC' },
       householdId: 'hh-1',
-      households: [],
+      households: [{ id: 'hh-1', name: 'Household One', timezone: 'UTC' }],
+      pastHouseholds: [],
       setActiveHouseholdId: mock(),
       isLoading: false,
       isError: false,
@@ -161,6 +168,25 @@ describe('TermsProposalCard', () => {
       styleArray.some(s => s && typeof s === 'object' && 'backgroundColor' in s)
     ).toBe(false);
     expect(getByTestId('today-terms-proposal-cta')).toBeTruthy();
+  });
+
+  // Pattern A (render-time, inverse of the mislabel): this card sits on the
+  // ACTIVE household's Today, so a proposal from her OTHER family must never
+  // pin here — that is that family's own Today's job, reached by switching.
+  it('renders nothing when the only terms proposal belongs to a different household', () => {
+    setItems([OTHER_HOUSEHOLD_TERMS_PROPOSAL]);
+
+    const { queryByTestId } = render(<TermsProposalCard />);
+
+    expect(queryByTestId('today-terms-proposal-card')).toBeNull();
+  });
+
+  it('shows only the ACTIVE household proposal when both households have one pending', () => {
+    setItems([OTHER_HOUSEHOLD_TERMS_PROPOSAL, TERMS_PROPOSAL]);
+
+    const { getByTestId } = render(<TermsProposalCard />);
+
+    expect(getByTestId('today-terms-proposal-card')).toBeTruthy();
   });
 
   // Regression: terms_proposal is owned HERE, not in NeedsAttentionCard.

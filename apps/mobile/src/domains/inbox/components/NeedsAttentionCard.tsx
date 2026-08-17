@@ -11,12 +11,13 @@
  * same fact differently.
  *
  * `pending_pattern` items are filtered out before anything else runs:
- * `PendingScheduleCard` already renders on the identical status/carer_id
- * gate (`buildInboxItems.ts:133`) and routes to the identical destination —
- * a pattern can never become this card's headline, and can never inflate
- * its "N more" count either. An earlier version special-cased this only in
- * headline selection, which still let a sole pending pattern render here
- * AND on `PendingScheduleCard` — two stacked cards for one obligation.
+ * `PendingScheduleCard` already renders one card PER pending pattern, across
+ * EVERY household she belongs to (Pattern A's inverse fix) — not just the
+ * active one — so a pattern can never become this card's headline, and can
+ * never inflate its "N more" count either, regardless of which household it
+ * belongs to. An earlier version special-cased this only in headline
+ * selection, which still let a sole pending pattern render here AND on
+ * `PendingScheduleCard` — two stacked cards for one obligation.
  *
  * TONE IS POSITIONAL. `usePinnedTone()` returns `'attention'` only when this
  * card is the single child of Today's `PinnedSlot`, and `'default'`
@@ -34,7 +35,10 @@ import { PersonAvatar } from '@/src/components/ui/person-avatar';
 import { Text } from '@/src/components/ui/text';
 import { Body, H3, MetadataLabel } from '@/src/components/ui/typography';
 import { useInboxItems } from '@/src/domains/inbox/hooks/useInboxItems';
-import { personOf } from '@/src/domains/inbox/utils/buildInboxItems';
+import {
+  householdIdOf,
+  personOf,
+} from '@/src/domains/inbox/utils/buildInboxItems';
 import {
   ctaForItem,
   deadlineForItem,
@@ -42,19 +46,18 @@ import {
   titleForItem,
 } from '@/src/domains/inbox/utils/inboxItemCopy';
 import { usePinnedTone } from '@/src/domains/today/components/PinnedSlot';
-import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
+import { useHouseholdLookup } from '@/src/hooks/queries/useHouseholdById';
 
 export function NeedsAttentionCard() {
   const { t } = useTranslation('inbox');
   const tone = usePinnedTone();
   const router = useRouter();
-  const active = useActiveHousehold();
-  const timeZone = active.household?.timezone ?? 'UTC';
+  const { timeZoneFor } = useHouseholdLookup();
   const { items: allItems, isLoading } = useInboxItems();
-  // A pending pattern is already its own T1 card on Today
-  // (`PendingScheduleCard`, same status/carer_id gate, same destination) —
-  // filtered out here entirely rather than just skipped for the headline,
-  // so it can never inflate the "N more" count either.
+  // A pending pattern is already its own T1 card on Today —
+  // `PendingScheduleCard` covers one per household she belongs to, not only
+  // the active one — filtered out here entirely rather than just skipped
+  // for the headline, so it can never inflate the "N more" count either.
   // A terms proposal is the same story on the other side of the ladder
   // (§7.1/B3): it has its own T1 card and its own rung in
   // `resolveAttentionOwner`, so it must not headline here or inflate the
@@ -80,6 +83,10 @@ export function NeedsAttentionCard() {
     // Unreachable — items.length === 0 already returned above.
     throw new Error('NeedsAttentionCard: unreachable empty items');
   }
+  // Pattern A: the headline is drawn from EVERY household's inbox, so its
+  // date/deadline must read in ITS OWN household's zone, never whichever one
+  // the switcher currently has active.
+  const timeZone = timeZoneFor(householdIdOf(headline));
   const deadline = deadlineForItem(headline, t, timeZone, Date.now());
   const moreCount = items.length - 1;
   const person = personOf(headline);

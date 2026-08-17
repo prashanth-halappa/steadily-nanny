@@ -183,9 +183,15 @@ describe('HouseholdCommandService.redeemInvite — invite_redeemed', () => {
       'h1',
       expect.objectContaining({
         body: expect.stringContaining('parent'),
+        // `role: 'parent'` — without it `notificationRouteMap.ts`'s
+        // INVITE_REDEEMED resolver has nothing to branch its parent arm on
+        // (it defaults to the parent destination only by falling through a
+        // `!== 'carer'` check, which a MISSING role satisfies by accident,
+        // not by design — pinned explicitly so that stays true on purpose).
         data: {
           type: PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED,
           householdId: 'h1',
+          role: 'parent',
         },
       })
     );
@@ -254,6 +260,7 @@ describe('HouseholdCommandService.redeemInvite — invite_redeemed', () => {
         data: {
           type: PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED,
           householdId: 'h1',
+          role: 'parent',
         },
       })
     );
@@ -399,7 +406,7 @@ describe('HouseholdCommandService.leave — parents are told', () => {
       expect.objectContaining({
         title: expect.stringContaining('left'),
         body: expect.stringContaining('left'),
-        data: expect.objectContaining({ householdId: 'h1' }),
+        data: expect.objectContaining({ householdId: 'h1', role: 'parent' }),
       })
     );
   });
@@ -492,6 +499,11 @@ describe('HouseholdCommandService.redeemInvite — the draft carer arm', () => {
           type: PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED,
           householdId: 'h-target',
           proposalId: 'p1',
+          // Without this, `notificationRouteMap.ts`'s carer arm
+          // (`data.role === 'carer'`) is unreachable — the push lands her on
+          // parent-facing household settings instead of the proposal she is
+          // waiting on.
+          role: 'carer',
         }),
       })
     );
@@ -512,6 +524,7 @@ describe('HouseholdCommandService.redeemInvite — the draft carer arm', () => {
       expect.objectContaining({
         data: expect.objectContaining({
           type: PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED,
+          role: 'parent',
         }),
       }),
       { excludeUserId: 'u-parent' }

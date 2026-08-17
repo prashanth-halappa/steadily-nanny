@@ -109,18 +109,21 @@ describe('buildInboxItems', () => {
       changeRequests: [],
       patterns: [
         {
+          household_id: 'hh-1',
           id: 'pat-1',
           carer_id: ME,
           status: 'pending',
           dtstart: '2026-08-05',
         },
         {
+          household_id: 'hh-1',
           id: 'pat-other',
           carer_id: OTHER,
           status: 'pending',
           dtstart: '2026-08-05',
         },
         {
+          household_id: 'hh-1',
           id: 'pat-draft',
           carer_id: ME,
           status: 'draft',
@@ -134,6 +137,7 @@ describe('buildInboxItems', () => {
       {
         kind: 'pending_pattern',
         id: 'pat-1',
+        householdId: 'hh-1',
         patternId: 'pat-1',
         dtstart: '2026-08-05',
       },
@@ -143,6 +147,7 @@ describe('buildInboxItems', () => {
   it('includes queried timesheet weeks only for the carer who must respond', () => {
     const timesheets = [
       {
+        household_id: 'hh-1',
         id: 'ts-1',
         carer_id: ME,
         week_start: '2026-07-28',
@@ -150,6 +155,7 @@ describe('buildInboxItems', () => {
         query_note: 'Break looks long',
       },
       {
+        household_id: 'hh-1',
         id: 'ts-other',
         carer_id: OTHER,
         week_start: '2026-07-28',
@@ -157,6 +163,7 @@ describe('buildInboxItems', () => {
         query_note: null,
       },
       {
+        household_id: 'hh-1',
         id: 'ts-ok',
         carer_id: ME,
         week_start: '2026-07-21',
@@ -178,6 +185,7 @@ describe('buildInboxItems', () => {
       {
         kind: 'queried_week',
         id: 'ts-1',
+        householdId: 'hh-1',
         weekStart: '2026-07-28',
         queryNote: 'Break looks long',
       },
@@ -199,6 +207,7 @@ describe('buildInboxItems', () => {
   it('includes submitted weeks for parent/owner viewers, with carer info when available', () => {
     const timesheets = [
       {
+        household_id: 'hh-1',
         id: 'ts-sub-1',
         carer_id: OTHER,
         week_start: '2026-08-04',
@@ -207,6 +216,7 @@ describe('buildInboxItems', () => {
         carer_display_name: 'Jamie Carer',
       },
       {
+        household_id: 'hh-1',
         id: 'ts-approved',
         carer_id: OTHER,
         week_start: '2026-07-28',
@@ -215,6 +225,7 @@ describe('buildInboxItems', () => {
         carer_display_name: 'Jamie Carer',
       },
       {
+        household_id: 'hh-1',
         id: 'ts-queried',
         carer_id: OTHER,
         week_start: '2026-07-21',
@@ -237,6 +248,7 @@ describe('buildInboxItems', () => {
       {
         kind: 'submitted_week',
         id: 'ts-sub-1',
+        householdId: 'hh-1',
         weekStart: '2026-08-04',
         carerDisplayName: 'Jamie Carer',
         personName: 'Jamie Carer',
@@ -253,6 +265,7 @@ describe('buildInboxItems', () => {
       patterns: [],
       timesheets: [
         {
+          household_id: 'hh-1',
           id: 'ts-sub-2',
           carer_id: OTHER,
           week_start: '2026-08-04',
@@ -266,6 +279,7 @@ describe('buildInboxItems', () => {
       {
         kind: 'submitted_week',
         id: 'ts-sub-2',
+        householdId: 'hh-1',
         weekStart: '2026-08-04',
         carerDisplayName: null,
       },
@@ -280,6 +294,7 @@ describe('buildInboxItems', () => {
   describe('stale_submitted_week (carer-side)', () => {
     const staleSheet = {
       id: 'ts-stale',
+      household_id: 'hh-1',
       carer_id: ME,
       week_start: '2026-08-04',
       status: 'submitted',
@@ -303,6 +318,7 @@ describe('buildInboxItems', () => {
         {
           kind: 'stale_submitted_week',
           id: 'ts-stale',
+          householdId: 'hh-1',
           weekStart: '2026-08-04',
           daysAgo: 21,
           totalMinutes: 2310,
@@ -394,6 +410,7 @@ describe('buildInboxItems', () => {
   it('never surfaces submitted weeks to carer/helper viewers', () => {
     const timesheets = [
       {
+        household_id: 'hh-1',
         id: 'ts-sub-1',
         carer_id: ME,
         week_start: '2026-08-04',
@@ -424,6 +441,7 @@ describe('buildInboxItems — pending_shift kind (§2.2, §2.3a)', () => {
   const NOW = '2026-08-25T12:00:00.000Z';
   const pendingShift = {
     id: 'shift-ask-1',
+    household_id: 'hh-1',
     carer_id: ME,
     status: 'pending',
     local_date: '2026-08-26',
@@ -448,6 +466,7 @@ describe('buildInboxItems — pending_shift kind (§2.2, §2.3a)', () => {
       {
         kind: 'pending_shift',
         id: 'shift-ask-1',
+        householdId: 'hh-1',
         localDate: '2026-08-26',
         startsAt: '2026-08-26T08:00:00.000Z',
         endsAt: '2026-08-26T13:00:00.000Z',
@@ -538,6 +557,7 @@ describe('buildInboxItems — pending_shift kind (§2.2, §2.3a)', () => {
       patterns: [],
       timesheets: [
         {
+          household_id: 'hh-1',
           id: 'ts-q',
           carer_id: ME,
           week_start: '2026-08-18',
@@ -703,6 +723,7 @@ describe('buildInboxItems — terms_proposal kind (§7.1)', () => {
       role: SETUP_ROLES.NANNY,
       timesheets: [
         {
+          household_id: 'hh-1',
           id: 'ts-q',
           carer_id: ME,
           week_start: '2026-08-18',
@@ -712,6 +733,7 @@ describe('buildInboxItems — terms_proposal kind (§7.1)', () => {
       ],
       shifts: [
         {
+          household_id: 'hh-1',
           id: 'shift-far',
           carer_id: ME,
           status: 'pending',
@@ -979,6 +1001,7 @@ describe('buildInboxItems — terms_ack kind', () => {
       role: SETUP_ROLES.NANNY,
       timesheets: [
         {
+          household_id: 'hh-1',
           id: 'ts-stale',
           carer_id: ME,
           week_start: '2026-08-04',
@@ -1072,6 +1095,7 @@ describe('buildInboxItems — reimbursement_owed kind', () => {
       role: SETUP_ROLES.PARENT,
       timesheets: [
         {
+          household_id: 'hh-1',
           id: 'ts-submitted',
           carer_id: ME,
           week_start: '2026-08-04',
@@ -1108,6 +1132,7 @@ describe('buildInboxItems — person on the item', () => {
       role: SETUP_ROLES.PARENT,
       timesheets: [
         {
+          household_id: 'hh-1',
           id: 'ts-sub-1',
           carer_id: OTHER,
           week_start: '2026-08-04',
@@ -1171,6 +1196,7 @@ describe('buildInboxItems — person on the item', () => {
       ],
       patterns: [
         {
+          household_id: 'hh-1',
           id: 'pat-1',
           carer_id: ME,
           status: 'pending',
@@ -1179,6 +1205,7 @@ describe('buildInboxItems — person on the item', () => {
       ],
       timesheets: [
         {
+          household_id: 'hh-1',
           id: 'ts-q',
           carer_id: ME,
           week_start: '2026-07-28',
@@ -1186,6 +1213,7 @@ describe('buildInboxItems — person on the item', () => {
           query_note: null,
         },
         {
+          household_id: 'hh-1',
           id: 'ts-stale',
           carer_id: ME,
           week_start: '2026-08-04',
@@ -1197,6 +1225,7 @@ describe('buildInboxItems — person on the item', () => {
       ],
       shifts: [
         {
+          household_id: 'hh-1',
           id: 'shift-ask-1',
           carer_id: ME,
           status: 'pending',
@@ -1223,6 +1252,7 @@ describe('buildInboxItems — person on the item', () => {
       currentUserId: PARENT,
       timesheets: [
         {
+          household_id: 'hh-1',
           id: 'ts-sub-2',
           carer_id: OTHER,
           week_start: '2026-08-04',

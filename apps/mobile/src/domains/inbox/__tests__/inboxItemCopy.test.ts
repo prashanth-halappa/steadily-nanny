@@ -23,6 +23,7 @@ const ZONE = 'Europe/London';
 const staleItem: InboxItem = {
   kind: 'stale_submitted_week',
   id: 'ts-stale',
+  householdId: 'hh-1',
   weekStart: '2026-08-04',
   daysAgo: 21,
   totalMinutes: 2310,

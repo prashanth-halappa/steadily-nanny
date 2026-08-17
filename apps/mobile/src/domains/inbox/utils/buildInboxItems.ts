@@ -65,6 +65,7 @@ export type InboxChangeRequestInput = {
 
 export type InboxPatternInput = {
   id: string;
+  household_id: string;
   carer_id: string | null;
   status: string;
   dtstart: string;
@@ -72,6 +73,7 @@ export type InboxPatternInput = {
 
 export type InboxTimesheetInput = {
   id: string;
+  household_id: string;
   carer_id: string | null;
   week_start: string;
   status: string;
@@ -96,6 +98,7 @@ export type InboxTimesheetInput = {
 
 export type InboxShiftInput = {
   id: string;
+  household_id: string;
   carer_id: string | null;
   status: string;
   local_date: string;
@@ -166,18 +169,21 @@ export type InboxItem =
   | {
       kind: 'pending_pattern';
       id: string;
+      householdId: string;
       patternId: string;
       dtstart: string;
     }
   | {
       kind: 'queried_week';
       id: string;
+      householdId: string;
       weekStart: string;
       queryNote: string | null;
     }
   | {
       kind: 'submitted_week';
       id: string;
+      householdId: string;
       weekStart: string;
       carerDisplayName: string | null;
       /** Present when the week names a carer the parent can recognise. */
@@ -187,6 +193,7 @@ export type InboxItem =
   | {
       kind: 'stale_submitted_week';
       id: string;
+      householdId: string;
       weekStart: string;
       daysAgo: number;
       totalMinutes: number;
@@ -194,6 +201,7 @@ export type InboxItem =
   | {
       kind: 'pending_shift';
       id: string;
+      householdId: string;
       localDate: string;
       startsAt: string;
       endsAt: string;
@@ -257,6 +265,18 @@ export interface InboxPerson {
   colour?: string;
 }
 
+/**
+ * Which household a row is about, for Pattern A's per-entity zone/name
+ * resolution (`useHouseholdLookup`) — `undefined` for the one kind that
+ * still carries none (`change_request`; its shift is fetched by id, not
+ * scoped per household on this list), which is exactly the input
+ * `timeZoneFor`/`nameFor` already treat as "fall back to the active
+ * household".
+ */
+export function householdIdOf(item: InboxItem): string | undefined {
+  return item.kind === 'change_request' ? undefined : item.householdId;
+}
+
 export function personOf(item: InboxItem): InboxPerson | undefined {
   switch (item.kind) {
     case 'submitted_week':
@@ -293,8 +313,15 @@ export function buildInboxItems(input: {
   role: SetupRole | null;
   currentUserId: string | null | undefined;
   /** Today in the household's zone — the clock `stale_submitted_week` is
-   * measured against. */
+   * measured against. Single-zone fallback; `todayISOFor` below is preferred
+   * whenever the caller has a per-household zone to resolve (Pattern A —
+   * one household's local midnight is not another's). */
   todayISO: string;
+  /** Per-household "today", for a viewer with households in different
+   * zones — `stale_submitted_week`'s clock must run on the WEEK'S OWN
+   * household, never whichever one happens to be active. Falls back to
+   * `todayISO` when omitted. */
+  todayISOFor?: (householdId: string) => string;
   /** The current instant, for §2.2's ordering (`pending_shift`'s within-48h
    * fork) — injectable for deterministic tests, defaults to `Date.now()`. */
   nowISO?: string;
@@ -334,6 +361,7 @@ export function buildInboxItems(input: {
     items.push({
       kind: 'pending_pattern',
       id: pattern.id,
+      householdId: pattern.household_id,
       patternId: pattern.id,
       dtstart: pattern.dtstart,
     });
@@ -346,6 +374,7 @@ export function buildInboxItems(input: {
     items.push({
       kind: 'queried_week',
       id: sheet.id,
+      householdId: sheet.household_id,
       weekStart: sheet.week_start,
       queryNote: sheet.query_note,
     });
@@ -360,6 +389,7 @@ export function buildInboxItems(input: {
       items.push({
         kind: 'submitted_week',
         id: sheet.id,
+        householdId: sheet.household_id,
         weekStart: sheet.week_start,
         carerDisplayName: sheet.carer_display_name ?? null,
         ...(sheet.carer_display_name
@@ -378,11 +408,15 @@ export function buildInboxItems(input: {
     // No submission date or no hours means no item — never one with a blank
     // or zero figure in place of a fact we do not have.
     if (!sheet.updated_at || sheet.total_minutes == null) continue;
-    const daysAgo = daysBetween(sheet.updated_at, input.todayISO);
+    const todayISO = input.todayISOFor
+      ? input.todayISOFor(sheet.household_id)
+      : input.todayISO;
+    const daysAgo = daysBetween(sheet.updated_at, todayISO);
     if (daysAgo <= STALE_SUBMITTED_DAYS) continue;
     items.push({
       kind: 'stale_submitted_week',
       id: sheet.id,
+      householdId: sheet.household_id,
       weekStart: sheet.week_start,
       daysAgo,
       totalMinutes: sheet.total_minutes,
@@ -398,6 +432,7 @@ export function buildInboxItems(input: {
       items.push({
         kind: 'pending_shift',
         id: shift.id,
+        householdId: shift.household_id,
         localDate: shift.local_date,
         startsAt: shift.starts_at,
         endsAt: shift.ends_at,

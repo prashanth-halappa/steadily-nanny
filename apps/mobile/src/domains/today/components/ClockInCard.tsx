@@ -72,6 +72,7 @@ import { useVoidTimeEntry } from '@/src/hooks/mutations/useVoidTimeEntry';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useDayThread } from '@/src/hooks/queries/useDayThread';
+import { useHouseholdLookup } from '@/src/hooks/queries/useHouseholdById';
 import { useRunningTimeEntry } from '@/src/hooks/queries/useRunningTimeEntry';
 import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
@@ -202,6 +203,7 @@ export function ClockInCard({
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
   const { households } = useActiveHousehold();
   const isMultiHousehold = households.length > 1;
+  const { nameFor } = useHouseholdLookup();
   const running = useRunningTimeEntry();
   const clockIn = useClockIn(timeZone, householdName);
   const clockOut = useClockOut();
@@ -209,6 +211,12 @@ export function ClockInCard({
 
   const entry = running.data ?? null;
   const elapsed = useElapsedTimer(entry?.clock_in_at ?? null);
+  // Pattern A: `running` is cross-household (no household filter) and this
+  // card is scoped to whichever household the switcher currently has
+  // selected — the two can disagree. The "Clocked into X" label must name
+  // THIS ENTRY's own household, never the active one the card happens to be
+  // rendered for.
+  const runningEntryHouseholdName = nameFor(entry?.household_id);
 
   // Single source for "is this overdue" — also read by TodayScreen to
   // arbitrate which T1 surface wins when this and NeedsAttentionCard are
@@ -634,9 +642,11 @@ export function ClockInCard({
               })}
             </Small>
           ) : null}
-          {isMultiHousehold && householdName ? (
+          {isMultiHousehold && runningEntryHouseholdName ? (
             <Small className="text-muted-foreground">
-              {t('clockedIntoHousehold', { household: householdName })}
+              {t('clockedIntoHousehold', {
+                household: runningEntryHouseholdName,
+              })}
             </Small>
           ) : null}
           {overdue ? (

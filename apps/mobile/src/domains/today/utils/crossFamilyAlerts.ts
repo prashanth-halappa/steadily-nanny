@@ -82,9 +82,12 @@ export function resolveCrossFamilyAlerts(input: {
   activeHouseholdId: string | null | undefined;
   households: readonly CrossFamilyHousehold[];
   meShifts: readonly CrossFamilyShift[];
-  /** Today's local date (`YYYY-MM-DD`), same convention `useInboxItems`
-   * already uses: computed once, from the ACTIVE household's timezone. */
-  todayLocalDate: string;
+  /** Today's local date (`YYYY-MM-DD`) IN THE GIVEN HOUSEHOLD'S OWN zone —
+   * Pattern A: a single "today" computed from the active household would
+   * mistime `hasShiftToday`/`termsBlock` for every OTHER household this
+   * strip is about by construction (a midnight straddle reads the wrong
+   * side for whichever household is behind/ahead of the active one). */
+  todayLocalDateFor: (householdId: string) => string;
   /** Injectable for deterministic tests — defaults to `Date.now()`. */
   nowISO?: string;
 }): CrossFamilyAlert[] {
@@ -94,7 +97,7 @@ export function resolveCrossFamilyAlerts(input: {
     activeHouseholdId,
     households,
     meShifts,
-    todayLocalDate,
+    todayLocalDateFor,
   } = input;
   const nowMs = input.nowISO ? Date.parse(input.nowISO) : Date.now();
 
@@ -120,7 +123,7 @@ export function resolveCrossFamilyAlerts(input: {
     const hasShiftToday = meShifts.some(
       shift =>
         shift.household_id === household.id &&
-        shift.local_date === todayLocalDate &&
+        shift.local_date === todayLocalDateFor(household.id) &&
         !NOT_HAPPENING_STATUSES.has(shift.status)
     );
     const hasTermsProposal = items.some(

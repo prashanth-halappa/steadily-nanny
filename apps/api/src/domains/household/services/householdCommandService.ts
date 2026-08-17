@@ -733,6 +733,7 @@ export class HouseholdCommandService {
         data: {
           type: PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED,
           householdId: invite.household_id,
+          role: 'parent',
         },
       });
     } catch {
@@ -1104,6 +1105,7 @@ export class HouseholdCommandService {
           data: {
             type: PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED,
             householdId,
+            role: 'parent',
           },
         },
         // The redeemer just tapped the button and is looking at the result;
@@ -1122,6 +1124,12 @@ export class HouseholdCommandService {
         data: {
           type: PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED,
           householdId,
+          // `role: 'carer'` is what makes `notificationRouteMap.ts`'s carer
+          // arm reachable at all. No `draftId` here on purpose: her draft
+          // (`invite.household_id`) is archived a few lines above this call
+          // (A6), so it is no longer a valid destination — `proposalId`
+          // alone is the honest route.
+          role: 'carer',
           ...(result.proposal ? { proposalId: result.proposal.id } : {}),
         },
       });
@@ -1333,6 +1341,7 @@ export class HouseholdCommandService {
         data: {
           type: PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED,
           householdId,
+          role: 'parent',
         },
       });
     } catch {

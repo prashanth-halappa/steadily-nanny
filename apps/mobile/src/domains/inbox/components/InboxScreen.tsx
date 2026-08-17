@@ -20,13 +20,16 @@ import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { PersonAvatar } from '@/src/components/ui/person-avatar';
 import { Body, H1, MetadataLabel, Small } from '@/src/components/ui/typography';
 import { useInboxItems } from '@/src/domains/inbox/hooks/useInboxItems';
-import { personOf } from '@/src/domains/inbox/utils/buildInboxItems';
+import {
+  householdIdOf,
+  personOf,
+} from '@/src/domains/inbox/utils/buildInboxItems';
 import {
   hrefForItem,
   subtitleForItem,
   titleForItem,
 } from '@/src/domains/inbox/utils/inboxItemCopy';
-import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
+import { useHouseholdLookup } from '@/src/hooks/queries/useHouseholdById';
 import { useElevation } from '~/lib/design-tokens/elevation';
 
 export function InboxScreen() {
@@ -34,8 +37,7 @@ export function InboxScreen() {
   const { t: tCommon } = useTranslation('common');
   const router = useRouter();
   const elevation = useElevation();
-  const active = useActiveHousehold();
-  const timeZone = active.household?.timezone ?? 'UTC';
+  const { timeZoneFor } = useHouseholdLookup();
   const { items, isLoading, isError, refetch } = useInboxItems();
   const { refreshControl } = usePullToRefresh();
 
@@ -86,6 +88,10 @@ export function InboxScreen() {
               </Body>
               {items.map(item => {
                 const person = personOf(item);
+                // Deliberately cross-household (module doc) — each row
+                // formats in ITS OWN household's zone, never a single one
+                // applied to the whole list.
+                const itemTimeZone = timeZoneFor(householdIdOf(item));
                 return (
                   <Pressable
                     key={`${item.kind}-${item.id}`}
@@ -111,10 +117,10 @@ export function InboxScreen() {
                         {t(`kinds.${item.kind}`)}
                       </MetadataLabel>
                       <Body weight="semibold">
-                        {titleForItem(item, t, timeZone)}
+                        {titleForItem(item, t, itemTimeZone)}
                       </Body>
                       <Small className="text-muted-foreground">
-                        {subtitleForItem(item, t, timeZone)}
+                        {subtitleForItem(item, t, itemTimeZone)}
                       </Small>
                     </View>
                   </Pressable>

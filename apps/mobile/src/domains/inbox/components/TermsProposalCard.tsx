@@ -18,6 +18,7 @@ import { Card } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
 import { Body, H3 } from '@/src/components/ui/typography';
 import { useInboxItems } from '@/src/domains/inbox/hooks/useInboxItems';
+import { householdIdOf } from '@/src/domains/inbox/utils/buildInboxItems';
 import {
   ctaForItem,
   hrefForItem,
@@ -26,15 +27,24 @@ import {
 } from '@/src/domains/inbox/utils/inboxItemCopy';
 import { usePinnedTone } from '@/src/domains/today/components/PinnedSlot';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
+import { useHouseholdLookup } from '@/src/hooks/queries/useHouseholdById';
 
 export function TermsProposalCard() {
   const { t } = useTranslation('inbox');
   const tone = usePinnedTone();
   const router = useRouter();
   const active = useActiveHousehold();
-  const timeZone = active.household?.timezone ?? 'UTC';
+  const { timeZoneFor } = useHouseholdLookup();
   const { items: allItems, isLoading } = useInboxItems();
-  const proposal = allItems.find(item => item.kind === 'terms_proposal');
+  // This card sits on the ACTIVE household's Today — a proposal from her
+  // OTHER family belongs on THAT family's Today, reached by switching (same
+  // check `usePendingOffer.ts` already does for the mirror A7 item).
+  const proposal = allItems.find(
+    item =>
+      item.kind === 'terms_proposal' &&
+      item.householdId === active.household?.id
+  );
+  const timeZone = timeZoneFor(proposal && householdIdOf(proposal));
 
   if (isLoading || !proposal) {
     return null;

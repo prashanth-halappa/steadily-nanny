@@ -266,6 +266,7 @@
   },
   "todayCard": {
     "pendingTitle": "A week is waiting for you",
+    "pendingTitleNamed": "A week from {{family}} is waiting for you",
     "pendingBody_one": "{{count}} day · {{hours}} hours a week",
     "pendingBody_other": "{{count}} days · {{hours}} hours a week",
     "pendingCta": "Review and respond",

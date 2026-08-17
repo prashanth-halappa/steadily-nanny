@@ -266,6 +266,7 @@
   },
   "todayCard": {
     "pendingTitle": "Una semana te espera",
+    "pendingTitleNamed": "Una semana de {{family}} te espera",
     "pendingBody_one": "{{count}} día · {{hours}} horas a la semana",
     "pendingBody_other": "{{count}} días · {{hours}} horas a la semana",
     "pendingCta": "Revisar y responder",
