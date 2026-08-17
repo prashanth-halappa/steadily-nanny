@@ -195,10 +195,14 @@ export function NannyWeekView({
   // rest of what an arrangement is for.
   const arrangementQuery = useCurrentPayArrangement(householdId, currentUserId);
   // Only so a payment's "Recorded by" reads as a person. Resolved through
-  // `resolveMemberDisplayName`, same as the parent view: it degrades to
-  // "Someone" for an id it cannot resolve YET, where a hand-rolled lookup
-  // degrades to "No longer in this household" — a false statement about a
-  // present, active parent on the one field that exists purely for trust.
+  // `resolveMemberDisplayName`, same as `ParentWeekView` AND `PaymentsScreen`
+  // — all three feed `PaymentDetailSheet`'s `recordedByName`, which degrades
+  // an unresolvable id to "Someone", never a hand-rolled "No longer in this
+  // household" claim that could be false about a present, active parent on
+  // the one field that exists purely for trust. `PaymentsScreen` used to
+  // disagree with this (its own lookup, its own fallback string) — fixed to
+  // route through the same resolver so the same fact reads the same way
+  // everywhere it's shown.
   const membersQuery = useHouseholdMembers(householdId);
   const updateEntry = useUpdateTimeEntry();
   const voidEntry = useVoidTimeEntry();
@@ -758,16 +762,12 @@ export function NannyWeekView({
         payment={selectedPayment}
         weekStart={null}
         paidToName={null}
-        recordedByName={
-          selectedPayment
-            ? resolveMemberDisplayName(
-                selectedPayment.recorded_by,
-                currentUserId,
-                membersByUserId,
-                memberLabels
-              )
-            : null
-        }
+        recordedByName={resolveMemberDisplayName(
+          selectedPayment?.recorded_by ?? null,
+          currentUserId,
+          membersByUserId,
+          memberLabels
+        )}
         // §3.1's second placement. The payment sheet CLOSES first: the flag
         // composer is another BottomSheetBase, and a sheet opened over a
         // sheet is invisible on iOS (GOLDEN-FIXES #40's family). The prefix

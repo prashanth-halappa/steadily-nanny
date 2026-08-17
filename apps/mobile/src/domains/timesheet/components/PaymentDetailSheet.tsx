@@ -57,9 +57,13 @@ interface PaymentDetailSheetProps {
   /** The carer this went to. Null for a nanny reading her own record — she
    * does not need telling who she is. */
   paidToName: string | null;
-  /** Resolved household member name, or null when `recorded_by` is null or
-   * no longer resolvable. Never a raw uuid. */
-  recordedByName: string | null;
+  /** Fully resolved by the caller via `resolveMemberDisplayName` — never a
+   * raw uuid, and never null: an unresolvable id degrades to "Someone"
+   * (the SAME word on every screen that feeds this sheet — PaymentsScreen
+   * used to hand-roll its own "no longer in this household" here, which
+   * could be false about a present, active parent whose membership just
+   * hasn't loaded yet). */
+  recordedByName: string;
   /** §3.1 (M12), carer viewer only: "This doesn't look right" on a payment
    * row. The caller owns everything about it — closing this sheet, stamping
    * the payment's date and amount into the message, and writing it to the
@@ -238,7 +242,7 @@ export function PaymentDetailSheet({
           <DetailRow
             testID={`${testID}-recorded-by`}
             label={t('payments.detail.recordedBy')}
-            value={recordedByName ?? t('payments.detail.recordedByGone')}
+            value={recordedByName}
           />
           <DetailRow
             testID={`${testID}-method`}

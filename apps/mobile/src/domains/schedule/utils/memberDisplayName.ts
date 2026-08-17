@@ -14,6 +14,17 @@ export interface MemberDisplayLabels {
 }
 
 /**
+ * The two raw name fields `resolveCarerName` reads — named here so a caller
+ * can type a prop against this shape without spelling out
+ * `display_name_override`/`profile_name` itself (`carerNameSingleSource.test.ts`
+ * fails the build on any production file that does).
+ */
+export type CarerNameSource = Pick<
+  HouseholdMember,
+  'display_name_override' | 'profile_name'
+>;
+
+/**
  * The ONE name chain for a carer: what this household calls her
  * (`display_name_override`) -> her own profile name (joined onto the
  * members-list read) -> the name a payroll/agreement row snapshotted at
@@ -28,10 +39,7 @@ export interface MemberDisplayLabels {
  * same word twice.
  */
 export function resolveCarerName(
-  member:
-    | Pick<HouseholdMember, 'display_name_override' | 'profile_name'>
-    | null
-    | undefined,
+  member: CarerNameSource | null | undefined,
   fallback: string,
   snapshotName?: string | null
 ): string {

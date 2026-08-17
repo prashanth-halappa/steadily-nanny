@@ -603,6 +603,33 @@ describe('ScheduleShiftsScreen', () => {
       expect(parent.getByTestId('schedule-lead')).toBeTruthy();
     });
 
+    it('renders the no-carer lead, not "lead.parent" with an empty name, when the household has no carer on record', () => {
+      // `useHouseholdCarers` is mocked to `data: []` for this whole file —
+      // the same shape a household sees once its only carer's account is
+      // deleted (her `household_members` row is destroyed, so she can never
+      // come back from this query). `ParentWeekView` already branches on
+      // this with a `lead.parentNoCarer` key; this screen must match it
+      // instead of interpolating `t('lead.parent', { name: '' })`, which
+      // renders " is with the children N days this week." with a leading
+      // space and no subject.
+      mockUseShiftsRange.mockImplementation(() => ({
+        data: [],
+        isLoading: false,
+        isError: false,
+        error: null,
+      }));
+      mockUseIsOnboarded.mockImplementation(() => ({
+        role: 'parent',
+        status: 'onboarded',
+      }));
+
+      const { getByTestId } = render(<ScheduleShiftsScreen />);
+
+      expect(getByTestId('schedule-lead').props.children).toBe(
+        'lead.parentNoCarer'
+      );
+    });
+
     it('gives a helper the PARENT voice, not a third one — helper sees the household schedule same as a parent', () => {
       mockUseIsOnboarded.mockImplementation(() => ({
         role: 'helper',

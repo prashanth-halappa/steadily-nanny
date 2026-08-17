@@ -237,6 +237,8 @@
     "payRow": "Pago y condiciones",
     "availabilityRow": "Disponibilidad",
     "timeOffRow": "Días libres",
-    "removeButton": "Eliminar de este hogar"
+    "removeButton": "Eliminar de este hogar",
+    "notFoundTitle": "Ya no está en este hogar",
+    "notFoundMessage": "Esta persona ha dejado el hogar o ha eliminado su cuenta."
   }
 }

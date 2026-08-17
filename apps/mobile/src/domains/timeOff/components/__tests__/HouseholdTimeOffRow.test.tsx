@@ -19,6 +19,20 @@ import { useAuthStore } from '@/src/store/auth';
 import { renderWithProviders } from '@/src/test-utils';
 import { toAllDayRange } from '../../utils/timeOffDate';
 
+// Echoes `key(name)` when a translation call carries a `name` interpolation
+// (same convention as ThisWeeksShiftsCard.test.tsx) so this file's tests can
+// still assert on bare keys everywhere else, while the new ledger-fallback
+// test below can see which NAME actually reached the mark-paid subtitle.
+mock.module('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string, opts?: { name?: string }) =>
+      opts?.name === undefined ? key : `${key}(${opts.name})`,
+    i18n: { language: 'en', changeLanguage: mock(() => Promise.resolve()) },
+  }),
+  Trans: ({ children }: { children: unknown }) => children,
+  initReactI18next: { type: '3rdParty', init: mock() },
+}));
+
 mock.module('@/lib/animations/useReducedMotion', () => ({
   useReducedMotion: mock(() => false),
 }));
@@ -143,7 +157,8 @@ describe('HouseholdTimeOffRow', () => {
       <HouseholdTimeOffRow
         timeOff={monWedTimeOff as never}
         householdId={HOUSEHOLD_ID}
-        carerName="Amara"
+        member={{ display_name_override: 'Amara', profile_name: null }}
+        carerFallbackLabel="role.nanny"
         canMarkPaid
         householdTimezone="UTC"
       />
@@ -155,12 +170,43 @@ describe('HouseholdTimeOffRow', () => {
     expect(queryByText('10 Aug – 13 Aug')).toBeNull();
   });
 
+  it("falls back to the PTO ledger's snapshotted name for a carer no longer on the active roster", async () => {
+    // A carer removed from the household (soft `status: 'removed'`,
+    // 009_households.sql) or whose account was deleted vanishes from the
+    // active member list, but her `carer_time_off` booking and PTO ledger
+    // both persist (043_pto_ledger.sql) — `member` is undefined here, the
+    // same shape the parent screen passes for her. The ledger's
+    // `carer_display_name` snapshot still names her correctly instead of
+    // falling straight to the generic "Nanny" role label.
+    getLedgerMock.mockImplementation(() =>
+      Promise.resolve([{ ...usageEntry, carer_display_name: 'Priya' }])
+    );
+
+    const { getByTestId, getByText } = renderWithProviders(
+      <HouseholdTimeOffRow
+        timeOff={timeOff as never}
+        householdId={HOUSEHOLD_ID}
+        member={undefined}
+        carerFallbackLabel="role.nanny"
+        canMarkPaid
+        householdTimezone="UTC"
+      />
+    );
+
+    fireEvent.press(getByTestId(`household-time-off-${TIME_OFF_ID}`));
+
+    await waitFor(() =>
+      expect(getByText('markPaidSheet.subtitle(Priya)')).toBeTruthy()
+    );
+  });
+
   it('not yet marked: shows the "Not marked paid" pill', async () => {
     const { getByTestId, getByText } = renderWithProviders(
       <HouseholdTimeOffRow
         timeOff={timeOff as never}
         householdId={HOUSEHOLD_ID}
-        carerName="Amara"
+        member={{ display_name_override: 'Amara', profile_name: null }}
+        carerFallbackLabel="role.nanny"
         canMarkPaid
         householdTimezone="UTC"
       />
@@ -181,7 +227,8 @@ describe('HouseholdTimeOffRow', () => {
       <HouseholdTimeOffRow
         timeOff={timeOff as never}
         householdId={HOUSEHOLD_ID}
-        carerName="Amara"
+        member={{ display_name_override: 'Amara', profile_name: null }}
+        carerFallbackLabel="role.nanny"
         canMarkPaid
         householdTimezone="UTC"
       />
@@ -220,7 +267,8 @@ describe('HouseholdTimeOffRow', () => {
       <HouseholdTimeOffRow
         timeOff={timeOff as never}
         householdId={HOUSEHOLD_ID}
-        carerName="Amara"
+        member={{ display_name_override: 'Amara', profile_name: null }}
+        carerFallbackLabel="role.nanny"
         canMarkPaid
         householdTimezone="UTC"
       />
@@ -266,7 +314,8 @@ describe('HouseholdTimeOffRow', () => {
       <HouseholdTimeOffRow
         timeOff={timeOff as never}
         householdId={HOUSEHOLD_ID}
-        carerName="Amara"
+        member={{ display_name_override: 'Amara', profile_name: null }}
+        carerFallbackLabel="role.nanny"
         canMarkPaid
         householdTimezone="UTC"
       />
@@ -289,7 +338,8 @@ describe('HouseholdTimeOffRow', () => {
       <HouseholdTimeOffRow
         timeOff={timeOff as never}
         householdId={HOUSEHOLD_ID}
-        carerName="Amara"
+        member={{ display_name_override: 'Amara', profile_name: null }}
+        carerFallbackLabel="role.nanny"
         canMarkPaid
         householdTimezone="UTC"
       />
@@ -318,7 +368,8 @@ describe('HouseholdTimeOffRow', () => {
       <HouseholdTimeOffRow
         timeOff={nzTimeOff as never}
         householdId={HOUSEHOLD_ID}
-        carerName="Amara"
+        member={{ display_name_override: 'Amara', profile_name: null }}
+        carerFallbackLabel="role.nanny"
         canMarkPaid
         householdTimezone="Pacific/Auckland"
       />
@@ -338,7 +389,8 @@ describe('HouseholdTimeOffRow', () => {
       <HouseholdTimeOffRow
         timeOff={timeOff as never}
         householdId={HOUSEHOLD_ID}
-        carerName="Amara"
+        member={{ display_name_override: 'Amara', profile_name: null }}
+        carerFallbackLabel="role.nanny"
         canMarkPaid
         householdTimezone="UTC"
       />
@@ -356,7 +408,8 @@ describe('HouseholdTimeOffRow', () => {
       <HouseholdTimeOffRow
         timeOff={timeOff as never}
         householdId={HOUSEHOLD_ID}
-        carerName="Amara"
+        member={{ display_name_override: 'Amara', profile_name: null }}
+        carerFallbackLabel="role.nanny"
         canMarkPaid={false}
         householdTimezone="UTC"
       />
@@ -371,7 +424,8 @@ describe('HouseholdTimeOffRow', () => {
       <HouseholdTimeOffRow
         timeOff={timeOff as never}
         householdId={HOUSEHOLD_ID}
-        carerName="Amara"
+        member={{ display_name_override: 'Amara', profile_name: null }}
+        carerFallbackLabel="role.nanny"
         canMarkPaid
         householdTimezone="UTC"
       />
@@ -401,7 +455,8 @@ describe('HouseholdTimeOffRow', () => {
         <HouseholdTimeOffRow
           timeOff={{ ...timeOff, kind: 'sick' } as never}
           householdId={HOUSEHOLD_ID}
-          carerName="Amara"
+          member={{ display_name_override: 'Amara', profile_name: null }}
+          carerFallbackLabel="role.nanny"
           canMarkPaid
           householdTimezone="UTC"
         />
@@ -419,7 +474,8 @@ describe('HouseholdTimeOffRow', () => {
         <HouseholdTimeOffRow
           timeOff={{ ...timeOff, kind: 'personal' } as never}
           householdId={HOUSEHOLD_ID}
-          carerName="Amara"
+          member={{ display_name_override: 'Amara', profile_name: null }}
+          carerFallbackLabel="role.nanny"
           canMarkPaid
           householdTimezone="UTC"
         />
@@ -445,7 +501,8 @@ describe('HouseholdTimeOffRow', () => {
       <HouseholdTimeOffRow
         timeOff={timeOff as never}
         householdId={HOUSEHOLD_ID}
-        carerName="Amara"
+        member={{ display_name_override: 'Amara', profile_name: null }}
+        carerFallbackLabel="role.nanny"
         canMarkPaid
         householdTimezone="UTC"
       />

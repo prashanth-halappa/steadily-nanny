@@ -304,10 +304,14 @@ export function ScheduleShiftsScreen({
         count: coveringShifts.length,
         hours: formatDuration(weekTotalMinutes),
       })
-    : t('lead.parent', {
-        name: nannyFirstName,
-        count: coveringDayCount,
-      });
+    : nannyFirstName
+      ? t('lead.parent', {
+          name: nannyFirstName,
+          count: coveringDayCount,
+        })
+      : t('lead.parentNoCarer', {
+          count: coveringDayCount,
+        });
 
   const showCrossFamily =
     calendarView === CALENDAR_VIEWS.CROSS_FAMILY &&

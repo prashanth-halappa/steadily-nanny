@@ -16,6 +16,7 @@ import {
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { SHIFT_KINDS } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { renderHook } from '@testing-library/react-native';
+import type { TimeEntry } from '@/src/domains/timesheet/types';
 import i18n from '@/src/i18n';
 
 const HOUSEHOLD_ID = '11111111-1111-4111-8111-111111111111';
@@ -90,6 +91,30 @@ function aug10Nanny1Shifts(): Shift[] {
       ends_at: '2026-08-10T18:22:00.000Z',
     }),
   ];
+}
+
+function makeEntry(overrides: Partial<TimeEntry> = {}): TimeEntry {
+  return {
+    id: 'entry-1',
+    household_id: HOUSEHOLD_ID,
+    carer_id: NANNY_ID,
+    carer_display_name: 'H1 Nanny1',
+    shift_id: null,
+    clock_in_at: null,
+    clock_out_at: null,
+    break_minutes: 0,
+    scheduled_minutes: null,
+    kind: 'worked',
+    note: null,
+    clock_in_location_ok: null,
+    clock_out_location_ok: null,
+    status: 'submitted',
+    local_date: '2026-08-10',
+    timezone: ZONE,
+    created_at: '2026-08-10T08:00:00.000Z',
+    updated_at: '2026-08-10T16:00:00.000Z',
+    ...overrides,
+  };
 }
 
 beforeAll(async () => {
@@ -201,5 +226,76 @@ describe('useTodayCoverRows', () => {
     ]).toContain(name as string);
     expect(name).not.toBe(i18n.t('today:carerFallback'));
     expect(name).not.toBe('carerFallback');
+  });
+
+  it("does not sibling a departed carer's own shift onto her entry row", () => {
+    // A departed carer's `time_entries` row keeps her name via the
+    // `carer_display_name` snapshot (033), but `shifts` has no such
+    // snapshot — `carer_id` goes NULL on both rows with nothing left to
+    // bucket the shift under the SAME key as her entry. `shift_id` is the
+    // one link that survives account deletion untouched.
+    mockWeekEntries.mockReturnValue({
+      data: [
+        makeEntry({
+          id: 'entry-emma',
+          carer_id: null,
+          carer_display_name: 'Emma',
+          shift_id: 'shift-emma-1122',
+          clock_in_at: '2026-08-10T10:22:00.000Z',
+          clock_out_at: '2026-08-10T18:22:00.000Z',
+          status: 'submitted',
+        }),
+      ],
+      isLoading: false,
+    });
+    mockShiftsRange.mockReturnValue({
+      data: [
+        makeShift({
+          id: 'shift-emma-1122',
+          carer_id: null,
+          status: 'confirmed',
+        }),
+      ],
+      isLoading: false,
+    });
+
+    const { result } = renderHook(() =>
+      useTodayCoverRows(HOUSEHOLD_ID, ZONE, 1)
+    );
+
+    expect(result.current.rows).toHaveLength(1);
+    expect(result.current.rows[0]?.name).toBe('Emma');
+    expect(result.current.rows[0]?.kind).toBe('finished');
+  });
+
+  it('keeps two departed carers on separate rows instead of merging under "unassigned"', () => {
+    mockWeekEntries.mockReturnValue({ data: [], isLoading: false });
+    mockShiftsRange.mockReturnValue({
+      data: [
+        makeShift({
+          id: 'shift-departed-a',
+          carer_id: null,
+          status: 'confirmed',
+          starts_at: '2026-08-10T09:00:00.000Z',
+          ends_at: '2026-08-10T17:00:00.000Z',
+        }),
+        makeShift({
+          id: 'shift-departed-b',
+          carer_id: null,
+          status: 'confirmed',
+          starts_at: '2026-08-10T13:00:00.000Z',
+          ends_at: '2026-08-10T21:00:00.000Z',
+        }),
+      ],
+      isLoading: false,
+    });
+
+    const { result } = renderHook(() =>
+      useTodayCoverRows(HOUSEHOLD_ID, ZONE, 1)
+    );
+
+    expect(result.current.rows).toHaveLength(2);
+    const keys = result.current.rows.map(row => row.key);
+    expect(new Set(keys).size).toBe(2);
   });
 });

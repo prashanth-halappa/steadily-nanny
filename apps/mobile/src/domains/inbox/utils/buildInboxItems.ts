@@ -138,10 +138,19 @@ export type InboxTermsAckInput = {
   acks: readonly PayArrangementAck[];
 };
 
-/** One carer-week whose approved reimbursements are still owed back. */
+/**
+ * One carer-week whose approved reimbursements are still owed back.
+ *
+ * `carer_id` is NULLABLE: 033 NULLs it when the carer deletes her account and
+ * the money is still owed, so the API reports her week too. 058's
+ * `household_member_id` is what keeps two departed carers in one week apart —
+ * see the row id built in `buildInboxItems`.
+ */
 export type InboxUnsettledReimbursementInput = {
   household_id: string;
-  carer_id: string;
+  carer_id: string | null;
+  household_member_id?: string | null;
+  carer_display_name: string;
   week_start: string;
   amount_minor: number;
   currency: string;
@@ -306,7 +315,11 @@ export function buildInboxItems(input: {
 
   for (const req of input.changeRequests) {
     if (req.status !== 'pending') continue;
-    if (!me || req.requested_by === me) continue;
+    // `requested_by` goes NULL when its author's account is deleted
+    // (ON DELETE SET NULL); with no guard `null === me` is never true, so
+    // the request would stick in every remaining member's inbox forever
+    // with no counterparty left to answer it.
+    if (!me || !req.requested_by || req.requested_by === me) continue;
     items.push({
       kind: 'change_request',
       id: req.id,
@@ -470,7 +483,9 @@ export function buildInboxItems(input: {
       if (week.amount_minor < 1) continue;
       items.push({
         kind: 'reimbursement_owed',
-        id: `${week.household_id}:${week.carer_id}:${week.week_start}`,
+        // `carerKeyOf`'s coalesce inline: two DEPARTED carers both key on a
+        // null carer_id, and a duplicate row id collapses them into one item.
+        id: `${week.household_id}:${week.carer_id ?? week.household_member_id ?? week.carer_display_name}:${week.week_start}`,
         householdId: week.household_id,
         weekStart: week.week_start,
         amountMinor: week.amount_minor,

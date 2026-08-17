@@ -24,6 +24,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Linking, Pressable, ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { ErrorState } from '@/src/components/custom/ErrorState';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -97,6 +98,29 @@ export function CarerProfileScreen() {
           <BackButton onPress={() => router.back()} label={tCommon('back')} />
         </View>
         <LoadingIndicator />
+      </View>
+    );
+  }
+
+  // No longer resolvable: removed from the household (soft
+  // `status: 'removed'`, 009_households.sql) or her account deleted. Render
+  // a not-found state rather than a full profile titled "Nanny" with a "?"
+  // avatar, live nav into Pay/Availability against a nulled carer id, and a
+  // "Remove from this household" button whose confirm dialog silently
+  // no-ops (`handleRemove`'s `if (!member) return;`).
+  if (!member) {
+    return (
+      <View testID="carer-profile-screen" className="flex-1 bg-background">
+        <View style={{ padding: SCREEN_CONTENT_STYLE.padding }}>
+          <BackButton onPress={() => router.back()} label={tCommon('back')} />
+        </View>
+        <ErrorState
+          variant="notFound"
+          title={t('carerProfile.notFoundTitle')}
+          message={t('carerProfile.notFoundMessage')}
+          onSecondaryAction={() => router.back()}
+          secondaryLabel={tCommon('back')}
+        />
       </View>
     );
   }

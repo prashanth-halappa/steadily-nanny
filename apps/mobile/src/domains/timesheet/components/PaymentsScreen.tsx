@@ -58,7 +58,7 @@ import {
   Small,
 } from '@/src/components/ui/typography';
 import { HouseholdSwitcher } from '@/src/domains/household/components/HouseholdSwitcher';
-import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
+import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { canViewParentSchedule } from '@/src/domains/setup/types';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
@@ -68,6 +68,7 @@ import { QUERY_TIMING } from '@/src/hooks/queries/utils';
 import i18n from '@/src/i18n';
 import { formatMoney } from '@/src/lib/money';
 import { showErrorToast } from '@/src/lib/toast';
+import { useAuthStore } from '@/src/store/auth';
 import {
   formatEarningsLongDate,
   formatEarningsSpanDate,
@@ -208,11 +209,13 @@ function MonthHeader({
 export function PaymentsScreen() {
   const { t } = useTranslation('hours');
   const { t: tCommon } = useTranslation('common');
+  const { t: tSchedule } = useTranslation('schedule');
   const router = useRouter();
   const onboarding = useIsOnboarded();
   const active = useActiveHousehold();
   const householdId = active.householdId;
   const isParentSide = canViewParentSchedule(onboarding.role);
+  const currentUserId = useAuthStore(s => s.user?.id ?? null);
 
   const payments = useHouseholdPayments(householdId);
   const members = useHouseholdMembers(householdId);
@@ -356,17 +359,31 @@ export function PaymentsScreen() {
   const selectedAttribution = selected
     ? (attributionByTimesheetId.get(selected.timesheet_id) ?? null)
     : null;
-  // Never a raw uuid: an unresolvable recorder reads as "no longer in this
-  // household", which is what a nulled/absent membership actually means.
-  const recordedByName = useMemo(() => {
-    if (!selected?.recorded_by) return null;
-    const member = (members.data ?? []).find(
-      row => row.user_id === selected.recorded_by
-    );
-    return member
-      ? resolveCarerName(member, t('payments.detail.recordedByGone'))
-      : null;
-  }, [selected, members.data, t]);
+  const membersByUserId = useMemo(
+    () => new Map((members.data ?? []).map(row => [row.user_id, row])),
+    [members.data]
+  );
+  const memberLabels = useMemo(
+    () => ({
+      you: tSchedule('detail.you'),
+      someone: tSchedule('detail.someone'),
+      roleFallback: (role: 'owner' | 'parent' | 'nanny' | 'helper') =>
+        tSchedule(`detail.roleFallback.${role}`),
+    }),
+    [tSchedule]
+  );
+  // Never a raw uuid, and never a hand-rolled "no longer in this household"
+  // guess either — `resolveMemberDisplayName` is the SAME resolver
+  // NannyWeekView/ParentWeekView use for this exact field, degrading to
+  // "Someone" for an id it cannot resolve (member not loaded yet, removed,
+  // or the account deleted) rather than asserting a departure that may not
+  // be true.
+  const recordedByName = resolveMemberDisplayName(
+    selected?.recorded_by ?? null,
+    currentUserId,
+    membersByUserId,
+    memberLabels
+  );
 
   const header = (
     <View className="gap-1 pb-2">

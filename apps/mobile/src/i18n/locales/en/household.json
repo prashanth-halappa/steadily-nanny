@@ -237,6 +237,8 @@
     "payRow": "Pay & terms",
     "availabilityRow": "Availability",
     "timeOffRow": "Time off",
-    "removeButton": "Remove from this household"
+    "removeButton": "Remove from this household",
+    "notFoundTitle": "No longer on this household",
+    "notFoundMessage": "This person has left the household or deleted their account."
   }
 }

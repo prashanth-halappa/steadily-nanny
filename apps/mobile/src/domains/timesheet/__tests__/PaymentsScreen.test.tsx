@@ -670,7 +670,13 @@ describe('PaymentsScreen — notes and the leaf sheet', () => {
     expect(queryByText(PARENT_ID)).toBeNull();
   });
 
-  it('says the recorder is gone rather than showing a uuid it cannot resolve', async () => {
+  // NannyWeekView/ParentWeekView already resolve an unmatched recorder as
+  // 'detail.someone' (schedule namespace), never a hand-rolled "no longer
+  // in this household" claim that could be false about a present, active
+  // parent (see NannyWeekView.tsx's module doc). PaymentsScreen must land
+  // on the SAME word for the SAME fact — see buildInboxItems-style D-46
+  // consistency, or here, GOLDEN-FIXES-worthy if it drifts again.
+  it('says "Someone" rather than showing a uuid it cannot resolve — same word as the parent/nanny week views', async () => {
     memberRows = [];
     paymentsResult = {
       data: [makePayment({ id: 'p-1' })],
@@ -689,7 +695,10 @@ describe('PaymentsScreen — notes and the leaf sheet', () => {
     await waitFor(() => expect(getByTestId('payments-detail')).toBeTruthy());
     expect(
       getByTestId('payments-detail-recorded-by-value').props.children
-    ).toBe('payments.detail.recordedByGone');
+    ).toBe('detail.someone');
+    expect(
+      getByTestId('payments-detail-recorded-by-value').props.children
+    ).not.toBe('payments.detail.recordedByGone');
     expect(queryByText(PARENT_ID)).toBeNull();
   });
 });

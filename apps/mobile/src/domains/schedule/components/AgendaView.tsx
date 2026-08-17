@@ -315,22 +315,38 @@ export function AgendaView({
   );
   // A single carer is unambiguous — no name needed on the row. 2+ active
   // nanny/helper members is when "who's covering this?" stops being
-  // obvious at a glance.
-  const showCarerNames =
-    new Set(
-      (membersQuery.data ?? [])
-        .filter(member => member.role === 'nanny' || member.role === 'helper')
-        .map(member => member.user_id)
-    ).size >= 2;
-  const carerFirstName = (carerId: string | null): string | undefined => {
-    if (!carerId) return undefined;
+  // obvious at a glance. Active membership alone UNDERCOUNTS the moment one
+  // carer deletes her account: her `household_members` row is destroyed
+  // (058/061), so she vanishes from `membersQuery.data` even though her
+  // COMPLETED shifts are still on screen — a shift only reaches `completed`
+  // once someone actually worked it, unlike a merely `confirmed`-but-still-
+  // unassigned one (`carer_id: null` there stays a legitimate "no one yet",
+  // which must keep rendering blank rather than lying about who's covering
+  // it — see the sibling test). `shifts` carries no `carer_display_name`
+  // snapshot the way `time_entries` does, so a completed+unassigned row is
+  // read as departed-carer evidence, not as "nobody worked this".
+  const activeCarerIds = new Set(
+    (membersQuery.data ?? [])
+      .filter(member => member.role === 'nanny' || member.role === 'helper')
+      .map(member => member.user_id)
+  );
+  const hasOrphanedCarerShift = shifts.some(
+    shift => shift.carer_id === null && shift.status === 'completed'
+  );
+  const showCarerNames = activeCarerIds.size >= 2 || hasOrphanedCarerShift;
+  const carerFirstName = (shift: Shift): string | undefined => {
+    if (!shift.carer_id && shift.status !== 'completed') return undefined;
+    // `resolveMemberDisplayName` already falls back to `memberLabels.someone`
+    // for a null/unresolvable id — a departed carer's completed shift
+    // renders THAT rather than going blank, which would read as the
+    // remaining carer's row (or as if nobody worked it at all).
     const fullName = resolveMemberDisplayName(
-      carerId,
+      shift.carer_id,
       currentUserId,
       membersByUserId,
       memberLabels
     );
-    return fullName.split(' ')[0];
+    return fullName.split(' ')[0] ?? fullName;
   };
   const childrenQuery = useChildren(householdId);
   const carersQuery = useHouseholdCarers(householdId);
@@ -573,9 +589,7 @@ export function AgendaView({
             <ShiftRow
               shift={item.shift}
               displayTimeZone={displayTimeZone}
-              carerName={
-                showCarerNames ? carerFirstName(item.shift.carer_id) : null
-              }
+              carerName={showCarerNames ? carerFirstName(item.shift) : null}
               carerColour={
                 showCarerNames && item.shift.carer_id
                   ? (membersByUserId.get(item.shift.carer_id)?.colour ??

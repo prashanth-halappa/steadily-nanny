@@ -455,9 +455,16 @@ export interface TodaysCoverInput {
   gaps: { startsAt: string; endsAt: string }[];
 }
 
-function shiftRowKey(shift: Pick<CoverShiftInput, 'kind' | 'carerId'>): string {
+function shiftRowKey(
+  shift: Pick<CoverShiftInput, 'id' | 'kind' | 'carerId'>
+): string {
   if (shift.kind === SHIFT_KINDS.PARENT_COVER) return 'shift-parent_cover';
-  return `shift-${shift.carerId ?? 'unassigned'}`;
+  // Unlike `time_entries` (058), `shifts` carries no `household_member_id`/
+  // `carer_display_name` snapshot, so a departed carer's shift has no
+  // identity beyond the row itself once `carer_id` goes NULL. Falling back
+  // to `shift.id` (instead of the literal string 'unassigned') keeps two
+  // different departed carers' shifts from merging into one "Carer" row.
+  return `shift-${shift.carerId ?? shift.id}`;
 }
 
 function pickCoverShift(
@@ -537,11 +544,20 @@ export function buildTodaysCoverPayload(
   const sortNames = new Map<string, string>();
   /** Carers their own entries already describe — their shift adds nothing. */
   const covered = new Set<string>();
+  /** Shifts an entry already clocked against — the `carer_id` match above
+   * goes blind the moment a departed carer's `carer_id` is NULL on both
+   * rows, but `shift_id` on the entry survives account deletion untouched
+   * (058's module doc). Without this a departed carer's own shift renders
+   * a second "Carer · due …" row next to her name-bearing entry row. */
+  const coveredShiftIds = new Set<string>();
 
   for (const [key, bucket] of buckets) {
     const first = bucket[0];
     if (!first) continue;
     if (first.carer_id) covered.add(first.carer_id);
+    for (const entry of bucket) {
+      if (entry.shift_id) coveredShiftIds.add(entry.shift_id);
+    }
     const name = nameFor(first.carer_id, first.carer_display_name);
     sortNames.set(key, name);
     const shift =
@@ -599,6 +615,7 @@ export function buildTodaysCoverPayload(
   const shiftBuckets = new Map<string, CoverShiftInput[]>();
   for (const shift of todayShifts) {
     if (shift.carerId && covered.has(shift.carerId)) continue;
+    if (coveredShiftIds.has(shift.id)) continue;
     const key = shiftRowKey(shift);
     const bucket = shiftBuckets.get(key);
     if (bucket) bucket.push(shift);

@@ -75,6 +75,32 @@ describe('buildInboxItems', () => {
     ]);
   });
 
+  it('excludes a pending change request raised by a since-deleted carer', () => {
+    // Account deletion nulls `requested_by` (033-style ON DELETE SET NULL)
+    // but does not resolve the request — with no null guard, `null === me`
+    // is false for every remaining member, so the row sticks in every
+    // household member's inbox forever with no counterparty left to answer
+    // it.
+    const items = buildInboxItems({
+      role: SETUP_ROLES.NANNY,
+      currentUserId: ME,
+      todayISO: '2026-08-25',
+      changeRequests: [
+        {
+          id: 'cr-orphaned',
+          shift_id: 'shift-1',
+          requested_by: null,
+          kind: 'time_change',
+          status: 'pending',
+        },
+      ],
+      patterns: [],
+      timesheets: [],
+    });
+
+    expect(items).toEqual([]);
+  });
+
   it('includes pending schedule patterns addressed to me', () => {
     const items = buildInboxItems({
       role: SETUP_ROLES.NANNY,
@@ -985,6 +1011,7 @@ describe('buildInboxItems — reimbursement_owed kind', () => {
   const unsettledWeek = {
     household_id: 'hh-1',
     carer_id: ME,
+    carer_display_name: 'Marisol Reyes',
     week_start: '2026-08-17',
     amount_minor: 3480,
     currency: 'GBP',
@@ -1207,6 +1234,7 @@ describe('buildInboxItems — person on the item', () => {
         {
           household_id: 'hh-1',
           carer_id: ME,
+          carer_display_name: 'Marisol Reyes',
           week_start: '2026-08-17',
           amount_minor: 3480,
           currency: 'GBP',

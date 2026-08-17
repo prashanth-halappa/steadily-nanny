@@ -12,7 +12,6 @@ import { BackButton } from '@/src/components/ui/back-button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { H1, Small } from '@/src/components/ui/typography';
-import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { HouseholdTimeOffRow } from '@/src/domains/timeOff/components/HouseholdTimeOffRow';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
@@ -62,11 +61,12 @@ export default function HouseholdTimeOffScreen() {
           date: formatDateShort(nextDate),
         });
 
-  const nameForCarer = (userId: string): string =>
-    resolveCarerName(
-      (members.data ?? []).find(m => m.user_id === userId),
-      t('role.nanny')
-    );
+  // Undefined for a carer no longer on the ACTIVE roster (removed from the
+  // household, or her account deleted) — `HouseholdTimeOffRow` still
+  // resolves a real name for her from her PTO ledger snapshot rather than
+  // falling straight to the role fallback below.
+  const memberForCarer = (userId: string) =>
+    (members.data ?? []).find(m => m.user_id === userId);
 
   return (
     <ScrollView
@@ -105,7 +105,8 @@ export default function HouseholdTimeOffScreen() {
                   key={row.id}
                   timeOff={row}
                   householdId={active.householdId as string}
-                  carerName={nameForCarer(row.user_id)}
+                  member={memberForCarer(row.user_id)}
+                  carerFallbackLabel={t('role.nanny')}
                   canMarkPaid={canMarkPaid}
                   householdTimezone={active.household?.timezone ?? 'UTC'}
                 />

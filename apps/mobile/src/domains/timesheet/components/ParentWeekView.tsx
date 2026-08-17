@@ -1126,16 +1126,12 @@ export function ParentWeekView({
         payment={selectedPayment}
         weekStart={null}
         paidToName={carerName ?? timesheet?.carer_display_name ?? null}
-        recordedByName={
-          selectedPayment
-            ? resolveMemberDisplayName(
-                selectedPayment.recorded_by,
-                currentUserId,
-                membersByUserId,
-                memberLabels
-              )
-            : null
-        }
+        recordedByName={resolveMemberDisplayName(
+          selectedPayment?.recorded_by ?? null,
+          currentUserId,
+          membersByUserId,
+          memberLabels
+        )}
         // §4.1 — correcting is the PAYER's act, so this view passes the
         // action and `NannyWeekView`/`PaymentsScreen` do not. A helper
         // (`readOnly`) never gets it either, the same gate as "Mark as paid".

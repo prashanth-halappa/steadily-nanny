@@ -345,6 +345,8 @@
     "nanny_one": "{{count}} shift this week, {{hours}} in all.",
     "nanny_other": "{{count}} shifts this week, {{hours}} in all.",
     "parent_one": "{{name}} is with the children {{count}} day this week.",
-    "parent_other": "{{name}} is with the children {{count}} days this week."
+    "parent_other": "{{name}} is with the children {{count}} days this week.",
+    "parentNoCarer_one": "The children are covered {{count}} day this week.",
+    "parentNoCarer_other": "The children are covered {{count}} days this week."
   }
 }

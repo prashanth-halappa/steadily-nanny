@@ -154,4 +154,49 @@ describe('AgendaView carer names', () => {
     expect(queryByTestId('schedule-shift-carer-shift-2')).toBeNull();
     expect(queryByTestId('schedule-shift-avatar-shift-2')).toBeNull();
   });
+
+  it("keeps names on and shows a fallback name for a departed carer's shift after the roster drops to 1", () => {
+    // The carer who worked shift-2 deleted her account: her
+    // `household_members` row is destroyed (058/061) and `shifts.carer_id`
+    // goes NULL (015_shifts.sql, on delete set null) — `shifts` carries no
+    // `carer_display_name` snapshot the way `time_entries` does. Only one
+    // active nanny is left on the roster.
+    mockUseHouseholdMembers.mockImplementation(() => ({
+      data: [nannyMember(NANNY_A_ID, 'Amara Diallo')],
+    }));
+
+    const { getByTestId } = render(
+      <AgendaView
+        shifts={[
+          makeShift({
+            id: 'shift-1',
+            carer_id: NANNY_A_ID,
+            local_date: '2026-08-03',
+          }),
+          makeShift({
+            id: 'shift-2',
+            carer_id: null,
+            status: 'completed',
+            local_date: '2026-08-02',
+          }),
+        ]}
+        householdId={HOUSEHOLD_ID}
+        weekDates={['2026-08-02', '2026-08-03']}
+      />
+    );
+
+    // The remaining nanny still gets her name — dropping to 1 active member
+    // must not silently turn names off for the whole agenda.
+    expect(getByTestId('schedule-shift-carer-shift-1').props.children).toBe(
+      'Amara'
+    );
+    // The departed carer's own shift renders SOME name rather than going
+    // blank, which would read as "nobody worked this" or blend into the
+    // remaining nanny's unlabeled rows. Rendered outside an i18n provider
+    // here, so `t()` echoes the key (docs/09-TESTING.md §6) — 'detail.someone'
+    // is `memberLabels.someone`'s translated value in a real app.
+    expect(getByTestId('schedule-shift-carer-shift-2').props.children).toBe(
+      'detail.someone'
+    );
+  });
 });

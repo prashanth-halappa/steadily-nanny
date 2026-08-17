@@ -13,6 +13,8 @@ let apiClient: any;
 
 const HOUSEHOLD_ID = '22222222-2222-4222-8222-222222222222';
 const CARER_ID = '33333333-3333-4333-8333-333333333333';
+/** A `household_members.id` (058) — deliberately different from the carer's. */
+const MEMBER_ID = '44444444-4444-4444-8444-444444444444';
 const SETTLEMENT_ID = '77777777-7777-4777-8777-777777777777';
 const WEEK_START = '2026-08-17';
 
@@ -140,6 +142,11 @@ describe('reimbursementSettlementApi.listUnsettled', () => {
   it('GETs /unsettled and unwraps the { weeks } envelope', async () => {
     const week = {
       carer_id: CARER_ID,
+      // 033/058: the API reports a DEPARTED carer's outstanding week too, so
+      // the row carries the membership stamp and the name snapshot alongside
+      // a `carer_id` that may be null.
+      household_member_id: MEMBER_ID,
+      carer_display_name: 'Marisol Reyes',
       week_start: WEEK_START,
       amount_minor: 3480,
       currency: 'GBP',

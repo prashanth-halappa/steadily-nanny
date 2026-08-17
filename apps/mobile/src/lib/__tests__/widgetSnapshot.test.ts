@@ -629,6 +629,67 @@ describe('buildTodaysCoverPayload (P1)', () => {
   });
 });
 
+describe('buildTodaysCoverPayload departed carers (058 has no shift snapshot)', () => {
+  const base = {
+    nowMs: NOW,
+    timeZone: ZONE,
+    householdName: 'Patel household',
+    namesByCarerId: { 'carer-1': 'Sarah' },
+    gaps: [],
+  };
+
+  it("does not sibling a departed carer's own shift onto her entry row", () => {
+    const { props } = buildTodaysCoverPayload({
+      ...base,
+      entries: [
+        makeEntry({
+          carer_id: null,
+          carer_display_name: 'Emma',
+          shift_id: 'shift-emma-1122',
+          status: 'submitted',
+          clock_in_at: '2026-08-06T07:12:00.000Z',
+          clock_out_at: '2026-08-06T16:04:00.000Z',
+        }),
+      ],
+      shifts: [
+        makeCoverShift({
+          id: 'shift-emma-1122',
+          carerId: null,
+          status: 'confirmed',
+        }),
+      ],
+    });
+    expect(props.rows).toHaveLength(1);
+    expect(props.rows[0]?.kind).toBe('finished');
+    expect(props.rows[0]?.title).toMatch(/^Emma finished at /);
+  });
+
+  it('keeps two departed carers on separate rows instead of merging under "unassigned"', () => {
+    const { props } = buildTodaysCoverPayload({
+      ...base,
+      entries: [],
+      shifts: [
+        makeCoverShift({
+          id: 'shift-departed-a',
+          carerId: null,
+          status: 'confirmed',
+          startsAt: '2026-08-06T09:00:00.000Z',
+          endsAt: '2026-08-06T17:00:00.000Z',
+        }),
+        makeCoverShift({
+          id: 'shift-departed-b',
+          carerId: null,
+          status: 'confirmed',
+          startsAt: '2026-08-06T13:00:00.000Z',
+          endsAt: '2026-08-06T21:00:00.000Z',
+        }),
+      ],
+    });
+    expect(props.rows).toHaveLength(2);
+    expect(new Set(props.rows.map(row => row.key)).size).toBe(2);
+  });
+});
+
 describe('week hours widgets (N3 / P2)', () => {
   const workedWeek = [
     makeEntry({

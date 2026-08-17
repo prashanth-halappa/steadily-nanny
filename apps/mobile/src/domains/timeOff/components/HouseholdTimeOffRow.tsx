@@ -39,6 +39,10 @@ import { spacing } from '@/lib/design-tokens';
 import { useElevation } from '@/lib/design-tokens/elevation';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Body, Small } from '@/src/components/ui/typography';
+import {
+  type CarerNameSource,
+  resolveCarerName,
+} from '@/src/domains/schedule/utils/memberDisplayName';
 import { useMarkTimeOffPaid } from '@/src/hooks/mutations/useMarkTimeOffPaid';
 import { usePtoBalance } from '@/src/hooks/queries/usePtoBalance';
 import { usePtoLedger } from '@/src/hooks/queries/usePtoLedger';
@@ -51,11 +55,20 @@ import { MarkTimeOffPaidSheet } from './MarkTimeOffPaidSheet';
 interface HouseholdTimeOffRowProps {
   timeOff: CarerTimeOff;
   householdId: string;
-  /** Resolved once, by the caller, from `useHouseholdMembers` — this row is
-   * inside the OWN household's view of its OWN nanny's time off, so a real
-   * name is correct here (the anonymity rule is only for the nanny's
-   * cross-family surface, TIER0-CX-SPEC.md §5.2, a different screen). */
-  carerName: string;
+  /** Resolved once, by the caller, from `useHouseholdMembers` — undefined
+   * for a carer no longer on the ACTIVE roster (removed from the household,
+   * `009_households.sql`'s soft `status: 'removed'`, or her account
+   * deleted). Her `carer_time_off`/`pto_ledger` rows outlive either case
+   * (`carer_time_off` is cascade-deleted only on full account deletion,
+   * and `pto_ledger` never is — 043_pto_ledger.sql), so this row still has
+   * her booking to show; `resolveCarerName` below falls to the ledger's own
+   * `carer_display_name` snapshot rather than the generic role label. */
+  member: CarerNameSource | undefined;
+  /** The label if even the ledger has nothing to snapshot from (e.g. no PTO
+   * has ever been marked paid for her) — the anonymity rule (TIER0-CX-SPEC
+   * §5.2) doesn't apply here, this is the household's OWN view of its OWN
+   * carer, so a real name is preferred at every step above this. */
+  carerFallbackLabel: string;
   /** Parent-editor role gate (defense in depth — the server is the real
    * gate). A non-parent still sees the row and its paid status, just can't
    * open the mark-paid sheet. */
@@ -68,7 +81,8 @@ interface HouseholdTimeOffRowProps {
 export function HouseholdTimeOffRow({
   timeOff,
   householdId,
-  carerName,
+  member,
+  carerFallbackLabel,
   canMarkPaid,
   householdTimezone,
 }: HouseholdTimeOffRowProps) {
@@ -86,6 +100,15 @@ export function HouseholdTimeOffRow({
   const ledger = usePtoLedger(householdId, timeOff.user_id, year);
   const balance = usePtoBalance(householdId, timeOff.user_id, year);
   const markPaid = useMarkTimeOffPaid(householdId, timeOff.user_id, year);
+
+  // Active member's live name first, then her PTO ledger's own snapshot
+  // (still hers even once she's off the active roster), then the generic
+  // fallback if neither has anything.
+  const carerName = resolveCarerName(
+    member,
+    carerFallbackLabel,
+    ledger.data?.[0]?.carer_display_name
+  );
 
   const usageEntry =
     (ledger.data ?? []).find(

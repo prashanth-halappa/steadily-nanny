@@ -160,16 +160,21 @@ describe('PaymentDetailSheet — the facts', () => {
   });
 
   // 033 discipline: a parent deleting her account nulls `recorded_by` and
-  // leaves the payment intact. A raw uuid — or a blank — on a money row is
-  // worse than saying plainly that the person is gone.
-  it('says the recorder is gone when recorded_by is null — never blank, never a uuid', () => {
+  // leaves the payment intact. The sheet no longer decides the fallback
+  // word itself (it used to, and disagreed with NannyWeekView/ParentWeekView
+  // — 'No longer in this household' vs 'Someone', one fact printed two
+  // ways). Every caller now resolves through `resolveMemberDisplayName`
+  // before handing this prop down, so this only pins that the sheet
+  // renders whatever string it is given, verbatim — never blank, never a
+  // raw uuid.
+  it('renders the caller-resolved name verbatim, never blank, never a raw uuid', () => {
     const { getByTestId, queryByText } = renderSheet({
       payment: makePayment({ recorded_by: null }),
-      recordedByName: null,
+      recordedByName: 'detail.someone',
     });
 
     const value = getByTestId('payments-detail-recorded-by-value');
-    expect(value.props.children).toBe('payments.detail.recordedByGone');
+    expect(value.props.children).toBe('detail.someone');
     expect(value.props.children).not.toBe('');
     expect(queryByText('11111111-1111-4111-8111-111111111111')).toBeNull();
   });

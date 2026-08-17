@@ -69,22 +69,24 @@ describe('CarerProfileScreen — render (Pattern B)', () => {
       isLoading: false,
     }),
   }));
+  const mockUseHouseholdMembers = mock(() => ({
+    data: [
+      {
+        id: 'member-row-1',
+        user_id: 'carer-1',
+        role: 'nanny',
+        status: 'active',
+        profile_name: 'Marisol',
+        profile_phone: '07700 900333',
+        display_name_override: null,
+        joined_at: '2026-01-15T00:00:00.000Z',
+      },
+    ],
+    isLoading: false,
+  }));
+
   mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
-    useHouseholdMembers: () => ({
-      data: [
-        {
-          id: 'member-row-1',
-          user_id: 'carer-1',
-          role: 'nanny',
-          status: 'active',
-          profile_name: 'Marisol',
-          profile_phone: '07700 900333',
-          display_name_override: null,
-          joined_at: '2026-01-15T00:00:00.000Z',
-        },
-      ],
-      isLoading: false,
-    }),
+    useHouseholdMembers: mockUseHouseholdMembers,
   }));
   mock.module('@/src/hooks/mutations/useRemoveMember', () => ({
     useRemoveMember: () => ({ mutate: removeMutate, isPending: false }),
@@ -108,5 +110,43 @@ describe('CarerProfileScreen — render (Pattern B)', () => {
       'member-row-1',
       expect.anything()
     );
+  });
+
+  describe('member no longer resolves (removed, or account deleted)', () => {
+    beforeAll(() => {
+      // Same `carerId: 'carer-1'` route param as every other test in this
+      // file — only the member LIST changes, exactly the state a household
+      // reaches once that carer is removed (soft `status: 'removed'`,
+      // 009_households.sql) or deletes her account.
+      mockUseHouseholdMembers.mockReturnValue({ data: [], isLoading: false });
+    });
+
+    it('renders a not-found state instead of a "Nanny" profile with a "?" avatar', () => {
+      const { getByTestId, queryByTestId, queryByText } = render(
+        <CarerProfileScreen />
+      );
+
+      expect(getByTestId('carer-profile-screen')).toBeTruthy();
+      expect(queryByTestId('carer-profile-avatar')).toBeNull();
+      expect(queryByText('carerProfile.removeButton')).toBeNull();
+    });
+
+    it('offers no live navigation into Pay/Availability for a nulled carer id', () => {
+      const { queryByTestId } = render(<CarerProfileScreen />);
+
+      expect(queryByTestId('carer-profile-pay-row')).toBeNull();
+      expect(queryByTestId('carer-profile-availability-row')).toBeNull();
+    });
+
+    it('never renders "Remove from this household" for a member that cannot be removed', () => {
+      const { queryByTestId } = render(<CarerProfileScreen />);
+
+      // The old bug: the button rendered, but its confirm dialog's
+      // `handleRemove` silently no-opped (`if (!member) return;`) — a
+      // parent could tap "Remove" and nothing would ever happen. With no
+      // button to press at all, that no-op can't be reached in the first
+      // place.
+      expect(queryByTestId('carer-profile-remove-button')).toBeNull();
+    });
   });
 });
