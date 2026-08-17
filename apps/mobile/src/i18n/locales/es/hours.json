@@ -154,6 +154,7 @@
     "balanceLabel": "Pendiente de pago",
     "noPayments": "Todavía no hay pagos registrados.",
     "markPaidButton": "Marcar como pagada",
+    "unknown": "No pudimos cargar lo que se ha pagado esta semana.",
     "recordedToast": "Pago registrado",
     "correctionRow": "Corrección {{date}}",
     "correctionRecordedToast": "Corrección registrada",

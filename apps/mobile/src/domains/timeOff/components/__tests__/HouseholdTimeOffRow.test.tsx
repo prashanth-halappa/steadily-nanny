@@ -397,6 +397,13 @@ describe('HouseholdTimeOffRow', () => {
     );
 
     expect(getByTestId('pto-mark-paid-sheet-modal').props.visible).toBe(false);
+    // Wait for the ledger/balance read to settle FIRST — D-B1 gates the row
+    // unpressable while either is pending, same as the error state below.
+    await waitFor(() =>
+      expect(
+        getByTestId(`household-time-off-status-${TIME_OFF_ID}`)
+      ).toBeTruthy()
+    );
     fireEvent.press(getByTestId(`household-time-off-${TIME_OFF_ID}`));
     await waitFor(() =>
       expect(getByTestId('pto-mark-paid-sheet-modal').props.visible).toBe(true)
@@ -431,6 +438,11 @@ describe('HouseholdTimeOffRow', () => {
       />
     );
 
+    await waitFor(() =>
+      expect(
+        getByTestId(`household-time-off-status-${TIME_OFF_ID}`)
+      ).toBeTruthy()
+    );
     fireEvent.press(getByTestId(`household-time-off-${TIME_OFF_ID}`));
     await waitFor(() =>
       expect(getByTestId('pto-mark-paid-hours-input')).toBeTruthy()
@@ -508,6 +520,11 @@ describe('HouseholdTimeOffRow', () => {
       />
     );
 
+    await waitFor(() =>
+      expect(
+        getByTestId(`household-time-off-status-${TIME_OFF_ID}`)
+      ).toBeTruthy()
+    );
     fireEvent.press(getByTestId(`household-time-off-${TIME_OFF_ID}`));
     await waitFor(() =>
       expect(getByTestId('pto-mark-paid-hours-input')).toBeTruthy()
@@ -519,5 +536,100 @@ describe('HouseholdTimeOffRow', () => {
     // Sheet stays open, and the typed value survives.
     expect(getByTestId('pto-mark-paid-sheet')).toBeTruthy();
     expect(getByTestId('pto-mark-paid-hours-input').props.value).toBe('8');
+  });
+
+  // D-B1, docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B — the compound finding's
+  // third instance: "no gate at all" used to mean "Not marked paid" on paid
+  // leave, and the row still opening the sheet with `existingUsageEntry:
+  // null`, inviting a double record.
+  describe('a pending or failed ledger/balance read', () => {
+    it('shows no pill while the ledger and balance are still pending, and the row is not pressable', () => {
+      getBalanceMock.mockImplementation(() => new Promise(() => {}));
+      getLedgerMock.mockImplementation(() => new Promise(() => {}));
+
+      const { queryByTestId, getByTestId } = renderWithProviders(
+        <HouseholdTimeOffRow
+          timeOff={timeOff as never}
+          householdId={HOUSEHOLD_ID}
+          member={{ display_name_override: 'Amara', profile_name: null }}
+          carerFallbackLabel="role.nanny"
+          canMarkPaid
+          householdTimezone="UTC"
+        />
+      );
+
+      expect(
+        queryByTestId(`household-time-off-status-${TIME_OFF_ID}`)
+      ).toBeNull();
+      expect(
+        queryByTestId(`household-time-off-retry-${TIME_OFF_ID}`)
+      ).toBeNull();
+
+      fireEvent.press(getByTestId(`household-time-off-${TIME_OFF_ID}`));
+      expect(getByTestId('pto-mark-paid-sheet-modal').props.visible).toBe(
+        false
+      );
+    });
+
+    it('shows an inline retry (never a stale pill) on a failed ledger read, and the row stays unpressable', async () => {
+      getLedgerMock.mockImplementation(() => Promise.reject(new Error('boom')));
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <HouseholdTimeOffRow
+          timeOff={timeOff as never}
+          householdId={HOUSEHOLD_ID}
+          member={{ display_name_override: 'Amara', profile_name: null }}
+          carerFallbackLabel="role.nanny"
+          canMarkPaid
+          householdTimezone="UTC"
+        />
+      );
+
+      await waitFor(() =>
+        expect(
+          getByTestId(`household-time-off-retry-${TIME_OFF_ID}`)
+        ).toBeTruthy()
+      );
+      expect(
+        queryByTestId(`household-time-off-status-${TIME_OFF_ID}`)
+      ).toBeNull();
+
+      fireEvent.press(getByTestId(`household-time-off-${TIME_OFF_ID}`));
+      expect(getByTestId('pto-mark-paid-sheet-modal').props.visible).toBe(
+        false
+      );
+
+      fireEvent.press(
+        getByTestId(`household-time-off-retry-${TIME_OFF_ID}-button`)
+      );
+      await waitFor(() => expect(getLedgerMock).toHaveBeenCalledTimes(2));
+    });
+
+    it('does not open the sheet into a NULL existingUsageEntry on a failed balance read', async () => {
+      getBalanceMock.mockImplementation(() =>
+        Promise.reject(new Error('boom'))
+      );
+
+      const { getByTestId } = renderWithProviders(
+        <HouseholdTimeOffRow
+          timeOff={timeOff as never}
+          householdId={HOUSEHOLD_ID}
+          member={{ display_name_override: 'Amara', profile_name: null }}
+          carerFallbackLabel="role.nanny"
+          canMarkPaid
+          householdTimezone="UTC"
+        />
+      );
+
+      await waitFor(() =>
+        expect(
+          getByTestId(`household-time-off-retry-${TIME_OFF_ID}`)
+        ).toBeTruthy()
+      );
+      fireEvent.press(getByTestId(`household-time-off-${TIME_OFF_ID}`));
+      expect(getByTestId('pto-mark-paid-sheet-modal').props.visible).toBe(
+        false
+      );
+    });
   });
 });

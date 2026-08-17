@@ -38,6 +38,7 @@
  */
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { Button } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';
 import { H4, MetadataLabel, Small } from '@/src/components/ui/typography';
@@ -78,6 +79,17 @@ interface ReimbursementsCardProps {
   /** A refused settlement, stated under the button that caused it
    * (GOLDEN-FIXES #40 — never a toast). */
   markReimbursedError?: string | null;
+  /** The settlement read FAILED or is still in flight — distinct from
+   * "loaded, and it hasn't happened yet" (`settledOn === null` covers that
+   * case too). A dropped read must never render "not reimbursed yet" over
+   * money that may already be back with her
+   * (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B) — the state line and "Mark
+   * reimbursed" are both withheld and an inline retry stands in for the
+   * state line. The itemised list and total above are UNAFFECTED — they
+   * come from the (unrelated) expenses read, not the settlement one. */
+  settlementUnknown?: boolean;
+  /** Wired to the settlements query's own `refetch`. */
+  onRetrySettlements?: () => void;
   testID?: string;
 }
 
@@ -91,6 +103,8 @@ export function ReimbursementsCard({
   onMarkReimbursedPress,
   isMarkReimbursedDisabled = false,
   markReimbursedError = null,
+  settlementUnknown = false,
+  onRetrySettlements,
   testID = 'reimbursements-card',
 }: ReimbursementsCardProps) {
   const { t } = useTranslation('expenses');
@@ -154,42 +168,53 @@ export function ReimbursementsCard({
 
       {/* State words on the figure, both roles, always (docs/11-MONEY.md §1):
           a total with no state says nothing about whether she has her money
-          back. */}
-      <Small testID={`${testID}-state`} className="text-muted-foreground">
-        {settledOn
-          ? settledAmountMinor != null
-            ? t('reimbursements.stateSettled', {
-                amount: formatMoney(settledAmountMinor, currency),
-                date: formatEarningsLongDate(settledOn),
-              })
-            : t('reimbursements.stateSettledDateOnly', {
-                date: formatEarningsLongDate(settledOn),
-              })
-          : t('reimbursements.stateUnsettled')}
-      </Small>
-
-      {onMarkReimbursedPress && !settledOn ? (
+          back. Withheld entirely when the settlement read itself is unknown
+          — see `settlementUnknown`'s doc. */}
+      {settlementUnknown ? (
+        <InlineRetry
+          testID={`${testID}-settlement-retry`}
+          message={t('reimbursements.settlementUnknown')}
+          onRetry={onRetrySettlements ?? (() => {})}
+        />
+      ) : (
         <>
-          <Button
-            testID={`${testID}-mark-reimbursed-button`}
-            variant="ghost"
-            disabled={isMarkReimbursedDisabled}
-            onPress={onMarkReimbursedPress}
-          >
-            <Text className="text-foreground">
-              {t('reimbursements.markReimbursedButton')}
-            </Text>
-          </Button>
-          {markReimbursedError ? (
-            <Small
-              testID={`${testID}-mark-reimbursed-error`}
-              className="text-destructive"
-            >
-              {markReimbursedError}
-            </Small>
+          <Small testID={`${testID}-state`} className="text-muted-foreground">
+            {settledOn
+              ? settledAmountMinor != null
+                ? t('reimbursements.stateSettled', {
+                    amount: formatMoney(settledAmountMinor, currency),
+                    date: formatEarningsLongDate(settledOn),
+                  })
+                : t('reimbursements.stateSettledDateOnly', {
+                    date: formatEarningsLongDate(settledOn),
+                  })
+              : t('reimbursements.stateUnsettled')}
+          </Small>
+
+          {onMarkReimbursedPress && !settledOn ? (
+            <>
+              <Button
+                testID={`${testID}-mark-reimbursed-button`}
+                variant="ghost"
+                disabled={isMarkReimbursedDisabled}
+                onPress={onMarkReimbursedPress}
+              >
+                <Text className="text-foreground">
+                  {t('reimbursements.markReimbursedButton')}
+                </Text>
+              </Button>
+              {markReimbursedError ? (
+                <Small
+                  testID={`${testID}-mark-reimbursed-error`}
+                  className="text-destructive"
+                >
+                  {markReimbursedError}
+                </Small>
+              ) : null}
+            </>
           ) : null}
         </>
-      ) : null}
+      )}
 
       <Small testID={`${testID}-note`} className="text-muted-foreground">
         {t('reimbursements.note')}

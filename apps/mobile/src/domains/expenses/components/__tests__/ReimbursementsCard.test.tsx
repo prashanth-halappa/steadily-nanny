@@ -285,4 +285,63 @@ describe('ReimbursementsCard', () => {
       getByTestId('reimbursements-card-mark-reimbursed-button')
     ).toBeTruthy();
   });
+
+  // D-B1: a failed or still-in-flight settlement read must never render
+  // "not reimbursed yet" over money that may already be back with her
+  // (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B's compound finding).
+  describe('settlementUnknown', () => {
+    it('withholds the settled/unsettled claim and the action, and offers a retry', () => {
+      const { getByTestId, queryByTestId } = render(
+        <ReimbursementsCard
+          testID="reimbursements-card"
+          approvedExpenses={[makeExpense()]}
+          totalMinor={1200}
+          currency="GBP"
+          onMarkReimbursedPress={mock(() => {})}
+          settlementUnknown
+        />
+      );
+
+      expect(queryByTestId('reimbursements-card-state')).toBeNull();
+      expect(
+        queryByTestId('reimbursements-card-mark-reimbursed-button')
+      ).toBeNull();
+      expect(getByTestId('reimbursements-card-settlement-retry')).toBeTruthy();
+    });
+
+    it('calls onRetrySettlements when the retry is pressed', () => {
+      const onRetrySettlements = mock(() => {});
+      const { getByTestId } = render(
+        <ReimbursementsCard
+          testID="reimbursements-card"
+          approvedExpenses={[makeExpense()]}
+          totalMinor={1200}
+          currency="GBP"
+          settlementUnknown
+          onRetrySettlements={onRetrySettlements}
+        />
+      );
+
+      fireEvent.press(
+        getByTestId('reimbursements-card-settlement-retry-button')
+      );
+      expect(onRetrySettlements).toHaveBeenCalledTimes(1);
+    });
+
+    it('still lists the approved expenses and the total — only the settlement claim is withheld', () => {
+      const { getByTestId } = render(
+        <ReimbursementsCard
+          testID="reimbursements-card"
+          approvedExpenses={[makeExpense()]}
+          totalMinor={1200}
+          currency="GBP"
+          settlementUnknown
+        />
+      );
+
+      expect(getByTestId('reimbursements-card-total').props.children).toBe(
+        '£12.00'
+      );
+    });
+  });
 });

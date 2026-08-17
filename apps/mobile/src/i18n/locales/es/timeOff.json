@@ -39,6 +39,9 @@
   "kind": {
     "sick": "Día de baja por enfermedad"
   },
+  "householdRow": {
+    "loadError": "No pudimos cargar si este tiempo libre se ha pagado."
+  },
   "sickButton": "Hoy estoy enferma",
   "sickConfirmTitle": "¿Reservar un día de baja por enfermedad?",
   "sickConfirmBody": "Se notificará a la familia. Esto reserva hoy como un día de baja por enfermedad.",

@@ -51,6 +51,7 @@ import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE, useElevation } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
+import { ErrorState } from '@/src/components/custom/ErrorState';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -392,7 +393,10 @@ export function TodayScreen() {
   // `isFetching`) so a background refetch never re-shows the skeleton over
   // data already on screen.
   const isFeedLoading =
-    !!household && (children.isLoading || householdMembers.isLoading);
+    !!household &&
+    (children.isLoading ||
+      householdMembers.isLoading ||
+      onboarding.status === 'loading');
   // Same tab-bar dead-zone fix as Settings (BUG1) — the floating tab bar
   // overlays this screen's content instead of reserving its own layout
   // space, so a fixed paddingBottom is not safe-area-aware.
@@ -406,6 +410,21 @@ export function TodayScreen() {
   // occupant is computed — a draft has no slot to fill.
   if (household?.state === HOUSEHOLD_STATES.DRAFT) {
     return <DraftHomeScreen />;
+  }
+
+  // C1 (D-B1, docs/CROSS-CUTTING-DEFECT-PATTERNS.md §C): on a failed
+  // memberships read, `useIsOnboarded` reports `role: null` — every
+  // role-keyed branch below (`activeNanny`, `slotOccupant`, …) would then
+  // silently render as if she had no role at all, dropping the clock-in
+  // card with NO error and NO retry while the rest of the feed renders
+  // normally. Same shape as `schedule.tsx`'s own `membershipsError` branch,
+  // and — after this — the only tab still missing one.
+  if (onboarding.membershipsError) {
+    return (
+      <View testID="today-tab-error" style={{ flex: 1 }}>
+        <ErrorState onRetry={onboarding.retryMemberships} />
+      </View>
+    );
   }
 
   const clockInCard = household ? (

@@ -154,6 +154,7 @@
     "balanceLabel": "Still to pay",
     "noPayments": "No payments recorded yet.",
     "markPaidButton": "Mark as paid",
+    "unknown": "We couldn't load what's been paid for this week.",
     "recordedToast": "Payment recorded",
     "correctionRow": "Correction {{date}}",
     "correctionRecordedToast": "Correction recorded",

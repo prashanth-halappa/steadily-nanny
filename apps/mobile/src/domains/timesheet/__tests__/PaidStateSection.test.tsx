@@ -207,6 +207,48 @@ describe('PaidStateSection — the ledger', () => {
   });
 });
 
+// A failed or still-in-flight payments read must never render as "nothing
+// paid" — D-B1, docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B's compound finding.
+describe('PaidStateSection — paidStateUnknown', () => {
+  it('withholds the badge and every amount, and never offers Mark as paid', () => {
+    const { getByTestId, queryByTestId } = renderCard({
+      paidStateUnknown: true,
+      onMarkPaidPress: mock(() => {}),
+      payments: [makePayment({ amount_minor: 23612 })],
+      paidState: derivePaidState([makePayment({ amount_minor: 23612 })], 23612),
+    });
+
+    expect(getByTestId('hours-paid-state')).toBeTruthy();
+    expect(queryByTestId('hours-paid-state-badge')).toBeNull();
+    expect(queryByTestId('hours-paid-state-total-value')).toBeNull();
+    expect(queryByTestId('hours-paid-state-balance-value')).toBeNull();
+    expect(queryByTestId('hours-mark-paid-button')).toBeNull();
+  });
+
+  it('renders an inline retry that calls onRetryPayments when pressed', () => {
+    const onRetryPayments = mock(() => {});
+    const { getByTestId, getByText } = renderCard({
+      paidStateUnknown: true,
+      onRetryPayments,
+    });
+
+    expect(getByText('paid.unknown')).toBeTruthy();
+    fireEvent.press(getByTestId('hours-paid-state-retry-button'));
+    expect(onRetryPayments).toHaveBeenCalledTimes(1);
+  });
+
+  it('still renders the section (title) even when the real paidState is null — unknown is not "nothing to say"', () => {
+    const { getByTestId } = renderCard({
+      paidStateUnknown: true,
+      paidState: null,
+      payments: [],
+    });
+
+    expect(getByTestId('hours-paid-state')).toBeTruthy();
+    expect(getByTestId('hours-paid-state-title')).toBeTruthy();
+  });
+});
+
 describe('PaidStateSection — who may act', () => {
   it('offers "Mark as paid" only when a handler is supplied (the parent view)', () => {
     const onMarkPaidPress = mock(() => {});

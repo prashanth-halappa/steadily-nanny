@@ -231,6 +231,14 @@ mock.module('@/src/api/endpoints/payments', () => ({
   },
 }));
 
+const listSettlementsMock = mock(() => Promise.resolve([] as unknown[]));
+mock.module('@/src/api/endpoints/reimbursementSettlements', () => ({
+  reimbursementSettlementApi: {
+    listForWeek: listSettlementsMock,
+    create: mock(),
+  },
+}));
+
 mock.module('@/src/api/endpoints/expenses', () => {
   const shared = expenseSchemaModule;
   return {
@@ -314,6 +322,28 @@ function makePayment(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeApprovedExpense(overrides: Partial<Expense> = {}): Expense {
+  return {
+    id: 'expense-1',
+    household_id: HOUSEHOLD_ID,
+    carer_id: CARER_ID,
+    local_date: WEEK_START,
+    kind: 'expense',
+    description: 'Soft play tickets',
+    amount_minor: 1200,
+    miles: null,
+    currency: 'GBP',
+    status: 'approved',
+    reviewed_by: PARENT_ID,
+    reviewed_at: now,
+    review_note: null,
+    carer_display_name: 'Amara',
+    created_at: now,
+    updated_at: now,
+    ...overrides,
+  };
+}
+
 function renderParentView(opts: { readOnly?: boolean } = {}) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -353,6 +383,7 @@ beforeEach(() => {
     listPaymentsMock,
     createPaymentMock,
     correctPaymentMock,
+    listSettlementsMock,
     exportCsvMock,
     shareCsvMock,
     sharePdfMock,
@@ -363,6 +394,7 @@ beforeEach(() => {
   }
   routerPushMock.mockClear();
 
+  listSettlementsMock.mockImplementation(() => Promise.resolve([]));
   listEntriesMock.mockImplementation(() => Promise.resolve([makeEntry()]));
   listTimesheetsMock.mockImplementation(() =>
     Promise.resolve([makeTimesheet({ status: 'approved' })])
@@ -392,6 +424,88 @@ beforeEach(() => {
     user: { id: PARENT_ID } as unknown as never,
     isInitialized: true,
   } as never);
+});
+
+// D-B1 — a failed or still-in-flight payments read must never render as
+// "Unpaid" over a week that may already be settled
+// (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B's compound finding).
+describe('ParentWeekView — a failed or pending payments read', () => {
+  it('hides Mark as paid and every Unpaid/Still-to-pay figure, and offers a retry', async () => {
+    listPaymentsMock.mockImplementation(() =>
+      Promise.reject(new Error('boom'))
+    );
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-money-card')).toBeTruthy());
+    expect(queryByTestId('hours-paid-state-badge')).toBeNull();
+    expect(queryByTestId('hours-paid-state-balance-value')).toBeNull();
+    expect(queryByTestId('hours-mark-paid-button')).toBeNull();
+    expect(getByTestId('hours-paid-state-retry')).toBeTruthy();
+
+    fireEvent.press(getByTestId('hours-paid-state-retry-button'));
+    await waitFor(() => expect(listPaymentsMock).toHaveBeenCalledTimes(2));
+  });
+
+  it('stays neutral while the payments read is still pending — never "Unpaid" before we know', async () => {
+    // A promise that never settles during the test — the payments query
+    // stays pending the whole time, same as a slow connection.
+    listPaymentsMock.mockImplementation(() => new Promise(() => {}));
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-money-card')).toBeTruthy());
+    expect(queryByTestId('hours-paid-state-badge')).toBeNull();
+    expect(queryByTestId('hours-mark-paid-button')).toBeNull();
+    expect(getByTestId('hours-paid-state-retry')).toBeTruthy();
+  });
+});
+
+// D-B1 — the reimbursement-settlements half of the same compound finding:
+// a failed or pending settlement read must never render "not reimbursed
+// yet" (or re-offer "Mark reimbursed") over money that may already be back
+// with her.
+describe('ParentWeekView — a failed or pending settlements read', () => {
+  it('hides the settled/unsettled claim and Mark reimbursed, and offers a retry', async () => {
+    listExpensesForWeekMock.mockImplementation(() =>
+      Promise.resolve([makeApprovedExpense()])
+    );
+    listSettlementsMock.mockImplementation(() =>
+      Promise.reject(new Error('boom'))
+    );
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('reimbursements-card')).toBeTruthy()
+    );
+    expect(queryByTestId('reimbursements-card-state')).toBeNull();
+    expect(
+      queryByTestId('reimbursements-card-mark-reimbursed-button')
+    ).toBeNull();
+    expect(getByTestId('reimbursements-card-settlement-retry')).toBeTruthy();
+
+    fireEvent.press(getByTestId('reimbursements-card-settlement-retry-button'));
+    await waitFor(() => expect(listSettlementsMock).toHaveBeenCalledTimes(2));
+  });
+
+  it('stays neutral while the settlements read is still pending', async () => {
+    listExpensesForWeekMock.mockImplementation(() =>
+      Promise.resolve([makeApprovedExpense()])
+    );
+    listSettlementsMock.mockImplementation(() => new Promise(() => {}));
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('reimbursements-card')).toBeTruthy()
+    );
+    expect(queryByTestId('reimbursements-card-state')).toBeNull();
+    expect(
+      queryByTestId('reimbursements-card-mark-reimbursed-button')
+    ).toBeNull();
+    expect(getByTestId('reimbursements-card-settlement-retry')).toBeTruthy();
+  });
 });
 
 describe('ParentWeekView — the paid-state card', () => {

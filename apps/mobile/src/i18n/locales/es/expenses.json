@@ -64,6 +64,7 @@
     "stateSettledDateOnly": "Reembolsado el {{date}}",
     "stateSettled": "Reembolsado {{amount}} el {{date}}",
     "markReimbursedButton": "Marcar como reembolsado",
+    "settlementUnknown": "No pudimos cargar los reembolsos de esta semana.",
     "note": "Los reembolsos no son salario ni forman parte del salario bruto."
   }
 }
