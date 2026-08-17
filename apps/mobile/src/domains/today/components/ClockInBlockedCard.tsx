@@ -34,10 +34,11 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
-import { Body, Caption, H3 } from '@/src/components/ui/typography';
+import { Body, H3 } from '@/src/components/ui/typography';
 import { PayChangeSheet } from '@/src/domains/pay/components/PayChangeSheet';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useProposeTerms } from '@/src/hooks/mutations/useProposeTerms';
+import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { localDateInZone } from '@/src/lib/localDate';
 import { useAuthStore } from '@/src/store/auth';
 import { useTermsGate } from '../hooks/useTermsGate';
@@ -49,6 +50,11 @@ export function ClockInBlockedCard({ household }: { household: Household }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const gate = useTermsGate(household.id);
   const proposeTerms = useProposeTerms(household.id, me ?? '');
+  // Her OWN membership row, for the backdating seed below. TodayScreen has
+  // already issued this exact query for this household, so it costs a cache
+  // read; and a nanny may read it — the members route gates on active
+  // membership, not on role.
+  const members = useHouseholdMembers(household.id);
 
   // Defensive, not decorative: `resolveSlotOccupant` already gates the mount,
   // but a card that announces a work stoppage must never outlive the fact.
@@ -63,8 +69,29 @@ export function ClockInBlockedCard({ household }: { household: Household }) {
       )
     : '';
 
+  // Her first day with this family, household-local. `PaySetupScreen` seeds
+  // the PARENT's first offer the same way; this is the nanny-side half, and
+  // the flow where losing Monday and Tuesday costs her the most.
+  const myJoinedAt = (members.data ?? []).find(
+    m => m.user_id === me
+  )?.joined_at;
+  const todayISO = localDateInZone(household.timezone);
+  const joinedDateISO = myJoinedAt
+    ? localDateInZone(household.timezone, new Date(myJoinedAt))
+    : null;
+  // Only when it is genuinely in the past — a seed of "today" dressed up as a
+  // deliberate backdate is worse than no seed at all (review finding 9).
+  const initialEffectiveDateISO =
+    joinedDateISO && joinedDateISO < todayISO ? joinedDateISO : undefined;
+
   // Literal `t()` per branch, never a ternary INSIDE `t(...)` — the second
   // key is invisible to the locale-key guard that way (see AcceptTermsSheet).
+  const title =
+    gate.variant === 'familySent'
+      ? t('clockInBlocked.titleFamilySent', { familyName: gate.familyName })
+      : gate.variant === 'youSent'
+        ? t('clockInBlocked.titleYouSent', { familyName: gate.familyName })
+        : t('clockInBlocked.titleNothingSent');
   const body =
     gate.variant === 'familySent'
       ? t('clockInBlocked.bodyFamilySent', {
@@ -90,7 +117,7 @@ export function ClockInBlockedCard({ household }: { household: Household }) {
       tone="attention"
       className="gap-3 p-5.5"
     >
-      <H3 testID="today-clock-in-blocked-title">{t('clockInBlocked.title')}</H3>
+      <H3 testID="today-clock-in-blocked-title">{title}</H3>
       <Body
         testID="today-clock-in-blocked-body"
         className="text-muted-foreground"
@@ -112,12 +139,15 @@ export function ClockInBlockedCard({ household }: { household: Household }) {
           {cta}
         </Text>
       </Button>
-      <Caption
+      {/* NOT a Caption. This sentence is the one that turns a lockout into a
+          delay, and at the smallest rung on the card it read as small print
+          under the refusal it exists to soften. */}
+      <Body
         testID="today-clock-in-blocked-footnote"
-        className="text-muted-foreground"
+        className="text-muted-strong"
       >
         {t('clockInBlocked.footnote')}
-      </Caption>
+      </Body>
 
       {/* Only the `nothingSent` variant can open this — the other two have a
           proposal to route to. No `currentArrangement`: she has none (that
@@ -147,7 +177,8 @@ export function ClockInBlockedCard({ household }: { household: Household }) {
           }
           householdTimezone={household.timezone}
           householdWeekStartsOn={household.week_starts_on}
-          todayISO={localDateInZone(household.timezone)}
+          todayISO={todayISO}
+          initialEffectiveDateISO={initialEffectiveDateISO}
         />
       ) : null}
     </Card>

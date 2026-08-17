@@ -8,6 +8,7 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 
 let payArrangementApi: any;
+let payArrangementEndpoints: any;
 let apiClient: any;
 
 const now = '2026-08-01T00:00:00.000Z';
@@ -48,6 +49,7 @@ beforeAll(async () => {
 
   const mod = await import('../payArrangements');
   payArrangementApi = mod.payArrangementApi;
+  payArrangementEndpoints = mod.payArrangementEndpoints;
   apiClient = (await import('@/src/api/client')).apiClient;
 });
 
@@ -96,43 +98,18 @@ describe('payArrangementApi.getHistory', () => {
   });
 });
 
-describe('payArrangementApi.create', () => {
-  const createInput = {
-    rate_minor: 1600,
-    currency: 'GBP',
-    overtime_multiplier: 1.5,
-    valid_from: '2026-08-04',
-    valid_to: null,
-  };
-
-  it('POSTs the validated body and returns the created arrangement', async () => {
-    apiClient.post.mockResolvedValue({
-      data: {
-        data: { pay_arrangement: { ...validArrangement, rate_minor: 1600 } },
-      },
-    });
-
-    const result = await payArrangementApi.create(
-      HOUSEHOLD_ID,
-      CARER_ID,
-      createInput
-    );
-
-    expect(apiClient.post).toHaveBeenCalledWith(
-      `/v1/households/${HOUSEHOLD_ID}/carers/${CARER_ID}/pay-arrangements`,
-      expect.objectContaining({ rate_minor: 1600, valid_from: '2026-08-04' })
-    );
-    expect(result.rate_minor).toBe(1600);
-  });
-
-  it('rejects an invalid body without calling the API', async () => {
-    await expect(
-      payArrangementApi.create(HOUSEHOLD_ID, CARER_ID, {
-        ...createInput,
-        rate_minor: -5,
-      })
-    ).rejects.toThrow();
-    expect(apiClient.post).not.toHaveBeenCalled();
+/**
+ * P1: THE DIRECT WRITE PATH IS GONE, on the client as well as the server.
+ * `pay_arrangements` is minted in exactly one place — a parent accepting a
+ * `terms_proposals` round — so an arrangement existing and someone having
+ * tapped Agree are the same fact. A client-side `create` would be a second
+ * door standing open with nothing behind it (the route 404s), and worse, an
+ * invitation to re-wire a screen to it.
+ */
+describe('the deleted create path', () => {
+  it('exposes no create call and no create URL', () => {
+    expect(payArrangementApi.create).toBeUndefined();
+    expect(payArrangementEndpoints.create).toBeUndefined();
   });
 });
 

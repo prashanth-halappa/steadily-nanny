@@ -91,9 +91,6 @@ const listMembersMock = mock(() =>
   Promise.resolve([nannyMember('2026-07-01T00:00:00.000Z')])
 );
 const membershipsListMock = mock(() => Promise.resolve([parentMembership]));
-const payCreateMock = mock((_h: string, carerId: string, input: unknown) =>
-  Promise.resolve({ id: 'arr-1', carer_id: carerId, ...(input as object) })
-);
 const routerBack = mock();
 const routerReplace = mock();
 
@@ -127,9 +124,57 @@ mock.module('@/src/api/endpoints/payArrangements', () => ({
   payArrangementApi: {
     getCurrent: payCurrentMock,
     getHistory: mock(() => Promise.resolve([])),
-    create: payCreateMock,
   },
 }));
+
+// P1: setup SENDS A ROUND. `terms_proposals` is the write, and the mutable
+// list below is what the screen reads back to decide between the form and
+// the receipt.
+let proposalRows: unknown[] = [];
+const proposeMock = mock<
+  (h: string, c: string, input: unknown) => Promise<unknown>
+>(() => Promise.resolve({ id: 'prop-new' }));
+const withdrawMock = mock<(id: string) => Promise<unknown>>(() =>
+  Promise.resolve({
+    id: 'prop-new',
+    household_id: HOUSEHOLD_ID,
+    carer_id: NANNY_ID,
+  })
+);
+mock.module('@/src/api/endpoints/termsProposals', () => ({
+  termsProposalApi: {
+    propose: proposeMock,
+    withdraw: withdrawMock,
+    list: mock(() => Promise.resolve(proposalRows)),
+  },
+}));
+
+const openParentRound = {
+  id: 'prop-open-1',
+  household_id: HOUSEHOLD_ID,
+  carer_id: NANNY_ID,
+  proposed_by: PARENT_USER_ID,
+  direction: 'parent',
+  status: 'proposed',
+  terms: {
+    rate_minor: 2500,
+    currency: 'GBP',
+    overtime_multiplier: 1.5,
+    valid_from: '2026-07-01',
+  },
+  note: null,
+  supersedes_id: null,
+  from_invite_id: null,
+  carer_display_name: 'Priya',
+  weekly_equivalent_minor: null,
+  viewed_at: null,
+  responded_at: null,
+  accepted_by: null,
+  accepted_arrangement_id: null,
+  responsibility_confirmed: false,
+  created_at: now,
+  updated_at: now,
+};
 
 beforeAll(async () => {
   PaySetupScreen = (await import('../PaySetupScreen')).PaySetupScreen;
@@ -151,8 +196,18 @@ beforeEach(() => {
   listMock.mockReset();
   listMembersMock.mockReset();
   membershipsListMock.mockReset();
-  payCreateMock.mockReset();
   payCurrentMock.mockReset();
+  proposeMock.mockReset();
+  withdrawMock.mockReset();
+  proposalRows = [];
+  proposeMock.mockImplementation(() => Promise.resolve({ id: 'prop-new' }));
+  withdrawMock.mockImplementation(() =>
+    Promise.resolve({
+      id: 'prop-new',
+      household_id: HOUSEHOLD_ID,
+      carer_id: NANNY_ID,
+    })
+  );
   routerBack.mockClear();
   routerReplace.mockClear();
 
@@ -164,10 +219,6 @@ beforeEach(() => {
     Promise.resolve([parentMembership])
   );
   payCurrentMock.mockImplementation(() => Promise.resolve(null));
-  payCreateMock.mockImplementation(
-    (_h: string, carerId: string, input: unknown) =>
-      Promise.resolve({ id: 'arr-1', carer_id: carerId, ...(input as object) })
-  );
 
   useAuthStore.setState({
     session: { user: { id: PARENT_USER_ID } } as unknown as never,
@@ -266,10 +317,12 @@ describe('PaySetupScreen', () => {
       fireEvent.press(getByTestId('pay-setup-screen-cta'));
 
       await waitFor(() =>
-        expect(payCreateMock).toHaveBeenCalledWith(
+        expect(proposeMock).toHaveBeenCalledWith(
           HOUSEHOLD_ID,
           NANNY_ID,
-          expect.objectContaining({ valid_from: '2026-09-01' })
+          expect.objectContaining({
+            terms: expect.objectContaining({ valid_from: '2026-09-01' }),
+          })
         )
       );
     });
@@ -306,21 +359,23 @@ describe('PaySetupScreen', () => {
       fireEvent.press(getByTestId('pay-setup-screen-cta'));
 
       await waitFor(() =>
-        expect(payCreateMock).toHaveBeenCalledWith(
+        expect(proposeMock).toHaveBeenCalledWith(
           HOUSEHOLD_ID,
           NANNY_ID,
           expect.objectContaining({
-            overtime_threshold_minutes: 2400,
-            overtime_daily_threshold_minutes: 480,
-            doubletime_daily_threshold_minutes: 720,
-            doubletime_multiplier: 2,
-            seventh_day_multiplier: 1.5,
-            seventh_day_doubletime_after_minutes: 480,
             terms: expect.objectContaining({
-              preset: expect.objectContaining({
-                id: 'common-defaults',
-                version: 1,
-                confirmed_by: PARENT_USER_ID,
+              overtime_threshold_minutes: 2400,
+              overtime_daily_threshold_minutes: 480,
+              doubletime_daily_threshold_minutes: 720,
+              doubletime_multiplier: 2,
+              seventh_day_multiplier: 1.5,
+              seventh_day_doubletime_after_minutes: 480,
+              terms: expect.objectContaining({
+                preset: expect.objectContaining({
+                  id: 'common-defaults',
+                  version: 1,
+                  confirmed_by: PARENT_USER_ID,
+                }),
               }),
             }),
           })
@@ -435,10 +490,12 @@ describe('PaySetupScreen', () => {
     fireEvent.press(getByTestId('pay-setup-screen-cta'));
 
     await waitFor(() =>
-      expect(payCreateMock).toHaveBeenCalledWith(
+      expect(proposeMock).toHaveBeenCalledWith(
         HOUSEHOLD_ID,
         NANNY_ID,
-        expect.objectContaining({ currency: 'USD' })
+        expect.objectContaining({
+          terms: expect.objectContaining({ currency: 'USD' }),
+        })
       )
     );
   });
@@ -459,10 +516,12 @@ describe('PaySetupScreen', () => {
     fireEvent.press(getByTestId('pay-setup-screen-cta'));
 
     await waitFor(() =>
-      expect(payCreateMock).toHaveBeenCalledWith(
+      expect(proposeMock).toHaveBeenCalledWith(
         HOUSEHOLD_ID,
         NANNY_ID,
-        expect.objectContaining({ currency: 'EUR' })
+        expect.objectContaining({
+          terms: expect.objectContaining({ currency: 'EUR' }),
+        })
       )
     );
   });
@@ -484,10 +543,12 @@ describe('PaySetupScreen', () => {
     fireEvent.press(getByTestId('pay-setup-screen-cta'));
 
     await waitFor(() =>
-      expect(payCreateMock).toHaveBeenCalledWith(
+      expect(proposeMock).toHaveBeenCalledWith(
         HOUSEHOLD_ID,
         NANNY_ID,
-        expect.objectContaining({ currency: 'EUR' })
+        expect.objectContaining({
+          terms: expect.objectContaining({ currency: 'EUR' }),
+        })
       )
     );
   });
@@ -514,15 +575,17 @@ describe('PaySetupScreen', () => {
       fireEvent.press(getByTestId('pay-setup-screen-cta'));
 
       await waitFor(() =>
-        expect(payCreateMock).toHaveBeenCalledWith(
+        expect(proposeMock).toHaveBeenCalledWith(
           HOUSEHOLD_ID,
           NANNY_ID,
           expect.objectContaining({
-            overtime_daily_threshold_minutes: null,
-            doubletime_daily_threshold_minutes: null,
-            doubletime_multiplier: null,
-            seventh_day_multiplier: null,
-            seventh_day_doubletime_after_minutes: null,
+            terms: expect.objectContaining({
+              overtime_daily_threshold_minutes: null,
+              doubletime_daily_threshold_minutes: null,
+              doubletime_multiplier: null,
+              seventh_day_multiplier: null,
+              seventh_day_doubletime_after_minutes: null,
+            }),
           })
         )
       );
@@ -564,17 +627,19 @@ describe('PaySetupScreen', () => {
       fireEvent.press(getByTestId('pay-setup-screen-cta'));
 
       await waitFor(() =>
-        expect(payCreateMock).toHaveBeenCalledWith(
+        expect(proposeMock).toHaveBeenCalledWith(
           HOUSEHOLD_ID,
           NANNY_ID,
           expect.objectContaining({
-            overtime_threshold_minutes: 2400,
-            overtime_multiplier: 1.5,
-            overtime_daily_threshold_minutes: 480,
-            doubletime_daily_threshold_minutes: 720,
-            doubletime_multiplier: 2,
-            seventh_day_multiplier: 1.5,
-            seventh_day_doubletime_after_minutes: 480,
+            terms: expect.objectContaining({
+              overtime_threshold_minutes: 2400,
+              overtime_multiplier: 1.5,
+              overtime_daily_threshold_minutes: 480,
+              doubletime_daily_threshold_minutes: 720,
+              doubletime_multiplier: 2,
+              seventh_day_multiplier: 1.5,
+              seventh_day_doubletime_after_minutes: 480,
+            }),
           })
         )
       );
@@ -620,10 +685,12 @@ describe('PaySetupScreen', () => {
       fireEvent.press(getByTestId('pay-setup-screen-cta'));
 
       await waitFor(() =>
-        expect(payCreateMock).toHaveBeenCalledWith(
+        expect(proposeMock).toHaveBeenCalledWith(
           HOUSEHOLD_ID,
           NANNY_ID,
-          expect.objectContaining({ holiday_hours_minutes: null })
+          expect.objectContaining({
+            terms: expect.objectContaining({ holiday_hours_minutes: null }),
+          })
         )
       );
     });
@@ -641,10 +708,12 @@ describe('PaySetupScreen', () => {
       fireEvent.press(getByTestId('pay-setup-screen-cta'));
 
       await waitFor(() =>
-        expect(payCreateMock).toHaveBeenCalledWith(
+        expect(proposeMock).toHaveBeenCalledWith(
           HOUSEHOLD_ID,
           NANNY_ID,
-          expect.objectContaining({ holiday_hours_minutes: 480 })
+          expect.objectContaining({
+            terms: expect.objectContaining({ holiday_hours_minutes: 480 }),
+          })
         )
       );
     });
@@ -670,10 +739,12 @@ describe('PaySetupScreen', () => {
       fireEvent.press(getByTestId('pay-setup-screen-cta'));
 
       await waitFor(() =>
-        expect(payCreateMock).toHaveBeenCalledWith(
+        expect(proposeMock).toHaveBeenCalledWith(
           HOUSEHOLD_ID,
           NANNY_ID,
-          expect.objectContaining({ worked_holiday_multiplier: null })
+          expect.objectContaining({
+            terms: expect.objectContaining({ worked_holiday_multiplier: null }),
+          })
         )
       );
     });
@@ -694,10 +765,12 @@ describe('PaySetupScreen', () => {
       fireEvent.press(getByTestId('pay-setup-screen-cta'));
 
       await waitFor(() =>
-        expect(payCreateMock).toHaveBeenCalledWith(
+        expect(proposeMock).toHaveBeenCalledWith(
           HOUSEHOLD_ID,
           NANNY_ID,
-          expect.objectContaining({ worked_holiday_multiplier: 1.5 })
+          expect.objectContaining({
+            terms: expect.objectContaining({ worked_holiday_multiplier: 1.5 }),
+          })
         )
       );
     });
@@ -721,7 +794,13 @@ describe('PaySetupScreen', () => {
     });
   });
 
-  it('saves through the real mutation and returns on success', async () => {
+  /**
+   * P1. Setup no longer WRITES terms: it sends a round she has to agree to.
+   * The success state is the receipt, not a toast and not a bounce — the
+   * parent stays on the page that now says what he sent and who owes the
+   * next move.
+   */
+  it('sends a proposal and stays put — the receipt is the confirmation', async () => {
     const { getByTestId } = renderWithProviders(<PaySetupScreen />);
 
     await waitFor(() =>
@@ -732,16 +811,72 @@ describe('PaySetupScreen', () => {
     fireEvent.press(getByTestId('pay-setup-screen-cta'));
 
     await waitFor(() =>
-      expect(payCreateMock).toHaveBeenCalledWith(
+      expect(proposeMock).toHaveBeenCalledWith(
         HOUSEHOLD_ID,
         NANNY_ID,
         expect.objectContaining({
-          rate_minor: 1850,
-          valid_from: '2026-07-01',
-          cancellation_paid_within_hours: null,
+          terms: expect.objectContaining({
+            rate_minor: 1850,
+            valid_from: '2026-07-01',
+            cancellation_paid_within_hours: null,
+          }),
         })
       )
     );
-    await waitFor(() => expect(routerBack).toHaveBeenCalled());
+    expect(routerBack).not.toHaveBeenCalled();
+  });
+
+  /**
+   * 1.1's second bug, closed by the same condition. The bounce/blank-form
+   * logic keyed on `currentArrangement`, which now stays null until she
+   * agrees — so re-entering mid-wait showed a BLANK FORM over a live round,
+   * and sending it would 23505 against 092's partial unique index.
+   */
+  describe('an open round is already on the table', () => {
+    it('renders the receipt instead of a blank form when the parent already sent one', async () => {
+      proposalRows = [openParentRound];
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <PaySetupScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId('pay-terms-receipt')).toBeTruthy()
+      );
+      expect(queryByTestId('pay-setup-rate-input')).toBeNull();
+      expect(getByTestId('pay-terms-receipt-consequence').props.children).toBe(
+        'receipt.mustAgreeParent'
+      );
+    });
+
+    it('Withdraw on the receipt withdraws that round', async () => {
+      proposalRows = [openParentRound];
+
+      const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-terms-receipt-withdraw')).toBeTruthy()
+      );
+      fireEvent.press(getByTestId('pay-terms-receipt-withdraw'));
+
+      await waitFor(() =>
+        expect(withdrawMock).toHaveBeenCalledWith('prop-open-1')
+      );
+    });
+
+    it('a round SHE sent gets a review route, never a form to overwrite it with', async () => {
+      proposalRows = [
+        { ...openParentRound, direction: 'carer', proposed_by: NANNY_ID },
+      ];
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <PaySetupScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId('pay-setup-open-proposal-review')).toBeTruthy()
+      );
+      expect(queryByTestId('pay-setup-rate-input')).toBeNull();
+    });
   });
 });

@@ -9,14 +9,17 @@ import { queryKeys } from '@/src/api/queryKeys';
  * consent (D-41) — nothing about the arrangement itself changes, so only the
  * ack list is invalidated.
  *
- * No error toast: a failure surfaces inline on the card next to the button
- * that failed, where the person who pressed it is already looking.
+ * NOBODY PRESSES ANYTHING (1.7). `MyPayScreen` fires this on first render
+ * with data — the same rule `terms_proposals.viewed_at` already uses — because
+ * the button it replaces looked exactly like an "I agree" button and then said
+ * in fine print that it was not one. No error toast: a failure surfaces inline
+ * on the card, and the card is honest either way (the state word simply still
+ * reads "Not read yet").
  *
  * The row the server just wrote is written into the cache BEFORE the
- * invalidate: the prompt she pressed must go away on the press, not one
- * round-trip later, and a refetch that then fails must not put it back —
- * the write has already happened, and showing the button again reads as the
- * app having lost her tap.
+ * invalidate, and that is now load-bearing for a second reason: it is what
+ * stops the caller re-firing on the next render while the refetch is in
+ * flight.
  */
 export function useAckPayArrangement(householdId: string, carerId: string) {
   const queryClient = useQueryClient();

@@ -101,6 +101,10 @@ export function ThisWeekCard({
           // The card itself only renders when there is a missed day to
           // recover, so this never puts a headline above nothing.
           firstRunHeadline={justAgreedTerms}
+          // Same query, handed down rather than re-issued: backdated terms
+          // are the ONLY way the card can know about days worked under the
+          // clock-in block when no pattern (and so no shift) exists.
+          arrangementValidFrom={arrangement.data?.valid_from ?? null}
         />
       ) : null}
 

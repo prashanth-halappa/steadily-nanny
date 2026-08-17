@@ -12,6 +12,8 @@
  * all, which is the point of §4.2.
  */
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type {
   CreatePayArrangementRequest,
   PayArrangement,
@@ -1062,6 +1064,86 @@ describe('PayChangeSheet mode="offer"', () => {
   // something to seed a form from" trick `proposalTermsToArrangement` uses
   // for a nanny's own draft, independently copied since an invite offer has
   // no carer/proposal id to hand it.
+  /**
+   * P1/1.6. A BLANK form is exactly the shape `ClockInBlockedCard` renders:
+   * the nanny proposing her own terms has no arrangement to seed from —
+   * that absence IS the block — so the sheet takes the blank branch, and the
+   * blank branch used to hardcode today. Losing Monday and Tuesday hurts
+   * most in precisely this flow, and the fix has to be VISIBLE (it changes
+   * what the family owes for days already worked), which a pre-filled past
+   * date plus the existing backdating hint is.
+   */
+  it('a BLANK form honours initialEffectiveDateISO — her first day, not today', () => {
+    const { getByTestId } = renderSheet({
+      mode: 'propose',
+      currentArrangement: undefined,
+      defaultCurrency: 'USD',
+      initialEffectiveDateISO: '2026-07-28',
+    });
+
+    expect(getByTestId('pay-propose-date-input').props.value).toBe(
+      '2026-07-28'
+    );
+    expect(getByTestId('pay-propose-backdating-hint')).toBeTruthy();
+  });
+
+  it('a blank form with no initialEffectiveDateISO still opens on today', () => {
+    const { getByTestId } = renderSheet({
+      mode: 'propose',
+      currentArrangement: undefined,
+      defaultCurrency: 'USD',
+    });
+
+    expect(getByTestId('pay-propose-date-input').props.value).toBe(TODAY_ISO);
+  });
+
+  it('the seeded past date is what gets submitted, not silently reset to today', () => {
+    const { getByTestId, onSubmit } = renderSheet({
+      mode: 'propose',
+      currentArrangement: undefined,
+      defaultCurrency: 'USD',
+      initialEffectiveDateISO: '2026-07-28',
+    });
+
+    fireEvent.changeText(getByTestId('pay-propose-rate-input'), '25.00');
+    fireEvent.press(getByTestId('pay-propose-cancellation-chip-none'));
+    fireEvent.press(getByTestId('pay-propose-submit'));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ valid_from: '2026-07-28', rate_minor: 2500 })
+    );
+  });
+
+  /**
+   * P1/1.2. "Set new terms" described a save that no longer happens — the
+   * terms go to the other side, who has to agree. The button names the
+   * recipient, and the receipt (not a dialog) carries the consequence.
+   */
+  it('the change-mode submit button names the recipient', () => {
+    const { getByTestId } = renderSheet({ counterpartyName: 'Andrea' });
+
+    expect(getByTestId('pay-change-submit-label')).toBeTruthy();
+    // `t()` echoes the KEY under test i18n, so the catalogue is where the
+    // placeholder can actually be pinned — plus a source check that the
+    // component feeds it. Neither half alone would catch a dropped name.
+    expect(enPay.changeSheet.submitButton).toBe('Send to {{name}}');
+    expect(esPay.changeSheet.submitButton).toBe('Enviar a {{name}}');
+    const source = readFileSync(
+      join(__dirname, '../PayChangeSheet.tsx'),
+      'utf8'
+    );
+    expect(source).toContain(
+      "t('changeSheet.submitButton', { name: counterpartyName ?? '' })"
+    );
+  });
+
+  it('the toast the receipt replaced is gone from the catalogue, in both locales', () => {
+    expect('savedToast' in enPay.changeSheet).toBe(false);
+    expect('savedToast' in esPay.changeSheet).toBe(false);
+    expect('savedToast' in enPay.setup).toBe(false);
+    expect('savedToast' in esPay.setup).toBe(false);
+  });
+
   it('editing an existing offer round-trips: seeds the form from the prior request', () => {
     const priorOffer: CreatePayArrangementRequest = {
       rate_minor: 1800,

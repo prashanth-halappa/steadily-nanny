@@ -20,7 +20,10 @@
  */
 
 import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/household.schema';
-import type { PayArrangement } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
+import type {
+  CreatePayArrangementRequest,
+  PayArrangement,
+} from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -51,7 +54,8 @@ import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { DEFAULT_WEEK_STARTS_ON } from '@/src/domains/timesheet/utils/week';
 import { useCancelScheduledPayArrangement } from '@/src/hooks/mutations/useCancelScheduledPayArrangement';
-import { useCreatePayArrangement } from '@/src/hooks/mutations/useCreatePayArrangement';
+import { useProposeTerms } from '@/src/hooks/mutations/useProposeTerms';
+import { useWithdrawTerms } from '@/src/hooks/mutations/useWithdrawTerms';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
@@ -65,15 +69,17 @@ import {
 } from '@/src/hooks/queries/useTermsProposals';
 import { localDateInZone } from '@/src/lib/localDate';
 import { formatMoney, formatRate } from '@/src/lib/money';
-import { showSuccessToast } from '@/src/lib/toast';
+import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
 import { resolveAckState } from '../utils/ackState';
 import { formatDisplayDateWithYear } from '../utils/payArrangementForm';
 import { proposalStateWord } from '../utils/proposalTerms';
+import { resolveTermsAgreement } from '../utils/termsAgreement';
 import { buildTermsDiff, summarizeTermsDiff } from '../utils/termsDiff';
 import { BackRow } from './BackRow';
 import { PayChangeSheet } from './PayChangeSheet';
 import { TermsDocumentRows } from './TermsDocumentRows';
+import { TermsSentReceipt } from './TermsSentReceipt';
 
 /** §6's card names the headline terms only — the full diff is one tap away
  * in the history once the change lands. */
@@ -171,15 +177,22 @@ function CarerPayDetail({
   const current = useCurrentPayArrangement(householdId, carerId);
   const history = usePayArrangementHistory(householdId, carerId);
   const acks = usePayArrangementAcks(householdId, carerId, current.data?.id);
-  const createArrangement = useCreatePayArrangement(householdId, carerId);
+  const proposeTerms = useProposeTerms(householdId, carerId);
   const cancelScheduled = useCancelScheduledPayArrangement(
     householdId,
     carerId
   );
+  const me = useAuthStore(s => s.session?.user?.id ?? null);
   // §7.1: Settings → Pay carries a row with a `pending` "Proposed" pill for as
   // long as one is open. Nothing announces their absence — the screen is
   // unchanged when there is no proposal (§12).
   const proposals = useTermsProposals(householdId, carerId);
+  // §7.1 / B2: the live negotiation, if any — same predicate as
+  // PaySetupPromptCard via `findOpenTermsProposal`. Read BEFORE the early
+  // returns below, because `useWithdrawTerms` is a hook and an empty id
+  // simply has nothing to withdraw.
+  const openProposal = findOpenTermsProposal(proposals.data);
+  const withdrawTerms = useWithdrawTerms(openProposal?.id ?? '');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const elevation = useElevation();
@@ -247,34 +260,63 @@ function CarerPayDetail({
           } as const)
         : ({ variant: 'pending', label: t('ack.notSeenYet') } as const);
 
-  // §7.1 / B2: the live negotiation, if any — same predicate as
-  // PaySetupPromptCard via `findOpenTermsProposal`.
-  const openProposal = findOpenTermsProposal(proposals.data);
-  // §10: "Agreed with Marisol on 12 Aug" — the word, with a date, beside the
-  // figure, on the very card the acceptance created. The join is the
-  // proposal's own `accepted_arrangement_id`, so a card that traces to a
-  // proposal says so and one that does not stays silent.
-  const agreedProposal = arrangement
-    ? (proposals.data ?? []).find(
-        row =>
-          row.status === 'accepted' &&
-          row.accepted_arrangement_id === arrangement.id
-      )
+  // 1.3: ONE state line, in ONE slot, for both roles (T16). Either these
+  // terms were agreed — and the word comes with the date and the name, from
+  // the round that agreed them — or they were merely set, and the line says
+  // so rather than letting silence imply agreement. Grandfathered rows stay
+  // in force; only the description changes.
+  const agreement = arrangement
+    ? resolveTermsAgreement(arrangement, proposals.data, history.data, t)
+    : null;
+  const setByMember = arrangement?.created_by
+    ? members.find(m => m.user_id === arrangement.created_by)
     : undefined;
+  const setByName =
+    arrangement?.created_by && arrangement.created_by === me
+      ? t('proposal.you')
+      : resolveCarerName(setByMember, t('proposal.theFamily'));
+  const termsStateLabel =
+    agreement === null
+      ? null
+      : agreement.kind === 'agreed'
+        ? proposalStateWord(
+            agreement.proposal,
+            { counterpartyName: carerName, timezone: householdTimezone },
+            t
+          ).label
+        : t('notAgreedSetBy', {
+            name: setByName,
+            date: arrangement
+              ? formatDisplayDateWithYear(
+                  localDateInZone(
+                    householdTimezone,
+                    new Date(arrangement.created_at)
+                  )
+                )
+              : '',
+          });
 
   const scheduled: PayArrangement | undefined = (history.data ?? [])
     .filter(row => row.valid_from > todayISO)
     .at(-1);
 
-  const handleSubmit = (
-    input: Parameters<typeof createArrangement.mutateAsync>[0]
-  ) => {
-    createArrangement
-      .mutateAsync(input)
-      .then(() => {
-        setSheetOpen(false);
-        showSuccessToast(t('changeSheet.savedToast'));
+  /**
+   * P1: this SENDS A ROUND, it does not write terms. The success state is
+   * not a toast — it is `TermsSentReceipt` above, rendered off the open
+   * proposal, which is still there tomorrow.
+   *
+   * `supersedes_id` is not optional politeness: 092's partial unique index
+   * allows one `proposed` row per (household, carer), so proposing over an
+   * open round raises a raw 23505. The real path is her proposing from the
+   * blocked card and the parent then opening this screen and tapping Send.
+   */
+  const handleSubmit = (input: CreatePayArrangementRequest) => {
+    proposeTerms
+      .mutateAsync({
+        terms: input,
+        ...(openProposal ? { supersedes_id: openProposal.id } : {}),
       })
+      .then(() => setSheetOpen(false))
       // Failure renders inline INSIDE the sheet (GOLDEN #40), which stays
       // open with the typed values (ClockOutSheet discipline).
       .catch(() => undefined);
@@ -286,16 +328,27 @@ function CarerPayDetail({
       {/* B2: hoist above the arrangement ternary so an open negotiation is
           visible even when there are no terms yet (empty state used to hide
           this row and invite writing an arrangement over it). */}
-      {openProposal ? (
+      {openProposal && openProposal.direction === 'parent' ? (
+        <TermsSentReceipt
+          proposal={openProposal}
+          counterpartyName={carerName}
+          householdTimezone={householdTimezone}
+          viewer="parent"
+          onWithdraw={() => withdrawTerms.mutate()}
+          isWithdrawing={withdrawTerms.isPending}
+        />
+      ) : null}
+      {openProposal && openProposal.direction !== 'parent' ? (
         <View
           testID="pay-open-proposal-row"
           className="gap-2 rounded-row bg-card px-4 py-3"
           style={elevation.row}
         >
+          {/* Only a round SHE authored reaches here — a round the parent
+              sent renders the receipt above instead, which says strictly
+              more than a title could. */}
           <Body testID="pay-open-proposal-title" weight="medium">
-            {openProposal.direction === 'parent'
-              ? t('proposal.openRowTitleSent', { name: carerName })
-              : t('proposal.openRowTitleReceived', { name: carerName })}
+            {t('proposal.openRowTitleReceived', { name: carerName })}
           </Body>
           <StatusPill
             testID="pay-open-proposal-pill"
@@ -396,21 +449,12 @@ function CarerPayDetail({
 
           <Card testID="pay-current-terms-card">
             <CardContent className="gap-3">
-              {agreedProposal ? (
+              {termsStateLabel ? (
                 <Small
-                  testID="pay-agreed-state"
+                  testID="pay-terms-state"
                   className="text-muted-foreground"
                 >
-                  {
-                    proposalStateWord(
-                      agreedProposal,
-                      {
-                        counterpartyName: carerName,
-                        timezone: householdTimezone,
-                      },
-                      t
-                    ).label
-                  }
+                  {termsStateLabel}
                 </Small>
               ) : null}
               <View className="flex-row flex-wrap items-center gap-2">
@@ -517,10 +561,11 @@ function CarerPayDetail({
             visible={sheetOpen}
             onDismiss={() => setSheetOpen(false)}
             onSubmit={handleSubmit}
-            isSubmitting={createArrangement.isPending}
+            isSubmitting={proposeTerms.isPending}
             submitError={
-              createArrangement.isError ? t('changeSheet.saveFailed') : null
+              proposeTerms.isError ? t('changeSheet.saveFailed') : null
             }
+            counterpartyName={carerName}
             currentArrangement={arrangement}
             householdCancellationDefaultHours={
               householdCancellationDefaultHours

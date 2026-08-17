@@ -213,6 +213,20 @@ mock.module('@/src/api/endpoints/payArrangements', () => ({
 const ptoBalanceMock = mock<() => Promise<unknown>>(() =>
   Promise.resolve(null)
 );
+const proposeMock = mock<
+  (h: string, c: string, input: unknown) => Promise<unknown>
+>(() => Promise.resolve({ ...openProposalRow, id: 'prop-new' }));
+const withdrawMock = mock<(id: string) => Promise<unknown>>(() =>
+  Promise.resolve({ ...openProposalRow, status: 'withdrawn' })
+);
+mock.module('@/src/api/endpoints/termsProposals', () => ({
+  termsProposalApi: {
+    propose: proposeMock,
+    withdraw: withdrawMock,
+    list: mock(() => Promise.resolve([])),
+  },
+}));
+
 mock.module('@/src/api/endpoints/pto', () => ({
   ptoApi: { getBalance: ptoBalanceMock },
 }));
@@ -229,6 +243,14 @@ beforeEach(() => {
   payCurrentMock.mockReset();
   payHistoryMock.mockReset();
   payCreateMock.mockReset();
+  proposeMock.mockReset();
+  withdrawMock.mockReset();
+  proposeMock.mockImplementation(() =>
+    Promise.resolve({ ...openProposalRow, id: 'prop-new' })
+  );
+  withdrawMock.mockImplementation(() =>
+    Promise.resolve({ ...openProposalRow, status: 'withdrawn' })
+  );
   listAcksMock.mockReset();
   cancelScheduledMock.mockReset();
   ptoBalanceMock.mockReset();
@@ -340,9 +362,10 @@ describe('PayArrangementScreen', () => {
       expect(getByTestId('pay-open-proposal-row')).toBeTruthy();
     });
 
-    // Parent authored → "Terms you sent …"; carer authored → "Terms from …".
-    // react-i18next is key-echo-mocked, so the rendered title IS the key.
-    it('parent-authored open proposal: the row title is Terms you sent', async () => {
+    // Parent authored → the RECEIPT (1.2), which says more than a title:
+    // what was sent, that she has to agree, and whether she has opened it.
+    // Carer authored → "Terms from …", the row that routes to her ask.
+    it('parent-authored open proposal: the receipt replaces the bare row', async () => {
       proposalRows = [
         {
           ...openProposalRow,
@@ -351,13 +374,16 @@ describe('PayArrangementScreen', () => {
         },
       ];
 
-      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <PayArrangementScreen />
+      );
 
       await waitFor(() =>
-        expect(getByTestId('pay-open-proposal-row')).toBeTruthy()
+        expect(getByTestId('pay-terms-receipt')).toBeTruthy()
       );
-      expect(getByTestId('pay-open-proposal-title').props.children).toBe(
-        'proposal.openRowTitleSent'
+      expect(queryByTestId('pay-open-proposal-row')).toBeNull();
+      expect(getByTestId('pay-terms-receipt-title').props.children).toBe(
+        'receipt.sentTo'
       );
     });
 
@@ -472,7 +498,13 @@ describe('PayArrangementScreen', () => {
     expect(ptoBalanceMock).not.toHaveBeenCalled();
   });
 
-  it('opens the change sheet and submits a new arrangement through the real mutation', async () => {
+  /**
+   * P1. "Change terms" no longer writes `pay_arrangements` — it opens a
+   * ROUND the nanny has to agree to. That is the whole point: an arrangement
+   * existing and someone having tapped Agree are now the same fact, so the
+   * clock-in gate can never open against terms she has not seen.
+   */
+  it('opens the change sheet and SENDS A PROPOSAL — never a direct arrangement write', async () => {
     payCurrentMock.mockImplementation(() =>
       Promise.resolve(arrangementFor(NANNY_A_ID))
     );
@@ -488,23 +520,55 @@ describe('PayArrangementScreen', () => {
     fireEvent.press(getByTestId('pay-change-submit'));
 
     await waitFor(() =>
-      expect(payCreateMock).toHaveBeenCalledWith(
+      expect(proposeMock).toHaveBeenCalledWith(
         HOUSEHOLD_ID,
         NANNY_A_ID,
-        expect.objectContaining({ rate_minor: 1850 })
+        expect.objectContaining({
+          terms: expect.objectContaining({ rate_minor: 1850 }),
+        })
+      )
+    );
+    expect(payCreateMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * 092's partial unique index allows ONE `proposed` row per (household,
+   * carer), and `propose` without `supersedes_id` raises a raw 23505 against
+   * an open round. The real path: she proposes from the blocked card, then
+   * the parent opens Pay & terms and taps Send. `SendMyTermsCard` already
+   * seeds this; both parent screens must too.
+   */
+  it('seeds supersedes_id from the open round rather than colliding with it', async () => {
+    payCurrentMock.mockImplementation(() =>
+      Promise.resolve(arrangementFor(NANNY_A_ID))
+    );
+    proposalRows = [openProposalRow];
+
+    const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId('pay-change-terms-button')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('pay-change-terms-button'));
+    await waitFor(() => expect(getByTestId('pay-change-submit')).toBeTruthy());
+    fireEvent.press(getByTestId('pay-change-submit'));
+
+    await waitFor(() =>
+      expect(proposeMock).toHaveBeenCalledWith(
+        HOUSEHOLD_ID,
+        NANNY_A_ID,
+        expect.objectContaining({ supersedes_id: 'prop-open-1' })
       )
     );
   });
 
-  // GOLDEN #40: the failed save renders INSIDE the still-open sheet — a
+  // GOLDEN #40: the failed send renders INSIDE the still-open sheet — a
   // toast fired behind it is invisible.
-  it('a failed save reports itself INSIDE the change sheet', async () => {
+  it('a failed send reports itself INSIDE the change sheet', async () => {
     payCurrentMock.mockImplementation(() =>
       Promise.resolve(arrangementFor(NANNY_A_ID))
     );
-    payCreateMock.mockImplementation(() =>
-      Promise.reject(new Error('offline'))
-    );
+    proposeMock.mockImplementation(() => Promise.reject(new Error('offline')));
 
     const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
 
@@ -521,6 +585,114 @@ describe('PayArrangementScreen', () => {
         'changeSheet.saveFailed'
       )
     );
+  });
+
+  /**
+   * 1.2 — the receipt. A persistent card, not a toast: it says what was sent,
+   * that she still has to agree, and whether she has opened it, and it is
+   * still there tomorrow.
+   */
+  describe('the receipt for a round the parent sent', () => {
+    const parentSentRow = {
+      ...openProposalRow,
+      id: 'prop-sent-1',
+      direction: 'parent',
+      proposed_by: PARENT_USER_ID,
+    };
+
+    it('renders the receipt instead of the bare open-proposal row', async () => {
+      proposalRows = [parentSentRow];
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <PayArrangementScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId('pay-terms-receipt')).toBeTruthy()
+      );
+      expect(queryByTestId('pay-open-proposal-row')).toBeNull();
+      expect(getByTestId('pay-terms-receipt-consequence').props.children).toBe(
+        'receipt.mustAgreeParent'
+      );
+      expect(getByTestId('pay-terms-receipt-seen').props.children).toBe(
+        'receipt.notOpened'
+      );
+    });
+
+    it('Withdraw on the receipt withdraws that round', async () => {
+      proposalRows = [parentSentRow];
+
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-terms-receipt-withdraw')).toBeTruthy()
+      );
+      fireEvent.press(getByTestId('pay-terms-receipt-withdraw'));
+
+      await waitFor(() =>
+        expect(withdrawMock).toHaveBeenCalledWith('prop-sent-1')
+      );
+    });
+
+    it('a round SHE sent keeps the review row — a receipt for her ask would be a lie', async () => {
+      proposalRows = [openProposalRow];
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <PayArrangementScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId('pay-open-proposal-row')).toBeTruthy()
+      );
+      expect(queryByTestId('pay-terms-receipt')).toBeNull();
+    });
+  });
+
+  /**
+   * 1.3 — one state line, same slot, both roles. A grandfathered row STAYS IN
+   * FORCE (else every existing household loses its clock on deploy day) and
+   * stops being described as agreed.
+   */
+  describe('the terms state line', () => {
+    it('a row no acceptance points at reads "not agreed in Steadily"', async () => {
+      payCurrentMock.mockImplementation(() =>
+        Promise.resolve(arrangementFor(NANNY_A_ID))
+      );
+      payHistoryMock.mockImplementation(() =>
+        Promise.resolve([arrangementFor(NANNY_A_ID)])
+      );
+
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-terms-state').props.children).toBe(
+          'notAgreedSetBy'
+        )
+      );
+    });
+
+    it('a row an accepted proposal points at reads as agreed', async () => {
+      const arrangement = arrangementFor(NANNY_A_ID);
+      payCurrentMock.mockImplementation(() => Promise.resolve(arrangement));
+      payHistoryMock.mockImplementation(() => Promise.resolve([arrangement]));
+      proposalRows = [
+        {
+          ...openProposalRow,
+          id: 'prop-accepted',
+          status: 'accepted',
+          accepted_arrangement_id: arrangement.id,
+          responded_at: now,
+        },
+      ];
+
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-terms-state').props.children).toBe(
+          'proposal.state.agreedWith'
+        )
+      );
+    });
   });
 
   it('no nanny in the household: shows the "No nanny yet" empty state routing to invite', async () => {

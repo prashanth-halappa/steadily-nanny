@@ -34,6 +34,13 @@ export interface MomentCardProps {
   title: string;
   body: string;
   action?: MomentCardAction;
+  /**
+   * A second route out, rendered ghost UNDER the primary. Exists for the
+   * joined moment, whose body may say a thing is missing ("she can clock in
+   * once you've both agreed the pay terms") — the route to fix that must not
+   * displace the route to her profile.
+   */
+  secondaryAction?: MomentCardAction;
   momentKey: string | null;
   children?: ReactNode;
 }
@@ -47,6 +54,7 @@ export function MomentCard({
   title,
   body,
   action,
+  secondaryAction,
   momentKey,
   children,
 }: MomentCardProps) {
@@ -130,6 +138,16 @@ export function MomentCard({
             testID={action.testID ?? `${testID}-cta`}
           >
             {action.label}
+          </Button>
+        ) : null}
+        {secondaryAction ? (
+          <Button
+            size="lg"
+            variant="ghost"
+            onPress={secondaryAction.onPress}
+            testID={secondaryAction.testID ?? `${testID}-secondary-cta`}
+          >
+            {secondaryAction.label}
           </Button>
         ) : null}
         {children}

@@ -412,7 +412,21 @@ describe('MyPayScreen', () => {
 
   // D-31/D-41, spec §8.2/§8.3. The state word is the load-bearing part: a
   // 'seen' row must NEVER read as agreement anywhere on this screen.
-  describe('acknowledgment (D-31)', () => {
+  /**
+   * 1.7 — THE READ RECEIPT IS RECORDED, NOT ASKED FOR.
+   *
+   * The nanny persona on the button this replaces: "it looks exactly like an
+   * 'I agree' button… then the fine print says the opposite," and on tapping
+   * it, "the button just vanished." The fact the ack records — that she saw
+   * this version — is one the app already knows the moment the screen renders
+   * with data, which is exactly the rule `terms_proposals.viewed_at` uses.
+   * Recording it needs no button, and a button that cannot be told apart from
+   * consent on a pay screen is worse than no button.
+   *
+   * This ships LAST in P1 and only because acceptance has replaced it: the
+   * record it removes now exists in a stronger form on the proposal.
+   */
+  describe('the read receipt (1.7)', () => {
     const ARRANGEMENT_A = `arr-${HOUSEHOLD_A}`;
     const seenRow = {
       id: 'ack-1',
@@ -422,19 +436,6 @@ describe('MyPayScreen', () => {
       note: null,
       created_at: '2026-08-11T09:00:00.000Z',
     };
-
-    it('no ack row: the state word reads "Not seen yet" and both footer buttons are offered', async () => {
-      const { getByTestId } = renderWithProviders(<MyPayScreen />);
-
-      await waitFor(() =>
-        expect(
-          getByTestId(`my-pay-ack-state-${HOUSEHOLD_A}`).props.children
-        ).toBe('ack.notSeenYet')
-      );
-      expect(getByTestId(`my-pay-ack-seen-${HOUSEHOLD_A}`)).toBeTruthy();
-      expect(getByTestId(`my-pay-ack-disagree-${HOUSEHOLD_A}`)).toBeTruthy();
-    });
-
     const disagreedRow = {
       ...seenRow,
       id: 'ack-2',
@@ -443,92 +444,8 @@ describe('MyPayScreen', () => {
       created_at: '2026-08-12T09:00:00.000Z',
     };
 
-    // The defect: she disagreed once, so §8.4's outranking rule hid her
-    // 'seen' row and no amount of pressing "I've read these terms" could
-    // clear the prompt.
-    it('a seen row clears the prompt even when a disagreement outranks it', async () => {
-      listAcksMock.mockImplementation(() =>
-        Promise.resolve([disagreedRow, seenRow])
-      );
-
-      const { getByTestId, queryByTestId } = renderWithProviders(
-        <MyPayScreen />
-      );
-
-      await waitFor(() =>
-        expect(
-          getByTestId(`my-pay-ack-state-${HOUSEHOLD_A}`).props.children
-        ).toBe('ack.seenBy')
-      );
-      expect(queryByTestId(`my-pay-ack-prompt-${HOUSEHOLD_A}`)).toBeNull();
-      expect(queryByTestId(`my-pay-ack-seen-${HOUSEHOLD_A}`)).toBeNull();
-      // ...and the disagreement is still on the card, as its own line.
-      expect(
-        getByTestId(`my-pay-ack-disagreed-${HOUSEHOLD_A}`).props.children
-      ).toBe('ack.needsUpdatingLine');
-    });
-
-    it('never renders the prompt before the ack list has loaded', async () => {
-      listAcksMock.mockImplementation(() => new Promise(() => {}));
-
-      const { getByTestId, queryByTestId } = renderWithProviders(
-        <MyPayScreen />
-      );
-
-      await waitFor(() =>
-        expect(getByTestId(`my-pay-ack-state-${HOUSEHOLD_A}`)).toBeTruthy()
-      );
-      expect(queryByTestId(`my-pay-ack-prompt-${HOUSEHOLD_A}`)).toBeNull();
-    });
-
-    it('the secondary button asks for an update rather than picking a fight', async () => {
-      const { getByTestId, getByText } = renderWithProviders(<MyPayScreen />);
-
-      await waitFor(() =>
-        expect(getByTestId(`my-pay-ack-disagree-${HOUSEHOLD_A}`)).toBeTruthy()
-      );
-      expect(getByText('ack.needsUpdatingButton')).toBeTruthy();
-      // Key-echo cannot see the copy, so the catalogue is the check: a nanny
-      // told a real user she would never press "I don't agree with this"
-      // because she read it as costing her the job.
-      expect(enPay.ack.needsUpdatingButton).not.toMatch(/agree/i);
-      expect(esPay.ack.needsUpdatingButton).not.toMatch(/acuerdo/i);
-    });
-
-    it('the ack button copy resolves to the "read" wording, never "seen"', async () => {
-      const { getByTestId, getByText } = renderWithProviders(<MyPayScreen />);
-
-      await waitFor(() =>
-        expect(getByTestId(`my-pay-ack-seen-${HOUSEHOLD_A}`)).toBeTruthy()
-      );
-      // Wiring: the button still uses ack.seenButton (key names stay).
-      expect(getByText('ack.seenButton')).toBeTruthy();
-      // Copy: key-echo cannot see the English, so the catalogue is the check.
-      // A parent/nanny reading "seen" as agreement is the bug this pass fixes.
-      expect(enPay.ack.seenButton).toMatch(/read/i);
-      expect(enPay.ack.seenButton).not.toMatch(/seen/i);
-      expect(esPay.ack.seenButton).toMatch(/leíd/i);
-      expect(esPay.ack.seenButton).not.toMatch(/visto/i);
-    });
-
-    it('"I\'ve read these terms" records the ack, and the prompt gives way to the read state word', async () => {
-      let recorded = false;
-      listAcksMock.mockImplementation(() =>
-        Promise.resolve(recorded ? [seenRow] : [])
-      );
-      ackMock.mockImplementation(() => {
-        recorded = true;
-        return Promise.resolve(seenRow);
-      });
-
-      const { getByTestId, queryByTestId } = renderWithProviders(
-        <MyPayScreen />
-      );
-
-      await waitFor(() =>
-        expect(getByTestId(`my-pay-ack-seen-${HOUSEHOLD_A}`)).toBeTruthy()
-      );
-      fireEvent.press(getByTestId(`my-pay-ack-seen-${HOUSEHOLD_A}`));
+    it('records the read automatically on first render with data', async () => {
+      renderWithProviders(<MyPayScreen />);
 
       await waitFor(() =>
         expect(ackMock).toHaveBeenCalledWith(
@@ -537,15 +454,113 @@ describe('MyPayScreen', () => {
           ARRANGEMENT_A
         )
       );
-      await waitFor(() =>
-        expect(queryByTestId(`my-pay-ack-seen-${HOUSEHOLD_A}`)).toBeNull()
-      );
-      expect(
-        getByTestId(`my-pay-ack-state-${HOUSEHOLD_A}`).props.children
-      ).toBe('ack.seenBy');
     });
 
-    it('"I don\'t agree with this" opens the dissent sheet and records her note', async () => {
+    it('there is no button to mistake for an agreement, and no line defusing one', async () => {
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <MyPayScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-ack-state-${HOUSEHOLD_A}`)).toBeTruthy()
+      );
+      expect(queryByTestId(`my-pay-ack-prompt-${HOUSEHOLD_A}`)).toBeNull();
+      expect(queryByTestId(`my-pay-ack-seen-${HOUSEHOLD_A}`)).toBeNull();
+      expect(queryByTestId(`my-pay-ack-recorded-${HOUSEHOLD_A}`)).toBeNull();
+      // The reassurance line existed SOLELY to defuse that button.
+      expect('seenButton' in enPay.ack).toBe(false);
+      expect('reassurance' in enPay.ack).toBe(false);
+      expect('recordedNow' in enPay.ack).toBe(false);
+      expect('seenButton' in esPay.ack).toBe(false);
+      expect('reassurance' in esPay.ack).toBe(false);
+      expect('recordedNow' in esPay.ack).toBe(false);
+    });
+
+    it('does not re-record when a seen row already exists', async () => {
+      listAcksMock.mockImplementation(() => Promise.resolve([seenRow]));
+
+      const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+      await waitFor(() =>
+        expect(
+          getByTestId(`my-pay-ack-state-${HOUSEHOLD_A}`).props.children
+        ).toBe('ack.seenBy')
+      );
+      expect(ackMock).not.toHaveBeenCalled();
+    });
+
+    it('never records before the ack list has loaded', async () => {
+      listAcksMock.mockImplementation(() => new Promise(() => {}));
+
+      const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-ack-state-${HOUSEHOLD_A}`)).toBeTruthy()
+      );
+      expect(ackMock).not.toHaveBeenCalled();
+    });
+
+    // The Read line and the seen pill STAY — 1.7 removes the button, never
+    // the record. A disagreement still gets its own line beside it.
+    it('keeps the read date, and the disagreement line beside it', async () => {
+      listAcksMock.mockImplementation(() =>
+        Promise.resolve([disagreedRow, seenRow])
+      );
+
+      const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+      await waitFor(() =>
+        expect(
+          getByTestId(`my-pay-ack-state-${HOUSEHOLD_A}`).props.children
+        ).toBe('ack.seenBy')
+      );
+      expect(
+        getByTestId(`my-pay-ack-disagreed-${HOUSEHOLD_A}`).props.children
+      ).toBe('ack.needsUpdatingLine');
+    });
+
+    /**
+     * "Needs updating to what? Did the rate change again?" — the rename says
+     * the actual fact, and it may only appear where that fact is true: a
+     * grandfathered row nobody agreed. On agreed terms the button would be a
+     * contradiction of the line directly above it.
+     */
+    it('the dissent button says what it means, and only on a row nobody agreed', async () => {
+      const { getByTestId, getByText } = renderWithProviders(<MyPayScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-ack-disagree-${HOUSEHOLD_A}`)).toBeTruthy()
+      );
+      expect(getByText('ack.needsUpdatingButton')).toBeTruthy();
+      expect(enPay.ack.needsUpdatingButton).toBe("I haven't agreed to these");
+      expect(esPay.ack.needsUpdatingButton).not.toMatch(/necesita/i);
+    });
+
+    it('an AGREED row offers no dissent button — she already agreed', async () => {
+      proposalRows = [
+        {
+          ...openProposal(NANNY_ID),
+          id: 'prop-accepted',
+          status: 'accepted',
+          accepted_arrangement_id: ARRANGEMENT_A,
+          responded_at: now,
+        },
+      ];
+      payHistoryMock.mockImplementation(() =>
+        Promise.resolve([arrangementFor(HOUSEHOLD_A)])
+      );
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <MyPayScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-terms-state-${HOUSEHOLD_A}`)).toBeTruthy()
+      );
+      expect(queryByTestId(`my-pay-ack-disagree-${HOUSEHOLD_A}`)).toBeNull();
+    });
+
+    it('the dissent sheet still records her note', async () => {
       const { getByTestId } = renderWithProviders(<MyPayScreen />);
 
       await waitFor(() =>
@@ -565,51 +580,6 @@ describe('MyPayScreen', () => {
           'My rate went down without a conversation.'
         )
       );
-    });
-
-    it('shows the recorded line once the terms acknowledgement succeeds', async () => {
-      const { getByTestId } = renderWithProviders(<MyPayScreen />);
-
-      await waitFor(() =>
-        expect(getByTestId(`my-pay-ack-seen-${HOUSEHOLD_A}`)).toBeTruthy()
-      );
-      fireEvent.press(getByTestId(`my-pay-ack-seen-${HOUSEHOLD_A}`));
-
-      await waitFor(() =>
-        expect(
-          getByTestId(`my-pay-ack-recorded-${HOUSEHOLD_A}`).props.children
-        ).toBe('ack.recordedNow')
-      );
-    });
-
-    it('shows the recorded line once a disagreement is submitted', async () => {
-      const { getByTestId } = renderWithProviders(<MyPayScreen />);
-
-      await waitFor(() =>
-        expect(getByTestId(`my-pay-ack-disagree-${HOUSEHOLD_A}`)).toBeTruthy()
-      );
-      fireEvent.press(getByTestId(`my-pay-ack-disagree-${HOUSEHOLD_A}`));
-      fireEvent.press(getByTestId(`my-pay-dissent-submit-${HOUSEHOLD_A}`));
-
-      await waitFor(() =>
-        expect(
-          getByTestId(`my-pay-dissent-recorded-${HOUSEHOLD_A}`).props.children
-        ).toBe('dissent.recordedNow')
-      );
-    });
-
-    it('shows neither line before either act', async () => {
-      const { getByTestId, queryByTestId } = renderWithProviders(
-        <MyPayScreen />
-      );
-
-      await waitFor(() =>
-        expect(getByTestId(`my-pay-ack-state-${HOUSEHOLD_A}`)).toBeTruthy()
-      );
-      expect(queryByTestId(`my-pay-ack-recorded-${HOUSEHOLD_A}`)).toBeNull();
-      expect(
-        queryByTestId(`my-pay-dissent-recorded-${HOUSEHOLD_A}`)
-      ).toBeNull();
     });
 
     // GOLDEN #40: a failure inside a sheet stays inside the sheet — the card
@@ -638,6 +608,51 @@ describe('MyPayScreen', () => {
       expect(
         getByTestId(`my-pay-dissent-note-${HOUSEHOLD_A}`).props.value
       ).toBe('The rate went down.');
+    });
+  });
+
+  /**
+   * 1.3 — the SAME state line in the SAME slot for both roles. Today the
+   * parent got it above the rate and she got a shorter, less attributed
+   * document below the rows; `screens-pay-terms.md` §1 calls that the T16
+   * violation. Same util, same position, worded for each reader.
+   */
+  describe('the terms state line', () => {
+    it('a grandfathered row reads "not agreed in Steadily", in force and honest', async () => {
+      payHistoryMock.mockImplementation(() =>
+        Promise.resolve([arrangementFor(HOUSEHOLD_A)])
+      );
+
+      const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+      await waitFor(() =>
+        expect(
+          getByTestId(`my-pay-terms-state-${HOUSEHOLD_A}`).props.children
+        ).toBe('notAgreedSetBy')
+      );
+    });
+
+    it('a row an accepted round points at reads as agreed', async () => {
+      proposalRows = [
+        {
+          ...openProposal(NANNY_ID),
+          id: 'prop-accepted',
+          status: 'accepted',
+          accepted_arrangement_id: `arr-${HOUSEHOLD_A}`,
+          responded_at: now,
+        },
+      ];
+      payHistoryMock.mockImplementation(() =>
+        Promise.resolve([arrangementFor(HOUSEHOLD_A)])
+      );
+
+      const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+      await waitFor(() =>
+        expect(
+          getByTestId(`my-pay-terms-state-${HOUSEHOLD_A}`).props.children
+        ).toBe('proposal.state.agreedWith')
+      );
     });
   });
 
@@ -718,21 +733,29 @@ describe('MyPayScreen', () => {
       );
     });
 
-    it('while HER proposal is open the card offers Withdraw instead, beside a pending pill', async () => {
+    // 1.2: her open round gets the RECEIPT, the same card the parent gets for
+    // his — what was sent, that they have to agree before her clock opens,
+    // and whether they have opened it. A pill said none of that.
+    it('while HER proposal is open the card shows the receipt, with Withdraw on it', async () => {
       proposalRows = [openProposal(NANNY_ID)];
+
       const { getByTestId, queryByTestId } = renderWithProviders(
         <MyPayScreen />
       );
-      await waitFor(() =>
-        expect(
-          getByTestId(`my-pay-proposal-withdraw-${HOUSEHOLD_A}`)
-        ).toBeTruthy()
-      );
-      expect(getByTestId(`my-pay-proposal-pill-${HOUSEHOLD_A}`)).toBeTruthy();
-      expect(queryByTestId(`my-pay-suggest-change-${HOUSEHOLD_A}`)).toBeNull();
 
-      fireEvent.press(getByTestId(`my-pay-proposal-withdraw-${HOUSEHOLD_A}`));
-      await waitFor(() => expect(withdrawMock).toHaveBeenCalled());
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-terms-receipt-${HOUSEHOLD_A}`)).toBeTruthy()
+      );
+      expect(
+        getByTestId(`my-pay-terms-receipt-${HOUSEHOLD_A}-consequence`).props
+          .children
+      ).toBe('receipt.mustAgreeCarer');
+      expect(queryByTestId(`my-pay-proposal-pill-${HOUSEHOLD_A}`)).toBeNull();
+
+      fireEvent.press(
+        getByTestId(`my-pay-terms-receipt-${HOUSEHOLD_A}-withdraw`)
+      );
+      expect(withdrawMock).toHaveBeenCalled();
     });
 
     it('when THEY countered, the ball is hers and the card sends her to the review surface', async () => {

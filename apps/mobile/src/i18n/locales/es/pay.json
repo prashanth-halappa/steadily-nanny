@@ -121,9 +121,8 @@
     "weekdaySat": "Sáb",
     "noteLabel": "Nota (opcional)",
     "notePlaceholder": "p. ej. Revisión anual",
-    "submitButton": "Establecer nuevas condiciones",
-    "savedToast": "Nuevas condiciones guardadas",
-    "saveFailed": "No se pudo guardar. Comprueba tu conexión e inténtalo de nuevo."
+    "submitButton": "Enviar a {{name}}",
+    "saveFailed": "No se pudo enviar. Revisa tu conexión e inténtalo de nuevo."
   },
   "termGroups": {
     "heading": "El resto del acuerdo",
@@ -172,8 +171,7 @@
   "setup": {
     "title": "Configurar el sueldo de {{name}}",
     "subtitle": "Lo que habéis acordado. {{name}} puede ver sus propias condiciones, y Steadily puede totalizar cada semana para ambos.",
-    "submitButton": "Guardar condiciones de pago",
-    "savedToast": "Condiciones de pago guardadas",
+    "submitButton": "Enviar a {{name}}",
     "cancellationRequiredHint": "Elige una opción — esta es la única condición que no puede quedar en blanco."
   },
   "promptCard": {
@@ -248,19 +246,14 @@
     "checkTheWeek": "Un cambio a mitad de semana significa que el total de esta semana puede no coincidir con lo que calcule tu servicio de nómina. Revisa la semana antes de enviarla."
   },
   "ack": {
-    "changedTitle": "Tus condiciones cambiaron el {{date}}",
-    "firstTitle": "Tus condiciones de pago están fijadas",
-    "seenButton": "He leído estas condiciones",
-    "needsUpdatingButton": "Necesita actualizarse",
-    "reassurance": "Esto registra la fecha en que las viste. No es una aceptación de ellas y no renuncias a nada.",
+    "needsUpdatingButton": "No he aceptado estas condiciones",
     "recordFailed": "No se pudo registrar. Revisa tu conexión e inténtalo de nuevo.",
     "seenBy": "Leído por {{name}} el {{date}}",
     "seen": "Leído el {{date}}",
     "notSeenYet": "Aún sin leer",
     "disagreed": "En desacuerdo el {{date}}",
     "needsUpdatingLine": "Dijiste que esto necesita actualizarse el {{date}}",
-    "historySeen": "Leído el {{date}}",
-    "recordedNow": "Registrado."
+    "historySeen": "Leído el {{date}}"
   },
   "dissent": {
     "title": "Diles qué está mal",
@@ -355,5 +348,14 @@
       "body": "{{rate}} la hora, desde el {{date}}. Ambas partes pueden leer el mismo documento en cualquier momento.",
       "cta": "Ver las condiciones"
     }
-  }
+  },
+  "receipt": {
+    "sentTo": "Enviado a {{name}} · {{date}}",
+    "terms": "{{rate}} desde el {{date}}.",
+    "mustAgreeParent": "{{name}} tiene que aceptar antes de poder fichar.",
+    "mustAgreeCarer": "{{name}} tiene que aceptar antes de que puedas fichar.",
+    "seenBy": "Visto por {{name}} el {{date}}",
+    "notOpened": "Aún sin abrir"
+  },
+  "notAgreedSetBy": "Fijado por {{name}} el {{date}} · no aceptado en Steadily"
 }

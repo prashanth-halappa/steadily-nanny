@@ -17,10 +17,13 @@
  *     the recovery path afterwards.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Household } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { fireEvent, render } from '@testing-library/react-native';
 import { liveCardBackground } from '~/lib/design-tokens/elevation';
 import { palette } from '~/lib/design-tokens/palette';
+import { typography } from '~/lib/design-tokens/typography';
 
 const SURFACE_ATTENTION = palette.light.surfaceAttention.hex;
 /** The apricot ground `tone="live"` paints — the one this card may never wear. */
@@ -49,8 +52,13 @@ const PROPOSAL: {
   created_at: '2026-08-12T09:00:00.000Z',
 };
 
+/** Her first day with this family — before "today", so it is backdatable. */
+const JOINED_AT = '2026-08-01T10:00:00.000Z';
+const TODAY_ISO = new Date().toISOString().slice(0, 10);
+
 let ClockInBlockedCard: typeof import('../components/ClockInBlockedCard').ClockInBlockedCard;
 let mockUseTermsGate: ReturnType<typeof mock>;
+let mockUseHouseholdMembers: ReturnType<typeof mock>;
 let mockPush: ReturnType<typeof mock>;
 let mockMutateAsync: ReturnType<typeof mock>;
 let lastSheetProps: Record<string, unknown> | null = null;
@@ -92,6 +100,20 @@ beforeAll(async () => {
       selector({ session: { user: { id: ME } } }),
   }));
 
+  // Already fetched by TodayScreen for this household, so the card's own call
+  // is a cache read, not a second request. A nanny may read it: the members
+  // route gates on `authWithOwnership` — any ACTIVE member, role unchecked.
+  mockUseHouseholdMembers = mock(() => ({
+    data: [
+      { user_id: 'someone-else', joined_at: '2026-07-01T10:00:00.000Z' },
+      { user_id: ME, joined_at: JOINED_AT },
+    ],
+    isLoading: false,
+  }));
+  mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
+    useHouseholdMembers: mockUseHouseholdMembers,
+  }));
+
   mockMutateAsync = mock(() => Promise.resolve());
   mock.module('@/src/hooks/mutations/useProposeTerms', () => ({
     useProposeTerms: mock(() => ({
@@ -131,6 +153,13 @@ beforeEach(() => {
   mockPush.mockClear();
   mockMutateAsync.mockClear();
   mockUseTermsGate.mockImplementation(() => blocked('familySent'));
+  mockUseHouseholdMembers.mockImplementation(() => ({
+    data: [
+      { user_id: 'someone-else', joined_at: '2026-07-01T10:00:00.000Z' },
+      { user_id: ME, joined_at: JOINED_AT },
+    ],
+    isLoading: false,
+  }));
 });
 
 function renderCard() {
@@ -181,11 +210,22 @@ describe('ClockInBlockedCard — tone', () => {
 });
 
 describe('ClockInBlockedCard — one title, three owners', () => {
-  it('titles every variant with the rule, not the blame', () => {
+  // 1.5: the title leads with the STATE, not the refusal. One unconditional
+  // "Clock-in opens when terms are agreed" made the card a rule notice; three
+  // titles make it a status. Literal `t()` per branch, never a ternary inside
+  // `t(...)` — the second key is invisible to the locale-key guard that way.
+  it('titles each variant with its own state, not one shared refusal', () => {
+    const expected = {
+      familySent:
+        'clockInBlocked.titleFamilySent({"familyName":"Okafor family"})',
+      youSent: 'clockInBlocked.titleYouSent({"familyName":"Okafor family"})',
+      nothingSent: 'clockInBlocked.titleNothingSent',
+    } as const;
+
     for (const variant of ['familySent', 'youSent', 'nothingSent'] as const) {
       mockUseTermsGate.mockImplementation(() => blocked(variant));
       const title = renderCard().getByTestId('today-clock-in-blocked-title');
-      expect(title.props.children).toBe('clockInBlocked.title');
+      expect(title.props.children).toBe(expected[variant]);
     }
   });
 
@@ -229,7 +269,7 @@ describe('ClockInBlockedCard — one title, three owners', () => {
   });
 });
 
-describe('ClockInBlockedCard — the footnote is the warning', () => {
+describe('ClockInBlockedCard — the recovery line is the warning', () => {
   it('shows in all three variants, because she can work anyway in all three', () => {
     for (const [variant, proposal] of [
       ['familySent', PROPOSAL],
@@ -242,6 +282,94 @@ describe('ClockInBlockedCard — the footnote is the warning', () => {
       );
       expect(footnote.props.children).toBe('clockInBlocked.footnote');
     }
+  });
+
+  // 1.5: PROMOTED off the smallest rung on the card. This sentence is what
+  // turns a lockout into a delay — at `Caption`/`text-muted-foreground` it
+  // read as legal small print under the refusal it exists to soften.
+  it('renders at the Body rung, not Caption — asserted on the emitted size', () => {
+    const line = renderCard().getByTestId('today-clock-in-blocked-footnote');
+    const style = [line.props.style]
+      .flat()
+      .find(
+        (s): s is { fontSize?: number } =>
+          !!s && typeof s === 'object' && 'fontSize' in s
+      );
+
+    expect(style?.fontSize).toBe(typography.body.size);
+    expect(style?.fontSize).not.toBe(typography.caption.size);
+  });
+
+  it('is muted-STRONG, not the faintest foreground on the card', () => {
+    const line = renderCard().getByTestId('today-clock-in-blocked-footnote');
+
+    expect(line.props.className).toContain('text-muted-strong');
+    expect(line.props.className).not.toContain('text-muted-foreground');
+  });
+
+  // The component test above can only see the key (`t` is stubbed to echo),
+  // so the INVERSION — recovery offered first, prohibition never led with —
+  // is pinned against the shipped copy itself.
+  it('leads with the recovery, not the prohibition', () => {
+    const en = JSON.parse(
+      readFileSync(
+        join(__dirname, '../../../i18n/locales/en/today.json'),
+        'utf8'
+      )
+    ) as { clockInBlocked: { footnote: string } };
+    const es = JSON.parse(
+      readFileSync(
+        join(__dirname, '../../../i18n/locales/es/today.json'),
+        'utf8'
+      )
+    ) as { clockInBlocked: { footnote: string } };
+
+    expect(en.clockInBlocked.footnote).toBe(
+      "Work today anyway? Keep a note of your hours — you'll be able to add them here once the terms are agreed."
+    );
+    expect(en.clockInBlocked.footnote).not.toStartWith('Hours worked before');
+    expect(es.clockInBlocked.footnote).not.toStartWith('Las horas trabajadas');
+    expect(es.clockInBlocked.footnote.length).toBeGreaterThan(0);
+  });
+});
+
+// 1.6: she has no arrangement — that IS the block — so `PayChangeSheet` takes
+// its blank branch, which seeds today. Her first day is the honest default:
+// losing Monday and Tuesday hurts most in exactly this flow.
+describe('ClockInBlockedCard — her own terms start on her first day', () => {
+  function openPropose() {
+    mockUseTermsGate.mockImplementation(() => blocked('nothingSent', null));
+    const tree = renderCard();
+    fireEvent.press(tree.getByTestId('today-clock-in-blocked-cta'));
+    return tree;
+  }
+
+  it('seeds the sheet from her own joined_at, in the household zone', () => {
+    openPropose();
+
+    expect(lastSheetProps?.initialEffectiveDateISO).toBe('2026-08-01');
+  });
+
+  it('leaves the seed alone when she joined today — nothing to backdate', () => {
+    mockUseHouseholdMembers.mockImplementation(() => ({
+      data: [{ user_id: ME, joined_at: `${TODAY_ISO}T08:00:00.000Z` }],
+      isLoading: false,
+    }));
+
+    openPropose();
+
+    expect(lastSheetProps?.initialEffectiveDateISO).toBeUndefined();
+  });
+
+  it('leaves the seed alone when her membership row has not loaded', () => {
+    mockUseHouseholdMembers.mockImplementation(() => ({
+      data: [],
+      isLoading: true,
+    }));
+
+    openPropose();
+
+    expect(lastSheetProps?.initialEffectiveDateISO).toBeUndefined();
   });
 });
 

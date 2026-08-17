@@ -48,12 +48,13 @@ import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Image, Pressable, ScrollView, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
-import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { SCREEN_CONTENT_STYLE, useElevation } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { ScreenWash } from '@/src/components/ui/screen-wash';
+import { SkeletonShimmer } from '@/src/components/ui/skeleton-shimmer';
 import { Body, H1, Small } from '@/src/components/ui/typography';
 import {
   DraftHomeScreen,
@@ -127,6 +128,36 @@ const HEADER_STYLE = {
   paddingTop: SCREEN_CONTENT_STYLE.padding,
   paddingBottom: 8,
 } as const;
+
+const FEED_SKELETON_ROWS = [0, 1, 2];
+
+/**
+ * P4.2 — `household` resolves (wave one) before the household-scoped queries
+ * that fill the feed do (wave two: children, household members). Without
+ * this, the feed rendered live off `data ?? []` the instant `household`
+ * existed, so it looked blank for exactly as long as wave two took. Same
+ * idea as `HoursWeekSkeleton`; the rung it stands in for is the white L3
+ * cards most of this feed is made of (`daylight-v2.md` §6.9), same shape as
+ * `DraftHomeSkeleton`'s L3 rows.
+ */
+function TodayFeedSkeleton() {
+  const elevation = useElevation();
+  return (
+    <View testID="today-feed-skeleton" className="gap-4" style={FEED_STYLE}>
+      {FEED_SKELETON_ROWS.map(index => (
+        <View
+          key={index}
+          className="gap-3 rounded-card bg-card p-5.5"
+          style={elevation.card}
+        >
+          <SkeletonShimmer width="50%" height={18} />
+          <SkeletonShimmer width="100%" height={14} />
+          <SkeletonShimmer width="80%" height={14} />
+        </View>
+      ))}
+    </View>
+  );
+}
 
 /**
  * Locale-key guard extracts the first string literal inside `t()`, so each
@@ -351,6 +382,12 @@ export function TodayScreen() {
       ? `firstWeekApproved:${household.id}`
       : null;
   const showFirstWeekApprovedMoment = useMomentOnce(firstWeekApprovedKey);
+  // P4.2 — wave two's first fetch (children, household members) still in
+  // flight for a household that already resolved. `isLoading` (not
+  // `isFetching`) so a background refetch never re-shows the skeleton over
+  // data already on screen.
+  const isFeedLoading =
+    !!household && (children.isLoading || householdMembers.isLoading);
   // Same tab-bar dead-zone fix as Settings (BUG1) — the floating tab bar
   // overlays this screen's content instead of reserving its own layout
   // space, so a fixed paddingBottom is not safe-area-aware.
@@ -493,6 +530,8 @@ export function TodayScreen() {
 
         {activeHousehold.isLoading ? (
           <LoadingIndicator />
+        ) : isFeedLoading ? (
+          <TodayFeedSkeleton />
         ) : household ? (
           <View className="gap-4" style={FEED_STYLE}>
             <HouseholdSwitcher />
@@ -530,6 +569,7 @@ export function TodayScreen() {
             ) : null}
             {showParentJoinedMoment && recentNannyMember ? (
               <NannyJoinedMomentCard
+                householdId={household.id}
                 name={resolveCarerName(recentNannyMember, '')}
                 family={household.name ?? t('household:untitledDraft')}
                 carerId={recentNannyMember.user_id}

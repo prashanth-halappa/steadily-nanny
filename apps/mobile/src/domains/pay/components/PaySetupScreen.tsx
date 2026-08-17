@@ -12,6 +12,16 @@
  * "everything closed" — the same rule the change sheet uses, reading as a
  * short required form rather than as a document.
  *
+ * P1: this SENDS the terms, it does not save them. `pay_arrangements` has
+ * exactly one writer now (`termsProposalCommandService.accept`), so what
+ * this screen submits is a `terms_proposals` round the nanny has to agree
+ * to — which is what makes "an arrangement exists" and "someone tapped
+ * Agree" the same fact, and what stops the clock-in gate opening against
+ * terms she never saw. With a round already open the screen renders the
+ * RECEIPT (or a route to hers) instead of a form: 092 allows one `proposed`
+ * row per (household, carer), and the old blank-form path would have
+ * collided with it.
+ *
  * Two differences from `PayChangeSheet`, both load-bearing:
  *  - the effective date defaults to the day she JOINED the household (when
  *    that is in the past, so already-worked weeks price), not today;
@@ -26,29 +36,37 @@ import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { BackButton } from '@/src/components/ui/back-button';
+import { Button } from '@/src/components/ui/button';
+import { Card, CardContent } from '@/src/components/ui/card';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
+import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
-import { Label } from '@/src/components/ui/typography';
+import { Body, Label } from '@/src/components/ui/typography';
 import { PayScheduleFields } from '@/src/domains/pay/components/PayScheduleFields';
 import { PayTermsGroups } from '@/src/domains/pay/components/PayTermsGroups';
 import { PayTermsRequiredCore } from '@/src/domains/pay/components/PayTermsRequiredCore';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import { isParentEditorRole } from '@/src/domains/setup/types';
-import { useCreatePayArrangement } from '@/src/hooks/mutations/useCreatePayArrangement';
+import { useProposeTerms } from '@/src/hooks/mutations/useProposeTerms';
+import { useWithdrawTerms } from '@/src/hooks/mutations/useWithdrawTerms';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import {
+  findOpenTermsProposal,
+  useTermsProposals,
+} from '@/src/hooks/queries/useTermsProposals';
 import { getDeviceCurrency } from '@/src/lib/deviceLocale';
 import { localDateInZone } from '@/src/lib/localDate';
-import { showSuccessToast } from '@/src/lib/toast';
 import {
   blankPayTermsFormState,
   buildCreatePayArrangementRequest,
   type PayTermsFormState,
 } from '../utils/payArrangementForm';
+import { TermsSentReceipt } from './TermsSentReceipt';
 
 function normalizeParam(
   value: string | string[] | undefined
@@ -79,10 +97,14 @@ export function PaySetupScreen() {
     householdId,
     carerId ?? null
   );
-  const createArrangement = useCreatePayArrangement(
-    householdId ?? '',
-    carerId ?? ''
-  );
+  // §7.1's live negotiation. Post-P1 this is the OTHER thing that can be
+  // true on arrival: an arrangement is null until she agrees, so the old
+  // `currentArrangement`-only gate showed a blank form over an open round —
+  // and sending it would 23505 against 092's partial unique index.
+  const proposals = useTermsProposals(householdId, carerId ?? null);
+  const openProposal = findOpenTermsProposal(proposals.data);
+  const proposeTerms = useProposeTerms(householdId ?? '', carerId ?? '');
+  const withdrawTerms = useWithdrawTerms(openProposal?.id ?? '');
 
   const member = (members.data ?? []).find(m => m.user_id === carerId);
   const carerName = resolveCarerName(member, tSettings('role.nanny'));
@@ -199,7 +221,8 @@ export function PaySetupScreen() {
     !householdId ||
     !carerId ||
     members.isPending ||
-    currentArrangement.isPending
+    currentArrangement.isPending ||
+    proposals.isPending
   ) {
     return (
       <View testID="pay-setup-screen" className="flex-1 bg-background">
@@ -223,17 +246,77 @@ export function PaySetupScreen() {
     );
   }
 
+  // ONE condition, two bugs. A round is already open, so there is nothing to
+  // set: the parent gets the RECEIPT for what he sent (persistent, not a
+  // toast — `screens-today.md` Table B) or a route to what SHE sent. A blank
+  // form here would invite a second `proposed` row that 092 refuses.
+  if (openProposal) {
+    return (
+      <View testID="pay-setup-screen" className="flex-1 bg-background">
+        <View
+          style={{
+            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingTop: SCREEN_CONTENT_STYLE.padding,
+          }}
+          className="gap-4"
+        >
+          <BackButton
+            testID="pay-setup-back"
+            onPress={() => router.back()}
+            label={tCommon('back')}
+          />
+          {openProposal.direction === 'parent' ? (
+            <TermsSentReceipt
+              proposal={openProposal}
+              counterpartyName={carerName}
+              householdTimezone={timezone}
+              viewer="parent"
+              onWithdraw={() => withdrawTerms.mutate()}
+              isWithdrawing={withdrawTerms.isPending}
+            />
+          ) : (
+            <Card testID="pay-setup-open-proposal">
+              <CardContent className="gap-2">
+                <Body weight="medium">
+                  {t('proposal.openRowTitleReceived', { name: carerName })}
+                </Body>
+                <Button
+                  testID="pay-setup-open-proposal-review"
+                  variant="ghost"
+                  className="self-start px-0"
+                  onPress={() =>
+                    router.push(`/pay/proposal/${openProposal.id}` as Href)
+                  }
+                >
+                  <Text>{t('proposal.reviewButton')}</Text>
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </View>
+      </View>
+    );
+  }
+
   const request = buildCreatePayArrangementRequest({ ...form, todayISO });
 
+  /**
+   * P1: this SENDS A ROUND. There is no toast and no bounce — the receipt
+   * this screen renders for an open round IS the confirmation, and it is
+   * still there tomorrow.
+   *
+   * No `supersedes_id` here, and that is not an omission: the branch above
+   * returns before this form ever renders while a round is open, so a first
+   * round is the only thing this path can send. `PayArrangementScreen`, which
+   * DOES keep its form reachable beside an open round, seeds it there.
+   */
   const handleSubmit = async () => {
     if (!request) return;
     try {
-      await createArrangement.mutateAsync(request);
-      showSuccessToast(t('setup.savedToast'));
-      router.back();
+      await proposeTerms.mutateAsync({ terms: request });
     } catch {
-      // useCreatePayArrangement's onError already surfaced a toast; keep the
-      // form as typed (same discipline as PayChangeSheet).
+      // useProposeTerms' onError already surfaced a toast; keep the form as
+      // typed (same discipline as PayChangeSheet).
     }
   };
 
@@ -242,9 +325,9 @@ export function PaySetupScreen() {
       testID="pay-setup-screen"
       title={t('setup.title', { name: carerName })}
       subtitle={t('setup.subtitle', { name: carerName })}
-      ctaLabel={t('setup.submitButton')}
+      ctaLabel={t('setup.submitButton', { name: carerName })}
       onCta={() => void handleSubmit()}
-      ctaDisabled={!request || createArrangement.isPending}
+      ctaDisabled={!request || proposeTerms.isPending}
       onBack={() => router.back()}
       backLabel={tCommon('back')}
     >

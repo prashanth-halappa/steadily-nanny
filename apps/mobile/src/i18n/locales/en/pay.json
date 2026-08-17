@@ -121,9 +121,8 @@
     "weekdaySat": "Sat",
     "noteLabel": "Note (optional)",
     "notePlaceholder": "e.g. Annual review",
-    "submitButton": "Set new terms",
-    "savedToast": "New terms saved",
-    "saveFailed": "That didn't save. Check your connection and try again."
+    "submitButton": "Send to {{name}}",
+    "saveFailed": "That didn't send. Check your connection and try again."
   },
   "termGroups": {
     "heading": "The rest of the agreement",
@@ -172,8 +171,7 @@
   "setup": {
     "title": "Set up pay for {{name}}",
     "subtitle": "What you've agreed. {{name}} can see their own terms, and Steadily can total each week for both of you.",
-    "submitButton": "Save pay terms",
-    "savedToast": "Pay terms saved",
+    "submitButton": "Send to {{name}}",
     "cancellationRequiredHint": "Choose one — this is the one term with no blank state."
   },
   "promptCard": {
@@ -248,19 +246,14 @@
     "checkTheWeek": "A change partway through a week means this week's total may not match what your payroll service works out. Check the week before you send it."
   },
   "ack": {
-    "changedTitle": "Your terms changed on {{date}}",
-    "firstTitle": "Your pay terms are set",
-    "seenButton": "I've read these terms",
-    "needsUpdatingButton": "Needs updating",
-    "reassurance": "This records the date you saw them. It isn't an agreement to them, and it doesn't give anything up.",
+    "needsUpdatingButton": "I haven't agreed to these",
     "recordFailed": "That didn't record. Check your connection and try again.",
     "seenBy": "Read by {{name}} on {{date}}",
     "seen": "Read {{date}}",
     "notSeenYet": "Not read yet",
     "disagreed": "Disagreed {{date}}",
     "needsUpdatingLine": "You said this needs updating on {{date}}",
-    "historySeen": "Read {{date}}",
-    "recordedNow": "Recorded."
+    "historySeen": "Read {{date}}"
   },
   "dissent": {
     "title": "Tell them what's wrong",
@@ -355,5 +348,14 @@
       "body": "{{rate}} an hour, from {{date}}. Both of you can read the same document any time.",
       "cta": "See the terms"
     }
-  }
+  },
+  "receipt": {
+    "sentTo": "Sent to {{name}} · {{date}}",
+    "terms": "{{rate}} from {{date}}.",
+    "mustAgreeParent": "{{name}} needs to agree before they can clock in.",
+    "mustAgreeCarer": "{{name}} needs to agree before you can clock in.",
+    "seenBy": "Seen by {{name}} {{date}}",
+    "notOpened": "Not opened yet"
+  },
+  "notAgreedSetBy": "Set by {{name}} on {{date}} · not agreed in Steadily"
 }

@@ -8,13 +8,19 @@
 // Every network call goes through the shared `apiClient` and unwraps the
 // standard success envelope `{ success, data, message, ... }` at
 // `response.data.data` before validating the payload with Zod.
+//
+// THERE IS NO `create` HERE (P1). `pay_arrangements` is minted in exactly one
+// place — a parent accepting a `terms_proposals` round — so an arrangement
+// existing and someone having tapped Agree are the same fact, and the
+// clock-in gate can never open against terms the nanny never saw. Screens
+// that used to write terms call `useProposeTerms` instead. The server route
+// is gone too (`payArrangementRoutes.ts`); adding this back re-opens the hole.
 
 import type {
   CreatePayArrangementRequest,
   PayArrangement,
 } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import {
-  CreatePayArrangementRequestSchema,
   PayArrangementListResponseSchema,
   PayArrangementSchema,
 } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
@@ -36,8 +42,6 @@ export const payArrangementEndpoints = {
   current: (householdId: string, carerId: string) =>
     `/v1/households/${householdId}/carers/${carerId}/pay-arrangements/current`,
   list: (householdId: string, carerId: string) =>
-    `/v1/households/${householdId}/carers/${carerId}/pay-arrangements`,
-  create: (householdId: string, carerId: string) =>
     `/v1/households/${householdId}/carers/${carerId}/pay-arrangements`,
   ack: (householdId: string, carerId: string, arrangementId: string) =>
     `/v1/households/${householdId}/carers/${carerId}/pay-arrangements/${arrangementId}/ack`,
@@ -89,30 +93,6 @@ export const payArrangementApi = {
     );
     if (!parsed.success) throw parsed.error;
     return parsed.data.pay_arrangements;
-  },
-
-  /**
-   * Create a new arrangement — the only write in this domain (append-only;
-   * no PATCH/DELETE anywhere, see `payArrangementRoutes.ts`). Parents only,
-   * enforced server-side.
-   */
-  create: async (
-    householdId: string,
-    carerId: string,
-    input: CreatePayArrangementRequest
-  ): Promise<PayArrangement> => {
-    const validated = CreatePayArrangementRequestSchema.safeParse(input);
-    if (!validated.success) throw validated.error;
-
-    const response = await apiClient.post(
-      payArrangementEndpoints.create(householdId, carerId),
-      validated.data
-    );
-    const parsed = z
-      .object({ pay_arrangement: PayArrangementSchema })
-      .safeParse(response.data.data);
-    if (!parsed.success) throw parsed.error;
-    return parsed.data.pay_arrangement;
   },
 
   /**

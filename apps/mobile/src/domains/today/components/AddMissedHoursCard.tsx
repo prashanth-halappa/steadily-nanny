@@ -59,19 +59,46 @@ import { useAuthStore } from '@/src/store/auth';
  * day she worked on an unanswered ask is still a day of missing hours. */
 const SCHEDULED_STATUS_SET = new Set<string>(SCHEDULED_SHIFT_STATUSES);
 
-function hasMissedHoursDay(
-  shifts: readonly Shift[],
+/** The days SHE has a live entry on. A voided entry is not a logged day. */
+function loggedDates(
   entries: readonly TimeEntry[],
-  currentUserId: string,
-  weekDates: readonly string[]
-): boolean {
-  const entryDates = new Set(
+  currentUserId: string
+): Set<string> {
+  return new Set(
     entries
       .filter(
         entry => entry.carer_id === currentUserId && entry.status !== 'voided'
       )
       .map(entry => entry.local_date)
   );
+}
+
+/**
+ * Any day in `[fromISO..toISO]` (both inclusive) she logged nothing on. The
+ * arrangement-first-run half of the gate: with no pattern built there are no
+ * shifts to detect a missed day from, so backdated terms are the only signal
+ * that days worked under the clock-in block exist at all.
+ */
+function hasUnloggedDayInRange(
+  entries: readonly TimeEntry[],
+  currentUserId: string,
+  fromISO: string,
+  toISO: string
+): boolean {
+  const entryDates = loggedDates(entries, currentUserId);
+  for (let day = fromISO; day <= toISO; day = addLocalDays(day, 1)) {
+    if (!entryDates.has(day)) return true;
+  }
+  return false;
+}
+
+function hasMissedHoursDay(
+  shifts: readonly Shift[],
+  entries: readonly TimeEntry[],
+  currentUserId: string,
+  weekDates: readonly string[]
+): boolean {
+  const entryDates = loggedDates(entries, currentUserId);
   return shifts.some(
     shift =>
       SCHEDULED_STATUS_SET.has(shift.status) &&
@@ -98,6 +125,17 @@ interface AddMissedHoursCardProps {
    * agreed" is true. It never changes what the CTA does.
    */
   firstRunHeadline?: boolean;
+  /**
+   * Her current arrangement's `valid_from` (household-local `yyyy-mm-dd`),
+   * handed down from `ThisWeekCard`'s existing `useCurrentPayArrangement`
+   * read — the same query, not a second one.
+   *
+   * Terms agreed with a backdated start mean she worked days the clock-in
+   * block refused. In the account that hits that block hardest there is no
+   * pattern and so no shift to notice them from, which is exactly why the
+   * shift-derived gate above cannot be the only one.
+   */
+  arrangementValidFrom?: string | null;
 }
 
 export function AddMissedHoursCard({
@@ -105,6 +143,7 @@ export function AddMissedHoursCard({
   timeZone,
   weekStartsOn,
   firstRunHeadline = false,
+  arrangementValidFrom = null,
 }: AddMissedHoursCardProps) {
   const { t } = useTranslation('today');
   const { t: tErrors } = useTranslation('errors');
@@ -130,6 +169,27 @@ export function AddMissedHoursCard({
   );
   const entriesQuery = useWeekTimeEntries(householdId, weekStart);
   const shiftsQuery = useShiftsRange(householdId, from, to);
+
+  const todayISO = useMemo(() => localDateInZone(timeZone), [timeZone]);
+  const prevWeekStart = useMemo(() => addLocalDays(weekStart, -7), [weekStart]);
+  // ponytail: the first-run window is bounded to this business week and the
+  // previous one — the two weeks we hold entries for. Terms backdated further
+  // than that have stopped being a fresh start and belong in Hours, which
+  // shows any week. Widen by querying more weeks if that ceiling bites.
+  const firstRunFrom =
+    arrangementValidFrom &&
+    arrangementValidFrom >= prevWeekStart &&
+    arrangementValidFrom < todayISO
+      ? arrangementValidFrom
+      : null;
+  // Only fetched when the range actually reaches back — `null` disables the
+  // query, so a nanny whose terms started this week pays for one read, not two.
+  const needsPrevWeek = firstRunFrom !== null && firstRunFrom < weekStart;
+  const prevEntriesQuery = useWeekTimeEntries(
+    householdId,
+    needsPrevWeek ? prevWeekStart : null
+  );
+
   const showCta = useMemo(() => {
     if (!currentUserId) return false;
     if (
@@ -140,20 +200,44 @@ export function AddMissedHoursCard({
     ) {
       return false;
     }
-    return hasMissedHoursDay(
-      shiftsQuery.data ?? [],
-      entriesQuery.data ?? [],
+    const entries = entriesQuery.data ?? [];
+    if (
+      hasMissedHoursDay(
+        shiftsQuery.data ?? [],
+        entries,
+        currentUserId,
+        weekDates
+      )
+    ) {
+      return true;
+    }
+    if (!firstRunFrom) return false;
+    if (
+      needsPrevWeek &&
+      (prevEntriesQuery.isLoading || prevEntriesQuery.isPending)
+    ) {
+      return false;
+    }
+    return hasUnloggedDayInRange(
+      needsPrevWeek ? [...(prevEntriesQuery.data ?? []), ...entries] : entries,
       currentUserId,
-      weekDates
+      firstRunFrom,
+      todayISO
     );
   }, [
     currentUserId,
     entriesQuery.data,
     entriesQuery.isLoading,
     entriesQuery.isPending,
+    firstRunFrom,
+    needsPrevWeek,
+    prevEntriesQuery.data,
+    prevEntriesQuery.isLoading,
+    prevEntriesQuery.isPending,
     shiftsQuery.data,
     shiftsQuery.isLoading,
     shiftsQuery.isPending,
+    todayISO,
     weekDates,
   ]);
 

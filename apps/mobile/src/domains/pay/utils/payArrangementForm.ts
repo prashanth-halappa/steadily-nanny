@@ -469,12 +469,21 @@ export function readTermsBag(
  */
 export function blankPayTermsFormState(
   currency: string,
-  todayISO: string
+  todayISO: string,
+  /**
+   * The date the form OPENS on when it should not be today — the same prop
+   * `seedPayTermsFormState` takes, honoured on the blank branch too. The
+   * caller that needs it is `ClockInBlockedCard`: a nanny proposing her own
+   * terms has NO arrangement to seed from (that absence IS the block), so
+   * she took the blank branch and silently lost every day she had already
+   * worked. Omitted, the field still opens on today.
+   */
+  initialEffectiveDateISO?: string
 ): PayTermsFormState {
   return {
     rateText: '',
     currency,
-    effectiveDateISO: todayISO,
+    effectiveDateISO: initialEffectiveDateISO ?? todayISO,
     todayISO,
     overtimeThresholdHoursText: '',
     overtimeMultiplierText: '1.5',

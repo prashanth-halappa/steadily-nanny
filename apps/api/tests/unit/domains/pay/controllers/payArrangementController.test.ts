@@ -46,7 +46,7 @@ function mockRes(): any {
 }
 
 beforeEach(() => {
-  for (const m of [getCurrent, getHistory, create]) {
+  for (const m of [getCurrent, getHistory, create, cancelScheduled]) {
     m.mockClear?.();
   }
 });
@@ -108,42 +108,51 @@ describe('PayArrangementController', () => {
     });
   });
 
-  it('create responds 201 with the new arrangement', async () => {
+  // P1: the direct write path is deleted. `pay_arrangements` is minted in
+  // exactly one place (`termsProposalCommandService.accept`), so an
+  // arrangement existing and someone having tapped Agree are one fact. A
+  // controller method here would be a second door standing open.
+  it('has no create handler at all', () => {
+    expect(PayArrangementController.create).toBeUndefined();
+  });
+
+  it('the command service is never reachable through this controller for a create', async () => {
     const res = mockRes();
-    const body = {
-      rate_minor: 1500,
-      currency: 'GBP',
-      valid_from: '2026-08-04',
-    };
-    await PayArrangementController.create(
+    await PayArrangementController.cancelScheduled(
       {
         user: { id: 'parent-1' },
-        params: { householdId: 'h1', carerId: 'carer-1' },
-        body,
+        params: {
+          householdId: 'h1',
+          carerId: 'carer-1',
+          arrangementId: 'pa-scheduled',
+        },
       } as any,
       res,
       mock()
     );
-    expect(create).toHaveBeenCalledWith('parent-1', 'h1', 'carer-1', body);
-    expect(res.statusCode).toBe(201);
-    // create's response is NOT enriched (module doc: only the read paths
-    // are) — the command service's own return value passes straight through.
-    expect(res.body.data).toEqual({
-      pay_arrangement: { id: 'pa-new', rate_minor: 1500 },
-    });
+    expect(create).not.toHaveBeenCalled();
+    expect(cancelScheduled).toHaveBeenCalledWith(
+      'parent-1',
+      'h1',
+      'carer-1',
+      'pa-scheduled'
+    );
   });
 
   it('forwards service errors to next() rather than answering', async () => {
-    create.mockImplementationOnce(async () => {
+    cancelScheduled.mockImplementationOnce(async () => {
       throw new Error('boom');
     });
     const res = mockRes();
     const next = mock();
-    await PayArrangementController.create(
+    await PayArrangementController.cancelScheduled(
       {
         user: { id: 'parent-1' },
-        params: { householdId: 'h1', carerId: 'carer-1' },
-        body: {},
+        params: {
+          householdId: 'h1',
+          carerId: 'carer-1',
+          arrangementId: 'pa-scheduled',
+        },
       } as any,
       res,
       next

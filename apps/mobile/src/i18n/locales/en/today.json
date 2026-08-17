@@ -219,14 +219,16 @@
     "title": "This week"
   },
   "clockInBlocked": {
-    "title": "Clock-in opens when terms are agreed",
+    "titleFamilySent": "{{familyName}} sent you terms",
+    "titleYouSent": "Your terms are with {{familyName}}",
+    "titleNothingSent": "Nobody's set your rate yet",
     "bodyFamilySent": "{{familyName}} sent you terms on {{date}}. Agree to them and you can clock in straight away.",
     "bodyYouSent": "You sent your terms on {{date}}. {{familyName}} hasn't answered yet.",
     "bodyNothingSent": "Nobody's set your rate yet. Send {{familyName}} your terms and you can start clocking in.",
     "ctaFamilySent": "Review these terms",
     "ctaYouSent": "See what you sent",
     "ctaNothingSent": "Send my terms",
-    "footnote": "Hours worked before terms are agreed can't be clocked. Keep your own note of them — you'll be able to add them here once terms are agreed.",
+    "footnote": "Work today anyway? Keep a note of your hours — you'll be able to add them here once the terms are agreed.",
     "sendFailed": "That didn't send. Try again."
   },
   "emergencyContactPrompt": {
@@ -258,7 +260,11 @@
   "moments": {
     "nannyJoined": {
       "title": "{{name}} has joined {{family}}",
-      "body": "{{name}} can see the week now, and she can clock in from her first shift.",
+      "bodyAgreed": "{{name}} can see the week now. She can clock in from her first shift.",
+      "bodyNothingSent": "{{name}} can see the week now. She can clock in once you've both agreed the pay terms.",
+      "bodyYouSent": "{{name}} can see the week now. She can clock in as soon as she agrees to the terms you sent.",
+      "ctaSetTerms": "Set the pay terms",
+      "ctaSeeTerms": "See the terms you sent",
       "cta": "See {{name}}'s profile"
     },
     "firstClockIn": {

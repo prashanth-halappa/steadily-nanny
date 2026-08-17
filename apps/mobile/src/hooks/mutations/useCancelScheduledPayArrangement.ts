@@ -6,7 +6,7 @@ import { queryKeys } from '@/src/api/queryKeys';
 
 /**
  * Cancelling is an APPEND (the server writes a revert row), not a delete —
- * so it invalidates exactly what `useCreatePayArrangement` does: current,
+ * so it invalidates exactly what an acceptance does: current,
  * history, and the week totals a future rate could have changed.
  *
  * No error toast: the refusal case that matters ("the date already arrived")

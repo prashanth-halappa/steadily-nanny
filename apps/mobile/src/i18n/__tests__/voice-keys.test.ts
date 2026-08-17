@@ -23,7 +23,14 @@ type Namespace =
 const VOICE_KEYS: ReadonlyArray<readonly [Namespace, string]> = [
   ['common', 'moments.continue'],
   ['today', 'moments.nannyJoined.title'],
-  ['today', 'moments.nannyJoined.body'],
+  // Three bodies since 1.4 — the clock promise is only true once terms are
+  // agreed, and the first sentence is identical in all three so the
+  // celebration never depends on the pay state.
+  ['today', 'moments.nannyJoined.bodyAgreed'],
+  ['today', 'moments.nannyJoined.bodyNothingSent'],
+  ['today', 'moments.nannyJoined.bodyYouSent'],
+  ['today', 'moments.nannyJoined.ctaSetTerms'],
+  ['today', 'moments.nannyJoined.ctaSeeTerms'],
   ['today', 'moments.nannyJoined.cta'],
   ['today', 'moments.firstClockIn.title'],
   ['today', 'moments.firstClockIn.body'],
@@ -75,7 +82,8 @@ const VOICE_KEYS: ReadonlyArray<readonly [Namespace, string]> = [
   ['pay', 'moments.termsAgreed.title'],
   ['pay', 'moments.termsAgreed.body'],
   ['pay', 'moments.termsAgreed.cta'],
-  ['pay', 'ack.recordedNow'],
+  // 1.7 removed `ack.recordedNow` with the button it confirmed — the read
+  // receipt is recorded automatically now, so there is no tap to acknowledge.
   ['pay', 'dissent.recordedNow'],
   ['settings', 'carerAvailabilitySummary'],
   ['settings', 'householdTimeOff.summary_one'],

@@ -219,14 +219,16 @@
     "title": "Esta semana"
   },
   "clockInBlocked": {
-    "title": "Podrás fichar cuando se acuerden las condiciones",
+    "titleFamilySent": "La familia {{familyName}} te envió sus condiciones",
+    "titleYouSent": "Tus condiciones están con la familia {{familyName}}",
+    "titleNothingSent": "Todavía nadie ha fijado tu tarifa",
     "bodyFamilySent": "La familia {{familyName}} te envió sus condiciones el {{date}}. Acéptalas y podrás fichar de inmediato.",
     "bodyYouSent": "Enviaste tus condiciones el {{date}}. La familia {{familyName}} aún no ha respondido.",
     "bodyNothingSent": "Todavía nadie ha fijado tu tarifa. Envía tus condiciones a la familia {{familyName}} y podrás empezar a fichar.",
     "ctaFamilySent": "Revisar estas condiciones",
     "ctaYouSent": "Ver lo que enviaste",
     "ctaNothingSent": "Enviar mis condiciones",
-    "footnote": "Las horas trabajadas antes de acordar las condiciones no se pueden fichar. Anótalas por tu cuenta: podrás añadirlas aquí en cuanto se acuerden.",
+    "footnote": "¿Vas a trabajar hoy igualmente? Anota tus horas: podrás añadirlas aquí en cuanto se acuerden las condiciones.",
     "sendFailed": "No se pudo enviar. Inténtalo de nuevo."
   },
   "emergencyContactPrompt": {
@@ -258,7 +260,11 @@
   "moments": {
     "nannyJoined": {
       "title": "{{name}} se ha unido a {{family}}",
-      "body": "{{name}} ya puede ver la semana y fichar desde su primer turno.",
+      "bodyAgreed": "{{name}} ya puede ver la semana. Puede fichar desde su primer turno.",
+      "bodyNothingSent": "{{name}} ya puede ver la semana. Podrá fichar cuando hayáis acordado las condiciones de pago.",
+      "bodyYouSent": "{{name}} ya puede ver la semana. Podrá fichar en cuanto acepte las condiciones que le enviaste.",
+      "ctaSetTerms": "Fijar las condiciones de pago",
+      "ctaSeeTerms": "Ver las condiciones que enviaste",
       "cta": "Ver el perfil de {{name}}"
     },
     "firstClockIn": {

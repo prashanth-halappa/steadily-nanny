@@ -81,7 +81,9 @@ interface PayChangeSheetProps {
    * against) — just the first statement of terms.
    */
   mode?: 'change' | 'propose' | 'offer';
-  /** Who will read the proposal — named in `propose`'s subtitle. */
+  /** Who will read this. Named in `propose`'s subtitle, and — since P1 —
+   * in `change`'s submit label too: the button says who the terms go to,
+   * because they are now a round that side has to agree to. */
   counterpartyName?: string;
   visible: boolean;
   onDismiss: () => void;
@@ -122,6 +124,10 @@ interface PayChangeSheetProps {
    * pre-fills the start date the other side proposed, so answering a
    * Monday-start offer on a Friday does not silently move the start to
    * Friday. Omitted, the field seeds to `todayISO` as it always did.
+   *
+   * Honoured on the BLANK branch too, not only when seeding from an
+   * arrangement — `ClockInBlockedCard` has no arrangement to seed from and
+   * still needs to open on the nanny's first day (1.6).
    */
   initialEffectiveDateISO?: string;
   /** Household `week_starts_on` (0=Sunday..6=Saturday). Decides which
@@ -170,7 +176,7 @@ export function PayChangeSheet({
     ? tHousehold('invite.offer.submitButton')
     : proposing
       ? t('proposeSheet.submitButton')
-      : t('changeSheet.submitButton');
+      : t('changeSheet.submitButton', { name: counterpartyName ?? '' });
 
   // Seeded from the arrangement, NOT `getDeviceCurrency()`: an existing
   // arrangement's currency is a stored fact about the employment, and the
@@ -183,7 +189,11 @@ export function PayChangeSheet({
           todayISO,
           initialEffectiveDateISO
         )
-      : blankPayTermsFormState(defaultCurrency ?? 'USD', todayISO)
+      : blankPayTermsFormState(
+          defaultCurrency ?? 'USD',
+          todayISO,
+          initialEffectiveDateISO
+        )
   );
   const patch = (next: Partial<PayTermsFormState>) =>
     setForm(current => ({ ...current, ...next }));
@@ -209,7 +219,11 @@ export function PayChangeSheet({
             todayRef.current,
             initialEffectiveDateISO
           )
-        : blankPayTermsFormState(defaultCurrency ?? 'USD', todayRef.current)
+        : blankPayTermsFormState(
+            defaultCurrency ?? 'USD',
+            todayRef.current,
+            initialEffectiveDateISO
+          )
     );
   }, [
     visible,

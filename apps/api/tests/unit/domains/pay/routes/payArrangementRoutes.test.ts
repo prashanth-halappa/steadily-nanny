@@ -267,56 +267,22 @@ describe('payArrangementRoutes — mounted router', () => {
     });
   });
 
-  describe('POST .../ (create)', () => {
-    it('a negative rate_minor is rejected with 400 BEFORE the command service is ever called', async () => {
+  /**
+   * P1 — THE DIRECT WRITE PATH IS GONE. `pay_arrangements` is minted in
+   * exactly one place now (`termsProposalCommandService.accept`), so that
+   * "an arrangement exists" and "someone tapped Agree with the checkbox
+   * ticked" are the same fact. A client POST here used to write terms
+   * nobody could ever accept — the nanny got a live Clock in button and a
+   * "Your pay terms are set" card for terms she had never seen.
+   *
+   * The route is DELETED rather than 403'd: a 404 from an older installed
+   * client is the right failure direction (a 404'd write mints nothing),
+   * and a refusal that still names the resource invites a retry.
+   */
+  describe('POST .../ (create) — deleted (P1)', () => {
+    it('a valid body 404s: the route no longer exists', async () => {
       const res = await fetch(
         `${baseUrl}${pathFor(HOUSEHOLD_ID, CARER_ID, '/')}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            rate_minor: -100,
-            currency: 'GBP',
-            valid_from: '2026-08-04',
-          }),
-        }
-      );
-
-      expect(res.status).toBe(400);
-      expect(createMock).not.toHaveBeenCalled();
-    });
-
-    it('a valid body reaches the controller: 201, and the command service is called with the auth user id + both route params + the body', async () => {
-      const body = {
-        rate_minor: 1850,
-        currency: 'GBP',
-        valid_from: '2026-08-04',
-      };
-      const res = await fetch(
-        `${baseUrl}${pathFor(HOUSEHOLD_ID, CARER_ID, '/')}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        }
-      );
-      const json = (await res.json()) as { data: { pay_arrangement: unknown } };
-
-      expect(res.status).toBe(201);
-      expect(json.data).toEqual({
-        pay_arrangement: { id: 'pa-new', rate_minor: 1500 },
-      });
-      expect(createMock).toHaveBeenCalledWith(
-        DEFAULT_AUTH_USER_ID,
-        HOUSEHOLD_ID,
-        CARER_ID,
-        expect.objectContaining(body)
-      );
-    });
-
-    it('a non-uuid carerId on POST is rejected with 400 before the body is even validated', async () => {
-      const res = await fetch(
-        `${baseUrl}${pathFor(HOUSEHOLD_ID, 'not-a-uuid', '/')}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -328,8 +294,34 @@ describe('payArrangementRoutes — mounted router', () => {
         }
       );
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(404);
       expect(createMock).not.toHaveBeenCalled();
+    });
+
+    it('the command service is unreachable over HTTP however the body is shaped', async () => {
+      const res = await fetch(
+        `${baseUrl}${pathFor(HOUSEHOLD_ID, CARER_ID, '/')}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rate_minor: -100 }),
+        }
+      );
+
+      expect(res.status).toBe(404);
+      expect(createMock).not.toHaveBeenCalled();
+    });
+
+    it('the router file declares no POST on its root path', () => {
+      const source = readFileSync(
+        join(
+          __dirname,
+          '../../../../../src/domains/pay/routes/payArrangementRoutes.ts'
+        ),
+        'utf8'
+      );
+      expect(source).not.toContain("router.post(\n  '/',");
+      expect(source).not.toContain('PayArrangementController.create');
     });
   });
 

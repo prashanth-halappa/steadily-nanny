@@ -3,6 +3,12 @@
  * (parent gate, carer assertion, helper denial) lives in the services; this
  * module unpacks the request and shapes the response, nothing else.
  *
+ * THERE IS NO `create` HERE (P1). Terms reach `pay_arrangements` through
+ * exactly one door — `termsProposalCommandService.accept` — so that an
+ * arrangement existing and someone having tapped Agree are the same fact. See
+ * `routes/payArrangementRoutes.ts`'s header for why the route was deleted
+ * rather than refused.
+ *
  * @module domains/pay/controllers/payArrangementController
  */
 import type { NextFunction, Request, Response } from 'express';
@@ -91,28 +97,6 @@ export class PayArrangementController {
       return sendSuccessResponse(res, 'Pay arrangements fetched', {
         pay_arrangements: history.map(withWeeklyEquivalent),
       });
-    } catch (error) {
-      return next(error);
-    }
-  }
-
-  /** POST /households/:householdId/carers/:carerId/pay-arrangements — parents only. */
-  static async create(req: Request, res: Response, next: NextFunction) {
-    try {
-      const householdId = req.params.householdId as string;
-      const carerId = req.params.carerId as string;
-      const pay_arrangement = await payArrangementCommandService.create(
-        getAuthUserId(req),
-        householdId,
-        carerId,
-        req.body
-      );
-      return sendSuccessResponse(
-        res,
-        'Pay arrangement created',
-        { pay_arrangement },
-        201
-      );
     } catch (error) {
       return next(error);
     }

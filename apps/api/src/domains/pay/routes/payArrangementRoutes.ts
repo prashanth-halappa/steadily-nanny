@@ -3,12 +3,26 @@
  * Mounted at `/api/v1/households/:householdId/carers/:carerId/pay-arrangements`
  * in `routes/index.ts`.
  *
- * `pay_arrangements` itself has three routes and deliberately no fourth:
- * there is no PATCH and no DELETE on the arrangement resource. `terms` is
- * append-only — a correction is a POST of a new row that supersedes the old
- * one via `effectiveOn`'s `created_at desc` tie-break (migration 041's
- * header). Immutability in this stack is the absence of a write path, so
- * adding a PATCH/DELETE there would quietly undo it.
+ * `pay_arrangements` itself is READ-ONLY over HTTP. There is no POST here,
+ * and no PATCH and no DELETE either. The table is append-only — a correction
+ * is a new row that supersedes the old one via `effectiveOn`'s `created_at
+ * desc` tie-break (migration 041's header) — and immutability in this stack
+ * is the ABSENCE of a write path, so adding any of the three would quietly
+ * undo it.
+ *
+ * THE POST IS DELETED, NOT DISABLED (P1). A client could once write terms
+ * here directly, with no proposal behind them — so those terms could never be
+ * accepted by anyone, and the clock-in gate (which only asks whether an
+ * arrangement EXISTS) opened for a nanny against terms she had never seen.
+ * `payArrangementCommandService.create` now has exactly ONE caller,
+ * `termsProposalCommandService.accept`, which makes "an arrangement exists"
+ * and "someone tapped Agree with the checkbox ticked" the same fact.
+ * `cancelScheduled` below still appends its revert row; it writes no terms
+ * that were not already agreed.
+ *
+ * Stated out loud: an installed older client's term-setting POST now 404s
+ * until it updates. That is the right failure direction — a 404'd write mints
+ * nothing — but it is a deliberate compatibility cut, not an oversight.
  *
  * `.../:arrangementId/ack` and `.../:arrangementId/dissent` (D-31/D-45) are
  * a DIFFERENT resource — `pay_arrangement_acks` (081) — and are POSTs for
@@ -32,7 +46,6 @@ import { asyncHandler } from '../../../utils/asyncHandler';
 import { PayArrangementController } from '../controllers/payArrangementController';
 import {
   CreatePayArrangementAckRequestSchema,
-  CreatePayArrangementRequestSchema,
   HouseholdCarerArrangementParamSchema,
   HouseholdCarerParamSchema,
 } from '../schemas';
@@ -51,13 +64,6 @@ router.get(
   '/',
   ...authWithValidation(HouseholdCarerParamSchema, 'params'),
   asyncHandler(PayArrangementController.list)
-);
-
-router.post(
-  '/',
-  ...authWithValidation(HouseholdCarerParamSchema, 'params'),
-  validate(CreatePayArrangementRequestSchema, 'body'),
-  asyncHandler(PayArrangementController.create)
 );
 
 router.post(

@@ -34,6 +34,11 @@ import { showErrorToast } from '@/src/lib/toast';
  *  - `user.memberships()` — acceptance flips the carer's membership from
  *    candidate to active, and `useIsOnboarded` reads memberships to decide
  *    whether she is still in onboarding.
+ *  - `timesheet.all` — a new arrangement can flip a week's earnings state
+ *    (`no_arrangement` -> `ok`). This invalidation used to live on
+ *    `useCreatePayArrangement`; P1 deleted that hook, and acceptance is the
+ *    only writer left, so it inherits the responsibility. Without it the week
+ *    she has just unblocked keeps reading "no pay rate set".
  */
 export function useAcceptTerms(proposalId: string) {
   const queryClient = useQueryClient();
@@ -61,6 +66,7 @@ export function useAcceptTerms(proposalId: string) {
       queryClient.invalidateQueries({
         queryKey: queryKeys.user.memberships(),
       });
+      queryClient.invalidateQueries({ queryKey: queryKeys.timesheet.all });
     },
     onError: error => {
       showErrorToast(getLocalizedErrorMessage(error, t));

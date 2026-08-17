@@ -23,17 +23,27 @@
  * proposal, reviewed on the same screen and accepted through the same sheet.
  * One lifecycle, not two — which is what "both directions everywhere" buys.
  *
- * D-31/D-41 (`docs/design/screens-pay-terms.md` §8.2/§8.3): pressing "I've
- * read these terms" records the DATE SHE READ THEM and nothing more. Every
- * string this screen renders for that fact says so — "Read by {name} on
- * {date}", never a word implying she agreed to them. The ack gates NOTHING:
- * all terms, all history, and every figure read the same before and after.
+ * D-31/D-41 (`docs/design/screens-pay-terms.md` §8.2/§8.3): the READ RECEIPT
+ * records the date she saw a version and nothing more. Every string here says
+ * so — "Read by {name} on {date}", never a word implying she agreed.
+ *
+ * 1.7: it is now recorded AUTOMATICALLY on first render with data, the same
+ * rule `terms_proposals.viewed_at` uses. The button it replaces "looked
+ * exactly like an 'I agree' button" and then said in fine print that it was
+ * not one, and the reassurance line under it existed solely to defuse that.
+ * On a pay screen an ambiguity between a receipt and consent is the one
+ * ambiguity that may not exist — and acceptance (§7.3) now records the far
+ * stronger fact, so nothing is lost by removing the weaker one.
+ *
+ * What survives the removal: the read date, the seen state word, the
+ * disagreement line — and "I haven't agreed to these", which now appears ONLY
+ * on a grandfathered row nobody agreed. The ack still gates NOTHING.
  */
 
 import type { Household } from '@steadily-nanny/shared-types/schemas/household.schema';
 import type { PayArrangement } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
@@ -73,10 +83,12 @@ import {
   proposalHistoryLabel,
   proposalStateWord,
 } from '../utils/proposalTerms';
+import { resolveTermsAgreement } from '../utils/termsAgreement';
 import { buildTermsDiff, summarizeTermsDiff } from '../utils/termsDiff';
 import { BackRow } from './BackRow';
 import { PayChangeSheet } from './PayChangeSheet';
 import { TermsDocumentRows } from './TermsDocumentRows';
+import { TermsSentReceipt } from './TermsSentReceipt';
 
 /**
  * The version immediately before `id` in the append-only history (newest
@@ -193,7 +205,7 @@ function MyPayHouseholdCard({
 
   const arrangement = current.data;
   const ackState = resolveAckState(acks.data);
-  const previous = arrangement
+  const _previous = arrangement
     ? previousVersion(history.data, arrangement.id)
     : null;
   // Household-local, because the date she saw her terms is a date in HER
@@ -240,12 +252,49 @@ function MyPayHouseholdCard({
       ? t('ack.seenBy', { name: carerName, date: seenDate })
       : t('ack.seen', { date: seenDate })
     : t('ack.notSeenYet');
-  // Gated on the ROW, not on the state word (see ackState's header), and not
-  // shown at all until the ack list has actually loaded — the query is
-  // disabled until the arrangement id lands, so gating on `!hasSeenAck` alone
-  // would flash the prompt at a nanny who has already read her terms.
-  const showAckPrompt =
-    arrangement != null && acks.isSuccess && !hasSeenAck(acks.data);
+  /**
+   * 1.7 — RECORDED, NOT ASKED FOR. The fact is "she saw this version", and
+   * the app knows it the moment this card renders with data: exactly the
+   * rule `terms_proposals.viewed_at` already uses. The button it replaces
+   * "looked exactly like an 'I agree' button" and then told her in fine
+   * print that it was not one — on a pay screen that is the one ambiguity
+   * that must not exist. Acceptance now records the far stronger fact, so
+   * removing the button removes no evidence.
+   *
+   * Gated on the ROW, not on the state word (see `ackState`'s header): a
+   * disagreement OUTRANKS a seen, so `resolveAckState(...).kind === 'seen'`
+   * would hide her seen row forever and re-record on every render. The ref
+   * is the in-flight guard — `useAckPayArrangement` writes the row into the
+   * cache optimistically, but not before the next render.
+   */
+  const recordedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!arrangement || !acks.isSuccess || hasSeenAck(acks.data)) return;
+    if (recordedRef.current === arrangement.id) return;
+    recordedRef.current = arrangement.id;
+    ackTerms.mutate(arrangement.id);
+  }, [arrangement, acks.isSuccess, acks.data, ackTerms.mutate]);
+
+  // 1.3: ONE state line, in ONE slot, for both roles (T16). The parent's
+  // copy of this sentence sits in the same place on `PayArrangementScreen`,
+  // resolved by the same util — the whole value of these two screens is that
+  // neither party can be shown a different contract from the other.
+  const agreement = arrangement
+    ? resolveTermsAgreement(arrangement, proposals.data, history.data, t)
+    : null;
+  const termsStateLabel =
+    !arrangement || agreement === null
+      ? null
+      : agreement.kind === 'agreed'
+        ? proposalStateWord(
+            agreement.proposal,
+            { counterpartyName: householdName, timezone: household.timezone },
+            t
+          ).label
+        : t('notAgreedSetBy', {
+            name: householdName,
+            date: cardDate(arrangement.created_at),
+          });
   const ackError = ackTerms.isError || dissentTerms.isError;
 
   return (
@@ -265,50 +314,13 @@ function MyPayHouseholdCard({
           </View>
         ) : (
           <>
-            {showAckPrompt ? (
-              <View
-                testID={`my-pay-ack-prompt-${household.id}`}
-                className="gap-3 rounded-row bg-secondary px-4 py-3"
+            {termsStateLabel ? (
+              <Small
+                testID={`my-pay-terms-state-${household.id}`}
+                className="text-muted-foreground"
               >
-                <Body weight="medium">
-                  {previous
-                    ? t('ack.changedTitle', {
-                        date: formatDisplayDateWithYear(arrangement.valid_from),
-                      })
-                    : t('ack.firstTitle')}
-                </Body>
-                <Small className="text-muted-foreground">
-                  {previous
-                    ? summarizeTermsDiff(
-                        buildTermsDiff(previous, arrangement, t)
-                      )
-                    : t('history.firstTermsSet')}
-                </Small>
-                <LoadingButton
-                  testID={`my-pay-ack-seen-${household.id}`}
-                  label={t('ack.seenButton')}
-                  isLoading={ackTerms.isPending}
-                  onPress={() => ackTerms.mutate(arrangement.id)}
-                />
-                <Button
-                  testID={`my-pay-ack-disagree-${household.id}`}
-                  variant="ghost"
-                  onPress={() => setDissentOpen(true)}
-                >
-                  <Text>{t('ack.needsUpdatingButton')}</Text>
-                </Button>
-                {/* Load-bearing, and must not soften into reassurance-speak
-                 * (§8.3.1): the button above is a receipt, not a waiver. */}
-                <Small className="text-muted-foreground">
-                  {t('ack.reassurance')}
-                </Small>
-                {ackError ? (
-                  <InlineError
-                    testID={`my-pay-ack-error-${household.id}`}
-                    message={t('ack.recordFailed')}
-                  />
-                ) : null}
-              </View>
+                {termsStateLabel}
+              </Small>
             ) : null}
             <View className="flex-row items-baseline gap-1">
               <H1 tabular>
@@ -343,16 +355,6 @@ function MyPayHouseholdCard({
                 {t('ack.needsUpdatingLine', { date: disagreedDate })}
               </Small>
             ) : null}
-            {/* Outside the prompt, because the prompt is gone the instant the
-                ack lands (the optimistic row in `useAckPayArrangement`). */}
-            {ackTerms.isSuccess ? (
-              <Small
-                testID={`my-pay-ack-recorded-${household.id}`}
-                className="text-muted-strong"
-              >
-                {t('ack.recordedNow')}
-              </Small>
-            ) : null}
             {dissentTerms.isSuccess ? (
               <Small
                 testID={`my-pay-dissent-recorded-${household.id}`}
@@ -361,6 +363,25 @@ function MyPayHouseholdCard({
                 {t('dissent.recordedNow')}
               </Small>
             ) : null}
+            {/* Survives ONLY on a grandfathered row. On terms she agreed it
+                would contradict the line at the top of this card, and "I
+                haven't agreed to these" would be false on its face. */}
+            {agreement?.kind === 'notAgreedInSteadily' ? (
+              <Button
+                testID={`my-pay-ack-disagree-${household.id}`}
+                variant="ghost"
+                className="self-start px-0"
+                onPress={() => setDissentOpen(true)}
+              >
+                <Text>{t('ack.needsUpdatingButton')}</Text>
+              </Button>
+            ) : null}
+            {ackError ? (
+              <InlineError
+                testID={`my-pay-ack-error-${household.id}`}
+                message={t('ack.recordFailed')}
+              />
+            ) : null}
             <Button
               testID={`my-pay-history-toggle-${household.id}`}
               variant="ghost"
@@ -368,34 +389,35 @@ function MyPayHouseholdCard({
             >
               <Text>{t('myPay.historyButton')}</Text>
             </Button>
-            {openProposal && openProposalState ? (
+            {openProposal && openProposalIsHers ? (
+              // 1.2: the receipt, not a pill. It says what she sent, that
+              // they have to agree before her clock opens, and whether they
+              // have opened it — persistent, so it is still there on Friday.
+              <TermsSentReceipt
+                testID={`my-pay-terms-receipt-${household.id}`}
+                proposal={openProposal}
+                counterpartyName={householdName}
+                householdTimezone={household.timezone}
+                viewer="carer"
+                onWithdraw={() => withdrawTerms.mutate()}
+                isWithdrawing={withdrawTerms.isPending}
+              />
+            ) : openProposal && openProposalState ? (
               <>
                 <StatusPill
                   testID={`my-pay-proposal-pill-${household.id}`}
                   variant={openProposalState.variant}
                   label={openProposalState.label}
                 />
-                {openProposalIsHers ? (
-                  <Button
-                    testID={`my-pay-proposal-withdraw-${household.id}`}
-                    variant="ghost"
-                    onPress={() => withdrawTerms.mutate()}
-                  >
-                    <Text className="text-destructive">
-                      {t('proposal.withdrawButton')}
-                    </Text>
-                  </Button>
-                ) : (
-                  <Button
-                    testID={`my-pay-proposal-review-${household.id}`}
-                    variant="ghost"
-                    onPress={() =>
-                      router.push(`/pay/proposal/${openProposal.id}`)
-                    }
-                  >
-                    <Text>{t('proposal.reviewButton')}</Text>
-                  </Button>
-                )}
+                <Button
+                  testID={`my-pay-proposal-review-${household.id}`}
+                  variant="ghost"
+                  onPress={() =>
+                    router.push(`/pay/proposal/${openProposal.id}`)
+                  }
+                >
+                  <Text>{t('proposal.reviewButton')}</Text>
+                </Button>
               </>
             ) : canWrite ? (
               <Button
