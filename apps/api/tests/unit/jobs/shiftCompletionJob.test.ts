@@ -27,6 +27,11 @@ function writerOf(rows: EndedConfirmedShift[]) {
   return {
     listEndedConfirmed: mock(async (_cutoff: string) => rows),
     completeByIds: mock(async (ids: string[]) => ids.map(id => ({ id }))),
+    // S5's second arm — inert here; its own matrix is in
+    // shiftCompletionJob.lapse.test.ts.
+    listEndedPendingRecurring: mock(async (_cutoff: string) => []),
+    lapseByIds: mock(async (ids: string[]) => ids.map(id => ({ id }))),
+    appendLapsedEvents: mock(async () => undefined),
   };
 }
 
@@ -91,10 +96,10 @@ describe('runShiftCompletionJob', () => {
   it('a failure is reported, never thrown — a cron that 500s pages someone about bookkeeping', async () => {
     const result = await runShiftCompletionJob(
       {
+        ...writerOf([]),
         listEndedConfirmed: mock(async () => {
           throw new Error('db down');
         }),
-        completeByIds: mock(async () => []),
       },
       clock
     );

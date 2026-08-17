@@ -167,13 +167,43 @@ noted — failures are logged and never fail the caller’s primary write/read.
 
 | Trigger | Call site | `cause` | Timing / scope |
 |---|---|---|---|
-| **Day-thread read (backstop)** | `shiftQueryService.listDayThread` | `nothingScheduled` | Every household day-thread GET for that `local_date`. Catches households that never hit a write-path trigger. Idempotent via keyed dedupe. |
+| **Explicit refresh** | `shiftCommandService.refreshDayThread` (`POST /households/:hid/day-thread/refresh`) | `nothingScheduled` | Parent-only WRITE, on demand. **Replaced the day-thread READ backstop in PR5 (audit S14)** — see below. |
 | **Shift declined** | `shiftCommandService.decline` | `declined` | Awaited after status → `declined`. Suppresses the generic `SHIFT_DECLINED` push when uncovered insertion already pushed. |
 | **Shift cancelled** | `shiftChangeRequestCommandService` (cancel accept path) | `cancelled` | Awaited after cancel is applied. Same suppression pattern vs `SHIFT_CANCELLED` when uncovered push fires. |
 | **Care hours written** | `childCommitmentCommandService` create/update/remove | `needsAdded` | Fire-and-forget for **today + next 2 local dates** (3 days) after any commitment write. |
 | **Closure removed** | `householdClosureCommandService.remove` | `closureRemoved` | Each local date from closure span intersecting `[today, today+30]` in household TZ. `excludeUserId` = remover (they already know). |
 | **Schedule materialised** | `schedulePatternCommandService` after `materialise` | `nothingScheduled` | Each `touchedDates` entry from today through **today+7** (household TZ). |
 | **Horizon job sweep** | `scheduleHorizonJob` → `sweepUncoveredCare` | per `detectUncoveredCareForDate` | **Wired as of 2026-08-10** (verified in the tree): the job calls `detectUncoveredCareForDate` across its backstop window, so households that neither write nor read a day-thread still get detection. This closes the "not wired in `scheduleHorizonJob`" gap this table used to record. |
+
+### S14 — the read backstop is gone (PR5)
+
+`GET /households/:hid/day-thread` used to run detection before returning the
+thread, which meant a **read endpoint inserted rows into an append-only audit
+table**. It no longer does. `shiftQueryService` is reads-only again, and the
+work moved to two places that were already doing it:
+
+- **every write path that changes cover** (the table above), and
+- **`scheduleHorizonJob.sweepUncoveredCare`**, nightly across today..today+30,
+  plus the hourly uncovered digest, which recomputes rather than trusting
+  stored rows.
+
+**What the removal actually costs, stated honestly.** Every in-app surface —
+TodayScreen/`CoverCard` (`useUncoveredToday`), the agenda's uncovered rows
+(`uncoveredWeek.ts`), `WeeklyHoursNotSetCard` — recomputes uncovered state
+live from current shifts + commitments + closures, exactly as §4 requires, so
+none of them can go stale. The **one** consumer that reads the STORED
+`uncovered_care` events is the home-screen widget
+(`apps/mobile/src/lib/useWidgetSnapshotSync.ts` → `widgetSnapshot.ts`). Two
+parent actions change cover without raising anything — `removeParentCover` and
+the parent time-edit in `shiftCommandService.update` — so between the nightly
+sweeps the widget can lack a gap row the app is already showing.
+
+`POST /households/:hid/day-thread/refresh` (parent-only) is the explicit
+recheck for that case. **The mobile client is not yet wired to call it** — the
+widget sync is the natural caller. The better long-term fix is the one §4
+already implies: make the widget recompute like every other surface, which
+also closes the inverse bug noted in §4 (an `uncovered_care` event is never
+retracted, so the widget can show a gap that has since been covered).
 
 ### Push rule (72 hours)
 

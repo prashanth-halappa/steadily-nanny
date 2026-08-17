@@ -20,4 +20,13 @@ router.get(
   asyncHandler(ShiftController.listDayThread)
 );
 
+// S14: the GET is a pure read again. This is the explicit recheck, and it is
+// a WRITE — parent-only, gated in the service.
+router.post(
+  '/refresh',
+  ...authWithValidation(HouseholdIdParamSchema, 'params'),
+  validate(DayThreadQuerySchema, 'body'),
+  asyncHandler(ShiftController.refreshDayThread)
+);
+
 export default router;

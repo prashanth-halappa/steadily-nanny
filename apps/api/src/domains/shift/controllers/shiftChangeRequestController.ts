@@ -93,11 +93,22 @@ export class ShiftChangeRequestController {
       const shift = result.shift;
       const warnings =
         shift.carer_id != null
-          ? await collectClashWarningsForCarer(shift.carer_id, {
-              startsAt: shift.starts_at,
-              endsAt: shift.ends_at,
-              timezone: shift.timezone,
-            })
+          ? await collectClashWarningsForCarer(
+              shift.carer_id,
+              {
+                startsAt: shift.starts_at,
+                endsAt: shift.ends_at,
+                timezone: shift.timezone,
+              },
+              {
+                // S12: without this the shift we JUST created comes straight
+                // back out of `v_busy_blocks` as a conflict with itself, so
+                // every extra-shift proposal shipped a guaranteed bogus
+                // warning. `shiftController.update`/`accept` have always
+                // passed it; this controller was the odd one out.
+                ignoreExact: { sourceUid: shift.ical_uid },
+              }
+            )
           : [];
       return sendSuccessResponse(res, 'Extra shift proposed', {
         status: result.status,

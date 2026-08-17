@@ -8,7 +8,7 @@ import { sendSuccessResponse } from '../../../utils/responseHelpers';
 import { collectClashWarningsForCarer } from '../../me/services/clashWarning';
 import { shiftCommandService } from '../services/shiftCommandService';
 import { shiftQueryService } from '../services/shiftQueryService';
-import type { ShiftRangeQuery } from '../types';
+import type { DayThreadQuery, ShiftRangeQuery } from '../types';
 
 export class ShiftController {
   /** The primary calendar feed: GET /households/:householdId/shifts?from=&to=. */
@@ -59,6 +59,33 @@ export class ShiftController {
       return sendSuccessResponse(res, 'Shift events fetched', {
         shift_events,
       });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * Explicit uncovered-care recheck: POST /households/:householdId/day-thread/refresh.
+   *
+   * S14 — the GET above no longer writes. This is where a client asks for the
+   * STORED `uncovered_care` rows to catch up with the live picture. Parent-only
+   * (`shiftCommandService.refreshDayThread`), because raising a gap notifies
+   * the family.
+   */
+  static async refreshDayThread(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const householdId = req.params.householdId as string;
+      const { local_date } = req.body as DayThreadQuery;
+      await shiftCommandService.refreshDayThread(
+        getAuthUserId(req),
+        householdId,
+        local_date
+      );
+      return sendSuccessResponse(res, 'Day thread refreshed', {});
     } catch (error) {
       return next(error);
     }

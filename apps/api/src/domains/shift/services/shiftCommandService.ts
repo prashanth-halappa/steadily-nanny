@@ -44,6 +44,7 @@ import { ShiftEventRepository } from '../repositories/shiftEventRepository';
 import type { ShiftWithChildren } from '../repositories/shiftRepository';
 import { ShiftRepository } from '../repositories/shiftRepository';
 import type { ParentEditShiftInput } from '../types';
+import { needsReconfirmPush } from '../utils/needsReconfirmPush';
 import { type ShiftQueryService, shiftQueryService } from './shiftQueryService';
 
 const WRITE_ROLES: ReadonlySet<string> = new Set([
@@ -469,6 +470,31 @@ export class ShiftCommandService {
   /**
    * Undo a parent-cover shift — hard-deletes only `parent_cover` rows so this
    * cannot become a way to delete a real shift.
+   *
+   * THE THREE PRECONDITIONS (audit S13). Until now the ONLY check here was
+   * the role: any parent could hard-delete a parent cover at any status, at
+   * any time, with hours already clocked against it, and nothing anywhere
+   * recorded that it had happened. A hard delete with no mutability gate is
+   * the one shift write in this domain that could rewrite settled history
+   * without leaving a trace, which is precisely what `ShiftRepository.update`
+   * exists to prevent on every other path.
+   *
+   *   1. STATUS — `pending` or `confirmed` only. A cancelled or completed
+   *      cover is already settled, and a draft was never live.
+   *   2. TIME — the window must still be in the FUTURE. Removing cover that
+   *      has already begun does not un-happen the morning; that is a
+   *      cancellation, and cancellation has its own path.
+   *   3. HOURS — `assertMutable`, the same chokepoint every other shift
+   *      mutation funnels through, refuses a shift anyone has clocked into
+   *      (409 `ShiftImmutableError`, `blockedBy: 'has_time_entries'`).
+   *
+   * THE DAY-THREAD ROW carries `shift_id: null`, not the removed shift's id,
+   * and that is not a shortcut: `shift_events.shift_id` is `on delete
+   * cascade` (015), so a row pointing at the shift we just deleted would be
+   * deleted along with it. A day-level row is also the honest shape — what
+   * the thread is recording is that the cover is GONE. Under migration 103
+   * day-level rows are parents-only, which matches: a nanny never saw the
+   * `parent_cover` row in the first place.
    */
   async removeParentCover(userId: string, shiftId: string): Promise<void> {
     const shift = await this.queries.getOwned(userId, shiftId);
@@ -483,7 +509,81 @@ export class ShiftCommandService {
       );
     }
 
+    if (
+      shift.status !== SHIFT_STATUSES.PENDING &&
+      shift.status !== SHIFT_STATUSES.CONFIRMED
+    ) {
+      throw new ValidationError(
+        'Only a live parent-cover shift can be removed',
+        'PARENT_COVER_NOT_REMOVABLE',
+        400,
+        { shiftId, status: shift.status }
+      );
+    }
+
+    if (Date.parse(shift.starts_at) <= Date.now()) {
+      throw new ValidationError(
+        'A parent-cover shift that has already started cannot be removed',
+        'PARENT_COVER_ALREADY_STARTED',
+        400,
+        { shiftId, startsAt: shift.starts_at }
+      );
+    }
+
+    await this.shiftRepo.assertMutable(shiftId);
     await this.shiftRepo.delete(shiftId);
+
+    try {
+      await this.eventRepo.insertMany([
+        {
+          household_id: shift.household_id,
+          shift_id: null,
+          local_date: shift.local_date,
+          actor_id: userId,
+          event_type: 'parent_cover_removed',
+          payload: { shiftId, removedBy: userId },
+        },
+      ]);
+    } catch (error) {
+      logger.warn(
+        'Failed to record parent_cover_removed event; the cover is still removed',
+        {
+          shiftId,
+          householdId: shift.household_id,
+          error: error instanceof Error ? error.message : String(error),
+        }
+      );
+    }
+  }
+
+  /**
+   * Re-run uncovered-care detection for one household local date, on purpose
+   * and on a WRITE (audit S14).
+   *
+   * `shiftQueryService.listDayThread` used to do this as a side effect of a
+   * GET, which meant a read endpoint inserted rows into an append-only audit
+   * table. It no longer does. Detection still runs from every write that
+   * changes cover, from `scheduleHorizonJob.sweepUncoveredCare` nightly and
+   * from the hourly uncovered digest; this is the explicit "recheck now" a
+   * client can ask for when it wants the STORED events to catch up with the
+   * live picture (the home-screen widget is the one surface that reads the
+   * stored rows rather than recomputing — see `docs/12-NEED-COVERAGE.md`).
+   *
+   * Owner/parent only, like every other write here: raising a gap notifies
+   * the family, and a carer must not be able to drive that.
+   */
+  async refreshDayThread(
+    userId: string,
+    householdId: string,
+    localDate: string
+  ): Promise<void> {
+    await this.assertWriteMember(userId, householdId);
+    await detectUncoveredCareForDate({
+      householdId,
+      localDate,
+      cause: 'nothingScheduled',
+      actorId: userId,
+    });
   }
 
   /**
@@ -769,18 +869,16 @@ export class ShiftCommandService {
     }
   }
 
-  /** Fire-and-forget: carer must reconfirm after a parent time edit. */
+  /**
+   * Fire-and-forget: carer must reconfirm after a parent time edit. The
+   * message itself lives in `utils/needsReconfirmPush` because
+   * `scheduleMaterialisationService` sends the SAME one when a
+   * re-materialisation moves a confirmed shift's times (audit S5) — one
+   * demotion, one message, whichever path caused it.
+   */
   private notifyNeedsReconfirm(shift: Shift, carerId: string): void {
     try {
-      notifyUser(carerId, {
-        title: 'Shift needs reconfirmation',
-        body: 'A parent changed the times — open Schedule to confirm.',
-        data: {
-          type: PUSH_NOTIFICATION_TYPES.SHIFT_NEEDS_RECONFIRM,
-          shiftId: shift.id,
-          householdId: shift.household_id,
-        },
-      });
+      notifyUser(carerId, needsReconfirmPush(shift));
     } catch {
       // notifyUser is fire-and-forget; never fail the write.
     }

@@ -95,89 +95,6 @@ function makeMemberRepo(overrides: Record<string, unknown> = {}): any {
   };
 }
 
-const household = {
-  id: 'h1',
-  timezone: 'Europe/London',
-};
-
-const commitment = {
-  id: 'cm1',
-  child_id: 'child-1',
-  household_id: 'h1',
-  rrule: 'FREQ=WEEKLY;BYDAY=MO',
-  start_time: '09:00',
-  end_time: '12:00',
-  starts_on: null,
-  ends_on: null,
-  exdates: [],
-};
-
-const closure = {
-  id: 'cl1',
-  household_id: 'h1',
-  starts_at: '2026-08-01T00:00:00.000Z',
-  ends_at: '2026-08-31T23:59:59.000Z',
-  label: 'Holiday',
-  created_at: 't',
-  updated_at: 't',
-};
-
-function makeHouseholdRepo(overrides: Record<string, unknown> = {}): any {
-  return {
-    findById: mock(async () => household),
-    ...overrides,
-  };
-}
-
-function makeCommitmentRepo(overrides: Record<string, unknown> = {}): any {
-  return {
-    findByHouseholdId: mock(async () => [commitment]),
-    ...overrides,
-  };
-}
-
-function makeClosureRepo(overrides: Record<string, unknown> = {}): any {
-  return {
-    listByHousehold: mock(async () => [closure]),
-    ...overrides,
-  };
-}
-
-function makeUncoveredService(overrides: Record<string, unknown> = {}): any {
-  return {
-    raiseUncoveredOnce: mock(async () => []),
-    ...overrides,
-  };
-}
-
-/** The day-thread wiring needs all collaborators — see `listDayThread`. */
-function makeDayThreadService(
-  repos: {
-    shiftRepo?: any;
-    eventRepo?: any;
-    memberRepo?: any;
-    householdRepo?: any;
-    commitmentRepo?: any;
-    closureRepo?: any;
-    uncoveredService?: any;
-  } = {}
-): InstanceType<typeof ShiftQueryService> {
-  return new ShiftQueryService(
-    repos.shiftRepo ??
-      makeShiftRepo({
-        findByHouseholdAndLocalDate: mock(async () => [
-          { ...shift, shift_children: [{ child_id: 'child-1' }] },
-        ]),
-      }),
-    repos.eventRepo ?? makeEventRepo(),
-    repos.memberRepo ?? makeMemberRepo(),
-    repos.householdRepo ?? makeHouseholdRepo(),
-    repos.commitmentRepo ?? makeCommitmentRepo(),
-    repos.closureRepo ?? makeClosureRepo(),
-    repos.uncoveredService ?? makeUncoveredService()
-  );
-}
-
 describe('ShiftQueryService.listForHousehold', () => {
   it('lists the range once membership is confirmed', async () => {
     const svc = new ShiftQueryService(
@@ -260,68 +177,16 @@ describe('ShiftQueryService.listEvents', () => {
 });
 
 describe('ShiftQueryService.listDayThread', () => {
-  it('raises uncovered care BEFORE returning the thread with mapped inputs incl. shift status and closures', async () => {
-    const shiftRepo = makeShiftRepo({
-      findByHouseholdAndLocalDate: mock(async () => [
-        {
-          ...shift,
-          status: 'confirmed',
-          shift_children: [
-            { child_id: 'child-1', starts_at: null, ends_at: null },
-          ],
-        },
-      ]),
-    });
-    const uncoveredService = makeUncoveredService();
-    const closureRepo = makeClosureRepo();
+  it('returns the whole thread for a parent', async () => {
     const eventRepo = makeEventRepo();
-    const svc = makeDayThreadService({
-      shiftRepo,
-      uncoveredService,
-      closureRepo,
+    const svc = new ShiftQueryService(
+      makeShiftRepo(),
       eventRepo,
-    });
+      makeMemberRepo()
+    );
 
     const result = await svc.listDayThread('u1', 'h1', '2026-08-03');
 
-    expect(shiftRepo.findByHouseholdAndLocalDate).toHaveBeenCalledWith(
-      'h1',
-      '2026-08-03'
-    );
-    expect(closureRepo.listByHousehold).toHaveBeenCalledWith('h1');
-    expect(raiseUncoveredOnceMock).toHaveBeenCalledWith({
-      householdId: 'h1',
-      localDate: '2026-08-03',
-      timezone: 'Europe/London',
-      shifts: [
-        {
-          id: 's1',
-          startsAt: shift.starts_at,
-          endsAt: shift.ends_at,
-          status: 'confirmed',
-          children: [{ childId: 'child-1', startsAt: null, endsAt: null }],
-        },
-      ],
-      needWindows: [
-        {
-          id: 'cm1',
-          childId: 'child-1',
-          rrule: 'FREQ=WEEKLY;BYDAY=MO',
-          startTime: '09:00',
-          endTime: '12:00',
-          startsOn: null,
-          endsOn: null,
-          exdates: [],
-        },
-      ],
-      closures: [
-        {
-          startsAt: closure.starts_at,
-          endsAt: closure.ends_at,
-        },
-      ],
-      cause: 'nothingScheduled',
-    });
     expect(eventRepo.listForHouseholdDate).toHaveBeenCalledWith(
       'h1',
       '2026-08-03'
@@ -329,26 +194,35 @@ describe('ShiftQueryService.listDayThread', () => {
     expect(result).toHaveLength(1);
   });
 
-  it('still returns the thread when uncovered-care detection blows up (best-effort side effect)', async () => {
-    raiseUncoveredOnceMock.mockImplementation(async () => {
-      throw new Error('supabase is down');
-    });
-    const svc = makeDayThreadService();
+  /**
+   * S14 — a read must not write. `listDayThread` used to run uncovered-care
+   * detection (an INSERT into `shift_events`) before returning. Detection now
+   * lives on the write paths, on `scheduleHorizonJob.sweepUncoveredCare`, and
+   * on the explicit `shiftCommandService.refreshDayThread`.
+   */
+  it('never raises uncovered care — the read path writes nothing', async () => {
+    const svc = new ShiftQueryService(
+      makeShiftRepo(),
+      makeEventRepo(),
+      makeMemberRepo()
+    );
 
-    const result = await svc.listDayThread('u1', 'h1', '2026-08-03');
-    expect(result).toHaveLength(1);
+    await svc.listDayThread('u1', 'h1', '2026-08-03');
+
+    expect(raiseUncoveredOnceMock).not.toHaveBeenCalled();
   });
 
-  it('never raises uncovered care for a non-member — membership is checked first', async () => {
-    const svc = makeDayThreadService({
-      memberRepo: makeMemberRepo({
-        findActiveMembership: mock(async () => null),
-      }),
-    });
+  it('throws for a non-member before touching the thread', async () => {
+    const eventRepo = makeEventRepo();
+    const svc = new ShiftQueryService(
+      makeShiftRepo(),
+      eventRepo,
+      makeMemberRepo({ findActiveMembership: mock(async () => null) })
+    );
 
     await expect(
       svc.listDayThread('u2', 'h1', '2026-08-03')
     ).rejects.toBeInstanceOf(ShiftNotFoundError);
-    expect(raiseUncoveredOnceMock).not.toHaveBeenCalled();
+    expect(eventRepo.listForHouseholdDate).not.toHaveBeenCalled();
   });
 });

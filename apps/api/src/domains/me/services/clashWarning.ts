@@ -1,12 +1,24 @@
 /**
  * Clash / outside-availability warnings — WARN, never block.
  *
- * Migration 015 deliberately has no overlap constraint on `shifts`: a nanny
- * may accept a shift that clashes with another family or falls outside her
- * marked availability. This module is the server-side implementation of that
- * product rule. Write paths (shift/pattern command services) should call
- * these helpers and surface the returned warnings to the client — they must
- * NEVER translate an overlap into a thrown ConflictError / 409.
+ * CROSS-HOUSEHOLD NEVER 409s; SAME-HOUSEHOLD OVERLAP IS A 409 SINCE 104.
+ * Migration 015 had no overlap constraint on `shifts` at all, and this module
+ * is the server-side implementation of the product rule behind that: a nanny
+ * may accept a shift that clashes with ANOTHER FAMILY or falls outside her
+ * marked availability, and neither may block her. That half is unchanged, and
+ * it is the half this module owns: write paths (shift/pattern command
+ * services) call these helpers and surface the returned warnings to the
+ * client, and must NEVER translate a cross-household overlap into a thrown
+ * ConflictError / 409.
+ *
+ * What DID change: `104_schedule_invariants.sql` added
+ * `shifts_carer_window_excl`, which refuses two overlapping live windows for
+ * one carer inside ONE household (audit S4a) — the family double-booking the
+ * same person against herself, which is nobody's honest state and which the
+ * timesheet would bill twice. That refusal is raised by the DATABASE and
+ * translated to `ShiftOverlapsError` (409) in the repositories; it never
+ * passes through here. The constraint is keyed on `household_id` precisely so
+ * that it can never reach the case this module exists to keep advisory.
  *
  * Privacy: busy overlaps are read from `v_busy_blocks` (via
  * `BusyBlockRepository`), which structurally carries no household id/name.

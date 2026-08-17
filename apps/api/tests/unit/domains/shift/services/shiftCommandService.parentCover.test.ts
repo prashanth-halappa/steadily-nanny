@@ -164,8 +164,20 @@ describe('ShiftCommandService.removeParentCover', () => {
     ).rejects.toBeInstanceOf(ValidationError);
   });
 
-  it('hard-deletes a parent_cover shift', async () => {
-    const { svc, deleteShift } = makeSvc();
+  // S13 added three preconditions (live status, future window, no hours) —
+  // the full matrix lives in shiftCommandService.removeParentCover.test.ts.
+  // This fixture's window is in the past, so it is moved forward here.
+  it('hard-deletes a future, live parent_cover shift', async () => {
+    const { svc, deleteShift } = makeSvc({
+      shiftRepo: { assertMutable: mock(async () => undefined) },
+      queries: {
+        getOwned: mock(async () => ({
+          ...parentCoverShift,
+          starts_at: '2099-08-03T09:00:00.000Z',
+          ends_at: '2099-08-03T12:00:00.000Z',
+        })),
+      },
+    });
 
     await svc.removeParentCover('parent-1', 'pc1');
 
