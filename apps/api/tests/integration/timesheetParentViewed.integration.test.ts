@@ -16,48 +16,17 @@
  *   bun test tests/integration/timesheetParentViewed.integration.test.ts
  *
  * CI runs it in the `db-migrations-and-rls` job after the RLS file.
+ * Client/user/guard plumbing lives in `./helpers/localStack`.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
-import { createClient } from '@supabase/supabase-js';
+import {
+  deleteUsers,
+  insertOne,
+  serviceClient,
+  withHousehold,
+} from './helpers/localStack';
 
-function requireEnv(...names: string[]): string {
-  for (const name of names) {
-    const value = process.env[name];
-    if (value) {
-      return value;
-    }
-  }
-  throw new Error(
-    `timesheetParentViewed.integration.test.ts needs a live Supabase stack: missing ${names.join(' / ')}.\n` +
-      '  Start one with `supabase start`, then export SUPABASE_URL, SUPABASE_ANON_KEY\n' +
-      '  and SUPABASE_SERVICE_KEY (SERVICE_ROLE_KEY) from `supabase status -o env`.'
-  );
-}
-
-const SUPABASE_URL = requireEnv('SUPABASE_URL', 'API_URL');
-const SUPABASE_SERVICE_KEY = requireEnv(
-  'SUPABASE_SERVICE_KEY',
-  'SUPABASE_SERVICE_ROLE_KEY',
-  'SERVICE_ROLE_KEY'
-);
-
-// LOCAL ONLY, and this guard is load-bearing. Bun auto-loads `apps/api/.env`
-// for anything the shell did not already export, and that file points at the
-// REMOTE project. Refuse anything that is not loopback.
-const host = new URL(SUPABASE_URL).hostname.replace(/^\[|\]$/g, '');
-if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') {
-  throw new Error(
-    `timesheetParentViewed.integration.test.ts refuses to run against ${host}: it writes rows.\n` +
-      '  Export the local stack first (see the header) — never a hosted project.'
-  );
-}
-
-const service = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
-
-const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-const PASSWORD = `Viewed-${Math.random().toString(36).slice(2)}-9A!`;
+const service = serviceClient();
 
 const VIEWED_AT = '2026-08-16T12:00:00.000Z';
 
@@ -65,21 +34,6 @@ let parentId = '';
 let carerId = '';
 let householdId = '';
 let timesheetId = '';
-
-async function insertOne<T extends Record<string, unknown>>(
-  table: string,
-  row: T
-): Promise<string> {
-  const { data, error } = await service
-    .from(table)
-    .insert(row)
-    .select('id')
-    .single();
-  if (error || !data) {
-    throw new Error(`seed ${table} failed: ${error?.message}`);
-  }
-  return data.id as string;
-}
 
 async function readTimesheet(): Promise<{
   updated_at: string;
@@ -104,61 +58,13 @@ async function readTimesheet(): Promise<{
 }
 
 beforeAll(async () => {
-  const parentEmail = `viewed-parent+${suffix}@example.test`;
-  const carerEmail = `viewed-carer+${suffix}@example.test`;
-
-  const { data: parentCreated, error: parentErr } =
-    await service.auth.admin.createUser({
-      email: parentEmail,
-      password: PASSWORD,
-      email_confirm: true,
-    });
-  if (parentErr || !parentCreated.user) {
-    throw new Error(`createUser(parent) failed: ${parentErr?.message}`);
-  }
-  parentId = parentCreated.user.id;
-
-  const { data: carerCreated, error: carerErr } =
-    await service.auth.admin.createUser({
-      email: carerEmail,
-      password: PASSWORD,
-      email_confirm: true,
-    });
-  if (carerErr || !carerCreated.user) {
-    throw new Error(`createUser(carer) failed: ${carerErr?.message}`);
-  }
-  carerId = carerCreated.user.id;
-
-  const { error: parentProfileErr } = await service
-    .from('user_profiles')
-    .insert({ user_id: parentId, name: 'Viewed Parent' });
-  if (parentProfileErr) {
-    throw new Error(
-      `user_profiles(parent) failed: ${parentProfileErr.message}`
-    );
-  }
-  const { error: carerProfileErr } = await service
-    .from('user_profiles')
-    .insert({ user_id: carerId, name: 'Viewed Carer' });
-  if (carerProfileErr) {
-    throw new Error(`user_profiles(carer) failed: ${carerProfileErr.message}`);
-  }
-
-  householdId = await insertOne('households', {
-    name: `Viewed H ${suffix}`,
-    created_by: parentId,
+  const household = await withHousehold({
+    parentLabel: 'viewed-parent',
+    nannyLabels: ['viewed-carer'],
   });
-  await insertOne('household_members', {
-    household_id: householdId,
-    user_id: parentId,
-    role: 'parent',
-    can_edit: true,
-  });
-  await insertOne('household_members', {
-    household_id: householdId,
-    user_id: carerId,
-    role: 'nanny',
-  });
+  householdId = household.householdId;
+  parentId = household.parent?.id ?? '';
+  carerId = household.nannies[0]?.id ?? '';
 
   timesheetId = await insertOne('timesheets', {
     household_id: householdId,
@@ -174,9 +80,7 @@ afterAll(async () => {
   if (householdId) {
     await service.from('households').delete().eq('id', householdId);
   }
-  for (const id of [parentId, carerId].filter(Boolean)) {
-    await service.auth.admin.deleteUser(id);
-  }
+  await deleteUsers([parentId, carerId]);
 });
 
 describe('100 — timesheets parent_viewed_at trigger (live Postgres)', () => {

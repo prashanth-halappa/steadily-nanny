@@ -289,12 +289,14 @@ jobs:
           NODE_ENV: test
 
   # ============================================
-  # Migrations + RLS against a real Postgres 15.
+  # Migrations + the DB integration tier against a real Postgres 15.
   # The only job that needs Docker, and the only place the migration set is
   # actually EXECUTED rather than grepped: `db reset` replays supabase/migrations
   # in order onto an empty database, so any broken SQL fails the job (F-B11-2).
-  # It then runs the RLS probe with real user JWTs (F-B10-2) — `bun run test`
-  # sweeps tests/unit only, so tests/integration never runs without a database.
+  # It then runs `bun run test:db` (docs/09-TESTING.md — RLS with real user
+  # JWTs F-B10-2, the migration-100 trigger, migration-101 multi-block days)
+  # — `bun run test` sweeps tests/unit only, so tests/integration never runs
+  # without a database.
   # ============================================
   db-migrations-and-rls:
     name: DB - Migrations + RLS
@@ -329,13 +331,8 @@ jobs:
                   -e 's/^ANON_KEY=/SUPABASE_ANON_KEY=/' \
                   -e 's/^SERVICE_ROLE_KEY=/SUPABASE_SERVICE_KEY=/' \
             >> "$GITHUB_ENV"
-      - name: RLS integration test
-        run: bun test tests/integration/rls.integration.test.ts
-        working-directory: apps/api
-        env:
-          NODE_ENV: test
-      - name: Timesheet parent_viewed_at trigger integration test
-        run: bun test tests/integration/timesheetParentViewed.integration.test.ts
+      - name: DB integration tier
+        run: bun run test:db
         working-directory: apps/api
         env:
           NODE_ENV: test

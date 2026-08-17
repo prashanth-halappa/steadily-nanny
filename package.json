@@ -15,6 +15,7 @@
     "format": "biome check --write --unsafe . && biome format --write .",
     "format:check": "biome format .",
     "test": "turbo run test",
+    "test:db": "cd apps/api && bun run test:db",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean && rm -rf node_modules",
     "qc": "./scripts/qc.sh",
