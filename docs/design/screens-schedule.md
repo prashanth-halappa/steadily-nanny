@@ -196,11 +196,57 @@ intends, and it should stay. Two deltas:
 
 **Parent / helper.** Same calendar, plus `SchedulePatternBanner` above it and
 the uncovered-row actions (`showUncoveredActions`). The banner is the screen's
-L1 when a pattern is `pending` or `declined`: `surfaceAttention`,
-`cardProminent`, `H3` title, filled primary. When the pattern is `accepted` it
-drops to L4 — a bare `MetadataLabel` line, or nothing at all. A banner that
-announces a settled state every day is the thing that trains people to stop
-reading banners.
+L1 whenever the usual week still needs a human: `surfaceAttention`,
+`cardProminent`, `H3` title, filled full-width primary. Only `accepted` drops
+to L4 — a bare `MetadataLabel` line with a ghost control beside it. A banner
+that announces a settled state every day is the thing that trains people to
+stop reading banners. **Which statuses count as settled is §4.1, and it is not
+a detail** — the code originally got it wrong in the one direction that
+matters.
+
+### 4.1 Banner rung, per pattern status
+
+The predicate is `pattern?.status !== 'accepted'`, and it is written that way
+on purpose. It used to be `pattern?.status ? SETTLED.has(...) : false`, which
+sent a **null** pattern — no usual week has ever existed, the emptiest state in
+the product — to the settled arm: a 13px grey line with a small text link,
+while "Add a one-off shift" sat beside the `H1`. The quietest thing on the
+screen was the one thing nobody had done yet.
+
+| Pattern status | Rung | Message | Action → route |
+|---|---|---|---|
+| `accepted` | **L4** — `MetadataLabel` on bare ground, ghost `Button` | `patternBannerAccepted` | Change → `/(private)/schedule/usual-week` |
+| `pending` | **L1** | `patternBannerPending` | → `/(private)/schedule/usual-week` |
+| `draft` | **L1** | `patternBannerDraft` | → `/(private)/schedule/build?patternId=` (the one place that anchor is right — there is a specific half-built week to resume) |
+| `declined` | **L1** | `patternBannerDeclined` | → `/(private)/schedule/usual-week` |
+| `withdrawn` | **L1** | `patternBannerWithdrawn` | Build → `/(private)/schedule/build` |
+| `ended` | **L1** | `patternBannerEnded` | Build → `/(private)/schedule/build` |
+| none, nanny on record | **L1** | `patternBannerNone` (names her) | Build → `/(private)/schedule/build` |
+| none, **no** nanny | **L1** | `patternBannerNoneNoCarer` | Invite → `/(private)/settings/invite` |
+
+`withdrawn` and `ended` are **not** settled. A withdrawn week is a week the
+parent pulled and never replaced; an ended one expired. Both leave a household
+with no live schedule, which is the same practical state as none — so they get
+the same rung. `canEdit` (`isParentEditorRole`) gates the control, not the
+rung: a helper still reads the L1 card, they just get no button.
+
+The `accepted` row's control is a ghost `Button`, not a `Pressable` wrapping
+coloured `Body` text — it has to read as a control, and `Button size="sm"`
+already carries the 44pt target. Its route is `/schedule/usual-week`, **not**
+`/schedule/build?patternId=`: "Change" silently picked one of two different
+edits, and a parent skipping a single school holiday landed in a full rebuild
+of the pattern. Only the detail screen can reach `AdjustSchedulePatternSheet`.
+
+**Which pattern the banner speaks for** is `resolveActivePattern`
+(`domains/schedule/utils/patternPrecedence.ts`), not array order.
+`GET /schedule-patterns` returns every row in no guaranteed order, and
+`schedule.tsx` used to take the first non-`ended` one — so a stale `withdrawn`
+could outrank a week genuinely sitting with the nanny, and the banner said
+"You withdrew your usual week" while she was looking at it. Precedence is
+`pending > accepted > draft > declined > withdrawn > ended`, ties broken by
+newest `created_at`, unknown statuses sorting last. `ended` is no longer
+excluded — "your usual week has ended" is a truer banner than "no usual week
+yet".
 
 ---
 

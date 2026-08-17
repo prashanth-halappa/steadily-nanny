@@ -543,7 +543,12 @@ describe('ScheduleShiftsScreen', () => {
     ]);
   });
 
-  it('P1: "Add a one-off shift" renders at Small/14/600, not Button-sm 16 (reads as heavy as the H1)', () => {
+  // Superseded: this used to assert Small/14/600 because the action sat
+  // beside the H1 and had to stay lighter than it. It no longer sits there
+  // (see the '"Add a one-off shift" is a control' describe below), so the
+  // constraint it encoded is gone — it is a Button now, and the only thing
+  // still worth asserting is that it carries the label.
+  it('P1: "Add a one-off shift" still carries its label after the move off the heading row', () => {
     mockUseIsOnboarded.mockImplementation(() => ({
       role: 'parent',
       status: 'onboarded',
@@ -555,11 +560,11 @@ describe('ScheduleShiftsScreen', () => {
       error: null,
     }));
 
-    const { getByText } = render(<ScheduleShiftsScreen />);
+    const { getByTestId } = render(<ScheduleShiftsScreen />);
 
-    const style = flattenStyle(getByText('shifts.addExtra').props.style);
-    expect(style.fontSize).toBe(14);
-    expect(style.fontWeight).toBe('600');
+    expect(getByTestId('schedule-shifts-add-extra').props.children).toBe(
+      'shifts.addExtra'
+    );
   });
 
   describe('S12: role-forked H1/subtitle (same screen, two voices)', () => {
@@ -733,8 +738,12 @@ describe('P0: uncovered windows join the agenda, never the contradicting empty s
       isError: false,
     }));
 
+    // An ACCEPTED pattern: the summary line is the only thing telling this
+    // parent about the gap, so it must show. (With no pattern — or a
+    // withdrawn/ended one — the banner above already says the same thing,
+    // and the summary is suppressed; see the double-telling describe below.)
     const { getByTestId, getAllByTestId, queryByTestId } = render(
-      <ScheduleShiftsScreen />
+      <ScheduleShiftsScreen pattern={{ status: 'accepted' } as never} />
     );
 
     // The two lines that used to disagree now agree: the summary is
@@ -867,7 +876,13 @@ describe('P0 0.2: empty state names its cause (viewer x pattern-accepted fork)',
     // No carer on record in this file's default mocks — the no-carer body,
     // not an interpolated-with-empty-string name.
     expect(getByText('shifts.emptyBuildParentBodyNoCarer')).toBeTruthy();
-    expect(getByText('shifts.emptyBuildParentCta')).toBeTruthy();
+    // NO CTA here any more. It lived inside the `showEmpty` branch, which
+    // goes false the moment `uncoveredWeek.totalCount > 0` — i.e. the
+    // moment the parent types any care hours — so the offer to build a
+    // usual week appeared once and then vanished. The pattern banner above
+    // now carries that act unconditionally; a second copy of it here is the
+    // same act offered twice.
+    expect(queryByText('shifts.emptyBuildParentCta')).toBeNull();
     expect(queryByText('shifts.empty')).toBeNull();
   });
 
@@ -984,5 +999,99 @@ describe('P0 0.3: empty/unavailable states use the inline EmptyState variant', (
       getByTestId('schedule-shifts-error').props.style
     );
     expect(wrapper.paddingBottom).toBe(114);
+  });
+});
+
+// The pattern banner and this line say the same fact — nothing is
+// scheduled, therefore care hours are uncovered — one line apart, in two
+// colours. Once the banner became unconditional (SchedulePatternBanner), the
+// summary is a second telling in every state where the banner already
+// carries it.
+describe('the week-summary line does not repeat what the banner just said', () => {
+  function renderWithPattern(pattern: unknown) {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'parent',
+      status: 'onboarded',
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+    mockUseHouseholdCommitments.mockImplementation(() => ({
+      data: [makeCommitment()],
+      isLoading: false,
+      isError: false,
+    }));
+    return render(<ScheduleShiftsScreen pattern={pattern as never} />);
+  }
+
+  it.each([
+    ['no pattern at all', null],
+    ['withdrawn', { status: 'withdrawn' }],
+    ['ended', { status: 'ended' }],
+  ])('suppresses the summary line when the pattern is %s', (_label, pattern) => {
+    const { queryByTestId, getAllByTestId } = renderWithPattern(pattern);
+
+    expect(queryByTestId('schedule-cover-week-summary')).toBeNull();
+    // The per-day uncovered rows in the agenda are untouched — the day-level
+    // detail is not the double-telling, the week-level headline is.
+    expect(getAllByTestId(/^schedule-uncovered-/).length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ['accepted', { status: 'accepted' }],
+    ['pending', { status: 'pending' }],
+    ['draft', { status: 'draft' }],
+    ['declined', { status: 'declined' }],
+  ])('keeps the summary line when the pattern is %s', (_label, pattern) => {
+    const { getByTestId } = renderWithPattern(pattern);
+
+    expect(getByTestId('schedule-cover-week-summary')).toBeTruthy();
+  });
+});
+
+// `docs/design/screens-schedule.md` §2 specifies a footer action for "Add a
+// one-off shift"; the code had drifted to a `Small semibold text-primary`
+// pressable sitting beside the H1 — the highest-status slot on the screen,
+// holding the lesser of the two acts the parent can take here.
+describe('"Add a one-off shift" is a control, not the loudest thing beside the H1', () => {
+  function renderParent() {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'parent',
+      status: 'onboarded',
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+    return render(<ScheduleShiftsScreen />);
+  }
+
+  it('renders it as a secondary Button', () => {
+    const { getByTestId } = renderParent();
+
+    const action = getByTestId('schedule-shifts-add-extra');
+    // A bare Pressable has no `variant` — this prop only exists because the
+    // action is a real Button now.
+    expect(action.props.variant).toBe('secondary');
+  });
+
+  it('no longer sits in the heading row beside the H1', () => {
+    const { getByTestId } = renderParent();
+
+    // The heading row is `flex-row items-center justify-between gap-2`,
+    // wrapping the H1 — the one container the one-off action must not be
+    // inside any more.
+    let node = getByTestId('schedule-shifts-add-extra').parent;
+    while (node) {
+      expect(String(node.props.className ?? '')).not.toContain(
+        'items-center justify-between'
+      );
+      node = node.parent;
+    }
   });
 });

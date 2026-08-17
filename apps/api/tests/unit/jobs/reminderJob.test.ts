@@ -48,6 +48,9 @@ function emptyCandidates(): ReminderCandidateSource {
   return {
     listShiftReminders: mock(async () => []),
     listTimesheetAwaitingApproval: mock(async () => []),
+    // Covered in `reminderJob.scheduleNotSet*.test.ts`; empty here so the
+    // shift/timesheet assertions below stay about one rule at a time.
+    listScheduleNotSet: mock(async () => []),
   };
 }
 

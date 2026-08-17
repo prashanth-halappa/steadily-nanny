@@ -12,6 +12,7 @@
  * confirmed one were pixel-identical).
  */
 import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/household.schema';
+import { SCHEDULE_PATTERN_STATUSES } from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { SCHEDULED_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
 import { type Href, useRouter } from 'expo-router';
@@ -24,9 +25,13 @@ import {
 } from '@/src/components/ui/status-pill';
 import { Figure, MetadataLabel, Small } from '@/src/components/ui/typography';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
+import { resolveActivePattern } from '@/src/domains/schedule/utils/patternPrecedence';
+import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
+import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { useSchedulePatterns } from '@/src/hooks/queries/useSchedulePatterns';
 import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { formatInstantDisplay, wallClockToUtcIso } from '@/src/lib/wallClock';
@@ -94,6 +99,8 @@ export function ThisWeeksShiftsCard() {
   const to = wallClockToUtcIso(addLocalDays(today, 14), '00:00', timeZone);
   const shiftsQuery = useShiftsRange(active.householdId, from, to);
   const membersQuery = useHouseholdMembers(active.householdId);
+  const patternsQuery = useSchedulePatterns(active.householdId);
+  const onboarding = useIsOnboarded();
 
   const nextShifts = useMemo(() => {
     const now = Date.now();
@@ -128,6 +135,36 @@ export function ThisWeeksShiftsCard() {
       ? nameFor(soleCarer.user_id)
       : '';
 
+  // An empty fortnight has two very different causes and the old copy said
+  // the same thing for both. A schedule that is out for a reply or already
+  // accepted is genuinely just quiet; one that was never sent is the reason
+  // there is nothing to show, and this L4 block is what still says so once
+  // the dismissible Today card is gone.
+  const activePattern = useMemo(
+    () => resolveActivePattern(patternsQuery.data ?? []),
+    [patternsQuery.data]
+  );
+  const scheduleIsLive =
+    activePattern?.status === SCHEDULE_PATTERN_STATUSES.PENDING ||
+    activePattern?.status === SCHEDULE_PATTERN_STATUSES.ACCEPTED;
+  const isNannyVoice = onboarding.role === SETUP_ROLES.NANNY;
+  const familyName = active.household?.name ?? '';
+  // Falls back to the plain line rather than naming nobody: "you haven't set
+  // 's weekly hours" is worse than saying less.
+  const noWeekNamed = isNannyVoice ? familyName : soleCarerName;
+  const explainsMissingWeek = !scheduleIsLive && noWeekNamed !== '';
+  const emptyLine = !explainsMissingWeek
+    ? t('todayCard.nextUpEmpty')
+    : isNannyVoice
+      ? t('todayCard.nextUpEmptyNoWeekNanny', { familyName })
+      : t('todayCard.nextUpEmptyNoWeek', { name: soleCarerName });
+  // The parent's way out of this state is the builder, not the calendar she
+  // is already looking at the summary of.
+  const ctaHref =
+    explainsMissingWeek && !isNannyVoice
+      ? '/(private)/schedule/build'
+      : '/(private)/schedule/shifts';
+
   return (
     <View testID="today-shifts-card" className="gap-2">
       <MetadataLabel
@@ -139,9 +176,7 @@ export function ThisWeeksShiftsCard() {
           : t('todayCard.nextUpTitle')}
       </MetadataLabel>
       {nextShifts.length === 0 ? (
-        <Small className="text-muted-foreground">
-          {t('todayCard.nextUpEmpty')}
-        </Small>
+        <Small className="text-muted-foreground">{emptyLine}</Small>
       ) : (
         nextShifts.map(shift => {
           const carerName =
@@ -190,7 +225,7 @@ export function ThisWeeksShiftsCard() {
       <Pressable
         testID="today-shifts-cta"
         accessibilityRole="button"
-        onPress={() => router.push('/(private)/schedule/shifts' as Href)}
+        onPress={() => router.push(ctaHref as Href)}
       >
         <Small className="text-primary">{t('todayCard.viewCalendar')}</Small>
       </Pressable>

@@ -76,6 +76,8 @@ mock.module('@/src/domains/draft', () => ({
 mock.module('@/src/domains/schedule', () => ({
   PendingScheduleCard: marker('pending-schedule'),
   ThisWeeksShiftsCard: () => null,
+  WeeklyHoursNotSetCard: marker('weekly-hours-not-set'),
+  NoWeekYetCard: marker('no-week-yet'),
 }));
 mock.module('@/src/domains/inbox', () => ({
   NeedsAttentionCard: marker('needs-attention'),
@@ -593,6 +595,36 @@ describe('TodayScreen — feed order beneath the slot', () => {
     );
     // The timer owns the slot, so it must not also sit in the feed.
     expect(feed).not.toContain('clock-in');
+  });
+
+  it("puts the parent's no-schedule card in the invite card's slot", () => {
+    const { pinned, feed } = renderScreen('parent');
+
+    // Successor to InviteWaitingCard: that card hides the instant a nanny is
+    // active and this one requires it, so they are mutually exclusive by
+    // construction and share one place in the story. Above the attention
+    // band, below the moments, and never in the slot — it displaces nothing.
+    expect(feed).toContain('weekly-hours-not-set');
+    expect(pinned).not.toContain('weekly-hours-not-set');
+    expect(feed.indexOf('invite-waiting')).toBeLessThan(
+      feed.indexOf('weekly-hours-not-set')
+    );
+    expect(feed.indexOf('weekly-hours-not-set')).toBeLessThan(
+      feed.indexOf('needs-attention')
+    );
+  });
+
+  it("keeps the nanny's no-schedule card beside the pending-week card", () => {
+    const { pinned, feed } = renderScreen('nanny');
+
+    // Two halves of one fact — a week that is waiting for her, and a week
+    // that was never sent — so they sit together and never both apply.
+    expect(feed).toContain('no-week-yet');
+    expect(pinned).not.toContain('no-week-yet');
+    expect(feed.indexOf('pending-schedule')).toBeLessThan(
+      feed.indexOf('no-week-yet')
+    );
+    expect(feed.indexOf('no-week-yet')).toBeLessThan(feed.indexOf('this-week'));
   });
 
   it('puts the invite waiting card above the attention band for a parent', () => {

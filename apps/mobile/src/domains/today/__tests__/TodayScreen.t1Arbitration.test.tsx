@@ -48,6 +48,10 @@ mock.module('@/src/domains/draft', () => ({
   DraftHomeScreen: () => null,
 }));
 mock.module('@/src/domains/schedule', () => ({
+  // Both no-schedule cards render null on an ordinary day; stubbed so this
+  // suite's subject is the only thing under test.
+  WeeklyHoursNotSetCard: () => null,
+  NoWeekYetCard: () => null,
   PendingScheduleCard: () => null,
   ThisWeeksShiftsCard: () => null,
 }));

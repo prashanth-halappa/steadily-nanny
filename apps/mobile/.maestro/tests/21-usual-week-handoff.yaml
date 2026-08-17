@@ -1,0 +1,206 @@
+# Scenario — a nanny joins, both sides agree pay terms, and nothing tells the
+# parent to send a usual week (nor gives her a prominent way to). Validates
+# the fix end to end: the Today nudge, the Schedule tab's attention banner
+# (now a real button, not a 13px grey link), the two-tap send-and-land-on-
+# Review path, the nanny-side handoff, her own no-week-yet card + its
+# same-week dismissal, and — the regression this is most likely to have
+# silently broken — that suppressing the week-summary headline did NOT also
+# remove the agenda's per-day uncovered-care rows.
+#
+# Fixture: scripts/seed-usual-week-fixtures.ts — one household, parent +
+# nanny both active, pay terms agreed (direct `pay_arrangements` write), one
+# child with a weekday 07:00-13:00 care-hours commitment, NO schedule_pattern,
+# NO shifts. Re-run it before this flow if a prior pass already sent the week
+# (it resets schedule_patterns/shifts back to empty every time).
+#
+# Run: `-e PARENT_EMAIL=... -e PARENT_PASSWORD=... -e NANNY_EMAIL=...
+#       -e NANNY_PASSWORD=... -e PHASE4_HOUSEHOLD_ID=<USUAL_WEEK_HOUSEHOLD_ID>`
+# (login.yaml/login-nanny.yaml both select `${PHASE4_HOUSEHOLD_ID}` — same
+# var name, reused rather than forked).
+appId: com.jetto.steadily.nanny
+tags:
+  - schedule
+  - today
+---
+# === A: parent, terms agreed, no schedule ==================================
+- runFlow: ../flows/login.yaml
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+
+- scrollUntilVisible:
+    element:
+      id: 'today-weekly-hours-not-set-card'
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: 'today-weekly-hours-not-set-card'
+- assertVisible:
+    id: 'today-weekly-hours-not-set-cta'
+- takeScreenshot: 21-a-today-weekly-hours-not-set
+
+- tapOn:
+    id: 'tab-schedule'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-pattern-banner'
+    timeout: 10000
+- assertVisible:
+    id: 'schedule-pattern-banner'
+- assertVisible:
+    id: 'schedule-pattern-banner-action'
+# The core fix: no second, quieter telling of the same fact next to it.
+- assertNotVisible:
+    id: 'schedule-cover-week-summary'
+
+- scrollUntilVisible:
+    element:
+      id: 'schedule-shifts-add-extra'
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: 'schedule-shifts-add-extra'
+- takeScreenshot: 21-a-schedule-pattern-banner
+
+# === E: regression guard — per-day uncovered rows survive the banner's ====
+# suppression of the week-summary line. Agenda is the parent's default view
+# (calendarViewStore.ts), so no view switch needed. Regex ids: the row key
+# is `childId|commitmentId|startsAt|endsAt`, not a stable literal.
+- scrollUntilVisible:
+    element:
+      id: 'schedule-uncovered-.*'
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: 'schedule-uncovered-.*'
+- assertVisible:
+    id: 'schedule-uncovered-ask-.*'
+- assertVisible:
+    id: 'schedule-uncovered-cover-.*'
+- assertVisible:
+    id: 'schedule-uncovered-hours-.*'
+- takeScreenshot: 21-e-agenda-uncovered-rows
+
+# === D: nanny, no pattern and no shifts in the next 14 days ================
+- runFlow: ../flows/login-nanny.yaml
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+
+- scrollUntilVisible:
+    element:
+      id: 'today-no-week-yet-card'
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: 'today-no-week-yet-card'
+- assertVisible:
+    id: 'today-no-week-yet-availability'
+- assertVisible:
+    id: 'today-no-week-yet-hide'
+- takeScreenshot: 21-d-no-week-yet-card
+
+- tapOn:
+    id: 'today-no-week-yet-hide'
+- waitForAnimationToEnd
+# Immediate, same-session dismissal — was broken (stable-selector bug in
+# todayCardDismissalStore, fixed via useCardDismissal), now a hard
+# requirement.
+- assertNotVisible:
+    id: 'today-no-week-yet-card'
+
+# A REAL relaunch, staying signed in — NOT login-nanny.yaml a second time.
+# login-nanny.yaml routes through reset-to-welcome.yaml's sign-out arm, and
+# `resetStores.ts` wipes `useTodayCardDismissalStore` on sign-out (by design,
+# so one user's dismissals don't leak to the next on a shared device) — that
+# would re-arm the card for an unrelated reason and prove nothing about
+# same-week persistence across an app restart.
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      text: 'Runtime version'
+    timeout: 6000
+    optional: true
+- runFlow: ../flows/dismiss-dev-menu.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'tab-today'
+    timeout: 15000
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'today-clock-card'
+    timeout: 10000
+- assertNotVisible:
+    id: 'today-no-week-yet-card'
+- takeScreenshot: 21-d-no-week-yet-card-dismissed-after-relaunch
+
+# === B: the two-tap promise — banner action opens the builder, prefilled, ==
+# lands directly on Review (one nanny + usable care hours, see
+# ScheduleBuildScreen's step-advance effect) ================================
+- runFlow: ../flows/login.yaml
+- tapOn:
+    id: 'tab-schedule'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-pattern-banner-action'
+    timeout: 10000
+- tapOn:
+    id: 'schedule-pattern-banner-action'
+
+# Assert on the REVIEW STEP'S CONTENT, not the tap — this is the whole claim.
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-send'
+    timeout: 15000
+- assertVisible:
+    id: 'schedule-review-prefill-note'
+- assertVisible:
+    id: 'schedule-review-days-count'
+- assertVisible:
+    id: 'schedule-review-hours-total'
+- takeScreenshot: 21-b-review-step-prefilled
+
+- tapOn:
+    id: 'schedule-send-cta'
+
+# Success: back on Schedule, pattern is now `pending` — banner text/action
+# change and the review screen is gone. Assert the RESULT, not the tap.
+# Neither combined (id+text) nor bare `text:` selectors match this Button:
+# its accessible string lives in `accessibilityText` ("Your usual week is
+# with Test Nanny. See it"), not the node's own `text` attribute (empty,
+# confirmed via `maestro hierarchy` — a Maestro/RN-accessibility selector
+# limitation, not an app defect). testID existence + screenshot instead.
+- extendedWaitUntil:
+    notVisible:
+      id: 'schedule-send'
+    timeout: 15000
+- assertVisible:
+    id: 'schedule-pattern-banner-status'
+- assertVisible:
+    id: 'schedule-pattern-banner-action'
+- takeScreenshot: 21-b-week-sent
+
+# === C: nanny sees the pending week, and the two "nothing scheduled" cards =
+# are mutually exclusive ====================================================
+- runFlow: ../flows/login-nanny.yaml
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+
+- scrollUntilVisible:
+    element:
+      id: 'today-pending-schedule-card'
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: 'today-pending-schedule-card'
+- assertNotVisible:
+    id: 'today-no-week-yet-card'
+- takeScreenshot: 21-c-nanny-pending-schedule-card

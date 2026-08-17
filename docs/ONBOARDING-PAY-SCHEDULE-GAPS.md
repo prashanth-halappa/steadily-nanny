@@ -154,6 +154,8 @@ Legend: **Yes** = shipped end-to-end · **Partial** = core works, UX/edge gap ·
 
 | Gap | Status | Pointer |
 |---|---|---|
+| Terms agreed → **no schedule, and nothing said so** | **Shipped** 2026-08-17 (found same day) | `termsProposalCommandService.accept()` is a money-only transition — activate the candidate, insert `pay_arrangements`, stamp the proposal, one push. No schedule, no prompt, no job, invisible to `computeUncovered`. The relationship then stalls: the parent was never told sending a week was next, the nanny saw only a clock-in button. **Not a capability gap** — "the usual week" (`schedule_patterns`) was already fully built and already prefills from `child_commitments` straight to Review. Two discoverability defects: `ScheduleShiftsScreen.tsx` hung `shifts.emptyBuildParentCta` off the `showEmpty` branch (`:310`), which goes false the moment `uncoveredWeek.totalCount > 0` — i.e. the moment care hours are typed. The duplicate CTA is deleted; the `showEmpty`/`showContent` split is a P0 fix and must not be widened. And `SchedulePatternBanner`'s old `needsAction` predicate sent a **null** pattern to the settled L4 arm, so the emptiest state was the quietest thing on screen. Closed by: banner reclassification (`screens-schedule.md` §4.1), `WeeklyHoursNotSetCard` / `NoWeekYetCard` (`screens-today.md` §4), and one `schedule_not_set` push from `reminderJob` (`ROLLBACK-RUNBOOK.md` §6) |
+| Banner named the wrong pattern when a household has several | **Shipped** 2026-08-17 | `schedule.tsx` took `.find(p => p.status !== 'ended')`, so array order decided which state was announced and a stale `withdrawn` could outrank a live `pending`. Now `resolveActivePattern` (`domains/schedule/utils/patternPrecedence.ts`), `pending > accepted > draft > declined > withdrawn > ended`, newest `created_at` breaking ties |
 | Day-thread as evidence (actor + date; most event types) | **Deferred (R3)** | Revisit ~2026-09-15; UI/i18n only |
 | Pattern timezone never re-syncs after household move | **By design (D-10)** | Silent status quo |
 | Children-only pattern amend lags until time/note change | **Accepted residual (C21)** | |
@@ -172,6 +174,11 @@ Invite revoke and cover-ask withdraw were earlier punch-list items and are
 2. ~~§9.2 send-draft-after-join (spec hole)~~ — **shipped 2026-08-15**
 2b. Candidate-readable household route (§5.1) — the absorption path's blind
     window, surfaced by the §8.1 card having nowhere honest to render
+2c. ~~Terms agreed → no schedule (§5.3)~~ — **shipped 2026-08-17**. It
+    supersedes no entry here: it sat *after* every "done" definition in §4.3,
+    which is exactly why nothing in this list named it. §4.3 defines done as
+    linked + terms attached; that pair was true and the relationship still had
+    no schedule. Read §4.3 as one step short of working
 3. Android universal-links fingerprint (acquisition)
 4. D-54 week outside-wages + N12 took-effect push (pay completeness)
 5. Mobile export download buttons (API ready)

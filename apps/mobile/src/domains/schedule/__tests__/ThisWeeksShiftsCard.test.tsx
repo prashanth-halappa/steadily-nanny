@@ -91,6 +91,15 @@ beforeAll(async () => {
     useShiftsRange: mockUseShiftsRange,
   }));
   mockUseHouseholdMembers = mock(() => ({ data: [] as unknown[] }));
+  // The card now forks its empty line on whether a weekly schedule was ever
+  // sent, so both reads have to be stubbed or every render hits a real
+  // useQuery with no provider.
+  mock.module('@/src/hooks/queries/useSchedulePatterns', () => ({
+    useSchedulePatterns: () => ({ data: [], isLoading: false }),
+  }));
+  mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
+    useIsOnboarded: () => ({ role: 'parent' }),
+  }));
   mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
     useHouseholdMembers: mockUseHouseholdMembers,
   }));

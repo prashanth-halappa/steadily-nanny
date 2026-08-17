@@ -22,6 +22,7 @@
  * card the next user on the same device hasn't seen yet.
  */
 
+import { useCallback } from 'react';
 import { createPersistedStore } from './createPersistedStore';
 
 export interface TodayCardDismissalState {
@@ -51,3 +52,39 @@ export const useTodayCardDismissalStore =
       partialize: state => ({ dismissedKeys: state.dismissedKeys }),
     }
   );
+
+/**
+ * Reactive accessor for the flags above. Use this, NOT
+ * `useTodayCardDismissalStore(s => s.isDismissed)`.
+ *
+ * `isDismissed` and `dismiss` are stable function references created once
+ * when the store is built — only `dismissedKeys` changes on a `set()`. So a
+ * component that selects the FUNCTION is subscribed to something that never
+ * changes, and zustand never re-renders it when a key is dismissed: the write
+ * reaches MMKV, but the card stays on screen until the next launch. Found
+ * on-device by Maestro against `NoWeekYetCard`, where "Hide this" looked
+ * completely dead. Selecting `dismissedKeys` subscribes to the VALUE, so the
+ * dismissal is visible in the same render pass.
+ *
+ * ponytail: `SendMyTermsCard`, `InviteWaitingCard` and
+ * `EmergencyContactPromptCard` still select the function refs and therefore
+ * still have this bug — their "Not now" / "Hide this" buttons look dead until
+ * the next launch. Not migrated here because six test files mock this module
+ * and would each need the new export; swap them over when one of them is
+ * touched for another reason. `useMomentOnce` and `TodayScreen` are FINE and
+ * must not be migrated: both keep their own `useState`/effect and re-render
+ * themselves, and making `TodayScreen` reactive would hide the joined-household
+ * card mid-reveal.
+ */
+export function useCardDismissal(): {
+  isDismissed: (key: string) => boolean;
+  dismiss: (key: string) => void;
+} {
+  const dismissedKeys = useTodayCardDismissalStore(s => s.dismissedKeys);
+  const dismiss = useTodayCardDismissalStore(s => s.dismiss);
+  const isDismissed = useCallback(
+    (key: string) => dismissedKeys[key] === true,
+    [dismissedKeys]
+  );
+  return { isDismissed, dismiss };
+}

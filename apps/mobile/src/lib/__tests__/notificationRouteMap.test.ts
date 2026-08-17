@@ -347,6 +347,17 @@ describe('NOTIFICATION_ROUTE_MAP resolvers', () => {
     });
   });
 
+  // The whole defect is that the builder is hard to find, so this MUST NOT
+  // land on the schedule tab — that reproduces the bug inside the fix. It
+  // goes straight to the builder itself.
+  it('routes schedule_not_set to the schedule builder, not the schedule tab', () => {
+    expect(
+      resolve(PUSH_NOTIFICATION_TYPES.SCHEDULE_NOT_SET, {
+        householdId: 'hh-1',
+      })
+    ).toBe('/(private)/schedule/build?householdId=hh-1');
+  });
+
   it('is usable as the injected NotificationRouteMap type', () => {
     const map: NotificationRouteMap = NOTIFICATION_ROUTE_MAP;
     expect(Object.keys(map).length).toBe(ALL_PUSH_NOTIFICATION_TYPES.length);
