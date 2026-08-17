@@ -18,6 +18,7 @@ import type { Payment } from '@steadily-nanny/shared-types/schemas/payment.schem
 import { fireEvent, render, within } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { spacing } from '@/lib/design-tokens/spacing';
+import { serializeTree } from '@/src/test-utils';
 import {
   hasPaidStateContent,
   PaidStateSection,
@@ -366,7 +367,7 @@ describe('PaidStateSection — corrections', () => {
   it('renders the correction directly under the payment it corrects, indented one step', () => {
     const { getByTestId, toJSON } = renderLedger();
 
-    const order = JSON.stringify(toJSON()).match(
+    const order = serializeTree(toJSON()).match(
       /hours-paid-state-line-[a-z0-9]+"/g
     );
     expect(order).toEqual([

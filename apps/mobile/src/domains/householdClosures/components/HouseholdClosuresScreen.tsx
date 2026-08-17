@@ -32,6 +32,7 @@ import { useTranslation } from 'react-i18next';
 import { KeyboardAvoidingView, Platform, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -75,6 +76,7 @@ export function HouseholdClosuresScreen() {
   const closures = useHouseholdClosures(householdId);
   const createClosure = useCreateHouseholdClosure(householdId ?? '');
   const deleteClosure = useDeleteHouseholdClosure(householdId ?? '');
+  const { refreshing, onRefresh } = usePullToRefresh();
   // A closure names the HOUSEHOLD's calendar days — all-day boundaries and
   // row labels must use the household clock, not the device's (same rule as
   // time off; a Pacific device once stored a London "24–25 Aug" closure as
@@ -185,6 +187,8 @@ export function HouseholdClosuresScreen() {
           testID="household-closures-list"
           data={closures.data ?? []}
           keyExtractor={(row: HouseholdClosure) => row.id}
+          refreshing={refreshing}
+          onRefresh={onRefresh}
           renderItem={({ item }: { item: HouseholdClosure }) => {
             const isPast = isPastTimeOff(item.ends_at);
             return (

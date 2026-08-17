@@ -30,6 +30,7 @@ import { ScrollView, View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
 import { SCREEN_CONTENT_STYLE, spacing } from '@/lib/design-tokens';
 import { Icon } from '@/lib/icons/iconWithClassName';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { cn } from '@/lib/utils';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
@@ -164,6 +165,7 @@ export default function SettingsScreen() {
   // ends up under the bar is a permanent dead zone: taps land on the tab
   // bar underneath instead of the row.
   const tabBarScrollPadding = useTabBarScrollPadding();
+  const { refreshControl } = usePullToRefresh();
   const language = useLanguageStore(s => s.language);
   const setLanguage = useLanguageStore(s => s.setLanguage);
   const signOut = useAuthStore(s => s.signOut);
@@ -233,6 +235,7 @@ export default function SettingsScreen() {
       <ScrollView
         testID="settings-screen"
         className="flex-1"
+        refreshControl={refreshControl}
         contentContainerStyle={{
           ...SCREEN_CONTENT_STYLE,
           paddingBottom: tabBarScrollPadding,

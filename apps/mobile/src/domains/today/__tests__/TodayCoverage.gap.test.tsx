@@ -23,7 +23,7 @@ import i18n from '@/src/i18n';
 // `renderWithProviders`, not bare `render`: the card now reads the day thread
 // to know whether the carer has said she's running late, and a bare render has
 // no QueryClient for that hook to hang off.
-import { renderWithProviders } from '@/src/test-utils';
+import { renderWithProviders, serializeTree } from '@/src/test-utils';
 import { computeUncoveredToday } from '../hooks/useUncoveredToday';
 
 const HOUSEHOLD_ID = '11111111-1111-4111-8111-111111111111';
@@ -297,7 +297,7 @@ describe('TodayCoverage — 10 Aug 2026 gap + plan', () => {
       />
     );
 
-    const rendered = JSON.stringify(tree.toJSON());
+    const rendered = serializeTree(tree.toJSON());
     for (const pattern of REASSURANCE_PATTERNS) {
       expect(rendered).not.toMatch(pattern);
     }

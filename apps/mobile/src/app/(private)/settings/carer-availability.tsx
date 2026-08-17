@@ -15,6 +15,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { BackButton } from '@/src/components/ui/back-button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -37,6 +38,7 @@ export default function CarerAvailabilityScreen() {
   const { t: tCommon } = useTranslation('common');
   const { t: tSchedule } = useTranslation('schedule');
   const router = useRouter();
+  const { refreshControl } = usePullToRefresh();
   const params = useLocalSearchParams<{ carerId?: string | string[] }>();
   const carerId = normalizeParam(params.carerId);
   const active = useActiveHousehold();
@@ -87,6 +89,7 @@ export default function CarerAvailabilityScreen() {
     <ScrollView
       testID="settings-carer-availability-screen"
       className="flex-1 bg-background"
+      refreshControl={refreshControl}
       contentContainerStyle={SCREEN_CONTENT_STYLE}
     >
       <BackButton onPress={() => router.back()} label={tCommon('back')} />

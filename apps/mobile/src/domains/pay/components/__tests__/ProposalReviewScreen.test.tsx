@@ -24,7 +24,7 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, waitFor } from '@testing-library/react-native';
 import { useAuthStore } from '@/src/store/auth';
-import { renderWithProviders } from '@/src/test-utils';
+import { renderWithProviders, serializeTree } from '@/src/test-utils';
 
 let ProposalReviewScreen: typeof import('../ProposalReviewScreen').ProposalReviewScreen;
 
@@ -476,7 +476,7 @@ describe('ProposalReviewScreen', () => {
         'proposal.notAgreedYet'
       );
       expect(screen.getByTestId('proposal-rate')).toBeTruthy();
-      const tree = JSON.stringify(screen.toJSON());
+      const tree = serializeTree(screen.toJSON());
       expect(tree.indexOf('proposal-not-agreed-yet')).toBeLessThan(
         tree.indexOf('proposal-rate')
       );

@@ -12,7 +12,7 @@
  */
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
 import type { TermsProposal } from '@steadily-nanny/shared-types/schemas/termsProposal.schema';
-import { renderWithProviders } from '@/src/test-utils';
+import { renderWithProviders, serializeTree } from '@/src/test-utils';
 import { palette } from '~/lib/design-tokens/palette';
 import { draftHousehold, draftProposal, makeInvite } from './fixtures';
 
@@ -160,7 +160,7 @@ describe('DraftHomeScreen — the L1 slot', () => {
     proposal = null;
 
     const { getByTestId, toJSON } = renderWithProviders(<DraftHomeScreen />);
-    const tree = JSON.stringify(toJSON());
+    const tree = serializeTree(toJSON());
 
     expect(tree.indexOf('draft-terms-card')).toBeGreaterThan(-1);
     expect(tree.indexOf('draft-terms-card')).toBeLessThan(
@@ -187,7 +187,7 @@ describe('DraftHomeScreen — the L1 slot', () => {
     const { getByTestId, queryByTestId, toJSON } = renderWithProviders(
       <DraftHomeScreen />
     );
-    const tree = JSON.stringify(toJSON());
+    const tree = serializeTree(toJSON());
 
     expect(tree.indexOf('draft-share-card-l1')).toBeGreaterThan(-1);
     expect(tree.indexOf('draft-share-card-l1')).toBeLessThan(

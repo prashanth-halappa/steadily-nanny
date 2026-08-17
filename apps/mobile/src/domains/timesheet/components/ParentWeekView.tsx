@@ -50,6 +50,7 @@ import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { useThemeColors } from '@/lib/design-tokens/useThemeColors';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { cn } from '@/lib/utils';
 import { ErrorState } from '@/src/components/custom/ErrorState';
@@ -188,6 +189,7 @@ export function ParentWeekView({
   // Same tab-bar dead-zone fix as Settings (BUG1) — the Hours tab's
   // FlashList needs the same real clearance a fixed magic number can't give.
   const tabBarScrollPadding = useTabBarScrollPadding();
+  const { refreshing, onRefresh } = usePullToRefresh();
   const colors = useThemeColors();
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
   // Cache hit, not a second request — `HoursScreen` already resolved this
@@ -832,6 +834,8 @@ export function ParentWeekView({
       <FlashList
         testID="hours-week-list"
         data={dayRows}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
         keyExtractor={row => row.date}
         renderItem={({ item }) => (
           <TimeEntryDayRow

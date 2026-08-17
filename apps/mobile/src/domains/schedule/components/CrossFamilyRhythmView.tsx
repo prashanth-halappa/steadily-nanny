@@ -30,6 +30,7 @@ import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE, useThemeColors } from '@/lib/design-tokens';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import {
   Caption,
@@ -171,6 +172,7 @@ export function CrossFamilyRhythmView({
   // Schedule tab's own scrollable views, so it needs the same real
   // clearance a fixed magic number can't give.
   const tabBarScrollPadding = useTabBarScrollPadding();
+  const { refreshControl } = usePullToRefresh();
   const activeHousehold = households.find(h => h.id === activeHouseholdId);
   const timeZone = activeHousehold?.timezone ?? 'UTC';
   const startDate = localDateInZone(timeZone);
@@ -223,6 +225,7 @@ export function CrossFamilyRhythmView({
   return (
     <ScrollView
       testID="calendar-cross-family-view"
+      refreshControl={refreshControl}
       className="flex-1"
       contentContainerStyle={{
         paddingHorizontal: SCREEN_CONTENT_STYLE.padding,

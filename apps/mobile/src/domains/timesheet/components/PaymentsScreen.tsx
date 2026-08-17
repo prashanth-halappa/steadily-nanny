@@ -42,6 +42,7 @@ import { AnimatedPressable } from '@/lib/animations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { spacing } from '@/lib/design-tokens/spacing';
 import { Icon } from '@/lib/icons/iconWithClassName';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { timesheetApi } from '@/src/api/endpoints/timesheets';
 import { queryKeys } from '@/src/api/queryKeys';
 import { ErrorState } from '@/src/components/custom/ErrorState';
@@ -207,6 +208,7 @@ function MonthHeader({
 }
 
 export function PaymentsScreen() {
+  const { refreshing, onRefresh, refreshControl } = usePullToRefresh();
   const { t } = useTranslation('hours');
   const { t: tCommon } = useTranslation('common');
   const { t: tSchedule } = useTranslation('schedule');
@@ -475,7 +477,10 @@ export function PaymentsScreen() {
     return (
       <View testID="payments-screen" className="flex-1 bg-background">
         <ScreenWash kind="brand" />
-        <ScrollView contentContainerStyle={SCREEN_CONTENT_STYLE}>
+        <ScrollView
+          contentContainerStyle={SCREEN_CONTENT_STYLE}
+          refreshControl={refreshControl}
+        >
           {header}
           {payments.isError ? (
             <View testID="payments-error">
@@ -520,6 +525,8 @@ export function PaymentsScreen() {
         ListHeaderComponent={header}
         ListFooterComponent={notes}
         contentContainerStyle={SCREEN_CONTENT_STYLE}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
         renderItem={({ item }) => {
           if (item.type === 'month-header') {
             return (

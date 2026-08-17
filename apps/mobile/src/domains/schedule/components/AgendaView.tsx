@@ -17,6 +17,7 @@ import { AlertCircle, Plane } from 'lucide-react-native';
 import { type ReactElement, type RefObject, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { Button } from '@/src/components/ui/button';
 import { DayHeader } from '@/src/components/ui/day-header';
@@ -291,6 +292,7 @@ export function AgendaView({
   // Schedule tab's own scrollable views, so it needs the same real
   // clearance a fixed magic number can't give.
   const tabBarScrollPadding = useTabBarScrollPadding();
+  const { refreshing, onRefresh } = usePullToRefresh();
   const currentUserId = useAuthStore(s => s.session?.user?.id ?? null);
   const membersQuery = useHouseholdMembers(householdId);
   const todayLocalDate = localDateInZone(displayTimeZone ?? householdTimeZone);
@@ -494,6 +496,8 @@ export function AgendaView({
       <FlashList
         ref={listRef}
         testID="schedule-shifts-list"
+        refreshing={refreshing}
+        onRefresh={onRefresh}
         data={items}
         keyExtractor={item => item.key}
         getItemType={item => item.type}

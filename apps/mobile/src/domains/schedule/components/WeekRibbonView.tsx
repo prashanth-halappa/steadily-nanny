@@ -16,6 +16,7 @@ import { type ReactNode, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE, useThemeColors } from '@/lib/design-tokens';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { Label, MetadataLabel, Small } from '@/src/components/ui/typography';
 import {
@@ -135,6 +136,7 @@ export function WeekRibbonView({
   // Schedule tab's own scrollable views, so it needs the same real
   // clearance a fixed magic number can't give.
   const tabBarScrollPadding = useTabBarScrollPadding();
+  const { refreshControl } = usePullToRefresh();
   const displayOrder = getWeekdayOrder(weekStartsOn);
 
   const visibleHours = useMemo(
@@ -165,6 +167,7 @@ export function WeekRibbonView({
   return (
     <ScrollView
       testID="calendar-week-ribbon-view"
+      refreshControl={refreshControl}
       className="flex-1"
       contentContainerStyle={{
         paddingHorizontal: SCREEN_CONTENT_STYLE.padding,

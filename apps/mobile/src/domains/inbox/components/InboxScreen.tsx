@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { BackButton } from '@/src/components/ui/back-button';
 import { EmptyState } from '@/src/components/ui/empty-state';
@@ -36,12 +37,14 @@ export function InboxScreen() {
   const active = useActiveHousehold();
   const timeZone = active.household?.timezone ?? 'UTC';
   const { items, isLoading, isError, refetch } = useInboxItems();
+  const { refreshControl } = usePullToRefresh();
 
   return (
     <ScrollView
       testID="inbox-screen"
       className="flex-1 bg-background"
       contentContainerStyle={{ ...SCREEN_CONTENT_STYLE, flexGrow: 1 }}
+      refreshControl={refreshControl}
     >
       <View className="min-h-full flex-1 gap-8">
         <View className="gap-1">

@@ -19,7 +19,7 @@ import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { SHIFT_KINDS } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { fireEvent, waitFor } from '@testing-library/react-native';
 import i18n from '@/src/i18n';
-import { renderWithProviders } from '@/src/test-utils';
+import { renderWithProviders, serializeTree } from '@/src/test-utils';
 
 const HOUSEHOLD_ID = '11111111-1111-4111-8111-111111111111';
 const CHILD_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -232,7 +232,7 @@ function renderCoverage(shifts: Shift[]) {
 describe('TodayCoverage — cover-ask lifecycle cause line + actions (§2.4a)', () => {
   it('shows the original cause line, and the default action row, when there is no ask', () => {
     const tree = renderCoverage([makeShift()]);
-    const rendered = JSON.stringify(tree.toJSON());
+    const rendered = serializeTree(tree.toJSON());
     expect(rendered).toContain('shift was cancelled');
     tree.getByTestId('today-coverage-ask-cover');
     tree.getByTestId('today-coverage-parent-cover');
@@ -242,7 +242,7 @@ describe('TodayCoverage — cover-ask lifecycle cause line + actions (§2.4a)', 
   it("swaps to the pending-ask cause line and drops to Ask someone else / I've got it", () => {
     const ask = makeAsk({ status: 'pending' });
     const tree = renderCoverage([makeShift(), ask]);
-    const rendered = JSON.stringify(tree.toJSON());
+    const rendered = serializeTree(tree.toJSON());
     expect(rendered).toContain('still uncovered');
     expect(rendered).toContain('You asked Priya');
     expect(rendered).not.toContain('shift was cancelled');
@@ -254,7 +254,7 @@ describe('TodayCoverage — cover-ask lifecycle cause line + actions (§2.4a)', 
   it('shows the declined-ask cause line without inventing "unavailable"/"declined" as a verdict', () => {
     const ask = makeAsk({ status: 'declined' });
     const tree = renderCoverage([makeShift(), ask]);
-    const rendered = JSON.stringify(tree.toJSON());
+    const rendered = serializeTree(tree.toJSON());
     expect(rendered).toContain("can't cover this one");
     expect(rendered.toLowerCase()).not.toContain('unavailable');
   });
@@ -266,7 +266,7 @@ describe('TodayCoverage — cover-ask lifecycle cause line + actions (§2.4a)', 
       cover_ask_expires_at: '2026-08-09T18:00:00.000Z',
     });
     const tree = renderCoverage([makeShift(), ask]);
-    const rendered = JSON.stringify(tree.toJSON());
+    const rendered = serializeTree(tree.toJSON());
     expect(rendered).toContain('expired');
     expect(rendered).toContain(
       i18n.t('schedule:cover.askAgain', { carerName: 'Priya' })
@@ -282,7 +282,7 @@ describe('TodayCoverage — cover-ask lifecycle cause line + actions (§2.4a)', 
       cover_ask_expires_at: '2026-08-09T18:00:00.000Z',
     });
     const tree = renderCoverage([makeShift(), ask]);
-    const rendered = JSON.stringify(tree.toJSON());
+    const rendered = serializeTree(tree.toJSON());
     expect(rendered).toContain('shift was cancelled');
     expect(rendered).not.toContain('expired');
     expect(rendered).not.toContain(i18n.t('schedule:cover.askSomeoneElse'));
@@ -294,7 +294,7 @@ describe('TodayCoverage — cover-ask lifecycle cause line + actions (§2.4a)', 
       reason: 'Only David can do this.',
     });
     const tree = renderCoverage([makeShift()]);
-    const rendered = JSON.stringify(tree.toJSON());
+    const rendered = serializeTree(tree.toJSON());
     expect(rendered).toContain('Only David can do this.');
     mockRestrictedAction.mockReturnValue({ disabled: false, reason: null });
   });
@@ -305,7 +305,7 @@ describe('TodayCoverage — withdraw the ask (§2.4a)', () => {
     const ask = makeAsk({ status: 'pending' });
     const tree = renderCoverage([makeShift(), ask]);
     tree.getByTestId('today-coverage-withdraw-ask');
-    expect(JSON.stringify(tree.toJSON())).toContain(
+    expect(serializeTree(tree.toJSON())).toContain(
       i18n.t('schedule:cover.withdrawAsk')
     );
   });
@@ -336,7 +336,7 @@ describe('TodayCoverage — withdraw the ask (§2.4a)', () => {
     const tree = renderCoverage([makeShift(), ask]);
 
     fireEvent.press(tree.getByTestId('today-coverage-withdraw-ask'));
-    expect(JSON.stringify(tree.toJSON())).toContain(
+    expect(serializeTree(tree.toJSON())).toContain(
       i18n.t('schedule:cover.withdrawAskConfirmTitle')
     );
     expect(mockWithdrawCoverAsk).not.toHaveBeenCalled();
@@ -355,7 +355,7 @@ describe('TodayCoverage — withdraw the ask (§2.4a)', () => {
     );
     const ask = makeAsk({ status: 'pending' });
     const tree = renderCoverage([makeShift(), ask]);
-    const rendered = JSON.stringify(tree.toJSON());
+    const rendered = serializeTree(tree.toJSON());
     expect(rendered).toContain('Only David can withdraw this ask.');
     mockRestrictedAction.mockReturnValue({ disabled: false, reason: null });
   });

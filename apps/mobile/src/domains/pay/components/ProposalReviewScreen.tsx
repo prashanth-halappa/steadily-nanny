@@ -33,6 +33,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
@@ -85,6 +86,7 @@ function normalizeParam(value: string | string[] | undefined): string | null {
 const viewedThisSession = new Set<string>();
 
 export function ProposalReviewScreen() {
+  const { refreshControl } = usePullToRefresh();
   const { t } = useTranslation('pay');
   const { t: tCommon } = useTranslation('common');
   const router = useRouter();
@@ -147,6 +149,7 @@ export function ProposalReviewScreen() {
         testID="proposal-review-screen"
         className="flex-1 bg-background"
         contentContainerStyle={SCREEN_CONTENT_STYLE}
+        refreshControl={refreshControl}
       >
         <BackRow
           testID="proposal-back"
@@ -239,6 +242,7 @@ export function ProposalReviewScreen() {
         testID="proposal-review-screen"
         className="flex-1 bg-background"
         contentContainerStyle={SCREEN_CONTENT_STYLE}
+        refreshControl={refreshControl}
       >
         <MomentCard
           testID="terms-agreed-moment"
@@ -264,6 +268,7 @@ export function ProposalReviewScreen() {
       testID="proposal-review-screen"
       className="flex-1 bg-background"
       contentContainerStyle={SCREEN_CONTENT_STYLE}
+      refreshControl={refreshControl}
     >
       <BackRow
         testID="proposal-back"

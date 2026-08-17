@@ -24,6 +24,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { RestrictedActionButton } from '@/src/components/custom/RestrictedActionButton';
 import {
   AlertDialog,
@@ -138,6 +139,7 @@ export function ShiftDetailScreen() {
   // `deadlineForItem` — "byte-identical string... a deadline that lives
   // only on the card she tapped away from is a deadline she cannot check."
   const { t } = useTranslation(['schedule', 'today', 'inbox']);
+  const { refreshControl } = usePullToRefresh();
   const elevation = useElevation();
   const router = useRouter();
   const params = useLocalSearchParams<{ shiftId?: string }>();
@@ -363,6 +365,7 @@ export function ShiftDetailScreen() {
         className="flex-1 bg-background"
         contentContainerStyle={SCREEN_CONTENT_STYLE}
         keyboardShouldPersistTaps="handled"
+        refreshControl={refreshControl}
       >
         <H1 testID="shift-detail-title">{t('detail.title')}</H1>
         <Body

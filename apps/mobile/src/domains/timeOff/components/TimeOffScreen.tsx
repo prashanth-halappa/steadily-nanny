@@ -29,6 +29,7 @@ import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { cn } from '@/lib/utils';
 import { BackButton } from '@/src/components/ui/back-button';
 import { EmptyState } from '@/src/components/ui/empty-state';
@@ -63,6 +64,7 @@ export function TimeOffScreen() {
   const timeOff = useTimeOff();
   const cancelTimeOff = useCancelTimeOff();
   const updateTimeOff = useUpdateTimeOff();
+  const { refreshing, onRefresh } = usePullToRefresh();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [editingTimeOff, setEditingTimeOff] = useState<CarerTimeOff | null>(
     null
@@ -155,6 +157,8 @@ export function TimeOffScreen() {
         testID="time-off-list"
         data={rows}
         keyExtractor={row => row.id}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
         renderItem={({ item }) => (
           <TimeOffRow
             timeOff={item}

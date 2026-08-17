@@ -32,6 +32,7 @@ import { useTranslation } from 'react-i18next';
 import { Image, ScrollView, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { OfflineBanner } from '@/src/components/custom/OfflineBanner';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
@@ -87,6 +88,7 @@ export function DraftHomeScreen() {
   const { t: tPay } = useTranslation('pay');
   const router = useRouter();
   const isOnline = useIsOnline();
+  const { refreshControl } = usePullToRefresh();
 
   const { household, households } = useActiveHousehold();
   const householdId = household?.id;
@@ -263,6 +265,7 @@ export function DraftHomeScreen() {
       <ScrollView
         className="flex-1"
         contentContainerStyle={SCREEN_CONTENT_STYLE}
+        refreshControl={refreshControl}
       >
         {/* Hero band — no card, no ground of its own. It needs no network, so
             it renders before anything has resolved. */}

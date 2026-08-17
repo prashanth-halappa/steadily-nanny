@@ -31,6 +31,7 @@ import { ScrollView, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { AnimatedPressable } from '@/lib/animations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import {
   AlertDialog,
@@ -615,6 +616,7 @@ function CarerPayDetail({
 }
 
 export function PayArrangementScreen() {
+  const { refreshControl } = usePullToRefresh();
   const { t } = useTranslation('pay');
   const { t: tCommon } = useTranslation('common');
   const { t: tSettings } = useTranslation('settings');
@@ -646,7 +648,10 @@ export function PayArrangementScreen() {
   if (!isParentEditorRole(onboarding.role) || onboarding.isPastMember) {
     return (
       <View testID="pay-not-available" className="flex-1 bg-background">
-        <ScrollView contentContainerStyle={SCREEN_CONTENT_STYLE}>
+        <ScrollView
+          contentContainerStyle={SCREEN_CONTENT_STYLE}
+          refreshControl={refreshControl}
+        >
           <BackRow
             testID="pay-not-available-back"
             onPress={() => router.back()}
@@ -689,6 +694,7 @@ export function PayArrangementScreen() {
       testID="pay-screen"
       className="flex-1 bg-background"
       contentContainerStyle={SCREEN_CONTENT_STYLE}
+      refreshControl={refreshControl}
     >
       <BackRow
         testID="pay-back"

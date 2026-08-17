@@ -24,6 +24,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Linking, Pressable, ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import {
   AlertDialog,
@@ -77,6 +78,7 @@ function ProfileRow({
 }
 
 export function CarerProfileScreen() {
+  const { refreshControl } = usePullToRefresh();
   const { t } = useTranslation('household');
   const { t: tCommon } = useTranslation('common');
   const { t: tSettings } = useTranslation('settings');
@@ -145,6 +147,7 @@ export function CarerProfileScreen() {
       testID="carer-profile-screen"
       className="flex-1 bg-background"
       contentContainerStyle={SCREEN_CONTENT_STYLE}
+      refreshControl={refreshControl}
     >
       <BackButton onPress={() => router.back()} label={tCommon('back')} />
 

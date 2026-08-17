@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { BackButton } from '@/src/components/ui/back-button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -25,6 +26,7 @@ export default function HouseholdTimeOffScreen() {
   const { t } = useTranslation('settings');
   const { t: tCommon } = useTranslation('common');
   const router = useRouter();
+  const { refreshControl } = usePullToRefresh();
   const active = useActiveHousehold();
   const timeOff = useHouseholdTimeOff(active.householdId);
   const members = useHouseholdMembers(active.householdId);
@@ -72,6 +74,7 @@ export default function HouseholdTimeOffScreen() {
     <ScrollView
       testID="settings-household-time-off-screen"
       className="flex-1 bg-background"
+      refreshControl={refreshControl}
       contentContainerStyle={SCREEN_CONTENT_STYLE}
     >
       <BackButton onPress={() => router.back()} label={tCommon('back')} />

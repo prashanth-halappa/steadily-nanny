@@ -49,6 +49,7 @@ import { useTranslation } from 'react-i18next';
 import { Image, Pressable, ScrollView, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE, useElevation } from '@/lib/design-tokens';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { EmptyState } from '@/src/components/ui/empty-state';
@@ -396,6 +397,7 @@ export function TodayScreen() {
   // overlays this screen's content instead of reserving its own layout
   // space, so a fixed paddingBottom is not safe-area-aware.
   const tabBarScrollPadding = useTabBarScrollPadding();
+  const { refreshControl } = usePullToRefresh();
 
   // §S6 item 4 / D-36: while the active household is a draft, this screen IS
   // `DraftHomeScreen` — self-contained (own scroll, own H1, own switcher),
@@ -472,6 +474,7 @@ export function TodayScreen() {
       <ScrollView
         className="flex-1"
         contentContainerStyle={{ paddingBottom: tabBarScrollPadding }}
+        refreshControl={refreshControl}
       >
         {/* Hero band — no card, no ground of its own: it IS the top of the
           wash, and the wash is what separates it from the cards below. It

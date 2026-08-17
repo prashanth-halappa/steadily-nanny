@@ -48,6 +48,7 @@ import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import {
   AlertDialog,
@@ -97,6 +98,7 @@ export function SchedulePendingScreen() {
   // Same tab-bar dead-zone fix as Settings (BUG1) — this is the Schedule
   // tab's root for a parent with no accepted pattern.
   const tabBarScrollPadding = useTabBarScrollPadding();
+  const { refreshControl } = usePullToRefresh();
   const router = useRouter();
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
 
@@ -230,6 +232,7 @@ export function SchedulePendingScreen() {
         ...SCREEN_CONTENT_STYLE,
         paddingBottom: tabBarScrollPadding,
       }}
+      refreshControl={refreshControl}
     >
       <BackButton
         testID="schedule-pending-back"

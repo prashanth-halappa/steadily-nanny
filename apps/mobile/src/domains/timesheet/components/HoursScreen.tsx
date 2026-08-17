@@ -48,6 +48,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { ScreenWash } from '@/src/components/ui/screen-wash';
@@ -121,6 +122,7 @@ export function HoursScreen() {
   // space, so a fixed paddingBottom is not safe-area-aware. Threaded into
   // both role views' FlashLists below, not just the empty-role ScrollView.
   const tabBarScrollPadding = useTabBarScrollPadding();
+  const { refreshControl } = usePullToRefresh();
   const onboarding = useIsOnboarded();
   // `useActiveHousehold` already fetches households internally (a cache hit,
   // not a second request) — this is the switcher-aware household, which for
@@ -251,6 +253,7 @@ export function HoursScreen() {
       <View testID="hours-screen" className="flex-1 bg-background">
         <ScreenWash kind="brand" />
         <ScrollView
+          refreshControl={refreshControl}
           contentContainerStyle={{
             ...SCREEN_CONTENT_STYLE,
             paddingBottom: tabBarScrollPadding,
@@ -276,6 +279,7 @@ export function HoursScreen() {
       <View testID="hours-screen" className="flex-1 bg-background">
         <ScreenWash kind="brand" />
         <ScrollView
+          refreshControl={refreshControl}
           contentContainerStyle={{
             ...SCREEN_CONTENT_STYLE,
             paddingBottom: tabBarScrollPadding,
@@ -298,6 +302,7 @@ export function HoursScreen() {
       <View testID="hours-screen" className="flex-1 bg-background">
         <ScreenWash kind="brand" />
         <ScrollView
+          refreshControl={refreshControl}
           contentContainerStyle={{
             ...SCREEN_CONTENT_STYLE,
             paddingBottom: tabBarScrollPadding,

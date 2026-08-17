@@ -21,7 +21,7 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, waitFor } from '@testing-library/react-native';
 import { useAuthStore } from '@/src/store/auth';
-import { renderWithProviders } from '@/src/test-utils';
+import { renderWithProviders, serializeTree } from '@/src/test-utils';
 
 // Delete-account confirm is a BottomSheetBase (keyboard-aware) — same mock
 // shape as ReopenWeekDialog.test.tsx. This test never exercises that flow
@@ -170,7 +170,7 @@ describe('SettingsScreen — preferred_locale (D26)', () => {
     // (daylight-v2 §2.3: segmented control, selected segment is a filled
     // `bg-primary` pill — not the old bordered chip's `border-primary`.)
     await waitFor(() => {
-      const tree = JSON.stringify(toJSON());
+      const tree = serializeTree(toJSON());
       expect(tree).toContain('bg-primary');
     });
   });

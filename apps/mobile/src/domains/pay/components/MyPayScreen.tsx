@@ -48,6 +48,7 @@ import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { Button } from '@/src/components/ui/button';
@@ -558,6 +559,7 @@ function MyPayHouseholdCard({
 }
 
 export function MyPayScreen() {
+  const { refreshControl } = usePullToRefresh();
   const { t } = useTranslation('pay');
   const { t: tCommon } = useTranslation('common');
   const router = useRouter();
@@ -637,6 +639,7 @@ export function MyPayScreen() {
       testID="my-pay-screen"
       className="flex-1 bg-background"
       contentContainerStyle={SCREEN_CONTENT_STYLE}
+      refreshControl={refreshControl}
     >
       <BackRow
         testID="my-pay-back"

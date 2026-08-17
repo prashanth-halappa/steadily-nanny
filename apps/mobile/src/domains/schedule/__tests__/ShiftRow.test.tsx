@@ -10,6 +10,7 @@ import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { fireEvent, render } from '@testing-library/react-native';
 import { formatShiftTime } from '@/src/domains/schedule/utils/shiftGrouping';
+import { serializeTree } from '@/src/test-utils';
 
 mock.module('expo-router', () => ({
   useRouter: () => ({ push: () => {} }),
@@ -94,7 +95,7 @@ describe('ShiftRow', () => {
     expect(
       pendingRender.getByTestId('schedule-shift-status-pending-1')
     ).toBeTruthy();
-    const serialized = JSON.stringify(pendingRender.toJSON());
+    const serialized = serializeTree(pendingRender.toJSON());
     expect(serialized).toContain(formatShiftTime(pending.starts_at, TZ));
     expect(serialized).toContain(formatShiftTime(pending.ends_at, TZ));
     pendingRender.unmount();

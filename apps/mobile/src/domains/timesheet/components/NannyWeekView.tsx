@@ -53,6 +53,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { ReceiptCard } from '@/src/components/ui/receipt-card';
@@ -167,6 +168,7 @@ export function NannyWeekView({
   // Same tab-bar dead-zone fix as Settings (BUG1) — the Hours tab's
   // FlashList needs the same real clearance a fixed magic number can't give.
   const tabBarScrollPadding = useTabBarScrollPadding();
+  const { refreshing, onRefresh } = usePullToRefresh();
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
   // Daylight P0-5: the household name for the approved appreciation line
   // ("Approved by the Smiths on..."). Reads the same SINGLE CHOKE POINT
@@ -564,6 +566,8 @@ export function NannyWeekView({
       <FlashList
         testID="hours-week-list"
         data={dayRows}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
         keyExtractor={row => row.date}
         renderItem={({ item }) => (
           <TimeEntryDayRow

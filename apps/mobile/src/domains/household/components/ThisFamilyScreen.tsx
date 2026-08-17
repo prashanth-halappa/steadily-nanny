@@ -32,6 +32,7 @@ import {
 } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
@@ -54,6 +55,7 @@ function callNumber(phone: string) {
 }
 
 export function ThisFamilyScreen() {
+  const { refreshControl } = usePullToRefresh();
   const { t } = useTranslation('household');
   const { t: tCommon } = useTranslation('common');
   const router = useRouter();
@@ -80,6 +82,7 @@ export function ThisFamilyScreen() {
       testID="settings-this-family-screen"
       className="flex-1 bg-background"
       contentContainerStyle={SCREEN_CONTENT_STYLE}
+      refreshControl={refreshControl}
     >
       <BackButton onPress={() => router.back()} label={tCommon('back')} />
       <View className="mt-1 flex-row items-start justify-between gap-3">
