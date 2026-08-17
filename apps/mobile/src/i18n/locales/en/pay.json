@@ -1,6 +1,7 @@
 {
   "title": "Pay & terms",
   "subtitle": "Rates and terms, kept in one place your nanny can see too.",
+  "sideDataUnknown": "We couldn't check where things stand with these terms.",
   "notSet": "Not set",
   "noCancellationPay": "No cancellation pay",
   "inEffectSince": "In effect since {{date}}",

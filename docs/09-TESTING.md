@@ -241,6 +241,8 @@ For testing stateful components without a real React runtime, you can override h
 
 Reuse shared helpers (`createMockQueryResult`, `createMockMutationResult`, `mockQueryHook`, data factories) from a `src/test-utils` module rather than re-rolling query/mutation mocks per file.
 
+A component or hook that reads a query's `isError` (directly, or via `src/hooks/queries/queryState.ts` — see `docs/06-MOBILE-ARCHITECTURE.md` §4 "Query state — three states, never two") needs a test that actually sets `isError: true` and asserts the error branch renders and its retry is wired — a render/source test that only ever exercises the happy and loading paths cannot catch a query silently folded into `?? []`.
+
 ---
 
 ## 6. `bun.setup.ts` — the global preload

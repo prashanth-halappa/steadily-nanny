@@ -33,6 +33,9 @@ let pickCoverShift: typeof import('../hooks/useTodayCoverRows').pickCoverShift;
 let mockWeekEntries: ReturnType<typeof mock>;
 let mockShiftsRange: ReturnType<typeof mock>;
 let mockHouseholdMembers: ReturnType<typeof mock>;
+let refetchEntries: ReturnType<typeof mock>;
+let refetchShifts: ReturnType<typeof mock>;
+let refetchMembers: ReturnType<typeof mock>;
 
 function makeShift(overrides: Partial<Shift> = {}): Shift {
   return {
@@ -120,8 +123,23 @@ function makeEntry(overrides: Partial<TimeEntry> = {}): TimeEntry {
 beforeAll(async () => {
   await i18n.changeLanguage('en');
 
-  mockWeekEntries = mock(() => ({ data: [], isLoading: false }));
-  mockShiftsRange = mock(() => ({ data: [] as Shift[], isLoading: false }));
+  refetchEntries = mock();
+  refetchShifts = mock();
+  refetchMembers = mock();
+  mockWeekEntries = mock(() => ({
+    data: [],
+    isLoading: false,
+    isPending: false,
+    isError: false,
+    refetch: refetchEntries,
+  }));
+  mockShiftsRange = mock(() => ({
+    data: [] as Shift[],
+    isLoading: false,
+    isPending: false,
+    isError: false,
+    refetch: refetchShifts,
+  }));
   mockHouseholdMembers = mock(() => ({
     data: [
       {
@@ -132,6 +150,9 @@ beforeAll(async () => {
       },
     ],
     isLoading: false,
+    isPending: false,
+    isError: false,
+    refetch: refetchMembers,
   }));
 
   mock.module('@/src/hooks/queries/useWeekTimeEntries', () => ({
@@ -266,6 +287,48 @@ describe('useTodayCoverRows', () => {
     expect(result.current.rows).toHaveLength(1);
     expect(result.current.rows[0]?.name).toBe('Emma');
     expect(result.current.rows[0]?.kind).toBe('finished');
+  });
+
+  it('exposes status "ready" once every underlying query has resolved', () => {
+    const { result } = renderHook(() =>
+      useTodayCoverRows(HOUSEHOLD_ID, ZONE, 1)
+    );
+    expect(result.current.status).toBe('ready');
+  });
+
+  it('exposes status "error" — never a false "nothing scheduled" — when a query has failed', () => {
+    mockShiftsRange.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isPending: false,
+      isError: true,
+      refetch: refetchShifts,
+    });
+
+    const { result } = renderHook(() =>
+      useTodayCoverRows(HOUSEHOLD_ID, ZONE, 1)
+    );
+
+    expect(result.current.status).toBe('error');
+  });
+
+  it('retry() refetches only the underlying query that actually failed', () => {
+    mockShiftsRange.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isPending: false,
+      isError: true,
+      refetch: refetchShifts,
+    });
+
+    const { result } = renderHook(() =>
+      useTodayCoverRows(HOUSEHOLD_ID, ZONE, 1)
+    );
+    result.current.retry();
+
+    expect(refetchShifts).toHaveBeenCalledTimes(1);
+    expect(refetchEntries).not.toHaveBeenCalled();
+    expect(refetchMembers).not.toHaveBeenCalled();
   });
 
   it('keeps two departed carers on separate rows instead of merging under "unassigned"', () => {

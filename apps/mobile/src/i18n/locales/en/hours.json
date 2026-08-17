@@ -47,6 +47,7 @@
   "emptyWeek": "No hours logged this week yet.",
   "waitingForHours": "Approve unlocks once your carer has logged hours this week.",
   "waitingAfterQuery": "Waiting for your carer to adjust hours after your query.",
+  "couldntLoadHours": "We couldn't load this week's hours. Try again.",
   "overScheduled": "{{duration}} over scheduled",
   "underScheduled": "{{duration}} under scheduled",
   "inProgress": "in progress",

@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
+import { ErrorState } from '@/src/components/custom/ErrorState';
 import { BackButton } from '@/src/components/ui/back-button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -104,6 +105,18 @@ export default function CarerAvailabilityScreen() {
       ) : null}
       {members.isLoading || availability.isLoading ? (
         <LoadingIndicator />
+      ) : members.isError || availability.isError ? (
+        // False alarm (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): a failed
+        // read fell through the same `?? []` a genuinely-empty one does,
+        // claiming "no carer to show" or "hasn't set availability" over an
+        // active nanny who has.
+        <ErrorState
+          variant="network"
+          onRetry={() => {
+            void members.refetch();
+            void availability.refetch();
+          }}
+        />
       ) : !nannyId ? (
         <View testID="carer-availability-empty">
           <EmptyState

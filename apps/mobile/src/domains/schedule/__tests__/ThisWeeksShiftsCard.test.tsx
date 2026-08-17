@@ -26,6 +26,10 @@ let ThisWeeksShiftsCard: typeof import('../components/ThisWeeksShiftsCard').This
 let mockPush: ReturnType<typeof mock>;
 let mockUseShiftsRange: ReturnType<typeof mock>;
 let mockUseHouseholdMembers: ReturnType<typeof mock>;
+let mockUseSchedulePatterns: ReturnType<typeof mock>;
+let refetchShifts: ReturnType<typeof mock>;
+let refetchMembers: ReturnType<typeof mock>;
+let refetchPatterns: ReturnType<typeof mock>;
 
 function member(userId: string, profileName: string) {
   return {
@@ -86,16 +90,36 @@ beforeAll(async () => {
       household: { timezone: 'Europe/London' },
     }),
   }));
-  mockUseShiftsRange = mock(() => ({ data: [] as unknown[] }));
+  refetchShifts = mock();
+  refetchMembers = mock();
+  refetchPatterns = mock();
+  mockUseShiftsRange = mock(() => ({
+    data: [] as unknown[],
+    isPending: false,
+    isError: false,
+    refetch: refetchShifts,
+  }));
   mock.module('@/src/hooks/queries/useShiftsRange', () => ({
     useShiftsRange: mockUseShiftsRange,
   }));
-  mockUseHouseholdMembers = mock(() => ({ data: [] as unknown[] }));
+  mockUseHouseholdMembers = mock(() => ({
+    data: [] as unknown[],
+    isPending: false,
+    isError: false,
+    refetch: refetchMembers,
+  }));
   // The card now forks its empty line on whether a weekly schedule was ever
   // sent, so both reads have to be stubbed or every render hits a real
   // useQuery with no provider.
+  mockUseSchedulePatterns = mock(() => ({
+    data: [],
+    isLoading: false,
+    isPending: false,
+    isError: false,
+    refetch: refetchPatterns,
+  }));
   mock.module('@/src/hooks/queries/useSchedulePatterns', () => ({
-    useSchedulePatterns: () => ({ data: [], isLoading: false }),
+    useSchedulePatterns: mockUseSchedulePatterns,
   }));
   mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
     useIsOnboarded: () => ({ role: 'parent' }),
@@ -109,8 +133,25 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
-  mockUseShiftsRange.mockReturnValue({ data: [] });
-  mockUseHouseholdMembers.mockReturnValue({ data: [] });
+  mockUseShiftsRange.mockReturnValue({
+    data: [],
+    isPending: false,
+    isError: false,
+    refetch: refetchShifts,
+  });
+  mockUseHouseholdMembers.mockReturnValue({
+    data: [],
+    isPending: false,
+    isError: false,
+    refetch: refetchMembers,
+  });
+  mockUseSchedulePatterns.mockReturnValue({
+    data: [],
+    isLoading: false,
+    isPending: false,
+    isError: false,
+    refetch: refetchPatterns,
+  });
   useAuthStore.setState({ user: null } as never);
 });
 
@@ -261,5 +302,62 @@ describe('ThisWeeksShiftsCard', () => {
 
     expect(queryByTestId('today-next-up-shift-declined')).toBeNull();
     expect(queryByTestId('today-next-up-status-shift-declined')).toBeNull();
+  });
+});
+
+// False alarm (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): this card had NO
+// loading or error gate at all — a still-loading or failed read fell
+// straight through to the empty-fortnight branch, accusing the parent of
+// never setting up a week she DID set up.
+describe('ThisWeeksShiftsCard — loading and error (no gate existed before)', () => {
+  it('renders a loading skeleton, never the empty-week copy, while shifts are still loading', () => {
+    mockUseShiftsRange.mockReturnValue({
+      data: undefined,
+      isPending: true,
+      isError: false,
+      refetch: refetchShifts,
+    });
+
+    const { getByTestId, queryByTestId } = render(<ThisWeeksShiftsCard />);
+
+    expect(getByTestId('today-shifts-skeleton')).toBeTruthy();
+    expect(queryByTestId('today-shifts-empty')).toBeNull();
+  });
+
+  it('renders InlineRetry, never the empty-week copy, when shifts failed', () => {
+    mockUseShiftsRange.mockReturnValue({
+      data: undefined,
+      isPending: false,
+      isError: true,
+      refetch: refetchShifts,
+    });
+
+    const { getByTestId, queryByTestId } = render(<ThisWeeksShiftsCard />);
+
+    expect(getByTestId('today-shifts-retry')).toBeTruthy();
+    expect(queryByTestId('today-shifts-empty')).toBeNull();
+  });
+
+  it('wires the retry to the failed query only', () => {
+    mockUseShiftsRange.mockReturnValue({
+      data: undefined,
+      isPending: false,
+      isError: true,
+      refetch: refetchShifts,
+    });
+
+    const { getByTestId } = render(<ThisWeeksShiftsCard />);
+    getByTestId('today-shifts-retry-button').props.onPress?.();
+
+    expect(refetchShifts).toHaveBeenCalledTimes(1);
+    expect(refetchMembers).not.toHaveBeenCalled();
+  });
+
+  it('renders the ordinary card once every query is ready', () => {
+    const { getByTestId, queryByTestId } = render(<ThisWeeksShiftsCard />);
+
+    expect(getByTestId('today-shifts-card')).toBeTruthy();
+    expect(queryByTestId('today-shifts-skeleton')).toBeNull();
+    expect(queryByTestId('today-shifts-retry')).toBeNull();
   });
 });

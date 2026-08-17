@@ -47,6 +47,7 @@
   "emptyWeek": "Aún no hay horas registradas esta semana.",
   "waitingForHours": "La aprobación se desbloquea cuando tu cuidadora registre horas esta semana.",
   "waitingAfterQuery": "Esperando a que tu cuidadora ajuste las horas tras tu consulta.",
+  "couldntLoadHours": "No pudimos cargar las horas de esta semana. Inténtalo de nuevo.",
   "overScheduled": "{{duration}} por encima de lo previsto",
   "underScheduled": "{{duration}} por debajo de lo previsto",
   "inProgress": "en curso",

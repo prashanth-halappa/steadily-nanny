@@ -450,6 +450,26 @@ describe('PaySetupScreen', () => {
     expect(getByTestId('pay-setup-screen-cta').props.disabled).toBe(false);
   });
 
+  // C6 (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §C): `onboarding.status` stays
+  // 'loading' FOREVER on a failed memberships read — checking only that made
+  // this outer gate a permanent spinner with no reachable retry.
+  it('a failed memberships read shows a retry, not a permanent spinner (C6)', async () => {
+    membershipsListMock.mockImplementation(() =>
+      Promise.reject(new Error('memberships boom'))
+    );
+
+    const { getByTestId, queryByTestId, getByText } = renderWithProviders(
+      <PaySetupScreen />
+    );
+
+    await waitFor(() => expect(getByTestId('error-state')).toBeTruthy());
+    expect(queryByTestId('pay-loading')).toBeNull();
+
+    membershipsListMock.mockClear();
+    fireEvent.press(getByText('tryAgain'));
+    await waitFor(() => expect(membershipsListMock).toHaveBeenCalled());
+  });
+
   it('a REMOVED parent (past member) gets "not available", never the pay form', async () => {
     membershipsListMock.mockImplementation(() =>
       Promise.resolve([{ ...parentMembership, status: 'removed' }])

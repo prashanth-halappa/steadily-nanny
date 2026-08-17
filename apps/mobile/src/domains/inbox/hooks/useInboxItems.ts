@@ -348,9 +348,16 @@ export function useInboxItems() {
   );
 
   // Initial load only — background refetch must not blank the list.
+  // `onboarding.status === 'loading'` alone would stay true FOREVER on a
+  // failed memberships read (`useIsOnboarded` reports that case as
+  // `status: 'loading'` permanently, by design — see its own header
+  // comment), which pins `isLoading` true and makes the `isError` branch
+  // below unreachable to any caller that checks `isLoading` first (C6,
+  // docs/CROSS-CUTTING-DEFECT-PATTERNS.md) — `!onboarding.membershipsError`
+  // is what lets the error actually surface.
   const isLoading =
     active.isLoading ||
-    onboarding.status === 'loading' ||
+    (onboarding.status === 'loading' && !onboarding.membershipsError) ||
     patternsQueries.some(q => q.isLoading) ||
     timesheetsQueries.some(q => q.isLoading) ||
     changeRequestsQuery.isLoading ||
@@ -364,6 +371,7 @@ export function useInboxItems() {
 
   const isError =
     active.isError ||
+    onboarding.membershipsError ||
     patternsQueries.some(q => q.isError) ||
     timesheetsQueries.some(q => q.isError) ||
     changeRequestsQuery.isError ||
@@ -376,6 +384,7 @@ export function useInboxItems() {
     unsettledReimbursementQueries.some(q => q.isError);
 
   const refetch = useCallback(() => {
+    onboarding.retryMemberships();
     for (const q of patternsQueries) void q.refetch();
     for (const q of timesheetsQueries) void q.refetch();
     for (const q of membersQueries) void q.refetch();
@@ -387,6 +396,7 @@ export function useInboxItems() {
     void changeRequestsQuery.refetch();
     void meShiftsQuery.refetch();
   }, [
+    onboarding.retryMemberships,
     patternsQueries,
     timesheetsQueries,
     membersQueries,

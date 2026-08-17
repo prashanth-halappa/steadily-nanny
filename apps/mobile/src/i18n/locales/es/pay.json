@@ -1,6 +1,7 @@
 {
   "title": "Sueldo y condiciones",
   "subtitle": "Tarifas y condiciones, en un solo lugar que tu niñera también puede ver.",
+  "sideDataUnknown": "No pudimos comprobar cómo están estas condiciones.",
   "notSet": "No establecido",
   "noCancellationPay": "Sin pago por cancelación",
   "inEffectSince": "Vigente desde el {{date}}",

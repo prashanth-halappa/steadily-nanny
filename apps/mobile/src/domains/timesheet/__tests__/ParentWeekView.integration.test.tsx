@@ -477,6 +477,57 @@ describe('ParentWeekView — earnings arms', () => {
     expect(queryByTestId('hours-timesheet-status')).toBeNull();
   });
 
+  // C3 / Pattern B (docs/CROSS-CUTTING-DEFECT-PATTERNS.md): entries succeed
+  // but the timesheet read fails — per this component's own header comment,
+  // the day rows keep rendering and only the money/status facts degrade.
+  // `timesheetStatus={timesheet?.status ?? null}` used to pre-coerce the
+  // unknown into a settled `null`, which `WeekTotal`'s `hasStatus` reads as
+  // "genuinely not submitted" — printing a false headline over a week whose
+  // real status the app simply failed to read.
+  describe('a timesheet-only failure (entries OK, timesheet errored)', () => {
+    it('never prints a status headline off an unknown timesheet', async () => {
+      listTimesheetsMock.mockImplementation(() =>
+        Promise.reject(new Error('timesheet boom'))
+      );
+
+      const { getByTestId, queryByTestId } = renderParentView();
+
+      // The day rows still render — proves this is NOT the full-screen
+      // entriesQuery.isError gate.
+      await waitFor(() => expect(getByTestId('hours-week-total')).toBeTruthy());
+      expect(queryByTestId('hours-status-headline')).toBeNull();
+      expect(queryByTestId('hours-timesheet-status')).toBeNull();
+    });
+
+    it('actionsNote reads a neutral "couldn\'t load", never "waiting for hours" (C3)', async () => {
+      listTimesheetsMock.mockImplementation(() =>
+        Promise.reject(new Error('timesheet boom'))
+      );
+
+      const { getByTestId } = renderParentView();
+
+      await waitFor(() =>
+        expect(getByTestId('hours-approve-waiting')).toBeTruthy()
+      );
+      expect(getByTestId('hours-approve-waiting').props.children).toBe(
+        'couldntLoadHours'
+      );
+    });
+
+    it('the approve button stays disabled, same as before (unchanged behaviour)', async () => {
+      listTimesheetsMock.mockImplementation(() =>
+        Promise.reject(new Error('timesheet boom'))
+      );
+
+      const { getByTestId } = renderParentView();
+
+      await waitFor(() =>
+        expect(getByTestId('hours-approve-button')).toBeTruthy()
+      );
+      expect(getByTestId('hours-approve-button').props.disabled).toBe(true);
+    });
+  });
+
   it('approved-frozen arm: shows "Approved gross" from the snapshot', async () => {
     getByIdMock.mockImplementation(() =>
       Promise.resolve(

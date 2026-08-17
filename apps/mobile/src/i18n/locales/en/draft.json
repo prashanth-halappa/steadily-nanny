@@ -9,7 +9,8 @@
     "body": "They'll get a link with your terms. Nothing is agreed until they accept.",
     "button": "Share my terms",
     "offlineHint": "You'll need a connection to send this.",
-    "needsTermsHint": "Write your terms first, then you can send them."
+    "needsTermsHint": "Write your terms first, then you can send them.",
+    "couldntCheckTermsHint": "We couldn't check your terms. Try again."
   },
   "terms": {
     "title": "Your terms",

@@ -9,7 +9,8 @@
     "body": "Recibirán un enlace con tus condiciones. Nada queda acordado hasta que las acepten.",
     "button": "Compartir mis condiciones",
     "offlineHint": "Necesitas conexión para enviar esto.",
-    "needsTermsHint": "Escribe primero tus condiciones y luego podrás enviarlas."
+    "needsTermsHint": "Escribe primero tus condiciones y luego podrás enviarlas.",
+    "couldntCheckTermsHint": "No pudimos comprobar tus condiciones. Inténtalo de nuevo."
   },
   "terms": {
     "title": "Tus condiciones",

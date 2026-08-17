@@ -100,6 +100,43 @@ beforeEach(async () => {
   } as never);
 });
 
+describe('usePaidFamilyCounts — error member', () => {
+  it('surfaces isError when the household list read fails — an absent id must not read as unpaid', async () => {
+    listMock.mockImplementation(() => Promise.reject(new Error('list boom')));
+
+    const { result } = renderHookWithProviders(() =>
+      usePaidFamilyCounts(timeOffRows)
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isError).toBe(true);
+  });
+
+  it('surfaces isError when a household ledger read fails', async () => {
+    getLedgerMock.mockImplementation((householdId: string) =>
+      householdId === HOUSEHOLD_A
+        ? Promise.reject(new Error('ledger boom'))
+        : Promise.resolve([])
+    );
+
+    const { result } = renderHookWithProviders(() =>
+      usePaidFamilyCounts(timeOffRows)
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isError).toBe(true);
+  });
+
+  it('isError stays false on ordinary success', async () => {
+    const { result } = renderHookWithProviders(() =>
+      usePaidFamilyCounts(timeOffRows)
+    );
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isError).toBe(false);
+  });
+});
+
 describe('usePaidFamilyCounts', () => {
   it('counts DISTINCT households that paid each time-off id', async () => {
     const { result } = renderHookWithProviders(() =>

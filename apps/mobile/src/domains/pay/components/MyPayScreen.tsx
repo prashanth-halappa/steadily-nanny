@@ -51,6 +51,7 @@ import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { ErrorState } from '@/src/components/custom/ErrorState';
+import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { EmptyState } from '@/src/components/ui/empty-state';
@@ -66,6 +67,7 @@ import { useAckPayArrangement } from '@/src/hooks/mutations/useAckPayArrangement
 import { useDissentPayArrangement } from '@/src/hooks/mutations/useDissentPayArrangement';
 import { useProposeTerms } from '@/src/hooks/mutations/useProposeTerms';
 import { useWithdrawTerms } from '@/src/hooks/mutations/useWithdrawTerms';
+import { onboardingAsQuery, queryState } from '@/src/hooks/queries/queryState';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
@@ -297,6 +299,23 @@ function MyPayHouseholdCard({
             date: cardDate(arrangement.created_at),
           });
   const ackError = ackTerms.isError || dissentTerms.isError;
+  // False alarm (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): `termsStateLabel`
+  // and `ackStateWord` above are computed off `proposals`/`history`/`acks`
+  // (and `balance`, when there's an entitlement to net against) WITHOUT
+  // checking whether those reads actually succeeded — a failed read must
+  // never be allowed to compute an agreement/ack fact ("not agreed in
+  // Steadily", "Not read yet") the app cannot stand behind.
+  const sideDataUnknown =
+    proposals.isError ||
+    history.isError ||
+    acks.isError ||
+    (hasEntitlement && balance.isError);
+  const retrySideData = () => {
+    void proposals.refetch?.();
+    void history.refetch();
+    void acks.refetch();
+    if (hasEntitlement) void balance.refetch();
+  };
 
   return (
     <Card testID={`my-pay-household-${household.id}`}>
@@ -304,6 +323,10 @@ function MyPayHouseholdCard({
         <Body weight="medium">{household.name}</Body>
         {current.isPending ? (
           <LoadingIndicator testID="my-pay-loading" />
+        ) : current.isError ? (
+          <View testID={`my-pay-error-${household.id}`}>
+            <ErrorState variant="network" onRetry={() => current.refetch()} />
+          </View>
         ) : !arrangement ? (
           <View testID={`my-pay-empty-${household.id}`}>
             <EmptyState
@@ -315,7 +338,7 @@ function MyPayHouseholdCard({
           </View>
         ) : (
           <>
-            {termsStateLabel ? (
+            {sideDataUnknown ? null : termsStateLabel ? (
               <Small
                 testID={`my-pay-terms-state-${household.id}`}
                 className="text-muted-foreground"
@@ -339,50 +362,63 @@ function MyPayHouseholdCard({
                 date: formatDisplayDateWithYear(arrangement.valid_from),
               })}
             </Small>
-            <Small
-              testID={`my-pay-ack-state-${household.id}`}
-              className="text-muted-foreground"
-            >
-              {ackStateWord}
-            </Small>
-            {/* Its own line, never a replacement for the one above: both are
-                true at once, and hiding either is the contradiction a nanny
-                read as the app losing her tap. */}
-            {disagreedDate ? (
-              <Small
-                testID={`my-pay-ack-disagreed-${household.id}`}
-                className="text-muted-foreground"
-              >
-                {t('ack.needsUpdatingLine', { date: disagreedDate })}
-              </Small>
-            ) : null}
-            {dissentTerms.isSuccess ? (
-              <Small
-                testID={`my-pay-dissent-recorded-${household.id}`}
-                className="text-muted-strong"
-              >
-                {t('dissent.recordedNow')}
-              </Small>
-            ) : null}
-            {/* Survives ONLY on a grandfathered row. On terms she agreed it
-                would contradict the line at the top of this card, and "I
-                haven't agreed to these" would be false on its face. */}
-            {agreement?.kind === 'notAgreedInSteadily' ? (
-              <Button
-                testID={`my-pay-ack-disagree-${household.id}`}
-                variant="ghost"
-                className="self-start px-0"
-                onPress={() => setDissentOpen(true)}
-              >
-                <Text>{t('ack.needsUpdatingButton')}</Text>
-              </Button>
-            ) : null}
-            {ackError ? (
-              <InlineError
-                testID={`my-pay-ack-error-${household.id}`}
-                message={t('ack.recordFailed')}
+            {sideDataUnknown ? (
+              // False alarm: no ack pill, no "not agreed in Steadily", no
+              // dissent button — a failed proposals/history/acks/balance
+              // read must never compute a fact about the agreement.
+              <InlineRetry
+                testID={`my-pay-side-data-retry-${household.id}`}
+                message={t('sideDataUnknown')}
+                onRetry={retrySideData}
               />
-            ) : null}
+            ) : (
+              <>
+                <Small
+                  testID={`my-pay-ack-state-${household.id}`}
+                  className="text-muted-foreground"
+                >
+                  {ackStateWord}
+                </Small>
+                {/* Its own line, never a replacement for the one above: both
+                    are true at once, and hiding either is the contradiction
+                    a nanny read as the app losing her tap. */}
+                {disagreedDate ? (
+                  <Small
+                    testID={`my-pay-ack-disagreed-${household.id}`}
+                    className="text-muted-foreground"
+                  >
+                    {t('ack.needsUpdatingLine', { date: disagreedDate })}
+                  </Small>
+                ) : null}
+                {dissentTerms.isSuccess ? (
+                  <Small
+                    testID={`my-pay-dissent-recorded-${household.id}`}
+                    className="text-muted-strong"
+                  >
+                    {t('dissent.recordedNow')}
+                  </Small>
+                ) : null}
+                {/* Survives ONLY on a grandfathered row. On terms she agreed
+                    it would contradict the line at the top of this card, and
+                    "I haven't agreed to these" would be false on its face. */}
+                {agreement?.kind === 'notAgreedInSteadily' ? (
+                  <Button
+                    testID={`my-pay-ack-disagree-${household.id}`}
+                    variant="ghost"
+                    className="self-start px-0"
+                    onPress={() => setDissentOpen(true)}
+                  >
+                    <Text>{t('ack.needsUpdatingButton')}</Text>
+                  </Button>
+                ) : null}
+                {ackError ? (
+                  <InlineError
+                    testID={`my-pay-ack-error-${household.id}`}
+                    message={t('ack.recordFailed')}
+                  />
+                ) : null}
+              </>
+            )}
             <Button
               testID={`my-pay-history-toggle-${household.id}`}
               variant="ghost"
@@ -585,7 +621,35 @@ export function MyPayScreen() {
   // A back affordance in EVERY state, including the transient loading one —
   // this screen is reachable straight from settings with no other way out
   // while it's still resolving (review finding 5).
-  if (onboarding.status === 'loading') {
+  //
+  // C6 (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §C): `onboarding.status`
+  // stays `'loading'` FOREVER on a failed memberships read — checking that
+  // alone made this a permanent spinner with no reachable retry.
+  // `onboardingAsQuery` + `queryState` is what lets error win over loading.
+  const onboardingQs = queryState(onboardingAsQuery(onboarding));
+  if (onboardingQs.status === 'error') {
+    return (
+      <View testID="my-pay-screen" className="flex-1 bg-background">
+        <View
+          style={{
+            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingTop: SCREEN_CONTENT_STYLE.padding,
+          }}
+        >
+          <BackRow
+            testID="my-pay-error-back"
+            onPress={() => router.back()}
+            label={tCommon('back')}
+          />
+        </View>
+        <View testID="my-pay-membership-error">
+          <ErrorState variant="network" onRetry={onboardingQs.retry} />
+        </View>
+      </View>
+    );
+  }
+
+  if (onboardingQs.status === 'loading') {
     return (
       <View testID="my-pay-screen" className="flex-1 bg-background">
         <View

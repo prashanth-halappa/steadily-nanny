@@ -545,6 +545,28 @@ describe('TimeOffScreen — nanny', () => {
     expect(getByTestId('time-off-empty')).toBeTruthy();
   });
 
+  // False alarm (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): `ListEmptyComponent`
+  // only ever checked `timeOff.isLoading` — a settled-with-error read has
+  // `isLoading: false` too, so a failed read used to print "No time off
+  // requests yet" over rows that genuinely exist.
+  it('renders a retry, never the "no time off yet" empty state, when the read fails', () => {
+    const refetch = mock();
+    mockUseTimeOff.mockImplementation(() => ({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      refetch,
+    }));
+
+    const { getByTestId, queryByTestId } = render(<TimeOffScreen />);
+
+    expect(queryByTestId('time-off-empty')).toBeNull();
+    expect(getByTestId('time-off-retry')).toBeTruthy();
+
+    fireEvent.press(getByTestId('time-off-retry-button'));
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
   it('renders a confirmed row with a working Cancel control, and calls the cancel mutation with the right id', async () => {
     mockUseTimeOff.mockImplementation(() => ({
       data: [makeTimeOff()],
@@ -804,5 +826,45 @@ describe('TimeOffScreen — parent (no entry point exists, but a direct deep lin
 
     expect(getByTestId('time-off-not-available')).toBeTruthy();
     expect(queryByTestId('time-off-request-form')).toBeNull();
+  });
+});
+
+// C6 (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §C): `onboarding.status` stays
+// 'loading' FOREVER on a failed memberships read — checking only that made
+// this gate a permanent spinner ("I'm sick today" unreachable) with no
+// retry.
+describe('TimeOffScreen — a failed memberships read (C6)', () => {
+  it('shows a retry instead of a permanent spinner', () => {
+    const retryMemberships = mock();
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'loading',
+      role: null,
+      householdId: null,
+      isPastMember: false,
+      membershipsError: true,
+      retryMemberships,
+    }));
+
+    const { getByTestId, queryByTestId } = render(<TimeOffScreen />);
+
+    expect(getByTestId('error-state')).toBeTruthy();
+    expect(queryByTestId('time-off-loading')).toBeNull();
+  });
+
+  it('wires the retry to retryMemberships', () => {
+    const retryMemberships = mock();
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'loading',
+      role: null,
+      householdId: null,
+      isPastMember: false,
+      membershipsError: true,
+      retryMemberships,
+    }));
+
+    const { getByText } = render(<TimeOffScreen />);
+
+    fireEvent.press(getByText('tryAgain'));
+    expect(retryMemberships).toHaveBeenCalledTimes(1);
   });
 });

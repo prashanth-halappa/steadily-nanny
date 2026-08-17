@@ -338,6 +338,16 @@ export function ParentWeekView({
   const entries = allEntries.filter(e => carerKeyOf(e) === selectedCarerId);
   const timesheet =
     weekTimesheets.find(t => carerKeyOf(t) === selectedCarerId) ?? null;
+  // False alarm (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): every caller of
+  // `timesheetStatus` below used to pre-coerce `timesheet?.status ?? null`,
+  // and `WeekTotal`'s `hasStatus` reads `null` as "genuinely not
+  // submitted" — printing a false headline/pill over a week whose real
+  // status this component simply failed (or hasn't yet managed) to read.
+  // `undefined` is what keeps that distinction alive downstream.
+  const timesheetStatusForDisplay =
+    timesheetQuery.isPending || timesheetQuery.isError
+      ? undefined
+      : (timesheet?.status ?? null);
   useEffect(() => {
     if (!timesheet || !currentUserId) return;
     if (isPastMember) return;
@@ -939,7 +949,7 @@ export function ParentWeekView({
             ) : null}
             <WeekTotal
               testID="hours-week-total"
-              timesheetStatus={timesheet?.status ?? null}
+              timesheetStatus={timesheetStatusForDisplay}
               showPayBoundary
               earnings={earnings}
               earningsRole="parent"
@@ -994,18 +1004,28 @@ export function ParentWeekView({
                     }
               }
               actionsNote={
-                readOnly || isActionable || isApproved
+                readOnly
                   ? null
-                  : isQueried
-                    ? t('waitingAfterQuery')
-                    : t('waitingForHours')
+                  : // C3 (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): a
+                    // failed timesheet read means `timesheet` is null, same
+                    // as "nothing submitted yet" — this used to say
+                    // "waiting for hours" (naming the wrong party: hers,
+                    // not the read failure) instead of a neutral "we
+                    // couldn't load this".
+                    timesheetQuery.isError
+                    ? t('couldntLoadHours')
+                    : isActionable || isApproved
+                      ? null
+                      : isQueried
+                        ? t('waitingAfterQuery')
+                        : t('waitingForHours')
               }
             />
             <WeekQueryThread
               messages={threadQuery.data?.messages ?? []}
               currentUserId={currentUserId}
               timeZone={timeZone}
-              timesheetStatus={timesheet?.status ?? null}
+              timesheetStatus={timesheetStatusForDisplay}
               viewerRole="parent"
               onSend={handleSendThreadMessage}
               isSending={addThreadMessage.isPending}
@@ -1025,7 +1045,7 @@ export function ParentWeekView({
                 paid, and may never record that they have. */}
             <WeekMoneyCard
               earnings={earnings ?? null}
-              timesheetStatus={timesheet?.status ?? null}
+              timesheetStatus={timesheetStatusForDisplay}
               viewerRole="parent"
               carerId={timesheet?.carer_id ?? null}
               carerDisplayName={timesheet?.carer_display_name ?? ''}

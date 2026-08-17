@@ -373,6 +373,35 @@ export function useCompleteChildStep() {
 
 Example: `src/api/endpoints/child.ts`. Each domain module exports an `endpoints` URL map, Zod schemas, inferred types, and an `api` object whose functions call `apiClient` and **validate responses with Zod** (`safeParse`, throw on failure) before returning typed data. Components import the query/mutation hooks, never these directly.
 
+### Query state — three states, never two
+
+A query is `loading` / `error` / `ready`, not `loading` / `ready` with error silently folded into one of the other two. Folding it in is how `docs/CROSS-CUTTING-DEFECT-PATTERNS.md` §B/§C's 26 sites happened: `?? []` / `?? null` at the call site collapses "failed" into "empty", and the component renders the empty state as a **fact** ("Nothing scheduled today", "not agreed in Steadily") instead of an unknown.
+
+`src/hooks/queries/queryState.ts` is the shared helper — a pure function, not a hook, so it composes queries from several hooks in one call:
+
+```ts
+const qs = queryState(shiftsQuery, commitmentsQuery, closuresQuery);
+// qs.status: 'loading' | 'error' | 'ready'
+// qs.retry(): refetches only the queries that actually errored
+```
+
+**Rule: error wins over loading.** A query that is both `isPending` (mid-refetch) and `isError` (its last settled attempt failed) reports `'error'` — checking loading first is C6's bug, and it makes the retry button unreachable forever.
+
+**Pitfall:** a query with `enabled: false` is `isPending` forever (TanStack Query v5 never settles a disabled query) — passing one straight into `queryState` pins the caller at `'loading'` permanently. Gate it at the call site: `queryState(...(enabled ? [q] : []))`.
+
+Three site classes consume it:
+
+- **(a) Full-screen gate** — the query result IS the screen:
+  ```tsx
+  if (qs.status === 'error') return <ErrorState variant="network" onRetry={qs.retry} />;
+  if (qs.status === 'loading') return <LoadingIndicator />;
+  // ScrollView + usePullToRefresh only in the ready branch below.
+  ```
+- **(b) Card/section** — a part of a larger screen degrades independently: use `InlineRetry` (`src/components/custom/InlineRetry.tsx`) INSIDE the card so its slot in the layout is kept rather than the card silently vanishing.
+- **(c) Derived-list hooks** — a hook like `useUncoveredToday` (`src/domains/today/hooks/useUncoveredToday.ts`) or `useTermsGate` (`src/domains/today/hooks/useTermsGate.ts`) that reduces several queries into one derived value must expose `status`/`retry` (spread `queryState`'s result), not only `isLoading` — otherwise every caller re-derives its own three-state union, which is exactly how this pattern got reinvented independently three times before this helper existed.
+
+`onboardingAsQuery(onboarding)` adapts `useIsOnboarded()`'s result (whose failed-read case is `status: 'loading'` + `membershipsError: true`, not its own `'error'` status — see that hook's header comment) into a `QueryLike`, so a screen's role gate composes with its other queries through one `queryState(...)` call instead of a hand-rolled `onboarding.status === 'loading'` check that forgets to branch on `membershipsError` (C6).
+
 ---
 
 ## 5. Zustand + MMKV (client state)

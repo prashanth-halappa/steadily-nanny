@@ -143,6 +143,35 @@ describe('SchedulePendingScreen', () => {
     expect(screenSource).toMatch(/try\s*\{\s*await amend\.mutateAsync/);
   });
 
+  // C5 (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §C): no loading/error guard
+  // preceded the role gate, so the household's own PARENT was told this
+  // screen "isn't available to you" for as long as onboarding was still
+  // resolving (role is null while loading) — mirrors ScheduleBuildScreen's
+  // ordering (loading/error first, role gate second).
+  it('C5: the loading/error guard precedes the role gate', () => {
+    expect(screenSource).toContain('queryState(onboardingAsQuery(onboarding))');
+    const loadingGuardIndex = screenSource.indexOf('onboardingQs.status');
+    const roleGateIndex = screenSource.indexOf(
+      'canViewParentSchedule(onboarding.role)'
+    );
+    expect(loadingGuardIndex).toBeGreaterThan(-1);
+    expect(roleGateIndex).toBeGreaterThan(-1);
+    expect(loadingGuardIndex).toBeLessThan(roleGateIndex);
+  });
+
+  it('C5: a failed onboarding read shows ErrorState with retryMemberships wired, before the role gate', () => {
+    expect(screenSource).toContain("onboardingQs.status === 'error'");
+    expect(screenSource).toContain('onRetry={onboardingQs.retry}');
+  });
+
+  // False alarm: `patterns.isError` fell through the same `?? []` a
+  // genuinely-empty list does, so a dropped connection showed the "build a
+  // new week" empty state over an existing pending/accepted week.
+  it('reads patterns.isError and wires its own retry, never the empty "build a week" state on a failed read', () => {
+    expect(screenSource).toContain('patterns.isError');
+    expect(screenSource).toContain('patterns.refetch()');
+  });
+
   it('REGRESSION: a non-parent/helper role sees an honest not-available state with a back affordance, never a bare null', () => {
     // The bug: `if (!canViewParentSchedule(onboarding.role)) { return null; }`
     // left a deep-linked nanny staring at a blank screen — no message, no

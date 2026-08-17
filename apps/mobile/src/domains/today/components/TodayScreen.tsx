@@ -52,6 +52,7 @@ import { SCREEN_CONTENT_STYLE, useElevation } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
+import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -197,6 +198,7 @@ function todayLeadText(
 export function TodayScreen() {
   const { t } = useTranslation('today');
   const { t: tSchedule } = useTranslation('schedule');
+  const { t: tErrors } = useTranslation('errors');
   // Server-derived role, NOT the local setupProgress store — that's
   // in-flight wizard UI state and can be empty/stale for a parent whose
   // household was seeded directly, or who signed in on a fresh device. See
@@ -299,7 +301,15 @@ export function TodayScreen() {
         ? formatClockTime(clockInAt, household.timezone)
         : undefined,
   });
-  const leadLine = todayLeadText(t, todayLead);
+  // False reassurance (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B):
+  // `coverRows.rows` is `[]` on BOTH "still loading" and "the read
+  // failed", and an empty `rows` reads as mood `quiet` -> "Nothing
+  // scheduled today." — the most-read line in the app, printed on a
+  // household with a confirmed shift on the books. Show it only once the
+  // read has actually settled; a failed read gets a visible retry instead
+  // of silently agreeing with nothing.
+  const leadLine =
+    coverRows.status === 'ready' ? todayLeadText(t, todayLead) : null;
   // §8.1 — "You've joined the {family}", once, per household. Nanny-only:
   // she is the one walking into a placement she has never seen. LIVE-only:
   // her OWN draft household is not something she "joined". A `candidate`
@@ -536,6 +546,14 @@ export function TodayScreen() {
                 <Body testID="today-lead" className="mt-1 text-muted-strong">
                   {leadLine}
                 </Body>
+              ) : coverRows.status === 'error' ? (
+                <View className="mt-1">
+                  <InlineRetry
+                    testID="today-cover-rows-retry"
+                    message={tErrors('network')}
+                    onRetry={coverRows.retry}
+                  />
+                </View>
               ) : null}
             </View>
             {/* Transparent PNG on purpose — the wash gradient passes under it. */}

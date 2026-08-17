@@ -33,6 +33,7 @@ import { Image, ScrollView, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
+import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { OfflineBanner } from '@/src/components/custom/OfflineBanner';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
@@ -86,6 +87,7 @@ const AVAILABILITY_ROUTE = '/(private)/settings/availability' as Href;
 export function DraftHomeScreen() {
   const { t } = useTranslation('draft');
   const { t: tPay } = useTranslation('pay');
+  const { t: tErrors } = useTranslation('errors');
   const router = useRouter();
   const isOnline = useIsOnline();
   const { refreshControl } = usePullToRefresh();
@@ -157,10 +159,22 @@ export function DraftHomeScreen() {
         )}
         <Body className="text-muted-strong">{t('sharePrompt.body')}</Body>
         {/* A disabled button always states its reason. Offline wins when
-            both apply — a connection is the more immediate blocker. */}
+            both apply — a connection is the more immediate blocker.
+            C7 (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §C): `hasTerms` is
+            `false` on BOTH "never written" and "the read failed" —
+            `proposalQuery.isError` must be checked FIRST, or a dropped
+            connection tells her she needs to write terms she already
+            wrote. */}
         {!isOnline ? (
           <Small testID="draft-share-offline" className="text-muted-strong">
             {t('sharePrompt.offlineHint')}
+          </Small>
+        ) : proposalQuery.isError ? (
+          <Small
+            testID="draft-share-couldnt-check-terms"
+            className="text-muted-strong"
+          >
+            {t('sharePrompt.couldntCheckTermsHint')}
           </Small>
         ) : !hasTerms ? (
           <Small testID="draft-share-needs-terms" className="text-muted-strong">
@@ -382,8 +396,19 @@ export function DraftHomeScreen() {
               </CardContent>
             </Card>
 
-            {/* ---- L4: "Sent to". Absent, not empty-stated, when unsent. ---- */}
-            {hasSent ? (
+            {/* ---- L4: "Sent to". Absent, not empty-stated, when unsent —
+                but a FAILED read is neither: `invites.length` fell through
+                the same `?? []` a genuinely-empty list does, silently
+                dropping her sent codes from view on a dropped connection. */}
+            {invitesQuery.isError ? (
+              <View className="mt-2">
+                <InlineRetry
+                  testID="draft-sent-to-retry"
+                  message={tErrors('network')}
+                  onRetry={() => invitesQuery.refetch()}
+                />
+              </View>
+            ) : hasSent ? (
               <View testID="draft-sent-to" className="mt-2 gap-2">
                 <MetadataLabel className="text-muted-foreground">
                   {t('sentTo.eyebrow')}

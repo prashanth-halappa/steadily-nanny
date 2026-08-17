@@ -10,7 +10,7 @@ import {
   HOUSEHOLD_MEMBER_STATUSES,
   type HouseholdMember,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
-import { waitFor } from '@testing-library/react-native';
+import { fireEvent, waitFor } from '@testing-library/react-native';
 import { useAuthStore } from '@/src/store/auth';
 import { renderWithProviders } from '@/src/test-utils';
 
@@ -187,5 +187,56 @@ describe('carer-availability route', () => {
       expect(getByTestId('carer-availability-none')).toBeTruthy()
     );
     expect(queryByTestId('carer-availability-summary')).toBeNull();
+  });
+});
+
+// False alarm (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): `members`/
+// `availability` failing fell through the same `?? []` a genuinely-empty
+// read does, claiming "no carer to show" or "hasn't set availability" over
+// a household with an active nanny who HAS set it.
+describe('carer-availability route — a failed read', () => {
+  it('renders ErrorState, never "no carer" empty state, when members fails', async () => {
+    listMembersMock.mockImplementation(() =>
+      Promise.reject(new Error('members boom'))
+    );
+
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <CarerAvailabilityScreen />
+    );
+
+    await waitFor(() => expect(getByTestId('error-state')).toBeTruthy());
+    expect(queryByTestId('carer-availability-empty')).toBeNull();
+  });
+
+  it('renders ErrorState, never "hasn\'t set availability", when the availability read fails', async () => {
+    getForUserMock.mockImplementation(() =>
+      Promise.reject(new Error('availability boom'))
+    );
+
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <CarerAvailabilityScreen />
+    );
+
+    await waitFor(() => expect(getByTestId('error-state')).toBeTruthy());
+    expect(queryByTestId('carer-availability-none')).toBeNull();
+  });
+
+  it('retrying refetches both members and availability', async () => {
+    getForUserMock.mockImplementation(() =>
+      Promise.reject(new Error('availability boom'))
+    );
+
+    const { getByTestId, getByText } = renderWithProviders(
+      <CarerAvailabilityScreen />
+    );
+
+    await waitFor(() => expect(getByTestId('error-state')).toBeTruthy());
+    listMembersMock.mockClear();
+    getForUserMock.mockClear();
+
+    fireEvent.press(getByText('tryAgain'));
+
+    await waitFor(() => expect(getForUserMock).toHaveBeenCalled());
+    expect(listMembersMock).toHaveBeenCalled();
   });
 });

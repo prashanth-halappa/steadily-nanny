@@ -173,6 +173,28 @@ describe('HouseholdClosuresScreen — parent', () => {
     expect(getByTestId('household-closures-empty')).toBeTruthy();
   });
 
+  // False alarm (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): `ListEmptyComponent`
+  // only ever checked `closures.isLoading` — a settled-with-error read has
+  // `isLoading: false` too, so a failed read used to print the "no closures"
+  // empty state over rows that genuinely exist.
+  it('renders a retry, never the empty state, when the read fails', () => {
+    const refetch = mock();
+    mockUseHouseholdClosures.mockImplementation(() => ({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      refetch,
+    }));
+
+    const { getByTestId, queryByTestId } = render(<HouseholdClosuresScreen />);
+
+    expect(queryByTestId('household-closures-empty')).toBeNull();
+    expect(getByTestId('household-closures-retry')).toBeTruthy();
+
+    fireEvent.press(getByTestId('household-closures-retry-button'));
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
   it('submitting with the default (today..today) range calls create with a same-day payload', async () => {
     const { getByTestId } = render(<HouseholdClosuresScreen />);
 
