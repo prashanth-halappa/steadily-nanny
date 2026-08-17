@@ -42,10 +42,28 @@
  * about closing it. A shift with time entries behind it is precisely the thing
  * that should end up `completed`.
  *
- * DRAFT AND PENDING ARE OUT OF SCOPE, deliberately. A shift nobody ever
+ * DRAFT AND PENDING ARE NEVER *COMPLETED*, deliberately. A shift nobody ever
  * accepted did not "complete" — it lapsed, and saying otherwise would put a
- * worked-looking row in the record for a morning nobody turned up to. Their
- * fate belongs to the ask lifecycle (`coverAskExpiryJob`), not here.
+ * worked-looking row in the record for a morning nobody turned up to.
+ *
+ * BUT THEY DO HAVE TO END SOMEWHERE (audit S5). A RECURRING shift left
+ * `pending` past its own end was resolved by NOTHING: `coverAskExpiryJob`
+ * covers `extra`/`cover` asks only, this sweep covers `confirmed` only, and
+ * `noShowJob` requires `confirmed` — so the shift sat `pending` forever and
+ * the family was never told it had been missed either. It is reachable from
+ * the silent re-materialisation demotion (`applyOneUpdate`), which is why
+ * that path now pushes too. The second arm below closes it.
+ *
+ * THE LAPSE LANDS ON `cancelled` WITH `cancelled_by = NULL`, NEVER
+ * `declined`. 088's rule, and it is worth quoting: "`declined` — LIES. It
+ * says the carer answered." She did not answer; the question expired around
+ * her. `cancelled` + a null actor is exactly the discriminator cover-ask
+ * expiry already uses for "nobody acted", and a `unconfirmed_shift_lapsed`
+ * day-thread row records it where a human will see it.
+ *
+ * NO GRACE PERIOD ON THAT ARM. The two hours exist to let a late clock-out
+ * land. There is no clock-out coming for a shift nobody accepted, so its
+ * cutoff is plain `now`.
  *
  * SETUP: scheduled nightly via pg_cron in migration
  * `089_shift_completion_cron.sql` (POST `/api/jobs/shift-completion`) — a repo
@@ -77,18 +95,43 @@ export interface EndedConfirmedShift {
   worked: boolean;
 }
 
+/** A recurring shift that ended still `pending` — enough of it to write its day-thread row. */
+export interface EndedPendingShift {
+  id: string;
+  household_id: string;
+  local_date: string;
+}
+
+/** One `unconfirmed_shift_lapsed` day-thread row. */
+export interface LapsedShiftEvent {
+  household_id: string;
+  shift_id: string;
+  local_date: string;
+  actor_id: null;
+  event_type: 'unconfirmed_shift_lapsed';
+  payload: { key: string };
+}
+
 /** The DB calls this job makes — narrow, so tests can fake them. */
 export interface ShiftCompletionWriter {
   /** Confirmed shifts that ended before `cutoffIso`, each tagged worked/not. */
   listEndedConfirmed(cutoffIso: string): Promise<EndedConfirmedShift[]>;
   /** CAS `confirmed` → `completed` for exactly these ids. */
   completeByIds(shiftIds: string[]): Promise<Array<Pick<Shift, 'id'>>>;
+  /** RECURRING shifts still `pending` whose window ended before `cutoffIso`. */
+  listEndedPendingRecurring(cutoffIso: string): Promise<EndedPendingShift[]>;
+  /** CAS `pending` → `cancelled` with a NULL `cancelled_by`, for exactly these ids. */
+  lapseByIds(shiftIds: string[]): Promise<Array<Pick<Shift, 'id'>>>;
+  /** Append the day-thread rows for a lapse batch. Keyed, so a re-run cannot double up. */
+  appendLapsedEvents(events: LapsedShiftEvent[]): Promise<void>;
 }
 
 export interface ShiftCompletionJobResult {
   completedCount: number;
   /** Past confirmed shifts left alone because nobody logged any hours. */
   skippedCount: number;
+  /** Past RECURRING shifts nobody ever answered, resolved to `cancelled` (S5). */
+  lapsedCount: number;
   errorCount: number;
   message: string;
 }
@@ -141,6 +184,70 @@ export class DefaultShiftCompletionWriter implements ShiftCompletionWriter {
     );
   }
 
+  async listEndedPendingRecurring(
+    cutoffIso: string
+  ): Promise<EndedPendingShift[]> {
+    const { data, error } = await supabaseService
+      .from('shifts')
+      .select('id, household_id, local_date')
+      .eq('status', SHIFT_STATUSES.PENDING)
+      .eq('kind', 'recurring')
+      .lt('ends_at', cutoffIso);
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list past pending recurring shifts',
+        'DATABASE_ERROR',
+        { details: error.message, cutoffIso }
+      );
+    }
+    return (data ?? []) as EndedPendingShift[];
+  }
+
+  async lapseByIds(shiftIds: string[]): Promise<Array<Pick<Shift, 'id'>>> {
+    const { data, error } = await supabaseService
+      .from('shifts')
+      .update({
+        status: SHIFT_STATUSES.CANCELLED,
+        // NOT `declined`, and NOT an actor: nobody answered. Same
+        // discriminator migration 088 gives cover-ask expiry.
+        cancelled_by: null,
+        cancelled_at: new Date().toISOString(),
+        cancellation_paid: false,
+        reason: 'unconfirmed_shift_lapsed',
+      })
+      // Doing double duty, exactly as in `completeByIds`: it selects the work
+      // AND it is the compare-and-set that keeps a shift somebody accepted in
+      // the meantime out of scope. Widening it is a guard removal.
+      .eq('status', SHIFT_STATUSES.PENDING)
+      .in('id', shiftIds)
+      .select('id');
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to lapse past pending recurring shifts',
+        'DATABASE_ERROR',
+        { details: error.message }
+      );
+    }
+    return (data ?? []) as Array<Pick<Shift, 'id'>>;
+  }
+
+  async appendLapsedEvents(events: LapsedShiftEvent[]): Promise<void> {
+    if (events.length === 0) {
+      return;
+    }
+    const { error } = await supabaseService.from('shift_events').insert(events);
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to record unconfirmed_shift_lapsed events',
+        'DATABASE_ERROR',
+        { details: error.message, count: events.length }
+      );
+    }
+  }
+
   async completeByIds(shiftIds: string[]): Promise<Array<Pick<Shift, 'id'>>> {
     const { data, error } = await supabaseService
       .from('shifts')
@@ -167,14 +274,17 @@ export async function runShiftCompletionJob(
   writer: ShiftCompletionWriter = new DefaultShiftCompletionWriter(),
   clock: { now: () => Date } = { now: () => new Date() }
 ): Promise<ShiftCompletionJobResult> {
-  const cutoff = new Date(
-    clock.now().getTime() - COMPLETION_GRACE_MS
-  ).toISOString();
+  const now = clock.now();
+  const cutoff = new Date(now.getTime() - COMPLETION_GRACE_MS).toISOString();
+
+  let completedCount = 0;
+  let skippedCount = 0;
+  let errorCount = 0;
 
   try {
     const candidates = await writer.listEndedConfirmed(cutoff);
     const workedIds = candidates.filter(row => row.worked).map(row => row.id);
-    const skippedCount = candidates.length - workedIds.length;
+    skippedCount = candidates.length - workedIds.length;
 
     if (skippedCount > 0) {
       // Not a silent skip: this count IS the no-show backlog, and a number
@@ -187,20 +297,71 @@ export async function runShiftCompletionJob(
 
     const completed =
       workedIds.length > 0 ? await writer.completeByIds(workedIds) : [];
-
-    return {
-      completedCount: completed.length,
-      skippedCount,
-      errorCount: 0,
-      message: `Completed ${completed.length} past confirmed shift(s), left ${skippedCount} with no hours`,
-    };
+    completedCount = completed.length;
   } catch (error) {
     logger.error('Shift completion job failed', { cutoff, error });
-    return {
-      completedCount: 0,
-      skippedCount: 0,
-      errorCount: 1,
-      message: 'Shift completion job failed',
-    };
+    errorCount += 1;
   }
+
+  // The two arms are independent: a shift that ended `confirmed` and a shift
+  // that ended `pending` share nothing but this schedule, so one failing must
+  // not swallow the other's work.
+  const lapsedCount = await lapseUnconfirmedRecurring(writer, now).catch(
+    error => {
+      logger.error('Shift lapse sweep failed', { error });
+      errorCount += 1;
+      return 0;
+    }
+  );
+
+  return {
+    completedCount,
+    skippedCount,
+    lapsedCount,
+    errorCount,
+    message:
+      `Completed ${completedCount} past confirmed shift(s), left ${skippedCount} with no hours, ` +
+      `lapsed ${lapsedCount} unanswered recurring shift(s)`,
+  };
+}
+
+/**
+ * S5. No grace period: the two hours exist to let a late clock-out land, and
+ * nobody is clocking into a shift they never accepted.
+ */
+async function lapseUnconfirmedRecurring(
+  writer: ShiftCompletionWriter,
+  now: Date
+): Promise<number> {
+  const stale = await writer.listEndedPendingRecurring(now.toISOString());
+  if (stale.length === 0) {
+    return 0;
+  }
+
+  const lapsed = await writer.lapseByIds(stale.map(shift => shift.id));
+  if (lapsed.length === 0) {
+    return 0;
+  }
+
+  // Only the rows the CAS actually won — a shift somebody accepted between
+  // the read and the write is not lapsed and must not be told it was.
+  const lapsedIds = new Set(lapsed.map(row => row.id));
+  await writer.appendLapsedEvents(
+    stale
+      .filter(shift => lapsedIds.has(shift.id))
+      .map(shift => ({
+        household_id: shift.household_id,
+        shift_id: shift.id,
+        local_date: shift.local_date,
+        actor_id: null as null,
+        event_type: 'unconfirmed_shift_lapsed' as const,
+        // Keyed so migration 025's partial unique index dedupes a re-run.
+        payload: { key: shift.id },
+      }))
+  );
+
+  logger.info('Shift lapse: resolved unanswered recurring shifts', {
+    lapsedCount: lapsed.length,
+  });
+  return lapsed.length;
 }

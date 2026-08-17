@@ -21,6 +21,7 @@ const createdShift = {
   timezone: 'Europe/London',
   kind: 'extra',
   status: 'pending',
+  ical_uid: 'uid-s-extra',
   shift_children: [],
 };
 
@@ -107,5 +108,32 @@ describe('ShiftChangeRequestController.createExtraShift', () => {
     await ShiftChangeRequestController.createExtraShift(req(), res, mock());
 
     expect(res.body.data.adopted).toBe(true);
+  });
+});
+
+/**
+ * S12 — every extra-shift proposal used to generate a guaranteed clash
+ * warning AGAINST ITSELF: this controller was the only one of the three that
+ * omitted `ignoreExact`, so the shift it had just created came straight back
+ * out of `v_busy_blocks` as a conflict. `shiftController.update` and
+ * `shiftController.accept` have always passed it.
+ */
+describe('ShiftChangeRequestController.createExtraShift — self-clash', () => {
+  it('ignores the shift it just created, by its opaque source uid', async () => {
+    await ShiftChangeRequestController.createExtraShift(
+      req(),
+      mockRes(),
+      mock()
+    );
+
+    expect(collectClashWarningsForCarer).toHaveBeenCalledWith(
+      'carer-1',
+      {
+        startsAt: createdShift.starts_at,
+        endsAt: createdShift.ends_at,
+        timezone: createdShift.timezone,
+      },
+      { ignoreExact: { sourceUid: 'uid-s-extra' } }
+    );
   });
 });

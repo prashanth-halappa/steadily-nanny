@@ -20,6 +20,13 @@
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { supabaseService } from '../../../config/supabase';
 import { DatabaseError } from '../../../errors';
+// Cross-domain, and deliberately narrow: 104's exclusion constraint is a
+// SHIFT fact, so the error it maps to and the predicate that recognises it
+// live with the shift domain rather than being re-declared here. Same
+// convention `scheduleMaterialisationService` already follows importing that
+// domain's `ShiftEventRepository` directly.
+import { ShiftOverlapsError } from '../../shift/errors/shiftErrors';
+import { isCarerWindowOverlap } from '../../shift/utils/carerWindowOverlap';
 import { RecurringShiftAlreadyExistsError } from '../errors/scheduleErrors';
 
 export interface NewShiftData {
@@ -183,6 +190,18 @@ export class ScheduleShiftRepository {
           endsAt: data.ends_at,
         });
       }
+      // S4a. NOT an adopt signal like the collision above — the existing row
+      // only OVERLAPS this occurrence, so there is nothing to re-point at
+      // this pattern. `scheduleMaterialisationService` records it as a
+      // `pattern_conflict` and carries on with the rest of the horizon.
+      if (isCarerWindowOverlap(error)) {
+        throw new ShiftOverlapsError({
+          householdId: data.household_id,
+          carerId: data.carer_id,
+          startsAt: data.starts_at,
+          endsAt: data.ends_at,
+        });
+      }
       throw new DatabaseError('Failed to create shift', 'DATABASE_ERROR', {
         details: error.message,
         code: error.code,
@@ -212,7 +231,9 @@ export class ScheduleShiftRepository {
       .select();
 
     if (error) {
-      if (isRecurringWindowCollision(error)) {
+      // Either guard aborts the whole multi-row statement and PostgREST
+      // cannot say WHICH row lost, so both fall back to the per-row retry.
+      if (isRecurringWindowCollision(error) || isCarerWindowOverlap(error)) {
         return null;
       }
       throw new DatabaseError('Failed to create shifts', 'DATABASE_ERROR', {
@@ -233,6 +254,12 @@ export class ScheduleShiftRepository {
       .single();
 
     if (error) {
+      // S4a: this is the ONE path that moves a live shift's times in bulk
+      // (`applyUpdates`), so it is the one that can re-time an occurrence on
+      // top of another of this carer's windows.
+      if (isCarerWindowOverlap(error)) {
+        throw new ShiftOverlapsError({ shiftId: id });
+      }
       throw new DatabaseError('Failed to update shift', 'DATABASE_ERROR', {
         details: error.message,
         id,

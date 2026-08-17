@@ -85,6 +85,35 @@ export class ExtraShiftAlreadyExistsError extends ConflictError {
   }
 }
 
+/**
+ * 409 — this carer already has a LIVE shift overlapping this window in THIS
+ * household. Raised wherever migration 104's `shifts_carer_window_excl`
+ * exclusion constraint rejects a write (23P01).
+ *
+ * OVERLAP, not equality: 059/062 already refuse an exact duplicate window and
+ * their `ExtraShiftAlreadyExistsError`/`RecurringShiftAlreadyExistsError` are
+ * ADOPT signals — "someone already made this, use theirs". This is the
+ * different answer to a different question: 09:00–17:00 and 10:00–12:00 are
+ * two distinct bookings that cannot both happen, and there is nothing to
+ * adopt. It is rendered to the caller, and the caller resolves it.
+ *
+ * SCOPED TO ONE HOUSEHOLD, deliberately. A clash with ANOTHER family stays
+ * advisory and never 409s — see `domains/me/services/clashWarning.ts` and
+ * 015's header. This error can only ever mean one family double-booking one
+ * carer against herself.
+ */
+export class ShiftOverlapsError extends ConflictError {
+  /** Metadata is free-form: an insert knows the window, an edit only the shift id. */
+  constructor(metadata: ErrorMetadata) {
+    super(
+      'This carer already has a shift overlapping that time',
+      'SHIFT_OVERLAP',
+      metadata
+    );
+    this.name = 'ShiftOverlapsError';
+  }
+}
+
 /** 409 — respond/withdraw was attempted on a request that is not `pending`. */
 export class ChangeRequestNotPendingError extends ConflictError {
   constructor(changeRequestId: string, status: string) {

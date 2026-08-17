@@ -17,7 +17,9 @@ import {
   ChangeRequestNotPendingError,
   ShiftImmutableError,
   ShiftNotFoundError,
+  ShiftOverlapsError,
 } from '../errors/shiftErrors';
+import { isCarerWindowOverlap } from '../utils/carerWindowOverlap';
 
 /**
  * One day-thread event handed to an RPC to insert inside its own transaction.
@@ -140,6 +142,15 @@ export class ShiftChangeRequestRepository extends BaseRepository<ShiftChangeRequ
     );
 
     if (error) {
+      // S4a: accepting a time_change can move the shift onto a window this
+      // carer already holds in this household, which 104's exclusion
+      // constraint refuses (23P01). That is the accepting party's conflict to
+      // resolve, not a 500.
+      if (isCarerWindowOverlap(error)) {
+        throw new ShiftOverlapsError({
+          changeRequestId: args.p_change_request_id,
+        });
+      }
       throw new DatabaseError(
         'Failed to accept shift change request',
         'DATABASE_ERROR',

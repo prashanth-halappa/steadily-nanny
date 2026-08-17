@@ -254,6 +254,92 @@ carry it). Today that is zero weeks. Older clients tolerate both new fields
 because `TimesheetSchema.hours_changed_after_payment_at` and
 `CreatePaymentSchema.idempotency_key` are both optional.
 
+### Migrations 103 / 104 — shift read scope + schedule invariants — NOT YET APPLIED
+
+Two migrations, two very different rollback profiles. **Read this before
+applying either.**
+
+#### 103 — `shift_read_scope.sql` — cheap to roll back, but ORDER MATTERS
+
+Replaces the SELECT policies on `shifts`, `shift_children`,
+`shift_change_requests` and `shift_events` so parents read household-wide and
+a carer reads only her own rows. No data is touched; every statement is
+idempotent.
+
+**Rollback is a policy re-issue from 040**, and 040's text is the source:
+
+```sql
+drop policy if exists "Parents and the assigned carer can view shifts" on public.shifts;
+create policy "Members can view shifts" on public.shifts
+  for select using (private.can_read_household(household_id));
+
+drop policy if exists "Parents and the assigned carer can view shift children" on public.shift_children;
+create policy "Members can view shift children" on public.shift_children
+  for select using (
+    exists (select 1 from public.shifts s
+             where s.id = shift_id and private.can_read_household(s.household_id))
+  );
+
+drop policy if exists "Parents and the assigned carer can view change requests" on public.shift_change_requests;
+create policy "Members can view change requests" on public.shift_change_requests
+  for select using (
+    exists (select 1 from public.shifts s
+             where s.id = shift_id and private.can_read_household(s.household_id))
+  );
+
+drop policy if exists "Parents, the actor and the carer can view the day thread" on public.shift_events;
+create policy "Members can view day thread" on public.shift_events
+  for select using (private.can_read_household(household_id));
+```
+
+**DEPLOY ORDER, and it is the opposite of §5's usual rule.** The service half
+(`shiftQueryService.assertShiftReader`) narrows *identically* to the policy, so
+the two are safe in either order — but only because the API runs as the service
+role and bypasses RLS entirely. **Apply the migration and deploy the server
+together.** Applying 103 alone leaves the hole open for anyone driving
+PostgREST with the bundled anon key; deploying the server alone is harmless but
+buys nothing at the door.
+
+**Rolling BACK the app without rolling back 103 is the safe direction** — the
+policy is stricter than the old service, and nothing in the app reads shifts
+through PostgREST.
+
+#### 104 — `schedule_invariants.sql` — the ALTER can BLOCK the deploy
+
+One unique index on `schedule_patterns`, two on `shifts`, and one exclusion
+constraint. **An exclusion constraint has no `NOT VALID` form**, so a
+pre-existing overlapping pair fails the ALTER outright and stops the deploy
+mid-migration. Run 104's header pre-flight SELECTs *before* the deploy window,
+not during it. Prod was verified at **0 live shifts, 0 accepted-pattern
+duplicates, 0 overlaps** when this was written — re-verify, that number is a
+snapshot.
+
+**Rollback is four drops, and it is completely lossless** (no rows are
+rewritten, only refused):
+
+```sql
+alter table public.shifts drop constraint if exists shifts_carer_window_excl;
+drop index if exists public.shifts_parent_cover_window_unique;
+drop index if exists public.shifts_cover_window_unique;
+drop index if exists public.schedule_patterns_one_accepted_idx;
+```
+
+Leave `btree_gist` alone — 055 installed it and `time_entries`' two exclusion
+constraints depend on it.
+
+**The kill switch, if 104 turns out to refuse legitimate bookings**, is the
+exclusion constraint alone: dropping `shifts_carer_window_excl` restores the
+old permissive behaviour without touching the three dedupe indexes, which are
+strictly narrower guards of the shape 059/062 already shipped. Drop it first
+and ask questions after — the app degrades to "warns, never blocks", which is
+where it was.
+
+**A server rollback under 104 is SAFE but noisier.** An old server does not
+know `ShiftOverlapsError`, so a refused write surfaces as a 500 instead of a
+409 and `scheduleMaterialisationService` fails the horizon run for that pattern
+rather than recording a `pattern_conflict` and continuing. Prefer dropping the
+constraint to rolling the server back.
+
 ---
 
 ## §6 Behavior changes with NO switch

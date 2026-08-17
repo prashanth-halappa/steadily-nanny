@@ -40,7 +40,9 @@ import {
   ExtraShiftAlreadyExistsError,
   ShiftImmutableError,
   ShiftNotFoundError,
+  ShiftOverlapsError,
 } from '../errors/shiftErrors';
+import { isCarerWindowOverlap } from '../utils/carerWindowOverlap';
 
 /** A shift joined with its `shift_children` rows — the shape the Supabase nested select (`*, shift_children(*)`) returns. */
 export interface ShiftWithChildren extends Shift {
@@ -420,6 +422,14 @@ export class ShiftRepository extends BaseRepository<Shift> {
       .single();
 
     if (error) {
+      if (isCarerWindowOverlap(error)) {
+        throw new ShiftOverlapsError({
+          householdId: data.household_id,
+          carerId: data.carer_id,
+          startsAt: data.starts_at,
+          endsAt: data.ends_at,
+        });
+      }
       if (isExtraWindowCollision(error)) {
         throw new ExtraShiftAlreadyExistsError({
           householdId: data.household_id,
@@ -566,6 +576,11 @@ export class ShiftRepository extends BaseRepository<Shift> {
       // 059's index constrains UPDATEs too: re-timing an extra shift onto
       // another live one's exact window is refused here. That refusal is
       // correct, but it is the parent's conflict to resolve, not a 500.
+      if (error && isCarerWindowOverlap(error)) {
+        // 104's constraint constrains UPDATEs too: a parent moving a shift on
+        // top of another of this carer's live windows in the same household.
+        throw new ShiftOverlapsError({ shiftId: args.shiftId });
+      }
       if (error && isExtraWindowCollision(error)) {
         throw new ExtraShiftAlreadyExistsError({ shiftId: args.shiftId });
       }

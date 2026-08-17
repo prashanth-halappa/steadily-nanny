@@ -76,6 +76,32 @@ Three routes into a `pending` shift needing per-shift confirmation: an extra/cov
 
 ## 6. Findings
 
+> **PR5 status (2026-08-17).** **S1, S3, S4a, S5, S12, S13 and S14 are fixed**,
+> in migrations `103_shift_read_scope.sql` and `104_schedule_invariants.sql`
+> plus the service halves that land with them. 103 gives all four shift tables
+> the 087 read circle (parents household-wide, the carer her own rows, a helper
+> none) and `shiftQueryService.assertShiftReader` narrows identically, because
+> a backstop wider than the check is the door. 104 adds the missing
+> `schedule_patterns` accepted-pattern unique index, the `cover`/`parent_cover`
+> window dedupes 059/062 skipped, and `shifts_carer_window_excl` — so a
+> same-household same-carer OVERLAP is now a 409 (`ShiftOverlapsError`) rather
+> than two bookings for one hour; the materialiser records a `pattern_conflict`
+> and carries on instead of failing the run. S5's two halves: the nightly
+> completion job now resolves past `pending` recurring shifts to `cancelled`
+> with a null `cancelled_by` (never `declined`), and the silent
+> re-materialisation demotion sends the same `SHIFT_NEEDS_RECONFIRM` push the
+> parent-edit path sends. S12 passes the missing `ignoreExact`; S13 gives
+> parent-cover delete status/future/no-hours preconditions and a
+> `parent_cover_removed` day-thread row; S14 removes the write from the
+> day-thread READ, replacing it with a parent-only
+> `POST /households/:hid/day-thread/refresh`.
+>
+> **Still open:** S2, S4b (cross-household, deliberately still advisory), S6,
+> S7, S8–S11, S15. Part of §7's coverage hole is closed too — the RPC bodies
+> now have executing tests (`tests/integration/shiftRpcs.integration.test.ts`),
+> as do the new policies and constraints (`shiftRls`, `shiftOverlap`,
+> `schedulePatternInvariants`).
+
 ### High
 
 **S1 — any active member can read every carer's shifts.** RLS on `shifts` is `can_read_household(household_id)` (`040:270-272`) — role-blind and carer-blind. A second nanny reads every shift in the household plus `shift_children`, `shift_change_requests` and the whole `shift_events` day thread, which carries free-text notes and reasons. A **helper** gets the same.

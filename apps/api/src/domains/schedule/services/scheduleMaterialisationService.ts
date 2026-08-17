@@ -72,12 +72,14 @@
  * @module domains/schedule/services/scheduleMaterialisationService
  */
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import { ShiftOverlapsError } from '../../shift/errors/shiftErrors';
 // Import the repository files DIRECTLY — never a domain barrel — so this
 // service never pulls another domain's service graph in behind them.
 import {
   type NewShiftEventInput,
   ShiftEventRepository,
 } from '../../shift/repositories/shiftEventRepository';
+import { needsReconfirmPush } from '../../shift/utils/needsReconfirmPush';
 import { TimeEntryRepository } from '../../timesheet/repositories/timeEntryRepository';
 import { RecurringShiftAlreadyExistsError } from '../errors/scheduleErrors';
 import {
@@ -100,10 +102,19 @@ export interface PatternForMaterialisation {
 
 export type MaterialiseConflictReason =
   | 'manually_edited'
-  | 'manually_edited_now_cancelled';
+  | 'manually_edited_now_cancelled'
+  /**
+   * S4a. Migration 104's `shifts_carer_window_excl` refused the write: this
+   * carer already holds a live window in this household that OVERLAPS the
+   * occurrence. Unlike 062's exact-duplicate collision there is nothing to
+   * adopt — the row in the way is a different booking — so the occurrence is
+   * skipped, warned about, and the rest of the horizon carries on.
+   */
+  | 'overlaps_existing_shift';
 
 export interface MaterialiseConflict {
-  shiftId: string;
+  /** Null when the INSERT itself was refused — there is no shift of ours to name. */
+  shiftId: string | null;
   localDate: string;
   reason: MaterialiseConflictReason;
 }
@@ -189,10 +200,15 @@ function touchDate(result: MaterialiseResult, localDate: string): void {
  */
 const UPDATE_CONCURRENCY = 8;
 
-/** One shift the run decided to preserve-and-warn about, awaiting its day-thread row. */
+/**
+ * One occurrence the run decided to warn about, awaiting its day-thread row.
+ * `shift` is null for an overlap refused at INSERT time — the row in the way
+ * is somebody else's booking, not ours to name in our own thread.
+ */
 interface PendingConflict {
-  shift: Shift;
+  shift: Shift | null;
   localDate: string;
+  reason: MaterialiseConflictReason;
 }
 
 /** Deterministic per-occurrence UID: stable across re-materialisations of the same pattern+date. */
@@ -378,7 +394,7 @@ export class ScheduleMaterialisationService {
 
     const conflicts: PendingConflict[] = [];
 
-    await this.createBatch(pattern, toCreate, result);
+    await this.createBatch(pattern, toCreate, result, conflicts);
 
     const toUpdate: { occ: ExpandedOccurrence; shift: Shift }[] = [];
     for (const { occ, shift } of paired) {
@@ -386,7 +402,11 @@ export class ScheduleMaterialisationService {
         continue; // past and paid-for reality is immutable — see time_entries (017)
       }
       if (isTouched.manually(shift)) {
-        conflicts.push({ shift, localDate: occ.localDate });
+        conflicts.push({
+          shift,
+          localDate: occ.localDate,
+          reason: 'manually_edited',
+        });
         result.conflicts.push({
           shiftId: shift.id,
           localDate: occ.localDate,
@@ -396,7 +416,7 @@ export class ScheduleMaterialisationService {
       }
       toUpdate.push({ occ, shift });
     }
-    await this.applyUpdates(pattern, toUpdate, result);
+    await this.applyUpdates(pattern, toUpdate, result, conflicts);
 
     await this.reconcileOrphans(orphans, isTouched, now, result, conflicts);
     await this.raiseConflictsOnce(pattern, conflicts);
@@ -437,7 +457,8 @@ export class ScheduleMaterialisationService {
   private async createBatch(
     pattern: PatternForMaterialisation,
     occurrences: ExpandedOccurrence[],
-    result: MaterialiseResult
+    result: MaterialiseResult,
+    conflicts: PendingConflict[]
   ): Promise<void> {
     if (occurrences.length === 0) {
       return;
@@ -446,12 +467,13 @@ export class ScheduleMaterialisationService {
     const created = await this.shiftRepo.createMany(rows);
 
     if (created === null) {
-      // 062's index refused one of the rows and aborted the whole statement,
+      // 062's index (or 104's exclusion constraint) refused one of the rows
+      // and aborted the whole statement,
       // so nothing was written and PostgREST cannot say which row lost. Redo
       // it row by row: the loser then raises an attributable collision and
       // adopts the shift already sitting in its window.
       for (const occ of occurrences) {
-        await this.createOne(pattern, occ, result);
+        await this.createOne(pattern, occ, result, conflicts);
       }
       return;
     }
@@ -480,12 +502,30 @@ export class ScheduleMaterialisationService {
   private async createOne(
     pattern: PatternForMaterialisation,
     occ: ExpandedOccurrence,
-    result: MaterialiseResult
+    result: MaterialiseResult,
+    conflicts: PendingConflict[]
   ): Promise<void> {
     let created: Shift;
     try {
       created = await this.shiftRepo.create(newShiftRow(pattern, occ));
     } catch (error) {
+      // S4a: an OVERLAP is not an exact duplicate, so there is nothing to
+      // adopt — the row in the way is a different booking. Skip the
+      // occurrence, warn, and let the rest of the horizon land. A nightly job
+      // must never 500 over one clashing day.
+      if (error instanceof ShiftOverlapsError) {
+        conflicts.push({
+          shift: null,
+          localDate: occ.localDate,
+          reason: 'overlaps_existing_shift',
+        });
+        result.conflicts.push({
+          shiftId: null,
+          localDate: occ.localDate,
+          reason: 'overlaps_existing_shift',
+        });
+        return;
+      }
       if (!(error instanceof RecurringShiftAlreadyExistsError)) {
         throw error;
       }
@@ -526,7 +566,8 @@ export class ScheduleMaterialisationService {
   private async applyUpdates(
     pattern: PatternForMaterialisation,
     pairs: { occ: ExpandedOccurrence; shift: Shift }[],
-    result: MaterialiseResult
+    result: MaterialiseResult,
+    conflicts: PendingConflict[]
   ): Promise<void> {
     if (pairs.length === 0) {
       return;
@@ -565,28 +606,89 @@ export class ScheduleMaterialisationService {
       }))
     );
 
+    // S4a: a moved window can land on another of this carer's live windows in
+    // this household, which 104 refuses. That is ONE day's conflict, not a
+    // failed run, so each patch is caught on its own and the rest of the
+    // batch still applies.
+    const overlapped = new Set<string>();
     for (let i = 0; i < dirty.length; i += UPDATE_CONCURRENCY) {
       await Promise.all(
         dirty
           .slice(i, i + UPDATE_CONCURRENCY)
           .map(({ occ, shift, timesMoved }) =>
-            this.shiftRepo.update(shift.id, {
-              starts_at: occ.startsAt,
-              ends_at: occ.endsAt,
-              timezone: pattern.timezone,
-              status:
-                shift.status === 'confirmed' && timesMoved
-                  ? 'pending'
-                  : shift.status,
-              note: pattern.note,
-              sequence: shift.sequence + 1,
-            })
+            this.applyOneUpdate(
+              pattern,
+              occ,
+              shift,
+              timesMoved,
+              conflicts,
+              result,
+              overlapped
+            )
           )
       );
     }
-    result.updated += dirty.length;
-    for (const { occ } of dirty) {
+    const applied = dirty.filter(({ shift }) => !overlapped.has(shift.id));
+    result.updated += applied.length;
+    for (const { occ } of applied) {
       touchDate(result, occ.localDate);
+    }
+  }
+
+  /**
+   * One row's patch, with 104's exclusion violation demoted from a thrown
+   * error to a recorded conflict. Split out of `applyUpdates` purely so the
+   * bounded-concurrency `Promise.all` above stays readable.
+   *
+   * A DEMOTION LIVES HERE TOO, and it used to be SILENT (audit S5). Moving a
+   * confirmed shift's times reverts it to `pending` — the same demotion a
+   * parent time-edit performs — but this path fires from the nightly horizon
+   * job and told the carer nothing. She then had a shift needing her answer
+   * that she was never asked about, and because `noShowJob` only fires on
+   * `confirmed`, nobody was told when it was missed either. It now sends the
+   * SAME push the parent-edit path sends (`needsReconfirmPush`).
+   *
+   * Fire-and-forget: the row is already written, and a push failure must
+   * never fail a horizon run.
+   */
+  private async applyOneUpdate(
+    pattern: PatternForMaterialisation,
+    occ: ExpandedOccurrence,
+    shift: Shift,
+    timesMoved: boolean,
+    conflicts: PendingConflict[],
+    result: MaterialiseResult,
+    overlapped: Set<string>
+  ): Promise<void> {
+    const demoted = shift.status === 'confirmed' && timesMoved;
+    try {
+      await this.shiftRepo.update(shift.id, {
+        starts_at: occ.startsAt,
+        ends_at: occ.endsAt,
+        timezone: pattern.timezone,
+        status: demoted ? 'pending' : shift.status,
+        note: pattern.note,
+        sequence: shift.sequence + 1,
+      });
+    } catch (error) {
+      if (!(error instanceof ShiftOverlapsError)) {
+        throw error;
+      }
+      overlapped.add(shift.id);
+      conflicts.push({
+        shift,
+        localDate: occ.localDate,
+        reason: 'overlaps_existing_shift',
+      });
+      result.conflicts.push({
+        shiftId: shift.id,
+        localDate: occ.localDate,
+        reason: 'overlaps_existing_shift',
+      });
+      return;
+    }
+    if (demoted && pattern.carerId) {
+      await notifyCarerNeedsReconfirm(pattern.carerId, shift);
     }
   }
 
@@ -738,7 +840,11 @@ export class ScheduleMaterialisationService {
       if (!isTouched.manually(shift)) {
         continue;
       }
-      conflicts.push({ shift, localDate: shift.local_date });
+      conflicts.push({
+        shift,
+        localDate: shift.local_date,
+        reason: 'manually_edited_now_cancelled',
+      });
       result.conflicts.push({
         shiftId: shift.id,
         localDate: shift.local_date,
@@ -776,16 +882,44 @@ export class ScheduleMaterialisationService {
       })
     );
 
-    const rows = conflicts.flatMap(({ shift, localDate }) => {
-      const key = conflictKey(pattern.id, shift.id, localDate);
+    const rows = conflicts.flatMap(({ shift, localDate, reason }) => {
+      const key = conflictKey(pattern.id, shift?.id ?? 'overlap', localDate);
       if (keysByDate.get(localDate)?.has(key)) {
         return [];
       }
-      return [conflictEvent(pattern, shift, localDate, key)];
+      return [conflictEvent(pattern, shift, localDate, key, reason)];
     });
     if (rows.length > 0) {
       await this.eventRepo.insertMany(rows);
     }
+  }
+}
+
+/**
+ * The reconfirm push, loaded AT CALL TIME rather than imported at the top.
+ *
+ * `notifyUser` lives behind `notification/services/householdPush`, which
+ * imports the household domain barrel, which constructs
+ * `householdCommandService`'s singleton, which reads `UserService` — and
+ * `userService` imports THIS module. A static import closes that ring and
+ * `userService` explodes with a TDZ `ReferenceError` before any test runs. A
+ * dynamic import defers the edge until every module has finished loading,
+ * which is exactly when a push is actually sent.
+ *
+ * Fire-and-forget in both directions: the shift row is already written, and a
+ * push failure must never fail a horizon run.
+ */
+async function notifyCarerNeedsReconfirm(
+  carerId: string,
+  shift: Shift
+): Promise<void> {
+  try {
+    const { notifyUser } = await import(
+      '../../notification/services/householdPush'
+    );
+    notifyUser(carerId, needsReconfirmPush(shift));
+  } catch {
+    // Never fail a materialisation over a push.
   }
 }
 
@@ -838,24 +972,32 @@ function conflictKey(
   return `${patternId}|${shiftId}|${localDate}`;
 }
 
+const CONFLICT_REASON_TEXT: Record<MaterialiseConflictReason, string> = {
+  manually_edited:
+    'Shift was manually edited since it was generated — the pattern change was not applied to it.',
+  manually_edited_now_cancelled:
+    'Shift was manually edited since it was generated — the pattern change was not applied to it.',
+  overlaps_existing_shift: 'overlaps a shift already on the calendar',
+};
+
 function conflictEvent(
   pattern: PatternForMaterialisation,
-  shift: Shift,
+  shift: Shift | null,
   localDate: string,
-  key: string
+  key: string,
+  reason: MaterialiseConflictReason
 ): NewShiftEventInput {
   return {
     household_id: pattern.householdId,
-    shift_id: shift.id,
+    shift_id: shift?.id ?? null,
     local_date: localDate,
     actor_id: null,
     event_type: PATTERN_CONFLICT,
     payload: {
       key,
       pattern_id: pattern.id,
-      shift_origin: shift.origin,
-      reason:
-        'Shift was manually edited since it was generated — the pattern change was not applied to it.',
+      shift_origin: shift?.origin ?? null,
+      reason: CONFLICT_REASON_TEXT[reason],
     },
   };
 }
