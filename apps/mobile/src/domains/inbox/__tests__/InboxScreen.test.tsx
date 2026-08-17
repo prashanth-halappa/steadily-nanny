@@ -27,14 +27,29 @@ beforeAll(async () => {
   mock.module('@/src/domains/inbox/hooks/useInboxItems', () => ({
     useInboxItems: mockUseInboxItems,
   }));
+  // Override the global key-echo mock: this file needs interpolated values
+  // (a row's own formatted clock time) to reach the rendered text so the
+  // per-household zone under test is actually observable.
+  mock.module('react-i18next', () => ({
+    useTranslation: () => ({
+      t: (key: string, opts?: Record<string, string | number>) =>
+        opts ? `${key}(${JSON.stringify(opts)})` : key,
+      i18n: { language: 'en', changeLanguage: mock() },
+    }),
+    initReactI18next: { type: '3rdParty', init: mock() },
+  }));
   mock.module('expo-router', () => ({
     useRouter: () => ({ push: mockPush, back: mock() }),
   }));
   mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
     useActiveHousehold: () => ({
-      household: { timezone: 'UTC' },
+      household: { id: 'hh-1', name: 'Household One', timezone: 'UTC' },
       householdId: 'hh-1',
-      households: [],
+      households: [
+        { id: 'hh-1', name: 'Household One', timezone: 'UTC' },
+        { id: 'hh-2', name: 'Household Two', timezone: 'America/New_York' },
+      ],
+      pastHouseholds: [],
       setActiveHouseholdId: mock(),
       isLoading: false,
       isError: false,
@@ -171,6 +186,7 @@ describe('InboxScreen', () => {
         {
           kind: 'pending_pattern',
           id: 'pat-1',
+          householdId: 'hh-1',
           patternId: 'pat-1',
           dtstart: '2026-08-05',
         },
@@ -192,6 +208,7 @@ describe('InboxScreen', () => {
         {
           kind: 'queried_week',
           id: 'ts-1',
+          householdId: 'hh-1',
           weekStart: '2026-07-28',
           queryNote: 'Break looks long',
         },
@@ -206,6 +223,36 @@ describe('InboxScreen', () => {
     );
   });
 
+  // Pattern A (render-time): this list is deliberately cross-household —
+  // each row's clock times must read in ITS OWN household's zone, never the
+  // active one the switcher happens to have selected.
+  it("formats a pending-shift row's times in its OWN household zone, not the active household's", () => {
+    mockUseInboxItems.mockImplementation(() => ({
+      isLoading: false,
+      isError: false,
+      refetch: mockRefetch,
+      items: [
+        {
+          kind: 'pending_shift',
+          id: 'shift-ask-1',
+          householdId: 'hh-2',
+          localDate: '2026-08-11',
+          // Noon UTC — reads 8:00 AM in hh-2's own zone (America/New_York),
+          // 12:00 PM in the active household's zone (UTC).
+          startsAt: '2026-08-11T12:00:00.000Z',
+          endsAt: '2026-08-11T18:00:00.000Z',
+          createdAt: '2026-08-08T00:00:00.000Z',
+          coverAskExpiresAt: null,
+        },
+      ] satisfies InboxItem[],
+    }));
+
+    const { getByText, queryByText } = render(<InboxScreen />);
+
+    expect(getByText(/8:00 AM/)).toBeTruthy();
+    expect(queryByText(/12:00 PM/)).toBeNull();
+  });
+
   it('renders a submitted-week row that deep-links to Hours', () => {
     mockUseInboxItems.mockImplementation(() => ({
       isLoading: false,
@@ -215,6 +262,7 @@ describe('InboxScreen', () => {
         {
           kind: 'submitted_week',
           id: 'ts-2',
+          householdId: 'hh-1',
           weekStart: '2026-08-04',
           carerDisplayName: 'Jamie Carer',
         },
@@ -244,6 +292,7 @@ describe('InboxScreen', () => {
         {
           kind: 'submitted_week',
           id: 'ts-2',
+          householdId: 'hh-1',
           weekStart: '2026-08-04',
           carerDisplayName: 'Jamie Carer',
         },
@@ -271,12 +320,14 @@ describe('InboxScreen', () => {
         {
           kind: 'pending_pattern',
           id: 'pat-1',
+          householdId: 'hh-1',
           patternId: 'pat-1',
           dtstart: '2026-08-05',
         },
         {
           kind: 'queried_week',
           id: 'ts-1',
+          householdId: 'hh-1',
           weekStart: '2026-07-28',
           queryNote: 'Break looks long',
         },
@@ -299,6 +350,7 @@ describe('InboxScreen', () => {
         {
           kind: 'submitted_week',
           id: 'ts-2',
+          householdId: 'hh-1',
           weekStart: '2026-08-04',
           carerDisplayName: 'Jamie Carer',
         },

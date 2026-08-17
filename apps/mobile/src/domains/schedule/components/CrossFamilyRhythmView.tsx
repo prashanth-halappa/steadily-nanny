@@ -43,6 +43,7 @@ import {
   shiftPeriod,
 } from '@/src/domains/schedule/utils/shiftGrouping';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
+import { useHouseholdLookup } from '@/src/hooks/queries/useHouseholdById';
 import { useMeShifts } from '@/src/hooks/queries/useMeShifts';
 import {
   addLocalDays,
@@ -188,8 +189,10 @@ export function CrossFamilyRhythmView({
 
   const meShifts = useMeShifts(from, to);
 
-  const timeZoneFor = (householdId: string): string =>
-    households.find(h => h.id === householdId)?.timezone ?? timeZone;
+  // Shared resolver (Pattern A) — same households/pastHouseholds source and
+  // the same active-household-then-UTC fallback this hand-rolled lookup used
+  // before it existed.
+  const { timeZoneFor } = useHouseholdLookup();
   const slots = slotsFromShifts(meShifts.data ?? [], timeZoneFor);
   const index = buildSlotIndex(slots);
 

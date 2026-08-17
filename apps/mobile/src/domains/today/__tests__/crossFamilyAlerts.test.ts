@@ -45,7 +45,7 @@ function baseArgs(
     activeHouseholdId: ACTIVE_ID,
     households: HOUSEHOLDS,
     meShifts: [],
-    todayLocalDate: TODAY,
+    todayLocalDateFor: () => TODAY,
     nowISO: NOW,
     ...overrides,
   };
@@ -225,6 +225,32 @@ describe('resolveCrossFamilyAlerts — terms block on a shift today', () => {
     );
     expect(alerts).toEqual([]);
   });
+
+  // Pattern A: a shift 23:30 B-local is already TOMORROW in A's zone. A
+  // single "today" computed from the active household would silently miss
+  // this termsBlock — the exact "lose a paid shift" failure §termsBlock
+  // exists to prevent.
+  it("a shift at 23:30 in OTHER_A's own zone still counts as 'today' for OTHER_A, even though it is tomorrow in the active household's zone", () => {
+    const TOMORROW = '2026-08-17';
+    const alerts = resolveCrossFamilyAlerts(
+      baseArgs({
+        items: [termsProposalItem(OTHER_A)],
+        todayLocalDateFor: householdId =>
+          householdId === OTHER_A ? TOMORROW : TODAY,
+        meShifts: [
+          {
+            household_id: OTHER_A,
+            status: 'confirmed',
+            starts_at: '2026-08-16T23:30:00.000Z',
+            local_date: TOMORROW,
+          },
+        ],
+      })
+    );
+    expect(alerts).toEqual([
+      { householdId: OTHER_A, familyName: 'Wilson family', kind: 'termsBlock' },
+    ]);
+  });
 });
 
 describe('resolveCrossFamilyAlerts — ordinary inbox noise never qualifies', () => {
@@ -232,18 +258,21 @@ describe('resolveCrossFamilyAlerts — ordinary inbox noise never qualifies', ()
     {
       kind: 'queried_week',
       id: 'q1',
+      householdId: OTHER_A,
       weekStart: '2026-08-10',
       queryNote: 'Check Tuesday',
     },
     {
       kind: 'submitted_week',
       id: 's1',
+      householdId: OTHER_A,
       weekStart: '2026-08-10',
       carerDisplayName: 'Test Carer',
     },
     {
       kind: 'pending_pattern',
       id: 'p1',
+      householdId: OTHER_A,
       patternId: 'p1',
       dtstart: '2026-08-20',
     },

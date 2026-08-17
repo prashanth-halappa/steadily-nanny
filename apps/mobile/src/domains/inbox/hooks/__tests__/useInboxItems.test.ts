@@ -5,14 +5,34 @@
  * fail a test. Empty-success (`items: []`, `isError: false`) is the
  * anti-pattern these cases guard against.
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  setSystemTime,
+} from 'bun:test';
 import { waitFor } from '@testing-library/react-native';
+import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
+import { wallClockToUtcIso } from '@/src/lib/wallClock';
 import { renderHookWithProviders } from '@/src/test-utils';
 
 const HOUSEHOLD = {
   id: 'hh-1',
   name: 'Test Household',
   timezone: 'UTC',
+};
+
+// UTC+14 — the world's furthest-ahead zone, deliberately: at a fixed instant
+// late in a UTC day it is already TOMORROW there, so its own "today" reliably
+// disagrees with HOUSEHOLD's (the active one).
+const HOUSEHOLD_B = {
+  id: 'hh-2',
+  name: 'Kiribati Household',
+  timezone: 'Pacific/Kiritimati',
 };
 
 const listPatterns = mock(() => Promise.resolve([] as unknown[]));
@@ -48,6 +68,7 @@ beforeAll(async () => {
     household: HOUSEHOLD,
     householdId: HOUSEHOLD.id,
     households: [HOUSEHOLD],
+    pastHouseholds: [],
     setActiveHouseholdId: mock(),
     isLoading: false,
     isError: false,
@@ -111,6 +132,7 @@ beforeEach(() => {
     household: HOUSEHOLD,
     householdId: HOUSEHOLD.id,
     households: [HOUSEHOLD],
+    pastHouseholds: [],
     setActiveHouseholdId: mock(),
     isLoading: false,
     isError: false,
@@ -132,6 +154,7 @@ describe('useInboxItems isError channel', () => {
       household: null,
       householdId: null,
       households: [],
+      pastHouseholds: [],
       setActiveHouseholdId: mock(),
       isLoading: false,
       isError: true,
@@ -237,5 +260,92 @@ describe('useInboxItems terms proposals (§7.1)', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(getCurrentProposal).not.toHaveBeenCalled();
     expect(result.current.items).toEqual([]);
+  });
+});
+
+// Pattern A: `todayISO`/`from`/`to` were computed once from the ACTIVE
+// household's zone and applied to every household's staleness math and
+// query window — the root cause behind NeedsAttentionCard/InboxScreen's
+// mislabelled dates. Fixed at the source, here.
+describe('useInboxItems — per-household today/window (Pattern A root)', () => {
+  beforeEach(() => {
+    mockUseActiveHousehold.mockImplementation(() => ({
+      household: HOUSEHOLD,
+      householdId: HOUSEHOLD.id,
+      households: [HOUSEHOLD, HOUSEHOLD_B],
+      pastHouseholds: [],
+      setActiveHouseholdId: mock(),
+      isLoading: false,
+      isError: false,
+    }));
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'nanny' as const,
+      status: 'onboarded' as const,
+    }));
+  });
+
+  it("computes stale_submitted_week's daysAgo against the WEEK'S OWN household today, not the active household's", async () => {
+    // 23:00 UTC on the 11th — already the 12th in HOUSEHOLD_B's zone
+    // (UTC+14), still the 11th in HOUSEHOLD's (active, UTC).
+    setSystemTime(new Date('2026-08-11T23:00:00.000Z'));
+
+    listTimesheets.mockImplementation((...args: unknown[]) => {
+      const householdId = args[0] as string;
+      return Promise.resolve(
+        householdId === HOUSEHOLD_B.id
+          ? [
+              {
+                id: 'ts-b',
+                household_id: HOUSEHOLD_B.id,
+                carer_id: 'user-1',
+                week_start: '2026-07-14',
+                status: 'submitted',
+                query_note: null,
+                total_minutes: 2000,
+                // 14 days before the ACTIVE household's today (11 Aug) —
+                // exactly AT the not-yet-stale boundary there — but 15 days
+                // before HOUSEHOLD_B's own today (12 Aug), past it.
+                updated_at: '2026-07-28T12:00:00.000Z',
+              },
+            ]
+          : []
+      );
+    });
+
+    const { result } = renderHookWithProviders(() => useInboxItems());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    setSystemTime();
+    expect(result.current.items).toContainEqual(
+      expect.objectContaining({ kind: 'stale_submitted_week', id: 'ts-b' })
+    );
+  });
+
+  afterAll(() => setSystemTime());
+
+  it('widens the me/shifts glance window past what the active household alone would query (min from, max to)', async () => {
+    setSystemTime(new Date('2026-08-11T23:00:00.000Z'));
+
+    // The OLD (buggy) single-zone bound: exactly what the active household
+    // ALONE would have queried out to.
+    const activeOnlyTo = wallClockToUtcIso(
+      addLocalDays(localDateInZone(HOUSEHOLD.timezone), 21),
+      '00:00',
+      HOUSEHOLD.timezone
+    );
+
+    renderHookWithProviders(() => useInboxItems());
+
+    await waitFor(() => expect(listMeShifts).toHaveBeenCalled());
+    const [, actualTo] = listMeShifts.mock.calls[0] as unknown as [
+      string,
+      string,
+    ];
+
+    // HOUSEHOLD_B is a day ahead, so ITS OWN window ends later than the
+    // active-only bound above — the actual call must reach at least that
+    // far, never clip HOUSEHOLD_B's glance window to the active zone's.
+    expect(Date.parse(actualTo)).toBeGreaterThan(Date.parse(activeOnlyTo));
+    setSystemTime();
   });
 });

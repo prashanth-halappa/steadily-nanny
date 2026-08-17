@@ -16,7 +16,16 @@
  * interpolation, so it is re-mocked here to splice `{{count}}`/`{{when}}`
  * in — the interpolated value reaching the rendered text is under test.
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  setSystemTime,
+} from 'bun:test';
 import { fireEvent, render } from '@testing-library/react-native';
 import { PinnedSlot } from '@/src/domains/today/components/PinnedSlot';
 import { palette } from '~/lib/design-tokens/palette';
@@ -41,6 +50,7 @@ const SECOND_CHANGE_REQUEST: InboxItem = {
 const PENDING_PATTERN: InboxItem = {
   kind: 'pending_pattern',
   id: 'pat-1',
+  householdId: 'hh-1',
   patternId: 'pat-1',
   dtstart: '2026-08-10',
 };
@@ -48,6 +58,7 @@ const PENDING_PATTERN: InboxItem = {
 const SUBMITTED_WEEK: InboxItem = {
   kind: 'submitted_week',
   id: 'ts-1',
+  householdId: 'hh-1',
   weekStart: '2026-08-04',
   carerDisplayName: 'Test Nanny',
 };
@@ -55,8 +66,24 @@ const SUBMITTED_WEEK: InboxItem = {
 const QUERIED_WEEK: InboxItem = {
   kind: 'queried_week',
   id: 'ts-2',
+  householdId: 'hh-1',
   weekStart: '2026-07-28',
   queryNote: null,
+};
+
+/** Belongs to `hh-2` (America/New_York) — active household on this fixture
+ * set is `hh-1` (UTC). Its expiry deadline must read in ITS OWN zone. */
+const PENDING_SHIFT_OTHER_HOUSEHOLD: InboxItem = {
+  kind: 'pending_shift',
+  id: 'shift-ask-1',
+  householdId: 'hh-2',
+  localDate: '2026-08-10',
+  startsAt: '2026-08-11T12:00:00.000Z',
+  endsAt: '2026-08-11T18:00:00.000Z',
+  createdAt: '2026-08-08T00:00:00.000Z',
+  // 2h after the fixed system time below — inside the 12h urgent window,
+  // and its UTC-vs-NY calendar date differs (Aug 11 vs Aug 10).
+  coverAskExpiresAt: '2026-08-11T02:00:00.000Z',
 };
 
 const TERMS_PROPOSAL: InboxItem = {
@@ -155,9 +182,13 @@ beforeAll(async () => {
   }));
   mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
     useActiveHousehold: () => ({
-      household: { timezone: 'UTC' },
+      household: { id: 'hh-1', name: 'Household One', timezone: 'UTC' },
       householdId: 'hh-1',
-      households: [],
+      households: [
+        { id: 'hh-1', name: 'Household One', timezone: 'UTC' },
+        { id: 'hh-2', name: 'Household Two', timezone: 'America/New_York' },
+      ],
+      pastHouseholds: [],
       setActiveHouseholdId: mock(),
       isLoading: false,
       isError: false,
@@ -215,6 +246,28 @@ describe('NeedsAttentionCard', () => {
     const { queryByText } = render(<NeedsAttentionCard />);
 
     expect(queryByText(/deadlineLabel/)).toBeNull();
+  });
+
+  // Pattern A (render-time): the deadline is the whole point of this card —
+  // it must read in the EXPIRING SHIFT's own household zone, never the
+  // household the switcher currently has active.
+  describe('cross-household deadline zone', () => {
+    beforeAll(() => setSystemTime(new Date('2026-08-11T00:00:00.000Z')));
+    afterAll(() => setSystemTime());
+
+    it("formats the deadline in the item's OWN household zone, not the active household's", () => {
+      setItems([PENDING_SHIFT_OTHER_HOUSEHOLD]);
+
+      const { getByText } = render(<NeedsAttentionCard />);
+
+      // UTC would read "11 Aug" / "2:00 AM"; America/New_York (the shift's
+      // OWN household, hh-2) reads the previous evening.
+      expect(
+        getByText(
+          /items\.pendingShift\.deadline\(.*"deadlineDate":"10 Aug".*"deadlineTime":"10:00 PM"/
+        )
+      ).toBeTruthy();
+    });
   });
 
   it('hides the "more" body and the "see all" button for a single item', () => {

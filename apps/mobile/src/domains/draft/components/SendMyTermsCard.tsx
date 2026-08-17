@@ -104,6 +104,17 @@ export function SendMyTermsCard() {
     // is omitted (which we do, deliberately, below), so keeping this in sync
     // is what actually makes the reset visible on the seeded arrangement.
     valid_from: localDateInZone(liveHousehold.timezone),
+    // Pattern A — the ORIGINAL bug this comment used to describe only the
+    // date half of: `arrangementFromProposal` also carries `currency` and
+    // `cancellation_paid_within_hours` straight off the DRAFT's terms
+    // (`proposalTerms.ts` :54/:74), into a sheet that simultaneously
+    // receives the LIVE household's window/timezone below. A US-drafted
+    // $2,500 must not seed a GBP household in dollars, and a cancellation
+    // window she agreed with nobody here must not seed one this family never
+    // set. Both are the household's own values, never the draft's.
+    currency: liveHousehold.currency,
+    cancellation_paid_within_hours:
+      liveHousehold.cancellation_paid_within_hours,
   };
 
   return (

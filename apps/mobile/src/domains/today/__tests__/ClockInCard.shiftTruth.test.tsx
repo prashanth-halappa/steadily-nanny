@@ -399,6 +399,46 @@ describe('ClockInCard — multi-household clock-in confirmation', () => {
     await waitFor(() => expect(getByTestId('today-clock-out')).toBeTruthy());
     expect(queryByText(/clockedIntoHousehold::/)).toBeNull();
   });
+
+  // Pattern A (render-time). She clocked into Jones (B) then switched the
+  // Today switcher to Smith (A) — the running entry does not follow the
+  // switch. The label must name the entry's OWN household, never whichever
+  // one the card happens to be scoped to.
+  it('names the RUNNING ENTRY household, not the active household the card is scoped to', async () => {
+    mockUseActiveHousehold.mockReturnValue({
+      households: [
+        { id: HOUSEHOLD_ID, name: 'Smith Family' },
+        { id: HOUSEHOLD_B_ID, name: 'Jones Family' },
+      ],
+      household: { id: HOUSEHOLD_ID, name: 'Smith Family' },
+      householdId: HOUSEHOLD_ID,
+      pastHouseholds: [],
+      isPastHousehold: false,
+      setActiveHouseholdId: mock(),
+      isLoading: false,
+      isError: false,
+    });
+    getRunningMock.mockImplementation(() =>
+      Promise.resolve({ ...RUNNING_ENTRY, household_id: HOUSEHOLD_B_ID })
+    );
+
+    const { getByTestId, getByText, queryByText } = renderWithProviders(
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+        householdName="Smith Family"
+      />
+    );
+
+    await waitFor(() => expect(getByTestId('today-clock-out')).toBeTruthy());
+    expect(
+      getByText(/clockedIntoHousehold::\{"household":"Jones Family"\}/)
+    ).toBeTruthy();
+    expect(
+      queryByText(/clockedIntoHousehold::\{"household":"Smith Family"\}/)
+    ).toBeNull();
+  });
 });
 
 describe('ClockInCard — clocked-out receipt', () => {

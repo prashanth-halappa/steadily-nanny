@@ -30,6 +30,7 @@ import type { InboxTermsAckInput } from '@/src/domains/inbox/utils/buildInboxIte
 import { buildInboxItems } from '@/src/domains/inbox/utils/buildInboxItems';
 import { isParentEditorRole, SETUP_ROLES } from '@/src/domains/setup/types';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
+import { useHouseholdLookup } from '@/src/hooks/queries/useHouseholdById';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useMePendingChangeRequests } from '@/src/hooks/queries/useMePendingChangeRequests';
 import { useMeShifts } from '@/src/hooks/queries/useMeShifts';
@@ -47,13 +48,51 @@ export function useInboxItems() {
   const isPastMember = onboarding.isPastMember;
   const active = useActiveHousehold();
   const households = active.households;
+  const { timeZoneFor } = useHouseholdLookup();
+  // Kept for the single-zone `todayISO` fallback below and the "no
+  // households yet" edge case — everything else resolves PER HOUSEHOLD
+  // (Pattern A: one household's local midnight is not another's).
   const timeZone = active.household?.timezone ?? 'UTC';
-
   const today = localDateInZone(timeZone);
+
+  const todayISOFor = useCallback(
+    (householdId: string) => localDateInZone(timeZoneFor(householdId)),
+    [timeZoneFor]
+  );
+
   // Glance window: recent + near-future shifts that may still carry a
-  // pending change request awaiting the other side's response.
-  const from = wallClockToUtcIso(addLocalDays(today, -7), '00:00', timeZone);
-  const to = wallClockToUtcIso(addLocalDays(today, 21), '00:00', timeZone);
+  // pending change request awaiting the other side's response — widened to
+  // the UNION of every household's own window (earliest `from`, latest
+  // `to`), so a household in a zone ahead/behind the active one never has
+  // its own glance window clipped to the active household's.
+  const { from, to } = useMemo(() => {
+    if (households.length === 0) {
+      return {
+        from: wallClockToUtcIso(addLocalDays(today, -7), '00:00', timeZone),
+        to: wallClockToUtcIso(addLocalDays(today, 21), '00:00', timeZone),
+      };
+    }
+    const windows = households.map(h => {
+      const hTimeZone = timeZoneFor(h.id);
+      const hToday = localDateInZone(hTimeZone);
+      return {
+        from: wallClockToUtcIso(addLocalDays(hToday, -7), '00:00', hTimeZone),
+        to: wallClockToUtcIso(addLocalDays(hToday, 21), '00:00', hTimeZone),
+      };
+    });
+    // ISO 8601 UTC timestamps ('...Z') sort lexically the same as
+    // chronologically, so a plain string min/max is exact here.
+    return {
+      from: windows.reduce(
+        (min, w) => (w.from < min ? w.from : min),
+        windows[0]?.from ?? ''
+      ),
+      to: windows.reduce(
+        (max, w) => (w.to > max ? w.to : max),
+        windows[0]?.to ?? ''
+      ),
+    };
+  }, [households, timeZoneFor, today, timeZone]);
 
   const baseEnabled = !!session && isInitialized && households.length > 0;
 
@@ -282,6 +321,7 @@ export function useInboxItems() {
         role,
         currentUserId,
         todayISO: today,
+        todayISOFor,
         isPastMember,
         changeRequests,
         patterns,
@@ -295,6 +335,7 @@ export function useInboxItems() {
       role,
       currentUserId,
       today,
+      todayISOFor,
       isPastMember,
       changeRequests,
       patterns,
