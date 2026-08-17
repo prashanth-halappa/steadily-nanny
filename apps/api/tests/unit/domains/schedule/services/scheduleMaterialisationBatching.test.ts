@@ -60,6 +60,7 @@ function twoDaysAWeek(weeks: number): ExpandedOccurrence[] {
         localDate,
         weekday,
         startsAt: `${localDate}T07:00:00.000Z`,
+        startTime: '07:00:00',
         endsAt: `${localDate}T16:00:00.000Z`,
         children: [{ childId: 'child-1', startsAt: null, endsAt: null }],
       });
@@ -221,7 +222,7 @@ describe('ScheduleMaterialisationService — round trips do not grow with the ho
         source_pattern_id: 'pattern-1',
         origin: 'system_generated',
         note: 'The usual week',
-        ical_uid: `pattern-ical-uid::${occ.localDate}`,
+        ical_uid: `pattern-ical-uid::${occ.localDate}::${occ.startTime}`,
       }))
     );
 
@@ -269,7 +270,7 @@ describe('ScheduleMaterialisationService — round trips do not grow with the ho
           source_pattern_id: 'pattern-1',
           origin: 'system_generated',
           note: null,
-          ical_uid: `pattern-ical-uid::${occ.localDate}`,
+          ical_uid: `pattern-ical-uid::${occ.localDate}::${occ.startTime}`,
         },
         `existing-${index}`
       )
@@ -314,7 +315,7 @@ describe('ScheduleMaterialisationService — round trips do not grow with the ho
           source_pattern_id: 'pattern-1',
           origin: 'system_generated',
           note: null,
-          ical_uid: `pattern-ical-uid::${occ.localDate}`,
+          ical_uid: `pattern-ical-uid::${occ.localDate}::${occ.startTime}`,
         },
         `existing-${index}`
       )
@@ -464,6 +465,7 @@ describe('ScheduleMaterialisationService — times-moved compares instants, not 
           localDate: '2026-06-02',
           weekday: 2,
           startsAt: '2026-06-02T07:00:00.000Z',
+          startTime: '07:00:00',
           endsAt: '2026-06-02T16:00:00.000Z',
           children: [],
         },
@@ -499,6 +501,7 @@ describe('ScheduleMaterialisationService — times-moved compares instants, not 
           localDate: '2026-06-02',
           weekday: 2,
           startsAt: '2026-06-02T08:00:00.000Z',
+          startTime: '08:00:00',
           endsAt: '2026-06-02T16:00:00.000Z',
           children: [],
         },
@@ -642,6 +645,7 @@ describe('ScheduleMaterialisationService — a no-op re-run does not rewrite unc
     localDate: '2026-06-02',
     weekday: 2,
     startsAt: '2026-06-02T07:00:00.000Z',
+    startTime: '07:00:00',
     endsAt: '2026-06-02T16:00:00.000Z',
     children: [],
   };
@@ -724,6 +728,7 @@ describe('ScheduleMaterialisationService — a no-op re-run does not rewrite unc
       localDate: '2026-06-04',
       weekday: 4,
       startsAt: '2026-06-04T07:00:00.000Z',
+      startTime: '07:00:00',
       endsAt: '2026-06-04T16:00:00.000Z',
       children: [],
     };

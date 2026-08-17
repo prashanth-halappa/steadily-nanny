@@ -315,4 +315,39 @@ describe('expandRecurrence — DST case table (Europe/London)', () => {
       '2026-02-05',
     ]);
   });
+
+  it('multiple time blocks on the same weekday produce separate occurrences with verbatim wall-clock startTime', () => {
+    const dtstart = '2026-08-17'; // Monday
+    const horizon = '2026-08-30'; // 2-week horizon
+
+    const occurrences = expandRecurrence(
+      {
+        rrule: 'FREQ=WEEKLY;INTERVAL=1',
+        dtstart,
+        until: null,
+        exdates: [],
+        pauseRanges: [],
+        timezone: LONDON,
+        days: [
+          { weekday: 1, startTime: '07:00:00', endTime: '13:00:00' },
+          { weekday: 1, startTime: '15:00:00', endTime: '17:00:00' },
+        ],
+      },
+      horizon
+    );
+
+    expect(occurrences).toHaveLength(4);
+
+    // week 1
+    expect(occurrences[0]?.localDate).toBe('2026-08-17');
+    expect(occurrences[0]?.startTime).toBe('07:00:00');
+    expect(occurrences[1]?.localDate).toBe('2026-08-17');
+    expect(occurrences[1]?.startTime).toBe('15:00:00');
+
+    // week 2
+    expect(occurrences[2]?.localDate).toBe('2026-08-24');
+    expect(occurrences[2]?.startTime).toBe('07:00:00');
+    expect(occurrences[3]?.localDate).toBe('2026-08-24');
+    expect(occurrences[3]?.startTime).toBe('15:00:00');
+  });
 });

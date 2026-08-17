@@ -276,16 +276,31 @@ describe('schedulePatternApi.replaceDays', () => {
     expect(apiClient.put).not.toHaveBeenCalled();
   });
 
-  it('rejects two days that repeat the same weekday', async () => {
+  it('rejects two days that repeat the same (weekday, start_time)', async () => {
     await expect(
       schedulePatternApi.replaceDays(patternId, {
         days: [
           { weekday: 3, start_time: '08:00', end_time: '13:00' },
-          { weekday: 3, start_time: '14:00', end_time: '17:00' },
+          { weekday: 3, start_time: '08:00', end_time: '17:00' },
         ],
       })
     ).rejects.toThrow();
     expect(apiClient.put).not.toHaveBeenCalled();
+  });
+
+  it('accepts two days that repeat the same weekday with different start_times', async () => {
+    apiClient.put.mockResolvedValue({
+      data: { data: { schedule_pattern: validPatternWithDays } },
+    });
+
+    await schedulePatternApi.replaceDays(patternId, {
+      days: [
+        { weekday: 3, start_time: '08:00', end_time: '13:00' },
+        { weekday: 3, start_time: '14:00', end_time: '17:00' },
+      ],
+    });
+
+    expect(apiClient.put).toHaveBeenCalled();
   });
 });
 

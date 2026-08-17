@@ -115,8 +115,12 @@ const ReplaceSchedulePatternDaysInputSchema = z
   })
   .refine(
     data =>
-      new Set(data.days.map(day => day.weekday)).size === data.days.length,
-    { message: 'each weekday may appear at most once', path: ['days'] }
+      new Set(data.days.map(day => `${day.weekday}|${day.start_time}`)).size ===
+      data.days.length,
+    {
+      message: 'each (weekday, start_time) may appear at most once',
+      path: ['days'],
+    }
   );
 export type ReplaceDayChildInput = z.infer<typeof ReplaceDayChildInputSchema>;
 export type ReplaceDayInput = z.infer<typeof ReplaceDayInputSchema>;

@@ -154,19 +154,38 @@ Migration 088 carries DDL, and `shiftRepository.ts` writes
 
 Also apply `077` before deploying the payment service — it calls that RPC.
 
-**Rehearsal evidence (Phase 5, 2026-08-12):** the full `074→096` chain applied
-clean, in order, onto a database rebuilt to prod's exact `073` state and
-seeded with prod-shaped rows; `run_integrity_checks()` came back clean; the
-frozen snapshot was byte-identical afterwards (md5 unchanged) and
-`week_starts_on` stayed `1`.
+### Migration 101 — multi-block pattern days — APPLIED 2026-08-17
 
-**Known consequence to sequence:** migration 074 adds
-`households.currency not null default 'USD'`. Existing GBP-era households get
-a **USD household label while their arrangements and frozen timesheets remain
-GBP**. 074's own header acknowledges this. Under D-9's pre-launch wipe it is
-moot — but only if the wipe actually precedes real use. If the wipe is ever
-skipped, backfill `households.currency` from the household's own arrangements
-before anyone reads it.
+`101_schedule_pattern_multi_block_days.sql` dropped
+`schedule_pattern_days_pattern_weekday_idx` (unique on `pattern_id, weekday`)
+and replaced it with a unique index on `(pattern_id, weekday, start_time)`, so
+a "usual week" can hold two blocks on one day (Mon 07:00-13:00 **and**
+15:00-17:00).
+
+**Applied to prod 2026-08-17**, recorded as `20260817180427`, via the Supabase
+MCP. Verified after applying: the old index is gone, the new one exists with
+the three-column definition.
+
+**The DB is now ahead of the deployed API, which is the safe direction.** An
+old server against the new schema simply never writes a second block — its Zod
+rule (`ReplaceSchedulePatternDaysSchema`) is *stricter* than the index. The
+dangerous pairing is the reverse: deploying the new API against the OLD schema
+would 500 on the old unique index the moment a parent sends a two-block week.
+Since the migration is already in, that window is closed — **just don't roll
+the database back under a deployed new API.**
+
+**Rollback status — safe today, lossy later.** At apply time
+`schedule_pattern_days` held **zero rows** (0 patterns, 0 recurring shifts), so
+restoring the old unique index right now costs nothing. That stops being true
+the moment the first two-block week is sent: from then on, recreating
+`(pattern_id, weekday)` as UNIQUE fails with a duplicate-key error unless you
+first delete every block after the earliest on each weekday — which cascades
+away its `schedule_pattern_day_children` rows, and strands the shifts already
+materialised from the deleted blocks (the next `scheduleHorizonJob` run sees
+them as orphans and cancels/deletes them: a second, separate blast radius).
+
+**So the real rollback remains "revert the app code and leave the index
+alone."** 101's own header carries the full two-step SQL and the same warning.
 
 ---
 

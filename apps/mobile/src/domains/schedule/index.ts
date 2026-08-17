@@ -15,4 +15,5 @@ export { SchedulePendingScreen } from './components/SchedulePendingScreen';
 export { ScheduleRespondScreen } from './components/ScheduleRespondScreen';
 export { ScheduleShiftsScreen } from './components/ScheduleShiftsScreen';
 export { ThisWeeksShiftsCard } from './components/ThisWeeksShiftsCard';
+export { WeekBlocksEditor } from './components/WeekBlocksEditor';
 export { WeeklyHoursNotSetCard } from './components/WeeklyHoursNotSetCard';

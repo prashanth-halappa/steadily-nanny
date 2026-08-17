@@ -443,6 +443,63 @@ describe('SchedulePatternCommandService.replaceDays', () => {
     ]);
   });
 
+  it('correlates returned days to inputs by weekday and start_time, not index', async () => {
+    const dayRepo = makeDayRepo({
+      replaceForPattern: mock(async () => [
+        // Mock returns them REVERSED vs the input array
+        {
+          id: 'd-1500',
+          pattern_id: 'p1',
+          weekday: 1,
+          start_time: '15:00:00',
+          end_time: '17:00:00',
+        },
+        {
+          id: 'd-0700',
+          pattern_id: 'p1',
+          weekday: 1,
+          start_time: '07:00:00',
+          end_time: '13:00:00',
+        },
+      ]),
+    });
+    const dayChildRepo = makeDayChildRepo();
+    const svc = new SchedulePatternCommandService(
+      makePatternRepo(),
+      dayRepo,
+      dayChildRepo,
+      makeMemberRepo('owner'),
+      makeHouseholdRepo(),
+      makeQueries(),
+      makeMaterialisation(),
+      makeChildren()
+    );
+
+    await svc.replaceDays('u1', 'p1', {
+      days: [
+        {
+          weekday: 1,
+          start_time: '07:00',
+          end_time: '13:00',
+          children: [{ child_id: 'child-A' }],
+        },
+        {
+          weekday: 1,
+          start_time: '15:00',
+          end_time: '17:00',
+          children: [{ child_id: 'child-B' }],
+        },
+      ],
+    });
+
+    expect(dayChildRepo.insertForDay).toHaveBeenCalledWith('d-0700', [
+      { child_id: 'child-A', start_time: undefined, end_time: undefined },
+    ]);
+    expect(dayChildRepo.insertForDay).toHaveBeenCalledWith('d-1500', [
+      { child_id: 'child-B', start_time: undefined, end_time: undefined },
+    ]);
+  });
+
   // D14 — SECURITY: child_id was previously inserted verbatim from the
   // client with no check it belongs to the pattern's own household. The
   // sharpest possible violation of the cross-household anonymity promise:

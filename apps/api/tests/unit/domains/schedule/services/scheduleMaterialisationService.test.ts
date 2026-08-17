@@ -36,6 +36,7 @@ function occurrence(
   return {
     localDate: '2026-06-04',
     weekday: 4,
+    startTime: '07:00:00',
     startsAt: '2026-06-04T07:00:00.000Z',
     endsAt: '2026-06-04T16:00:00.000Z',
     children: [],
@@ -63,7 +64,7 @@ function baseShift(overrides: Partial<Shift> = {}): Shift {
     cancelled_by: null,
     cancellation_paid: false,
     cancellation_message: null,
-    ical_uid: 'pattern-ical-uid::2026-06-04',
+    ical_uid: 'pattern-ical-uid::2026-06-04::07:00:00',
     sequence: 0,
     created_by: null,
     created_at: '2026-01-01T00:00:00.000Z',
@@ -136,7 +137,7 @@ describe('ScheduleMaterialisationService — new occurrence', () => {
         status: 'confirmed',
         origin: 'system_generated',
         source_pattern_id: 'pattern-1',
-        ical_uid: 'pattern-ical-uid::2026-06-04',
+        ical_uid: 'pattern-ical-uid::2026-06-04::07:00:00',
         note: 'The usual week',
       }),
     ]);
@@ -733,5 +734,318 @@ describe('ScheduleMaterialisationService — voided entries do not freeze shifts
       'shift-voided-only',
       expect.objectContaining({ starts_at: '2026-06-04T09:00:00.000Z' })
     );
+  });
+});
+
+describe('ScheduleMaterialisationService — multiple blocks per day (TDD)', () => {
+  it('a) materialises two shifts on the same local_date with distinct ical_uids', async () => {
+    const repo = makeRepo();
+    const svc = new ScheduleMaterialisationService(
+      repo,
+      makeTimeEntryRepo(),
+      makeEventRepo()
+    );
+
+    const occ1 = occurrence({
+      localDate: '2026-06-01',
+      startTime: '07:00:00',
+      startsAt: '2026-06-01T07:00:00.000Z',
+      endsAt: '2026-06-01T13:00:00.000Z',
+    });
+    const occ2 = occurrence({
+      localDate: '2026-06-01',
+      startTime: '15:00:00',
+      startsAt: '2026-06-01T15:00:00.000Z',
+      endsAt: '2026-06-01T17:00:00.000Z',
+    });
+
+    const result = await svc.materialise(pattern, [occ1, occ2], NOW);
+
+    expect(result.created).toBe(2);
+    expect(repo.createMany).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          starts_at: occ1.startsAt,
+          ical_uid: 'pattern-ical-uid::2026-06-01::07:00:00',
+        }),
+        expect.objectContaining({
+          starts_at: occ2.startsAt,
+          ical_uid: 'pattern-ical-uid::2026-06-01::15:00:00',
+        }),
+      ])
+    );
+  });
+
+  it('b) is a no-op when running materialise a second time with the same input', async () => {
+    const shift1 = baseShift({
+      id: 's1',
+      local_date: '2026-06-01',
+      starts_at: '2026-06-01T07:00:00.000Z',
+      ends_at: '2026-06-01T13:00:00.000Z',
+      ical_uid: 'pattern-ical-uid::2026-06-01::07:00:00',
+      note: 'The usual week',
+    });
+    const shift2 = baseShift({
+      id: 's2',
+      local_date: '2026-06-01',
+      starts_at: '2026-06-01T15:00:00.000Z',
+      ends_at: '2026-06-01T17:00:00.000Z',
+      ical_uid: 'pattern-ical-uid::2026-06-01::15:00:00',
+      note: 'The usual week',
+    });
+
+    const repo = makeRepo({
+      findActiveByPattern: mock(async () => [shift1, shift2]),
+    });
+    const svc = new ScheduleMaterialisationService(
+      repo,
+      makeTimeEntryRepo(),
+      makeEventRepo()
+    );
+
+    const occ1 = occurrence({
+      localDate: '2026-06-01',
+      startTime: '07:00:00',
+      startsAt: '2026-06-01T07:00:00.000Z',
+      endsAt: '2026-06-01T13:00:00.000Z',
+    });
+    const occ2 = occurrence({
+      localDate: '2026-06-01',
+      startTime: '15:00:00',
+      startsAt: '2026-06-01T15:00:00.000Z',
+      endsAt: '2026-06-01T17:00:00.000Z',
+    });
+
+    const result = await svc.materialise(pattern, [occ1, occ2], NOW);
+
+    expect(result.created).toBe(0);
+    expect(result.updated).toBe(0);
+    expect(result.deleted).toBe(0);
+    expect(result.cancelled).toBe(0);
+  });
+
+  it('c) orphans exactly the removed block and leaves the other untouched', async () => {
+    const shift1 = baseShift({
+      id: 's1',
+      local_date: '2026-06-01',
+      starts_at: '2026-06-01T07:00:00.000Z',
+      ends_at: '2026-06-01T13:00:00.000Z',
+      ical_uid: 'pattern-ical-uid::2026-06-01::07:00:00',
+      note: 'The usual week',
+    });
+    const shift2 = baseShift({
+      id: 's2',
+      local_date: '2026-06-01',
+      starts_at: '2026-06-01T15:00:00.000Z',
+      ends_at: '2026-06-01T17:00:00.000Z',
+      ical_uid: 'pattern-ical-uid::2026-06-01::15:00:00',
+      note: 'The usual week',
+    });
+
+    const repo = makeRepo({
+      findActiveByPattern: mock(async () => [shift1, shift2]),
+    });
+    const svc = new ScheduleMaterialisationService(
+      repo,
+      makeTimeEntryRepo(),
+      makeEventRepo()
+    );
+
+    // Only occ1 is produced now (the 15:00-17:00 block is removed from pattern)
+    const occ1 = occurrence({
+      localDate: '2026-06-01',
+      startTime: '07:00:00',
+      startsAt: '2026-06-01T07:00:00.000Z',
+      endsAt: '2026-06-01T13:00:00.000Z',
+    });
+
+    const result = await svc.materialise(pattern, [occ1], NOW);
+
+    // s2 should be deleted since it's a future untouched shift
+    expect(repo.deleteMany).toHaveBeenCalledWith(['s2']);
+    expect(repo.update).not.toHaveBeenCalledWith('s1', expect.anything());
+    expect(result.deleted).toBe(1);
+    expect(result.updated).toBe(0);
+  });
+
+  it('d) pairs a shift whose time moved within the same day via pass 2, not duplicating or orphaning it', async () => {
+    // shift was moved by a human to start at 08:00 instead of 07:00.
+    const shift1 = baseShift({
+      id: 's1',
+      local_date: '2026-06-01',
+      starts_at: '2026-06-01T08:00:00.000Z',
+      ends_at: '2026-06-01T14:00:00.000Z',
+      ical_uid: 'pattern-ical-uid::2026-06-01::07:00:00',
+      origin: 'parent_proposed',
+    });
+    const repo = makeRepo({ findActiveByPattern: mock(async () => [shift1]) });
+    const svc = new ScheduleMaterialisationService(
+      repo,
+      makeTimeEntryRepo(),
+      makeEventRepo()
+    );
+
+    // The occurrence is still produced as 07:00
+    const occ1 = occurrence({
+      localDate: '2026-06-01',
+      startTime: '07:00:00',
+      startsAt: '2026-06-01T07:00:00.000Z',
+      endsAt: '2026-06-01T13:00:00.000Z',
+    });
+
+    const result = await svc.materialise(pattern, [occ1], NOW);
+
+    expect(result.created).toBe(0);
+    expect(result.deleted).toBe(0);
+    // Because it's manually touched, it generates a conflict warning rather than overwriting
+    expect(result.conflicts).toHaveLength(1);
+    expect(repo.createMany).not.toHaveBeenCalled();
+    expect(repo.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('e) does not recreate a shift carrying a legacy 2-part ical_uid on a date the pattern still produces', async () => {
+    const legacyShift = baseShift({
+      id: 's-legacy',
+      local_date: '2026-06-01',
+      starts_at: '2026-06-01T07:00:00.000Z',
+      ends_at: '2026-06-01T13:00:00.000Z',
+      ical_uid: 'pattern-ical-uid::2026-06-01',
+    });
+    const repo = makeRepo({
+      findActiveByPattern: mock(async () => [legacyShift]),
+    });
+    const svc = new ScheduleMaterialisationService(
+      repo,
+      makeTimeEntryRepo(),
+      makeEventRepo()
+    );
+
+    const occ1 = occurrence({
+      localDate: '2026-06-01',
+      startTime: '07:00:00',
+      startsAt: '2026-06-01T07:00:00.000Z',
+      endsAt: '2026-06-01T13:00:00.000Z',
+    });
+
+    const result = await svc.materialise(pattern, [occ1], NOW);
+
+    expect(result.created).toBe(0); // Should pair with legacyShift, not create a new one.
+    expect(repo.createMany).not.toHaveBeenCalled();
+  });
+
+  it('f) ensures a completed shift blocks re-creation and is not orphaned', async () => {
+    const completedShift = baseShift({
+      id: 's-comp',
+      local_date: '2026-06-01',
+      starts_at: '2026-06-01T07:00:00.000Z',
+      ends_at: '2026-06-01T13:00:00.000Z',
+      ical_uid: 'pattern-ical-uid::2026-06-01::07:00:00',
+      status: 'completed',
+    });
+    const repo = makeRepo({
+      findActiveByPattern: mock(async () => [completedShift]),
+    });
+    const svc = new ScheduleMaterialisationService(
+      repo,
+      makeTimeEntryRepo(),
+      makeEventRepo()
+    );
+
+    const occ1 = occurrence({
+      localDate: '2026-06-01',
+      startTime: '07:00:00',
+      startsAt: '2026-06-01T07:00:00.000Z',
+      endsAt: '2026-06-01T13:00:00.000Z',
+    });
+
+    const result = await svc.materialise(pattern, [occ1], NOW);
+
+    expect(result.created).toBe(0);
+    expect(result.deleted).toBe(0);
+    expect(result.cancelled).toBe(0);
+    expect(repo.createMany).not.toHaveBeenCalled();
+    expect(repo.deleteMany).not.toHaveBeenCalled();
+    expect(repo.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('g) adds a second block to a pattern whose existing shift carries a LEGACY 2-part uid', async () => {
+    // 07:00 shift was accepted before the multi-block feature, so it carries the legacy 2-part uid.
+    const legacyShift = baseShift({
+      id: 's-legacy',
+      local_date: '2026-06-01',
+      starts_at: '2026-06-01T07:00:00.000Z',
+      ends_at: '2026-06-01T13:00:00.000Z',
+      ical_uid: 'pattern-ical-uid::2026-06-01',
+    });
+    const repo = makeRepo({
+      findActiveByPattern: mock(async () => [legacyShift]),
+    });
+    const svc = new ScheduleMaterialisationService(
+      repo,
+      makeTimeEntryRepo(),
+      makeEventRepo()
+    );
+
+    // Pattern now expands to TWO occurrences on Monday
+    const occ1 = occurrence({
+      localDate: '2026-06-01',
+      startTime: '07:00:00',
+      startsAt: '2026-06-01T07:00:00.000Z',
+      endsAt: '2026-06-01T13:00:00.000Z',
+    });
+    const occ2 = occurrence({
+      localDate: '2026-06-01',
+      startTime: '15:00:00',
+      startsAt: '2026-06-01T15:00:00.000Z',
+      endsAt: '2026-06-01T17:00:00.000Z',
+    });
+
+    const result = await svc.materialise(pattern, [occ1, occ2], NOW);
+
+    // The 15:00 block must be created. The 07:00 block must pair.
+    expect(result.created).toBe(1);
+    expect(repo.createMany).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          starts_at: occ2.startsAt,
+          ical_uid: 'pattern-ical-uid::2026-06-01::15:00:00',
+        }),
+      ])
+    );
+  });
+
+  it('h) ensures a legacy-uid shift moved to a new local_date still prevents re-creation on its original date', async () => {
+    // A legacy shift was originally on 2026-06-01. A human moved it to 2026-06-02.
+    // It keeps its original ical_uid.
+    const movedLegacyShift = baseShift({
+      id: 's-moved-legacy',
+      local_date: '2026-06-02',
+      starts_at: '2026-06-02T07:00:00.000Z',
+      ends_at: '2026-06-02T13:00:00.000Z',
+      ical_uid: 'pattern-ical-uid::2026-06-01',
+    });
+    const repo = makeRepo({
+      findActiveByPattern: mock(async () => [movedLegacyShift]),
+    });
+    const svc = new ScheduleMaterialisationService(
+      repo,
+      makeTimeEntryRepo(),
+      makeEventRepo()
+    );
+
+    // The pattern still produces 2026-06-01
+    const occ1 = occurrence({
+      localDate: '2026-06-01',
+      startTime: '07:00:00',
+      startsAt: '2026-06-01T07:00:00.000Z',
+      endsAt: '2026-06-01T13:00:00.000Z',
+    });
+
+    const result = await svc.materialise(pattern, [occ1], NOW);
+
+    // Because 'pattern-ical-uid::2026-06-01' is still in the DB, it must NOT re-create occ1,
+    // which would crash the DB constraint.
+    expect(result.created).toBe(0);
+    expect(repo.createMany).not.toHaveBeenCalled();
   });
 });

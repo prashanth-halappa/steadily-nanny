@@ -13,6 +13,12 @@ beforeAll(async () => {
 });
 
 describe('SchedulePatternPreview', () => {
+  it('keeps all blocks per weekday (no .find) and sorts them by display order then start_time', () => {
+    expect(source).not.toContain('.find(d => d.weekday ===');
+    expect(source).toContain('.sort(');
+    expect(source).toContain('localeCompare');
+  });
+
   it('renders until, exdates, and pause_ranges when provided', () => {
     expect(source).toContain('until');
     expect(source).toContain('exdates');

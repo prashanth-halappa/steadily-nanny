@@ -81,15 +81,11 @@ import { View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
-import { ChildChip } from '@/src/components/ui/child-chip';
 import { EmptyState } from '@/src/components/ui/empty-state';
-import { FieldLabel } from '@/src/components/ui/field-label';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
-import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
 import { isEndAfterStart } from '@/src/components/ui/time-range-picker.utils';
-import { Body, Caption } from '@/src/components/ui/typography';
+import { Body } from '@/src/components/ui/typography';
 import { WeekStrip } from '@/src/components/ui/week-strip';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
@@ -111,13 +107,16 @@ import { getWeekdayOrder } from '@/src/lib/weekdayOrder';
 import {
   buildWeeklyRrule,
   calculateWeekTotalHours,
+  type DayBlock,
+  hasOverlappingBlocks,
   hydrateDraftPattern,
   hydrateFromCommitments,
-  isOutsideAvailability,
   sendScheduleWeek,
+  timeToMinutes,
   todayIsoDate,
   toggleWeekday,
 } from '../utils';
+import { WeekBlocksEditor } from './WeekBlocksEditor';
 
 type Step =
   | 'loading'
@@ -131,11 +130,6 @@ type Step =
 
 const DEFAULT_START = '09:00';
 const DEFAULT_END = '17:00';
-
-interface DayTime {
-  start: string;
-  end: string;
-}
 
 interface ScheduleBuildScreenProps {
   /** An existing draft pattern's id, e.g. from the build route's `?patternId=` search param — see this component's own header comment (DRAFT RESUME). */
@@ -172,8 +166,7 @@ export function ScheduleBuildScreen({
   // warn about, rather than popping in after the picker renders.
   const carerAvailability = useAvailabilityForCarer(selectedCarerId);
   const [selectedDays, setSelectedDays] = useState<number[]>([]);
-  const [dayTimes, setDayTimes] = useState<Record<number, DayTime>>({});
-  const [dayChildren, setDayChildren] = useState<Record<number, string[]>>({});
+  const [dayBlocks, setDayBlocks] = useState<Record<number, DayBlock[]>>({});
   const [intervalWeeks, setIntervalWeeks] = useState<1 | 2>(1);
   const [step, setStep] = useState<Step>('loading');
   // Seeded from `resumePatternId` (never left undefined when resuming) so
@@ -220,8 +213,7 @@ export function ScheduleBuildScreen({
     if (hydrated.carerId) setSelectedCarerId(hydrated.carerId);
     if (hydrated.selectedDays.length > 0) {
       setSelectedDays(hydrated.selectedDays);
-      setDayTimes(prev => ({ ...prev, ...hydrated.dayTimes }));
-      setDayChildren(prev => ({ ...prev, ...hydrated.dayChildren }));
+      setDayBlocks(prev => ({ ...prev, ...hydrated.dayBlocks }));
     }
     setIntervalWeeks(hydrated.intervalWeeks);
     setStep('loading');
@@ -262,16 +254,19 @@ export function ScheduleBuildScreen({
     const isUsable =
       seeded.selectedDays.length > 0 &&
       seeded.selectedDays.every(day => {
-        const times = seeded.dayTimes[day];
-        return times !== undefined && isEndAfterStart(times.start, times.end);
+        const blocks = seeded.dayBlocks[day];
+        return (
+          blocks !== undefined &&
+          blocks.length > 0 &&
+          blocks.every(b => isEndAfterStart(b.start, b.end))
+        );
       });
     if (!isUsable) return;
     setSelectedDays(seeded.selectedDays);
     // Seeded values go UNDER `prev`, so anything already set wins — and the
     // default-fill effect below still only writes days with no entry, so a
     // pre-seed composes with it rather than fighting it.
-    setDayTimes(prev => ({ ...seeded.dayTimes, ...prev }));
-    setDayChildren(prev => ({ ...seeded.dayChildren, ...prev }));
+    setDayBlocks(prev => ({ ...seeded.dayBlocks, ...prev }));
     setPrefilledFromCareHours(true);
   }, [
     hasSeededCareHours,
@@ -325,17 +320,18 @@ export function ScheduleBuildScreen({
   // so the two compose: seeded days keep the parent's stated hours, days they
   // add by hand afterwards still get the plain defaults.
   useEffect(() => {
-    setDayTimes(prev => {
+    setDayBlocks(prev => {
       const next = { ...prev };
       for (const day of selectedDays) {
-        if (!next[day]) next[day] = { start: DEFAULT_START, end: DEFAULT_END };
-      }
-      return next;
-    });
-    setDayChildren(prev => {
-      const next = { ...prev };
-      for (const day of selectedDays) {
-        if (!next[day]) next[day] = (children.data ?? []).map(c => c.id);
+        if (!next[day]) {
+          next[day] = [
+            {
+              start: DEFAULT_START,
+              end: DEFAULT_END,
+              children: (children.data ?? []).map(c => c.id),
+            },
+          ];
+        }
       }
       return next;
     });
@@ -346,31 +342,30 @@ export function ScheduleBuildScreen({
     setSelectedDays(prev => toggleWeekday(prev, day));
   };
 
-  const toggleChildForDay = (day: number, childId: string) => {
-    setDayChildren(prev => {
-      const current = prev[day] ?? [];
-      const nextForDay = current.includes(childId)
-        ? current.filter(id => id !== childId)
-        : [...current, childId];
-      return { ...prev, [day]: nextForDay };
-    });
-  };
-
   const selectedCarer = (carers.data ?? []).find(
     c => c.user_id === selectedCarerId
   );
 
   const totalHours = calculateWeekTotalHours(
-    selectedDays.map(day => ({
-      start_time: dayTimes[day]?.start ?? DEFAULT_START,
-      end_time: dayTimes[day]?.end ?? DEFAULT_END,
-    }))
+    selectedDays.flatMap(day =>
+      (dayBlocks[day] ?? []).map(b => ({
+        start_time: b.start,
+        end_time: b.end,
+      }))
+    )
   );
 
-  const allDaysValid = selectedDays.every(day => {
-    const times = dayTimes[day];
-    return times !== undefined && isEndAfterStart(times.start, times.end);
-  });
+  const allDaysValid =
+    selectedDays.length > 0 &&
+    selectedDays.every(day => {
+      const blocks = dayBlocks[day];
+      return (
+        blocks !== undefined &&
+        blocks.length > 0 &&
+        blocks.every(b => isEndAfterStart(b.start, b.end)) &&
+        !hasOverlappingBlocks(blocks)
+      );
+    });
 
   // A missing display name falls back to a neutral, translated placeholder
   // — NEVER a UI step title (that was the bug: an un-namespaced `t()` call
@@ -409,14 +404,22 @@ export function ScheduleBuildScreen({
         carerId: selectedCarerId,
         rrule: buildWeeklyRrule(selectedDays, intervalWeeks),
         dtstart: todayIsoDate(),
-        days: selectedDays.map(day => ({
-          weekday: day,
-          start_time: dayTimes[day]?.start ?? DEFAULT_START,
-          end_time: dayTimes[day]?.end ?? DEFAULT_END,
-          children: (dayChildren[day] ?? []).map(childId => ({
-            child_id: childId,
-          })),
-        })),
+        days: selectedDays
+          .flatMap(day =>
+            (dayBlocks[day] ?? []).map(b => ({
+              weekday: day,
+              start_time: b.start,
+              end_time: b.end,
+              children: b.children.map(child_id => ({ child_id })),
+            }))
+          )
+          .sort((a, b) => {
+            if (a.weekday !== b.weekday) return a.weekday - b.weekday;
+            return (
+              (timeToMinutes(a.start_time) ?? 0) -
+              (timeToMinutes(b.start_time) ?? 0)
+            );
+          }),
         createPattern: input => createPattern.mutateAsync(input),
         replaceDays: args => replaceDays.mutateAsync(args),
         sendPattern: args => sendPattern.mutateAsync(args),
@@ -607,66 +610,19 @@ export function ScheduleBuildScreen({
                 {t('build.prefilledFromCareHours')}
               </Body>
             ) : null}
-            {displayOrder
-              .filter(day => selectedDays.includes(day))
-              .map(day => {
-                const dayStart = dayTimes[day]?.start ?? DEFAULT_START;
-                const dayEnd = dayTimes[day]?.end ?? DEFAULT_END;
-                // `undefined` (still loading) is deliberately NOT treated as
-                // "outside availability" — isOutsideAvailability's own
-                // contract is "no row for this weekday = outside", which
-                // would otherwise flash a false warning on every day before
-                // the fetch resolves.
-                const outsideAvailability =
-                  carerAvailability.data !== undefined &&
-                  isOutsideAvailability(
-                    { weekday: day, start_time: dayStart, end_time: dayEnd },
-                    carerAvailability.data
-                  );
-                return (
-                  <View key={day} className="gap-2">
-                    <View className="flex-row items-center justify-between gap-2">
-                      <Body weight="medium">{t(`weekday.${day}`)}</Body>
-                      {outsideAvailability ? (
-                        <StatusPill
-                          variant="outside-hours"
-                          label={t('build.outsideHoursWarning')}
-                          testID={`schedule-build-outside-hours-${day}`}
-                        />
-                      ) : null}
-                    </View>
-                    {outsideAvailability ? (
-                      <Caption className="text-warning">
-                        {t('build.outsideHoursNote')}
-                      </Caption>
-                    ) : null}
-                    <TimeRangePicker
-                      testID={`schedule-build-time-range-${day}`}
-                      start={dayStart}
-                      end={dayEnd}
-                      onChange={(start, end) =>
-                        setDayTimes(prev => ({
-                          ...prev,
-                          [day]: { start, end },
-                        }))
-                      }
-                    />
-                    <FieldLabel>{t('build.childrenLabel')}</FieldLabel>
-                    <View className="flex-row flex-wrap gap-2">
-                      {(children.data ?? []).map(child => (
-                        <ChildChip
-                          key={child.id}
-                          testID={`schedule-build-child-${day}-${child.id}`}
-                          name={child.name}
-                          colour={child.colour ?? undefined}
-                          selected={(dayChildren[day] ?? []).includes(child.id)}
-                          onPress={() => toggleChildForDay(day, child.id)}
-                        />
-                      ))}
-                    </View>
-                  </View>
-                );
-              })}
+            <WeekBlocksEditor
+              displayOrder={displayOrder}
+              selectedDays={selectedDays}
+              dayBlocks={dayBlocks}
+              // biome-ignore lint/correctness/noChildrenProp: children is a data array
+              children={children.data ?? []}
+              availability={carerAvailability.data}
+              onChange={next => {
+                setSelectedDays(next.selectedDays);
+                setDayBlocks(next.dayBlocks);
+              }}
+              testIDPrefix="schedule-build"
+            />
           </View>
         </SetupScreenShell>
       ) : null}
@@ -738,31 +694,19 @@ export function ScheduleBuildScreen({
             <Body testID="schedule-review-hours-total" tabular>
               {t('build.reviewHoursTotal', { hours: totalHours })}
             </Body>
-            {displayOrder
-              .filter(day => selectedDays.includes(day))
-              .map(day => (
-                <View key={day} className="gap-1">
-                  <Body weight="medium" tabular>
-                    {t(`weekday.${day}`)} —{' '}
-                    {dayTimes[day]?.start ?? DEFAULT_START}
-                    {'–'}
-                    {dayTimes[day]?.end ?? DEFAULT_END}
-                  </Body>
-                  <View className="flex-row flex-wrap gap-2">
-                    {(children.data ?? [])
-                      .filter(child =>
-                        (dayChildren[day] ?? []).includes(child.id)
-                      )
-                      .map(child => (
-                        <ChildChip
-                          key={child.id}
-                          name={child.name}
-                          colour={child.colour ?? undefined}
-                        />
-                      ))}
-                  </View>
-                </View>
-              ))}
+            <WeekBlocksEditor
+              displayOrder={displayOrder}
+              selectedDays={selectedDays}
+              dayBlocks={dayBlocks}
+              // biome-ignore lint/correctness/noChildrenProp: children is a data array
+              children={children.data ?? []}
+              availability={carerAvailability.data}
+              onChange={next => {
+                setSelectedDays(next.selectedDays);
+                setDayBlocks(next.dayBlocks);
+              }}
+              testIDPrefix="schedule-review"
+            />
           </View>
         </SetupScreenShell>
       ) : null}

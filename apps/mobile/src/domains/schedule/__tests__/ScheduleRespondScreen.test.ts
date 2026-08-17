@@ -44,8 +44,8 @@ describe('ScheduleRespondScreen source', () => {
     expect(source).toContain('testID="schedule-respond-screen"');
   });
 
-  it('wires a per-day outside-hours warning testID off the weekday', () => {
-    expect(source).toContain('schedule-respond-outside-hours-${');
+  it('wires per-day testIDs off day.id to avoid collisions on split weekdays', () => {
+    expect(source).toContain('schedule-respond-day-${day.id}');
   });
 
   it('renders a StatusPill outside-hours warning on its own row (no duplicate note)', () => {
@@ -54,11 +54,21 @@ describe('ScheduleRespondScreen source', () => {
     expect(source).not.toContain('outsideHoursNote');
   });
 
-  it('orders days via getWeekdayOrder from the reader profile (matches parent preview)', () => {
+  it('keeps all blocks per weekday (no .find) and sorts them by display order then start_time', () => {
+    expect(source).not.toContain('.find(d => d.weekday ===');
     expect(source).toContain('getWeekdayOrder');
     expect(source).toContain('useUserProfile');
     expect(source).toContain('week_starts_on');
-    expect(source).not.toContain('[1, 2, 3, 4, 5, 6, 0]');
+    expect(source).toContain('.sort(');
+    expect(source).toContain('localeCompare');
+  });
+
+  it('computes isShorterDay from a per-weekday total to avoid falsely flagging split afternoon blocks', () => {
+    // Assert old code is gone and we group by weekday
+    expect(source).not.toMatch(
+      /const maxDayHours = days\.reduce\(\s*\(max, day\) =>\s*Math\.max\(max, calculateDayHours\(day\.start_time, day\.end_time\)\),\s*0\s*\);/
+    );
+    expect(source).toContain('isShorterDay');
   });
 
   it('pins total hours + Accept/Decline in a footer outside the day ScrollView', () => {

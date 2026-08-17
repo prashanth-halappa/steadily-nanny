@@ -198,8 +198,12 @@ interface PendingConflict {
 /** Deterministic per-occurrence UID: stable across re-materialisations of the same pattern+date. */
 export function deriveOccurrenceIcalUid(
   patternIcalUid: string,
-  localDate: string
+  localDate: string,
+  startTime?: string
 ): string {
+  if (startTime) {
+    return `${patternIcalUid}::${localDate}::${startTime}`;
+  }
   return `${patternIcalUid}::${localDate}`;
 }
 
@@ -230,17 +234,27 @@ export class ScheduleMaterialisationService {
     const existingForPattern = await this.shiftRepo.findActiveByPattern(
       pattern.id
     );
-    const byDate = new Map<string, Shift>();
+    const remainingByDate = new Map<string, Shift[]>();
     for (const shift of existingForPattern) {
-      if (!byDate.has(shift.local_date)) {
-        byDate.set(shift.local_date, shift);
+      let bucket = remainingByDate.get(shift.local_date);
+      if (!bucket) {
+        bucket = [];
+        remainingByDate.set(shift.local_date, bucket);
       }
+      bucket.push(shift);
     }
+    for (const bucket of remainingByDate.values()) {
+      bucket.sort(
+        (a, b) =>
+          new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()
+      );
+    }
+
     // Matching above is by `local_date`; the DB's uniqueness is by `ical_uid`.
     // Those agree until a human MOVES a shift — `ical_uid` is deliberately not
     // re-keyed then (see `applyUpdates`), so the row keeps the uid of the date
     // it was born on while `local_date` follows it to the new day. The
-    // occurrence for the ORIGINAL date then finds nothing in `byDate`, looks
+    // occurrence for the ORIGINAL date then finds nothing in `remainingByDate`, looks
     // brand new, and re-inserting it violates `shifts_ical_uid_key`. That
     // aborts the whole horizon insert, so one moved shift 500s the nightly job
     // for every pattern behind it, every night, until someone looks.
@@ -249,48 +263,111 @@ export class ScheduleMaterialisationService {
         .map(shift => shift.ical_uid)
         .filter((uid): uid is string => typeof uid === 'string')
     );
-    const producedDates = new Set(occurrences.map(occ => occ.localDate));
+
+    // The legacy 2-part uid scheme could only ever mint ONE uid per date.
+    // So consult the legacy uid ONLY for the occurrence that would have owned it —
+    // the EARLIEST occurrence (by `startsAt`) on that `localDate`.
+    const earliestStartsAtByDate = new Map<string, string>();
+    for (const occ of occurrences) {
+      const existingEarliest = earliestStartsAtByDate.get(occ.localDate);
+      if (
+        !existingEarliest ||
+        new Date(occ.startsAt).getTime() < new Date(existingEarliest).getTime()
+      ) {
+        earliestStartsAtByDate.set(occ.localDate, occ.startsAt);
+      }
+    }
 
     const toCreate: ExpandedOccurrence[] = [];
     const paired: { occ: ExpandedOccurrence; shift: Shift }[] = [];
+
+    // We do TWO passes over occurrences to pair them.
+    // We need to keep track of occurrences we haven't paired yet.
+    const unmatchedOccurrences: ExpandedOccurrence[] = [];
+
+    // PASS 1 — exact startsAt match (idempotent pass)
     for (const occ of occurrences) {
-      const existing = byDate.get(occ.localDate);
-      if (!existing) {
-        if (
-          takenUids.has(deriveOccurrenceIcalUid(pattern.icalUid, occ.localDate))
-        ) {
-          // Already materialised once; a human has since moved it (and may
-          // have cancelled it). Re-creating is the duplicate-key crash, and
-          // re-pointing it would undo their edit. Leave it alone — same
-          // posture as the NEVER_TOUCH branch below.
+      const bucket = remainingByDate.get(occ.localDate);
+      if (bucket) {
+        const occStartsAt = new Date(occ.startsAt).getTime();
+        const exactMatchIdx = bucket.findIndex(
+          shift => new Date(shift.starts_at).getTime() === occStartsAt
+        );
+        if (exactMatchIdx !== -1) {
+          const [existing] = bucket.splice(exactMatchIdx, 1);
+          // `splice` at a findIndex hit always yields one element; the guard
+          // is for the compiler, not for a case that can happen.
+          if (existing && !NEVER_TOUCH_STATUSES.has(existing.status)) {
+            paired.push({ occ, shift: existing });
+          }
           continue;
         }
-        // F-B6-3: a horizon catch-up run (e.g. after the job was down for
-        // days) re-expands from `dtstart` and can produce occurrences that
-        // have already started. `occ.startsAt` is already an absolute UTC
-        // instant (computed from the pattern's own timezone by
-        // `expandRecurrence`), so comparing it straight against `now` is
-        // correct regardless of the pattern's or server's timezone — no
-        // separate zone conversion needed here. Never backfill one of these
-        // as a brand-new `confirmed` shift nobody could ever have clocked
-        // into; an occurrence that already has a row is untouched by this
-        // guard and still flows through the normal update path below.
-        if (new Date(occ.startsAt).getTime() > now.getTime()) {
-          toCreate.push(occ);
+      }
+      unmatchedOccurrences.push(occ);
+    }
+
+    // PASS 2 — first remaining in bucket (handles moved times)
+    // A human MOVED the shift's time within its own day. Without pass 2 that shift is orphaned AND a duplicate is created, losing its id, its ical_uid and its change-request history.
+    for (const occ of unmatchedOccurrences) {
+      const bucket = remainingByDate.get(occ.localDate);
+      if (bucket && bucket.length > 0) {
+        const existing = bucket.shift();
+        if (
+          existing !== undefined &&
+          !NEVER_TOUCH_STATUSES.has(existing.status)
+        ) {
+          paired.push({ occ, shift: existing });
         }
         continue;
       }
-      if (NEVER_TOUCH_STATUSES.has(existing.status)) {
-        continue; // completed/cancelled — never touched, full stop
+
+      // Fallback: new shift creation
+      // Legacy shifts have 2-part UIDs, new shifts have 3-part UIDs. Check both.
+      // If you only check the new form, every pre-existing shift in production gets re-created on the next run.
+      // Defect Fix: The legacy scheme was one-uid-per-date so a second block never had one.
+      // If we don't scope the legacy check, a second block on the same day as a pre-existing shift
+      // would incorrectly find the legacy UID (which belongs to the first block) and abort creation.
+      const isEarliestOnDate =
+        occ.startsAt === earliestStartsAtByDate.get(occ.localDate);
+      if (
+        takenUids.has(
+          deriveOccurrenceIcalUid(pattern.icalUid, occ.localDate, occ.startTime)
+        ) ||
+        (isEarliestOnDate &&
+          takenUids.has(
+            deriveOccurrenceIcalUid(pattern.icalUid, occ.localDate)
+          ))
+      ) {
+        // Already materialised once; a human has since moved it (and may
+        // have cancelled it). Re-creating is the duplicate-key crash, and
+        // re-pointing it would undo their edit. Leave it alone — same
+        // posture as the NEVER_TOUCH branch below.
+        continue;
       }
-      paired.push({ occ, shift: existing });
+      // F-B6-3: a horizon catch-up run (e.g. after the job was down for
+      // days) re-expands from `dtstart` and can produce occurrences that
+      // have already started. `occ.startsAt` is already an absolute UTC
+      // instant (computed from the pattern's own timezone by
+      // `expandRecurrence`), so comparing it straight against `now` is
+      // correct regardless of the pattern's or server's timezone — no
+      // separate zone conversion needed here. Never backfill one of these
+      // as a brand-new `confirmed` shift nobody could ever have clocked
+      // into; an occurrence that already has a row is untouched by this
+      // guard and still flows through the normal update path below.
+      if (new Date(occ.startsAt).getTime() > now.getTime()) {
+        toCreate.push(occ);
+      }
     }
 
-    const orphans = existingForPattern.filter(
-      shift =>
-        !producedDates.has(shift.local_date) &&
-        !NEVER_TOUCH_STATUSES.has(shift.status)
-    );
+    // Orphans are whatever is left in the buckets, minus NEVER_TOUCH_STATUSES
+    const orphans: Shift[] = [];
+    for (const bucket of remainingByDate.values()) {
+      for (const shift of bucket) {
+        if (!NEVER_TOUCH_STATUSES.has(shift.status)) {
+          orphans.push(shift);
+        }
+      }
+    }
 
     // Two probes for the whole run, covering every shift either branch below
     // might rewrite — this is what used to be four questions per occurrence.
@@ -383,7 +460,7 @@ export class ScheduleMaterialisationService {
     // rather than by array position — RETURNING order is not a contract.
     const byUid = new Map(
       occurrences.map(occ => [
-        deriveOccurrenceIcalUid(pattern.icalUid, occ.localDate),
+        deriveOccurrenceIcalUid(pattern.icalUid, occ.localDate, occ.startTime),
         occ,
       ])
     );
@@ -736,7 +813,11 @@ function newShiftRow(
     source_pattern_id: pattern.id,
     origin: 'system_generated',
     note: pattern.note,
-    ical_uid: deriveOccurrenceIcalUid(pattern.icalUid, occ.localDate),
+    ical_uid: deriveOccurrenceIcalUid(
+      pattern.icalUid,
+      occ.localDate,
+      occ.startTime
+    ),
   };
 }
 

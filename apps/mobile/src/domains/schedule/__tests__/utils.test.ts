@@ -15,9 +15,11 @@ import {
   calculateDayHours,
   calculateWeekTotalHours,
   formatWallClockTime,
+  hasOverlappingBlocks,
   hydrateDraftPattern,
   hydrateFromCommitments,
   isOutsideAvailability,
+  mergeDayBlocks,
   parseWeeklyRruleInterval,
   sendScheduleWeek,
   todayIsoDate,
@@ -104,8 +106,91 @@ describe('parseWeeklyRruleInterval', () => {
   });
 });
 
+describe('mergeDayBlocks', () => {
+  it('disjoint windows stay two blocks', () => {
+    const blocks = [
+      { start: '07:00', end: '13:00', children: ['c1'] },
+      { start: '15:00', end: '17:00', children: ['c1'] },
+    ];
+    expect(mergeDayBlocks(blocks)).toEqual([
+      { start: '07:00', end: '13:00', children: ['c1'] },
+      { start: '15:00', end: '17:00', children: ['c1'] },
+    ]);
+  });
+
+  it('overlapping windows merge into one', () => {
+    const blocks = [
+      { start: '07:00', end: '13:00', children: ['c1'] },
+      { start: '12:00', end: '15:00', children: ['c2'] },
+    ];
+    expect(mergeDayBlocks(blocks)).toEqual([
+      { start: '07:00', end: '15:00', children: ['c1', 'c2'] },
+    ]);
+  });
+
+  it('TOUCHING windows (12:00 end / 12:00 start) merge into one', () => {
+    const blocks = [
+      { start: '09:00', end: '12:00', children: ['c1'] },
+      { start: '12:00', end: '15:00', children: ['c2'] },
+    ];
+    expect(mergeDayBlocks(blocks)).toEqual([
+      { start: '09:00', end: '15:00', children: ['c1', 'c2'] },
+    ]);
+  });
+
+  it('children are unioned without duplicates', () => {
+    const blocks = [
+      { start: '07:00', end: '13:00', children: ['c1', 'c2'] },
+      { start: '10:00', end: '15:00', children: ['c2', 'c3'] },
+    ];
+    expect(mergeDayBlocks(blocks)).toEqual([
+      { start: '07:00', end: '15:00', children: ['c1', 'c2', 'c3'] },
+    ]);
+  });
+
+  it('input order does not matter', () => {
+    const blocks = [
+      { start: '12:00', end: '15:00', children: ['c2'] },
+      { start: '09:00', end: '12:00', children: ['c1'] },
+    ];
+    expect(mergeDayBlocks(blocks)).toEqual([
+      { start: '09:00', end: '15:00', children: ['c1', 'c2'] },
+    ]);
+  });
+});
+
+describe('hasOverlappingBlocks', () => {
+  it('true for 07:00-13:00 + 12:00-17:00', () => {
+    expect(
+      hasOverlappingBlocks([
+        { start: '07:00', end: '13:00' },
+        { start: '12:00', end: '17:00' },
+      ])
+    ).toBe(true);
+  });
+
+  it('FALSE for 07:00-13:00 + 13:00-17:00 (touching)', () => {
+    expect(
+      hasOverlappingBlocks([
+        { start: '07:00', end: '13:00' },
+        { start: '13:00', end: '17:00' },
+      ])
+    ).toBe(false);
+  });
+
+  it('false for a single block', () => {
+    expect(hasOverlappingBlocks([{ start: '07:00', end: '13:00' }])).toBe(
+      false
+    );
+  });
+
+  it('false for an empty array', () => {
+    expect(hasOverlappingBlocks([])).toBe(false);
+  });
+});
+
 describe('hydrateDraftPattern', () => {
-  it('derives selected days, per-day times, and per-day children from a draft pattern', () => {
+  it('derives selected days and per-day blocks from a draft pattern', () => {
     const hydrated = hydrateDraftPattern({
       carer_id: 'carer-1',
       rrule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,WE',
@@ -128,13 +213,9 @@ describe('hydrateDraftPattern', () => {
     expect(hydrated.carerId).toBe('carer-1');
     // Sorted numerically, independent of the days' original order.
     expect(hydrated.selectedDays).toEqual([1, 3]);
-    expect(hydrated.dayTimes).toEqual({
-      1: { start: '09:00', end: '15:00' },
-      3: { start: '08:00', end: '17:00' },
-    });
-    expect(hydrated.dayChildren).toEqual({
-      1: [],
-      3: ['child-1'],
+    expect(hydrated.dayBlocks).toEqual({
+      1: [{ start: '09:00', end: '15:00', children: [] }],
+      3: [{ start: '08:00', end: '17:00', children: ['child-1'] }],
     });
     expect(hydrated.intervalWeeks).toBe(1);
   });
@@ -153,9 +234,36 @@ describe('hydrateDraftPattern', () => {
       ],
     });
 
-    expect(hydrated.dayTimes).toEqual({
-      2: { start: '09:00', end: '17:00' },
+    expect(hydrated.dayBlocks).toEqual({
+      2: [{ start: '09:00', end: '17:00', children: [] }],
     });
+  });
+
+  it('a pattern with two weekday-1 rows yields selectedDays equal to [1] (NOT [1,1]) and dayBlocks[1].length === 2 in start_time order; HH:MM:SS is trimmed to HH:MM', () => {
+    const hydrated = hydrateDraftPattern({
+      carer_id: 'carer-1',
+      rrule: 'FREQ=WEEKLY;INTERVAL=1;BYDAY=MO',
+      days: [
+        {
+          weekday: 1,
+          start_time: '15:00:00',
+          end_time: '17:00:00',
+          children: [{ child_id: 'child-2' }],
+        },
+        {
+          weekday: 1,
+          start_time: '07:00:00',
+          end_time: '13:00:00',
+          children: [{ child_id: 'child-1' }],
+        },
+      ],
+    });
+
+    expect(hydrated.selectedDays).toEqual([1]);
+    expect(hydrated.dayBlocks[1]).toEqual([
+      { start: '07:00', end: '13:00', children: ['child-1'] },
+      { start: '15:00', end: '17:00', children: ['child-2'] },
+    ]);
   });
 
   it('carries a null carer_id through unchanged (a draft may not have a carer picked yet)', () => {
@@ -770,32 +878,41 @@ describe('hydrateFromCommitments', () => {
     expect(hydrated.selectedDays).toEqual([0, 1, 3, 5]);
   });
 
-  it('takes the earliest start and latest end across overlapping windows on the same day', () => {
+  it('overlapping windows on one day yield ONE merged block', () => {
     const hydrated = hydrateFromCommitments([
       commitment('child-1', 'FREQ=WEEKLY;BYDAY=MO', '07:00:00', '13:00:00'),
       commitment('child-2', 'FREQ=WEEKLY;BYDAY=MO', '12:00:00', '18:00:00'),
     ]);
-    expect(hydrated.dayTimes[1]).toEqual({ start: '07:00', end: '18:00' });
+    expect(hydrated.dayBlocks[1]).toEqual([
+      { start: '07:00', end: '18:00', children: ['child-1', 'child-2'] },
+    ]);
   });
 
-  it('spans a gap when two children have disjoint windows on the same day', () => {
+  it('keeps two disjoint windows on the same day as two separate blocks', () => {
+    // Deliberate behaviour change: disjoint windows stay separate blocks rather than merging into a single block that spans the gap.
     const hydrated = hydrateFromCommitments([
       commitment('child-1', 'FREQ=WEEKLY;BYDAY=TU', '08:00:00', '09:00:00'),
       commitment('child-2', 'FREQ=WEEKLY;BYDAY=TU', '16:00:00', '18:00:00'),
     ]);
-    // A single continuous block is the only shape the wizard can express —
-    // the disclosure copy exists precisely because this exceeds both windows.
-    expect(hydrated.dayTimes[2]).toEqual({ start: '08:00', end: '18:00' });
+    expect(hydrated.dayBlocks[2]).toEqual([
+      { start: '08:00', end: '09:00', children: ['child-1'] },
+      { start: '16:00', end: '18:00', children: ['child-2'] },
+    ]);
   });
 
-  it('lists each day only the children with a commitment on THAT day, without duplicates', () => {
+  it('07:00-13:00 on MO + 15:00-17:00 on MO yields TWO blocks on weekday 1 in start order', () => {
     const hydrated = hydrateFromCommitments([
       commitment('child-1', 'FREQ=WEEKLY;BYDAY=MO,TU', '09:00:00', '13:00:00'),
       commitment('child-1', 'FREQ=WEEKLY;BYDAY=MO', '15:00:00', '17:00:00'),
       commitment('child-2', 'FREQ=WEEKLY;BYDAY=TU', '09:00:00', '13:00:00'),
     ]);
-    expect(hydrated.dayChildren[1]).toEqual(['child-1']);
-    expect(hydrated.dayChildren[2]).toEqual(['child-1', 'child-2']);
+    expect(hydrated.dayBlocks[1]).toEqual([
+      { start: '09:00', end: '13:00', children: ['child-1'] },
+      { start: '15:00', end: '17:00', children: ['child-1'] },
+    ]);
+    expect(hydrated.dayBlocks[2]).toEqual([
+      { start: '09:00', end: '13:00', children: ['child-1', 'child-2'] },
+    ]);
   });
 
   it('leaves days with no commitment out entirely — no empty entries', () => {
@@ -803,15 +920,13 @@ describe('hydrateFromCommitments', () => {
       commitment('child-1', 'FREQ=WEEKLY;BYDAY=MO', '09:00:00', '13:00:00'),
     ]);
     expect(hydrated.selectedDays).toEqual([1]);
-    expect(Object.keys(hydrated.dayTimes)).toEqual(['1']);
-    expect(Object.keys(hydrated.dayChildren)).toEqual(['1']);
+    expect(Object.keys(hydrated.dayBlocks)).toEqual(['1']);
   });
 
   it('returns an empty week for an empty list', () => {
     expect(hydrateFromCommitments([])).toEqual({
       selectedDays: [],
-      dayTimes: {},
-      dayChildren: {},
+      dayBlocks: {},
     });
   });
 
@@ -830,8 +945,7 @@ describe('hydrateFromCommitments', () => {
       ])
     ).toEqual({
       selectedDays: [],
-      dayTimes: {},
-      dayChildren: {},
+      dayBlocks: {},
     });
   });
 
@@ -840,14 +954,37 @@ describe('hydrateFromCommitments', () => {
       commitment('child-1', 'FREQ=WEEKLY;BYDAY=MO', 'not-a-time', '13:00:00'),
       commitment('child-2', 'FREQ=WEEKLY;BYDAY=MO', '09:00:00', '15:00:00'),
     ]);
-    expect(hydrated.dayTimes[1]).toEqual({ start: '09:00', end: '15:00' });
-    expect(hydrated.dayChildren[1]).toEqual(['child-2']);
+    expect(hydrated.dayBlocks[1]).toEqual([
+      { start: '09:00', end: '15:00', children: ['child-2'] },
+    ]);
   });
 
   it('accepts already-trimmed HH:MM times as well as HH:MM:SS', () => {
     const hydrated = hydrateFromCommitments([
       commitment('child-1', 'FREQ=WEEKLY;BYDAY=MO', '07:30', '13:00'),
     ]);
-    expect(hydrated.dayTimes[1]).toEqual({ start: '07:30', end: '13:00' });
+    expect(hydrated.dayBlocks[1]).toEqual([
+      { start: '07:30', end: '13:00', children: ['child-1'] },
+    ]);
+  });
+
+  it('LOAD-BEARING REGRESSION: care hours of 07:00-13:00 on MO,TU,WE,TH,FR plus 15:00-17:00 on MO,TU hydrate to a week whose calculateWeekTotalHours over all blocks is 34', () => {
+    const hydrated = hydrateFromCommitments([
+      commitment(
+        'child-1',
+        'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+        '07:00:00',
+        '13:00:00'
+      ),
+      commitment('child-1', 'FREQ=WEEKLY;BYDAY=MO,TU', '15:00:00', '17:00:00'),
+    ]);
+
+    // 5 days x 6h = 30, plus 2 days x 2h = 4 -> 34 hours
+    const totalHours = calculateWeekTotalHours(
+      Object.values(hydrated.dayBlocks)
+        .flat()
+        .map(b => ({ start_time: b.start, end_time: b.end }))
+    );
+    expect(totalHours).toBe(34);
   });
 });

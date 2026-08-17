@@ -81,9 +81,10 @@ const ReplaceDaySchema = z
 /**
  * PUT body for `/schedule-patterns/:patternId/days` — days and their children
  * are nested resources clients replace WHOLESALE, never PATCHed piecemeal
- * (per the wave-2 spec). One row per weekday; no two rows may repeat a
- * weekday (mirrors the DB's `schedule_pattern_days_pattern_weekday_idx`
- * unique index).
+ * (per the wave-2 spec). A weekday may hold MORE THAN ONE block, but the pair
+ * (weekday, start_time) must be unique (mirrors the DB's
+ * `schedule_pattern_days_pattern_weekday_start_idx` unique index).
+ * OVERLAPPING blocks are deliberately allowed (clashes warn, never block).
  */
 export const ReplaceSchedulePatternDaysSchema = z
   .object({
@@ -91,8 +92,12 @@ export const ReplaceSchedulePatternDaysSchema = z
   })
   .refine(
     data =>
-      new Set(data.days.map(day => day.weekday)).size === data.days.length,
-    { message: 'each weekday may appear at most once', path: ['days'] }
+      new Set(data.days.map(day => `${day.weekday}|${day.start_time}`)).size ===
+      data.days.length,
+    {
+      message: 'each (weekday, start_time) may appear at most once',
+      path: ['days'],
+    }
   );
 export type ReplaceSchedulePatternDaysInput = z.infer<
   typeof ReplaceSchedulePatternDaysSchema

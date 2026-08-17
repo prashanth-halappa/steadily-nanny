@@ -1,0 +1,74 @@
+-- ---------------------------------------------------------------------------
+-- 101_schedule_pattern_multi_block_days.sql — a weekday may hold MORE THAN ONE
+-- time block ("Mon 07:00-13:00 AND 15:00-17:00")
+--
+-- Applied to prod 2026-08-17 (recorded as `20260817180427`). Applied via the
+-- Supabase MCP `apply_migration` in order after 100 — never `supabase db push`
+-- (version-scheme mismatch; see 092's header and docs/ROLLBACK-RUNBOOK.md).
+--
+-- Verified after applying: `schedule_pattern_days_pattern_weekday_idx` is gone
+-- and `schedule_pattern_days_pattern_weekday_start_idx` exists as
+-- `unique (pattern_id, weekday, start_time)`. The CLAIM was then exercised
+-- against the live schema in a self-rolling-back DO block: two blocks on the
+-- same Monday (07:00-13:00 + 15:00-17:00) were both accepted, and a third row
+-- repeating start_time 07:00 was refused with `unique_violation` — i.e. the
+-- gap is now representable and the same-start modelling error still is not.
+-- The probe left zero rows behind. At apply time the table held
+-- ZERO rows (0 patterns, 0 recurring shifts), so the swap could not have
+-- conflicted and the lossy rollback below is currently a no-op — that stops
+-- being true the moment the first two-block week is sent.
+--
+-- 014 carried `schedule_pattern_days_pattern_weekday_idx`, unique on
+-- (pattern_id, weekday). That was the ONLY thing making a usual week
+-- one-block-per-day. `schedule_pattern_day_children` carves per-CHILD
+-- sub-windows *within* a block and cannot express a gap in the carer's own
+-- day, so a split shift was unrepresentable — and the wizard's care-hours
+-- prefill collapsed 07:00-13:00 + 15:00-17:00 into 07:00-17:00, inventing two
+-- paid hours in the gap.
+--
+-- WHY THE REPLACEMENT IS STILL UNIQUE, ON start_time
+-- Two blocks on the same weekday starting at the same minute is a modelling
+-- error, not a real week: "Maya 07:00-09:00, Theo 07:00-13:00" is ONE 07:00
+-- block with two `schedule_pattern_day_children` rows (014's header). Left
+-- unconstrained it would also materialise two shifts inside each other's
+-- window, which is the duplicate-shift class 062 exists to refuse.
+--
+-- OVERLAP IS NOT REFUSED, deliberately — 015's "NO OVERLAP CONSTRAINT,
+-- DELIBERATELY" and GOLDEN-FIXES #27: clashes WARN, they never block.
+-- 07:00-13:00 + 12:00-18:00 remain two perfectly good rows. (The mobile
+-- editor refuses overlap at the point of entry; the wire does not.)
+--
+-- Safe on live data: `replaceForPattern` is delete-then-insert, no upsert
+-- anywhere touches this table, and nothing FKs to (pattern_id, weekday) —
+-- `schedule_pattern_day_children` keys on `schedule_pattern_days.id`.
+--
+-- ROLLBACK — READ BEFORE PASTING.
+-- The real rollback is "revert the app code and LEAVE THIS INDEX ALONE".
+-- Step 1 alone is safe and is almost always all you want:
+--
+--   drop index if exists public.schedule_pattern_days_pattern_weekday_start_idx;
+--   create index if not exists schedule_pattern_days_pattern_idx
+--     on public.schedule_pattern_days (pattern_id, weekday);
+--
+-- Step 2 ONLY if the old UNIQUE invariant must genuinely come back. It is
+-- LOSSY, and the `create unique index` WILL FAIL with a duplicate-key error
+-- unless the delete runs first — it deletes every block after the earliest on
+-- each weekday and cascades away their `schedule_pattern_day_children` rows.
+-- It also does NOT retract shifts already materialised from the deleted
+-- blocks; the next `scheduleHorizonJob` run sees those as orphans and
+-- cancels/deletes them, which is a second, separate blast radius.
+--
+--   delete from public.schedule_pattern_days d
+--    using (select id,
+--                  row_number() over (partition by pattern_id, weekday
+--                                     order by start_time, id) as rn
+--             from public.schedule_pattern_days) r
+--    where d.id = r.id and r.rn > 1;
+--   create unique index schedule_pattern_days_pattern_weekday_idx
+--     on public.schedule_pattern_days (pattern_id, weekday);
+-- ---------------------------------------------------------------------------
+
+drop index if exists public.schedule_pattern_days_pattern_weekday_idx;
+
+create unique index if not exists schedule_pattern_days_pattern_weekday_start_idx
+  on public.schedule_pattern_days (pattern_id, weekday, start_time);

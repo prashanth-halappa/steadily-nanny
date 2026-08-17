@@ -57,12 +57,17 @@ export function PendingScheduleCard() {
 
   const days = detail.data.days;
   const totalHours = calculateWeekTotalHours(days);
+  // days are BLOCKS now, not days. We must report DISTINCT weekday count.
+  const distinctDaysCount = new Set(days.map(d => d.weekday)).size;
 
   return (
     <Card testID="today-pending-schedule-card" className="gap-2 p-5.5">
       <H4>{t('todayCard.pendingTitle')}</H4>
       <Body className="text-muted-foreground" tabular>
-        {t('todayCard.pendingBody', { count: days.length, hours: totalHours })}
+        {t('todayCard.pendingBody', {
+          count: distinctDaysCount,
+          hours: totalHours,
+        })}
       </Body>
       <Button
         testID="today-pending-schedule-cta"

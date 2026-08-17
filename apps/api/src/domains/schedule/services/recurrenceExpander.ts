@@ -85,6 +85,13 @@ export interface ExpandedOccurrence {
   /** The calendar date of the occurrence's START, in the pattern's timezone. */
   localDate: string;
   weekday: number;
+  /**
+   * The WALL-CLOCK time (e.g. '07:00:00') copied VERBATIM from the pattern day.
+   * NOT the UTC instant and NOT derived from `startsAt`. The UID built from it is
+   * assigned once at shift-creation time and must not read differently on either
+   * side of a DST boundary.
+   */
+  startTime: string;
   /** ISO-8601 UTC instant, e.g. '2026-02-05T08:00:00.000Z'. */
   startsAt: string;
   endsAt: string;
@@ -290,6 +297,7 @@ export function expandRecurrence(
       occurrences.push({
         localDate: dateStr,
         weekday: day.weekday,
+        startTime: day.startTime,
         startsAt: toIsoString(startsAtMillis),
         endsAt: toIsoString(endsAtMillis),
         children: (day.children ?? []).map(child => ({

@@ -76,12 +76,17 @@ describe('SchedulePatternDayRepository.replaceForPattern', () => {
 });
 
 describe('SchedulePatternDayRepository.listForPattern', () => {
-  it('lists a pattern’s days', async () => {
+  it('lists a pattern’s days and orders by weekday then start_time', async () => {
     const rows = [{ id: 'd1', pattern_id: 'p1', weekday: 4 }];
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: rows, error: null })
-    );
+    const chain = createMockQueryChain({ data: rows, error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+
     const repo = new SchedulePatternDayRepository();
     expect(await repo.listForPattern('p1')).toEqual(rows);
+
+    expect(chain.order.mock.calls).toEqual([
+      ['weekday', { ascending: true }],
+      ['start_time', { ascending: true }],
+    ]);
   });
 });

@@ -135,15 +135,24 @@ export function ScheduleRespondScreen({
   }
 
   const displayOrder = getWeekdayOrder(profile.data?.week_starts_on);
-  const days = displayOrder
-    .map(dow => pattern.data.days.find(d => d.weekday === dow))
-    .filter((d): d is (typeof pattern.data.days)[number] => d !== undefined);
+  // A weekday may legitimately carry more than one block. Keep ALL blocks,
+  // sorting by weekday display order then start_time, to avoid dropping blocks.
+  const days = [...pattern.data.days].sort((a, b) => {
+    const aOrder = displayOrder.indexOf(a.weekday);
+    const bOrder = displayOrder.indexOf(b.weekday);
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return a.start_time.localeCompare(b.start_time);
+  });
   const totalHours = calculateWeekTotalHours(days);
-  const maxDayHours = days.reduce(
-    (max, day) =>
-      Math.max(max, calculateDayHours(day.start_time, day.end_time)),
-    0
-  );
+  const hoursPerWeekday = new Map<number, number>();
+  for (const day of days) {
+    const hrs = calculateDayHours(day.start_time, day.end_time);
+    hoursPerWeekday.set(
+      day.weekday,
+      (hoursPerWeekday.get(day.weekday) ?? 0) + hrs
+    );
+  }
+  const maxDayHours = Math.max(0, ...Array.from(hoursPerWeekday.values()));
   const householdCommitments = commitments.data ?? [];
 
   const handleAccept = async () => {
@@ -193,8 +202,8 @@ export function ScheduleRespondScreen({
         <View className="mt-6 gap-4">
           {days.map(day => {
             const outsideHours = isOutsideAvailability(day, availabilityRows);
-            const dayHours = calculateDayHours(day.start_time, day.end_time);
-            const isShorterDay = dayHours < maxDayHours;
+            const weekdayHours = hoursPerWeekday.get(day.weekday) ?? 0;
+            const isShorterDay = weekdayHours < maxDayHours;
             const noteLabel = isShorterDay
               ? structuralNoteLabel(
                   day.weekday,
@@ -205,7 +214,7 @@ export function ScheduleRespondScreen({
             return (
               <View
                 key={day.id}
-                testID={`schedule-respond-day-${day.weekday}`}
+                testID={`schedule-respond-day-${day.id}`}
                 className="gap-2 rounded-row bg-card p-4"
                 style={elevation.row}
               >
@@ -219,7 +228,7 @@ export function ScheduleRespondScreen({
                     <StatusPill
                       variant="outside-hours"
                       label={t('respond.outsideHoursWarning')}
-                      testID={`schedule-respond-outside-hours-${day.weekday}`}
+                      testID={`schedule-respond-outside-hours-${day.id}`}
                     />
                   ) : null}
                 </View>
@@ -259,7 +268,7 @@ export function ScheduleRespondScreen({
                 ) : null}
                 {isShorterDay ? (
                   <Small
-                    testID={`schedule-respond-structural-note-${day.weekday}`}
+                    testID={`schedule-respond-structural-note-${day.id}`}
                     className="text-muted-foreground"
                   >
                     {noteLabel

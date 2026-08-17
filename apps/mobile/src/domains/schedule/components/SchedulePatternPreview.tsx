@@ -50,9 +50,12 @@ export function SchedulePatternPreview({
   const profile = useUserProfile();
   const displayOrder = getWeekdayOrder(profile.data?.week_starts_on);
   const totalHours = calculateWeekTotalHours([...days]);
-  const ordered = displayOrder
-    .map(dow => days.find(d => d.weekday === dow))
-    .filter((d): d is DayWithChildren => d !== undefined);
+  const ordered = [...days].sort((a, b) => {
+    const aOrder = displayOrder.indexOf(a.weekday);
+    const bOrder = displayOrder.indexOf(b.weekday);
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return a.start_time.localeCompare(b.start_time);
+  });
 
   return (
     <Card testID={testID} className="gap-3 p-5.5">
@@ -86,29 +89,33 @@ export function SchedulePatternPreview({
           ))}
         </View>
       ) : null}
-      {ordered.map(day => (
-        <View key={day.id} className="gap-1">
-          <Body weight="medium" tabular>
-            {t(`weekday.${day.weekday}`)} ·{' '}
-            {formatWallClockTime(day.start_time)}–
-            {formatWallClockTime(day.end_time)}
-          </Body>
-          {day.children.length > 0 ? (
-            <View className="flex-row flex-wrap gap-2">
-              {day.children.map(dc => {
-                const child = childrenById.get(dc.child_id);
-                return (
-                  <ChildChip
-                    key={dc.id}
-                    name={child?.name ?? ''}
-                    colour={child?.colour ?? undefined}
-                  />
-                );
-              })}
-            </View>
-          ) : null}
-        </View>
-      ))}
+      {ordered.map((day, index) => {
+        const isFirstOfWeekday =
+          index === 0 || ordered[index - 1]?.weekday !== day.weekday;
+        return (
+          <View key={day.id} className="gap-1">
+            <Body weight="medium" tabular>
+              {isFirstOfWeekday ? `${t(`weekday.${day.weekday}`)} · ` : ''}
+              {formatWallClockTime(day.start_time)}–
+              {formatWallClockTime(day.end_time)}
+            </Body>
+            {day.children.length > 0 ? (
+              <View className="flex-row flex-wrap gap-2">
+                {day.children.map(dc => {
+                  const child = childrenById.get(dc.child_id);
+                  return (
+                    <ChildChip
+                      key={dc.id}
+                      name={child?.name ?? ''}
+                      colour={child?.colour ?? undefined}
+                    />
+                  );
+                })}
+              </View>
+            ) : null}
+          </View>
+        );
+      })}
     </Card>
   );
 }

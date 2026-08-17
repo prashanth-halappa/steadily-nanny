@@ -178,11 +178,16 @@ export interface DraftPatternForHydration {
   days: DraftPatternDayForHydration[];
 }
 
+export interface DayBlock {
+  start: string;
+  end: string;
+  children: string[];
+}
+
 export interface HydratedDraftState {
   carerId: string | null;
   selectedDays: number[];
-  dayTimes: Record<number, { start: string; end: string }>;
-  dayChildren: Record<number, string[]>;
+  dayBlocks: Record<number, DayBlock[]>;
   intervalWeeks: 1 | 2;
 }
 
@@ -198,25 +203,28 @@ export interface HydratedDraftState {
 export function hydrateDraftPattern(
   pattern: DraftPatternForHydration
 ): HydratedDraftState {
-  const selectedDays = pattern.days
-    .map(day => day.weekday)
-    .sort((a, b) => a - b);
-  const dayTimes: Record<number, { start: string; end: string }> = {};
-  const dayChildren: Record<number, string[]> = {};
+  // Use Set to dedupe in case there are multiple rows for the same weekday
+  const selectedDays = [...new Set(pattern.days.map(day => day.weekday))].sort(
+    (a, b) => a - b
+  );
+  const dayBlocks: Record<number, DayBlock[]> = {};
   for (const day of pattern.days) {
-    // Postgres `time` serialises as HH:MM:SS; the wizard renders these
-    // verbatim, and no user-visible time ever shows seconds.
-    dayTimes[day.weekday] = {
+    const blocks = dayBlocks[day.weekday] ?? [];
+    blocks.push({
       start: day.start_time.slice(0, 5),
       end: day.end_time.slice(0, 5),
-    };
-    dayChildren[day.weekday] = day.children.map(child => child.child_id);
+      children: day.children.map(child => child.child_id),
+    });
+    // Sort blocks by start time
+    blocks.sort(
+      (a, b) => (timeToMinutes(a.start) ?? 0) - (timeToMinutes(b.start) ?? 0)
+    );
+    dayBlocks[day.weekday] = blocks;
   }
   return {
     carerId: pattern.carer_id,
     selectedDays,
-    dayTimes,
-    dayChildren,
+    dayBlocks,
     intervalWeeks: parseWeeklyRruleInterval(pattern.rrule),
   };
 }
@@ -232,8 +240,60 @@ export interface CommitmentForHydration {
 /** `hydrateDraftPattern`'s shape minus the pattern-only fields (carer, interval) — a stated need names neither. */
 export type HydratedCommitmentWeek = Pick<
   HydratedDraftState,
-  'selectedDays' | 'dayTimes' | 'dayChildren'
+  'selectedDays' | 'dayBlocks'
 >;
+
+export function mergeDayBlocks(ranges: DayBlock[]): DayBlock[] {
+  if (ranges.length === 0) return [];
+  const sorted = [...ranges].sort(
+    (a, b) => (timeToMinutes(a.start) ?? 0) - (timeToMinutes(b.start) ?? 0)
+  );
+
+  const first = sorted[0];
+  if (!first) return [];
+  const merged: DayBlock[] = [{ ...first, children: [...first.children] }];
+  for (let i = 1; i < sorted.length; i++) {
+    const current = merged[merged.length - 1];
+    const next = sorted[i];
+    if (!current || !next) continue;
+
+    const currentEnd = timeToMinutes(current.end) ?? 0;
+    const nextStart = timeToMinutes(next.start) ?? 0;
+
+    if (nextStart <= currentEnd) {
+      const nextEnd = timeToMinutes(next.end) ?? 0;
+      if (nextEnd > currentEnd) {
+        current.end = next.end;
+      }
+      for (const child of next.children) {
+        if (!current.children.includes(child)) {
+          current.children.push(child);
+        }
+      }
+    } else {
+      merged.push({ ...next, children: [...next.children] });
+    }
+  }
+  return merged;
+}
+
+export function hasOverlappingBlocks(
+  blocks: { start: string; end: string }[]
+): boolean {
+  if (blocks.length < 2) return false;
+  const sorted = [...blocks].sort(
+    (a, b) => (timeToMinutes(a.start) ?? 0) - (timeToMinutes(b.start) ?? 0)
+  );
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const current = sorted[i];
+    const next = sorted[i + 1];
+    if (!current || !next) continue;
+    const currentEnd = timeToMinutes(current.end) ?? 0;
+    const nextStart = timeToMinutes(next.start) ?? 0;
+    if (nextStart < currentEnd) return true;
+  }
+  return false;
+}
 
 /**
  * Derives a starting "usual week" for ScheduleBuildScreen from the care
@@ -244,12 +304,10 @@ export type HydratedCommitmentWeek = Pick<
  * shifts (`docs/12-NEED-COVERAGE.md` §9) — only an accepted `schedule_pattern`
  * does. Nothing here is persisted or inferred; the parent confirms every day.
  *
- * Per day, the window is the earliest start and the latest end across every
- * commitment on that day, because the wizard can only express ONE continuous
- * block per day. That union can exceed any single child's stated window
- * (07:00-13:00 plus 12:00-18:00 becomes 07:00-18:00), and can span a gap
- * between two disjoint windows — which is why the hours/review steps disclose
- * where these times came from rather than presenting them as read back.
+ * Disjoint windows on the same day stay separate blocks, so multiple distinct
+ * shifts are preserved. Only windows that genuinely overlap or touch are merged
+ * into a single continuous block, because overlapping windows represent
+ * concurrent care needs.
  *
  * Days come from the SAME `parseWeeklyDays` the care-hours UI writes with, so
  * the Postgres `extract(dow)` convention has exactly one implementation. A
@@ -260,43 +318,39 @@ export type HydratedCommitmentWeek = Pick<
 export function hydrateFromCommitments(
   commitments: CommitmentForHydration[]
 ): HydratedCommitmentWeek {
-  const dayMinutes: Record<number, { start: number; end: number }> = {};
-  const dayChildren: Record<number, string[]> = {};
+  const dayBlocksRaw: Record<number, DayBlock[]> = {};
 
   for (const commitment of commitments) {
     if (!/(?:^|;)FREQ=WEEKLY(?:;|$)/i.test(commitment.rrule)) continue;
-    const start = timeToMinutes(commitment.start_time);
-    const end = timeToMinutes(commitment.end_time);
-    if (start === null || end === null) continue;
+    const startMins = timeToMinutes(commitment.start_time);
+    const endMins = timeToMinutes(commitment.end_time);
+    if (startMins === null || endMins === null) continue;
+
+    const startStr = minutesToWallClock(startMins);
+    const endStr = minutesToWallClock(endMins);
+
     for (const day of parseWeeklyDays(commitment.rrule)) {
-      const existing = dayMinutes[day];
-      dayMinutes[day] = existing
-        ? {
-            start: Math.min(existing.start, start),
-            end: Math.max(existing.end, end),
-          }
-        : { start, end };
-      const children = dayChildren[day] ?? [];
-      if (!children.includes(commitment.child_id)) {
-        children.push(commitment.child_id);
-      }
-      dayChildren[day] = children;
+      const blocks = dayBlocksRaw[day] ?? [];
+      blocks.push({
+        start: startStr,
+        end: endStr,
+        children: [commitment.child_id],
+      });
+      dayBlocksRaw[day] = blocks;
     }
   }
 
-  const selectedDays = Object.keys(dayMinutes)
+  const selectedDays = Object.keys(dayBlocksRaw)
     .map(Number)
     .sort((a, b) => a - b);
-  const dayTimes: Record<number, { start: string; end: string }> = {};
+  const dayBlocks: Record<number, DayBlock[]> = {};
   for (const day of selectedDays) {
-    const window = dayMinutes[day];
-    if (!window) continue;
-    dayTimes[day] = {
-      start: minutesToWallClock(window.start),
-      end: minutesToWallClock(window.end),
-    };
+    const rawBlocks = dayBlocksRaw[day];
+    if (rawBlocks) {
+      dayBlocks[day] = mergeDayBlocks(rawBlocks);
+    }
   }
-  return { selectedDays, dayTimes, dayChildren };
+  return { selectedDays, dayBlocks };
 }
 
 /** Inverse of `timeToMinutes` for the wizard's "HH:MM" form values. */

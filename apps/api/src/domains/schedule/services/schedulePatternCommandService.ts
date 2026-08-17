@@ -206,8 +206,21 @@ export class SchedulePatternCommandService {
       }))
     );
 
-    for (const [index, day] of days.entries()) {
-      const source = input.days[index];
+    // Postgres returns `time` columns as `HH:MM:SS` ('07:00:00') while the client
+    // sends `HH:MM` ('07:00'). We must slice to 5 characters to normalise both sides,
+    // otherwise lookups fail and children are silently dropped.
+    // Index-based matching was replaced because DB row return order is undefined.
+    const inputMap = new Map(
+      input.days.map(day => [
+        `${day.weekday}|${day.start_time.slice(0, 5)}`,
+        day,
+      ])
+    );
+
+    for (const day of days) {
+      const source = inputMap.get(
+        `${day.weekday}|${day.start_time.slice(0, 5)}`
+      );
       const children = source?.children ?? [];
       if (children.length > 0) {
         await this.dayChildRepo.insertForDay(

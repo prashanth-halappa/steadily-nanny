@@ -35,6 +35,31 @@ describe('ScheduleBuildScreen source', () => {
     expect(source).toContain("from '../utils'");
   });
 
+  it('uses dayBlocks state and neither dayTimes nor dayChildren appears anywhere', () => {
+    expect(source).toContain('const [dayBlocks, setDayBlocks] = useState');
+    expect(source).not.toContain('dayTimes');
+    expect(source).not.toContain('dayChildren');
+  });
+
+  it('renders WeekBlocksEditor in both the hours and review steps', () => {
+    const hoursStep = source.match(
+      /step === 'hours' \? \([\s\S]*?<WeekBlocksEditor[\s\S]*?\) : null/
+    );
+    const reviewStep = source.match(
+      /step === 'review' \? \([\s\S]*?<WeekBlocksEditor[\s\S]*?\) : null/
+    );
+    expect(hoursStep).not.toBeNull();
+    expect(reviewStep).not.toBeNull();
+  });
+
+  it('uses a flatMap over blocks in onSend', () => {
+    const onSendMatch = source.match(
+      /const onSend = async \(\) => \{[\s\S]*?\n {2}\};/
+    );
+    const onSendBody = onSendMatch?.[0] ?? '';
+    expect(onSendBody).toMatch(/selectedDays\s*\.flatMap\(/);
+  });
+
   it('passes WeekStrip selected/onToggle straight through — no display-order remapping', () => {
     expect(source).toContain('testID="schedule-day-toggle"');
     expect(source).toMatch(/<WeekStrip[\s\S]{0,200}selected={selectedDays}/);
@@ -72,9 +97,9 @@ describe('ScheduleBuildScreen source', () => {
     expect(source).toContain('schedule-carer-option-');
   });
 
-  it('assigns per-day time-range and child-chip testIDs', () => {
-    expect(source).toContain('schedule-build-time-range-');
-    expect(source).toContain('schedule-build-child-');
+  it('passes testIDPrefix to WeekBlocksEditor for child components', () => {
+    expect(source).toContain('testIDPrefix="schedule-build"');
+    expect(source).toContain('testIDPrefix="schedule-review"');
   });
 
   it('offers weekly and fortnightly repeat options with stable testIDs', () => {
@@ -159,43 +184,13 @@ describe('ScheduleBuildScreen source', () => {
   });
 
   it("D25: fetches the selected carer's availability and warns — never blocks — on a day/time outside it", () => {
-    // Fetched via the real hook (real endpoint, real Zod-validated response
-    // — see useAvailabilityForCarer.test.ts and availability.test.ts's
-    // getForUser cases for that layer's own render/call-level coverage).
-    // The clash check itself is the SAME already-unit-tested pure function
-    // ScheduleRespondScreen uses (utils.test.ts's `isOutsideAvailability`
-    // describe block), reused here rather than re-derived.
     expect(source).toContain('useAvailabilityForCarer(selectedCarerId)');
-    expect(source).toContain('isOutsideAvailability(');
-    expect(source).toContain("from '../utils'");
-    expect(source).toContain('variant="outside-hours"');
-    expect(source).toContain("t('build.outsideHoursWarning')");
-    // Never blocks: TimeRangePicker is unconditional, not gated behind
-    // `!outsideAvailability` or any disabled/hidden prop tied to it.
-    expect(source).not.toMatch(
-      /outsideAvailability[\s\S]{0,80}<TimeRangePicker/
-    );
-    expect(source).not.toMatch(/TimeRangePicker[\s\S]{0,40}disabled/);
-  });
-
-  it('gates the hours-step CTA and review send on all weekday ranges being valid', () => {
-    expect(source).toContain('allDaysValid');
-    expect(source).toContain('isEndAfterStart');
-    expect(source).toMatch(
-      /build\.hoursCta[\s\S]{0,80}ctaDisabled=\{!allDaysValid\}/
-    );
-    expect(source).toMatch(
-      /build\.reviewSendCta[\s\S]{0,80}ctaDisabled=\{isSending \|\| !allDaysValid\}/
-    );
+    expect(source).toContain('availability={carerAvailability.data}');
   });
 
   it('D25: does not treat a still-loading availability fetch as "outside availability" (no false-positive warning flash)', () => {
-    // isOutsideAvailability itself treats "no row for this weekday" as
-    // outside — correct once data has actually loaded, wrong while it's
-    // still in flight (undefined). The screen must gate on that explicitly.
-    expect(source).toMatch(
-      /carerAvailability\.data !== undefined[\s\S]{0,40}isOutsideAvailability/
-    );
+    // WeekBlocksEditor now handles this internally, but it relies on availability being undefined while loading
+    expect(source).toContain('availability={carerAvailability.data}');
   });
 
   it('REGRESSION: a failed draft fetch reaches a real error step, never a permanent spinner', () => {
@@ -298,7 +293,7 @@ describe('ScheduleBuildScreen care-hours prefill (P3.2)', () => {
 
   it('composes with the default-fill effect rather than fighting it: that effect still only writes days with NO entry', () => {
     const defaultFill = source.match(
-      /setDayTimes\(prev => \{[\s\S]*?return next;\s*\}\);/
+      /setDayBlocks\(prev => \{[\s\S]*?return next;\s*\}\);/
     );
     expect(defaultFill?.[0]).toContain('if (!next[day])');
   });

@@ -41,6 +41,7 @@ function occurrence(): ExpandedOccurrence {
     localDate: '2026-06-04',
     weekday: 4,
     startsAt: '2026-06-04T07:00:00.000Z',
+    startTime: '07:00:00',
     endsAt: '2026-06-04T16:00:00.000Z',
     children: [],
   };

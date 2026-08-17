@@ -40,6 +40,7 @@ function occurrence(
     localDate: '2026-06-04',
     weekday: 4,
     startsAt: '2026-06-04T07:00:00.000Z',
+    startTime: '07:00:00',
     endsAt: '2026-06-04T16:00:00.000Z',
     children: [],
     ...overrides,
@@ -333,6 +334,7 @@ describe('ScheduleMaterialisationService — moved shift still owns its uid', ()
         occurrence({
           localDate: '2026-06-11',
           startsAt: '2026-06-11T07:00:00.000Z',
+          startTime: '07:00:00',
           endsAt: '2026-06-11T16:00:00.000Z',
         }),
       ],

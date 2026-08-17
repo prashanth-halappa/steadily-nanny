@@ -161,7 +161,10 @@ export type SchedulePatternListResponse = z.infer<
 // schedule_pattern_days
 // =============================================================================
 
-/** The persisted entity as returned to clients. */
+/**
+ * The persisted entity as returned to clients. A weekday may appear more than
+ * once if there are multiple blocks; blocks come back ordered by start_time.
+ */
 export const SchedulePatternDaySchema = z.object({
   id: z.uuid(),
   pattern_id: z.uuid(),

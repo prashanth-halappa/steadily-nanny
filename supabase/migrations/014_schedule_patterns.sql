@@ -89,6 +89,12 @@ create table if not exists public.schedule_pattern_days (
   constraint schedule_pattern_days_time_order check (end_time > start_time)
 );
 
+-- SUPERSEDED BY 101 (applied 2026-08-17) — DO NOT rely on this index existing.
+-- 101 drops it and replaces it with `..._pattern_weekday_start_idx`, unique on
+-- (pattern_id, weekday, start_time), because a weekday must be able to hold
+-- MORE THAN ONE block ("Mon 07:00-13:00 AND 15:00-17:00"). Left in place here
+-- because applied migrations are history and are never rewritten; read 101 for
+-- the current shape. See GOLDEN-FIXES #46 for what depended on the old key.
 create unique index if not exists schedule_pattern_days_pattern_weekday_idx
   on public.schedule_pattern_days (pattern_id, weekday);
 

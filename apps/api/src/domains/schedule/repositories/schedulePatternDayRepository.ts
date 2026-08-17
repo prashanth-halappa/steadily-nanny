@@ -25,7 +25,8 @@ export class SchedulePatternDayRepository {
       .from(this.table)
       .select('*')
       .eq('pattern_id', patternId)
-      .order('weekday', { ascending: true });
+      .order('weekday', { ascending: true })
+      .order('start_time', { ascending: true });
 
     if (error) {
       throw new DatabaseError(
