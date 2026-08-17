@@ -37,20 +37,39 @@ select * from run_integrity_checks();
 **Bad:** any non-zero violation count. That is a money-consistency failure —
 go to `ROLLBACK-RUNBOOK.md` §10 step 3 and stop writes before investigating.
 
-Confirm the cron actually ran, rather than assuming — **and use the right
-table, because this one is a trap.**
+Confirm the cron actually ran, rather than assuming — **and the premise below
+was itself wrong until this correction. Read it before trusting either query.**
 
-> **CORRECTED 2026-08-14 (first live watch).** An earlier version of this
-> section told you to look in `job_runs` and to treat an absent row as "cron
-> not firing". **That is wrong and it cries wolf.** `integrity-checks` is a
-> pure SQL cron that calls `run_integrity_checks()` directly; it never goes
-> through the API's job handler, and the job handler is the only thing that
-> writes `job_runs`. So `integrity-checks` has **zero rows in `job_runs` by
-> design, forever.** Verified live: `job_runs` had no `%integrity%` row at all,
-> while `cron.job_run_details` showed it firing at 04:10 and succeeding.
+> **CORRECTED 2026-08-17 (S2 audit).** The 2026-08-14 correction above this
+> line claimed `integrity-checks` is "a pure SQL cron that calls
+> `run_integrity_checks()` directly" and therefore has zero rows in `job_runs`
+> "by design, forever". **That claim is false, and `057_integrity_checks_cron.sql:64-75`
+> contradicts it in the same repo:** the cron body is
+> `SELECT net.http_post(url := … || '/api/jobs/integrity-checks', …)` — the
+> exact same shape as every other job cron. `/api/jobs/integrity-checks` is
+> wired to `JobController.runIntegrityChecks`, which IS
+> `createTrackedJobHandler`, the same factory every other job uses. It writes
+> `job_runs` like everything else. The "zero rows" observation on 2026-08-14
+> was real, but the explanation for it was wrong — treat any future absence of
+> `integrity-checks` rows in `job_runs` as a genuine finding, not an expected
+> shape.
+>
+> **The deeper premise error (S2, `docs/AS-BUILT-SCHEDULE.md` §6 S2):**
+> `cron.job_run_details.status = 'succeeded'` — the signal the query below
+> reads — proves only that **pg_net accepted the enqueue**. pg_net is
+> asynchronous: the actual HTTP call it fires happens out-of-band, and its
+> result lands in `net._http_response`, a table **nothing in this repo reads**
+> (verified — zero call sites). A rotated Vault key (401), a 500 from the API,
+> and a dead Cloud Run revision are all **indistinguishable from success** in
+> `cron.job_run_details`. `job_runs` — written by `createTrackedJobHandler` — is
+> the only signal that reflects what the job actually did, for every job
+> registered through it (all ten, including `integrity-checks` as corrected
+> above). Read `job_runs` FIRST; treat `cron.job_run_details` as "did the
+> scheduler fire", never as "did the job succeed".
 
 ```sql
--- The right check for SQL-only crons: cron's own history, not job_runs.
+-- Did the scheduler fire at all — proves enqueue only, NOT job success
+-- (see the correction above). Use alongside job_runs, never instead of it.
 select j.jobname, j.schedule, j.active,
        max(d.start_time)                                     as last_fire,
        (array_agg(d.status ORDER BY d.start_time DESC))[1]   as last_status,
@@ -64,12 +83,45 @@ order by j.jobname;
 **Good:** every job `active = true`, `last_fire` within its own schedule's
 period, `last_status = 'succeeded'`.
 **Bad:** `last_status = 'failed'`, or a `last_fire` older than the schedule
-implies.
+implies. **Not sufficient on its own either way** — see the two queries below.
 
-`job_runs` remains the right table for the API-driven jobs (`reminders`,
-`no-show-sweep`, `cover-ask-expiry`, `shift-completion`, `uncovered-digest`,
-`cancellation-pay-reconcile`, `no-show-digest`) because those DO route through
-the job handler — that is where §2's volume query gets its counts.
+`job_runs` is the right table for every job registered through
+`createTrackedJobHandler` — `schedule-horizon`, `reminders`,
+`integrity-checks`, `no-show-sweep`, `cover-ask-expiry`, `shift-completion`,
+`uncovered-digest`, `cancellation-pay-reconcile`, `no-show-digest`, and
+`job-health` (below) — which as corrected above is all ten registered jobs,
+not a subset. That is where §2's volume query gets its counts.
+
+`docs/AS-BUILT-SCHEDULE.md` §6 S2's two settling queries, run together:
+
+```sql
+-- 1. What job_runs itself says, per job, over the last week.
+select job_name, max(started_at), count(*) from job_runs
+where started_at > now() - interval '7 days' group by job_name;
+
+-- 2. What pg_net itself saw at the HTTP layer, independent of job_runs —
+-- this is the ONLY way to catch a call that never reached the API at all
+-- (rotated key, network failure, dead deploy), because that case never
+-- creates a job_runs row in the first place.
+select status_code, count(*) from net._http_response
+where created > now() - interval '7 days' group by status_code;
+```
+
+### The automated version of this check: `job-health`
+
+As of migration `105_job_health_cron.sql` (J1-b), a tenth job —
+`job-health` — runs this same comparison daily at 06:15 UTC so it does not
+depend on a human running this file. It reads (i) `job_runs` for every
+registered job's own recorded outcome, keyed to that job's expected cadence,
+and (ii) `net._http_response` via `public.job_http_failures()`, for exactly
+the "never reached the API" case query 2 above exists to catch. When either
+signal is unhealthy it sends one email to `OPS_ALERT_EMAILS` and one push per
+id in `OPS_ALERT_USER_IDS` (both optional env vars — unconfigured means the
+finding is still recorded in `job_runs.summary`, just not alerted on; see
+`apps/api/.env.example`). This does not replace this file — a human doing the
++24h/+48h/+72h read still catches things a fixed cadence table cannot (a
+cron that fires on schedule but does obviously wrong work, for instance) —
+but it means a fully dead job is no longer silent between watches.
 
 ---
 
@@ -84,13 +136,16 @@ from cron.job
 order by jobid;
 ```
 
-**Good:** nine jobs active — the six that predate this release
+**Good:** ten jobs active — the six that predate this release
 (`schedule-horizon`, `reminders-hourly`, `cancellation-pay-reconcile`,
 `integrity-checks`, `no-show-sweep`, `uncovered-digest`) plus
-`cover-ask-expiry` (*/5), `shift-completion` (03:40) and `no-show-digest`.
-**Bad:** fewer than nine, or any `active = false`.
-**Verified live 2026-08-14:** all nine present and `active`, every one
-`succeeded` on its last fire.
+`cover-ask-expiry` (*/5), `shift-completion` (03:40) and `no-show-digest`,
+plus `job-health` (06:15, migration 105 — J1-b).
+**Bad:** fewer than ten, or any `active = false`.
+**Verified live 2026-08-14:** all nine jobs registered at that time present
+and `active`, every one `succeeded` on its last fire. `job-health` is new
+since and has not yet had its own live watch entry — confirm it the same way
+the first time this file is run after 105 is applied.
 
 > **Name mismatch between the two tables — do not read it as a missing job.**
 > `cron.job` calls it **`reminders-hourly`**; `job_runs` records it as

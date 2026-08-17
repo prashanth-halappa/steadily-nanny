@@ -256,4 +256,11 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
     appendQuery('/(private)/schedule/build', {
       householdId: asString(data.householdId),
     }),
+
+  // J1-b (S2 audit closeout) — `jobHealthJob`'s own alert. Never sent to a
+  // parent or carer in practice (only to `OPS_ALERT_USER_IDS`), but the
+  // route map is a total Record over every push type, so it still needs a
+  // destination. Settings is the closest thing this app has to an ops/admin
+  // surface.
+  [PUSH_NOTIFICATION_TYPES.OPS_JOB_HEALTH]: () => '/(private)/settings',
 };

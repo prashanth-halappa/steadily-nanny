@@ -168,7 +168,8 @@
       "terms_proposal_accepted": "Terms agreed",
       "terms_proposal_withdrawn": "Terms withdrawn",
       "terms_proposal_declined": "Terms declined",
-      "terms_offer_accepted": "Terms agreed"
+      "terms_offer_accepted": "Terms agreed",
+      "ops_job_health": "Job health alerts"
     }
   }
 }

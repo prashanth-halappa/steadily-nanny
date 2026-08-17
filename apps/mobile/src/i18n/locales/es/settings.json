@@ -168,7 +168,8 @@
       "terms_proposal_accepted": "Condiciones acordadas",
       "terms_proposal_withdrawn": "Condiciones retiradas",
       "terms_proposal_declined": "Condiciones rechazadas",
-      "terms_offer_accepted": "Condiciones acordadas"
+      "terms_offer_accepted": "Condiciones acordadas",
+      "ops_job_health": "Alertas de estado de trabajos"
     }
   }
 }
