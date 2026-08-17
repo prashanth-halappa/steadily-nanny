@@ -142,6 +142,12 @@ export class PaymentCommandService {
       // "the parent said nothing about how" is a fact worth stating.
       method_note: input.method_note ?? null,
       recorded_by: callerId,
+      // Passed through UNTOUCHED and never generated here (102). The key
+      // identifies one payment INTENT on one phone — the sheet opening, and
+      // every retry of that same attempt — which is a fact only the client
+      // holds. A server-minted key would be new on every request and would
+      // dedupe nothing, which is the whole failure it exists to prevent.
+      idempotency_key: input.idempotency_key,
     });
 
     if (outcome.outcome === 'exceeds_gross') {

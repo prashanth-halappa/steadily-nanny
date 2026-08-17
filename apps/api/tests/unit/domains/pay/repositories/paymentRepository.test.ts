@@ -296,7 +296,7 @@ describe('PaymentRepository.listForHousehold', () => {
 // ---------------------------------------------------------------------------
 
 describe('PaymentRepository.recordForTimesheet', () => {
-  it('calls the REAL function name with the REAL five parameter names', async () => {
+  it('calls the REAL function name with the REAL six parameter names', async () => {
     withRpc({ outcome: 'recorded', payment: paymentRow() });
 
     await new PaymentRepository().recordForTimesheet('ts-1', RECORD_ENTRY);
@@ -308,6 +308,46 @@ describe('PaymentRepository.recordForTimesheet', () => {
       p_paid_at: '2026-08-11',
       p_method_note: 'Bank transfer',
       p_recorded_by: 'parent-1',
+      // Explicit null rather than omitted, for the same reason `method_note`
+      // is: 102's sixth parameter is DEFAULTED, and a missing key in the
+      // PostgREST body would bind the default silently. Sending it says "this
+      // client had no intent key", which is a different fact from "this
+      // client is older than 102" and is worth being able to read.
+      p_idempotency_key: null,
+    });
+  });
+
+  it('passes an intent key through when the client minted one (102)', async () => {
+    withRpc({ outcome: 'recorded', payment: paymentRow() });
+
+    await new PaymentRepository().recordForTimesheet('ts-1', {
+      ...RECORD_ENTRY,
+      idempotency_key: '11111111-2222-3333-4444-555555555555',
+    });
+
+    expect(rpcCalls[0]?.args.p_idempotency_key).toBe(
+      '11111111-2222-3333-4444-555555555555'
+    );
+  });
+
+  it('maps the FIRST payment back when the key repeats — a retry is a success, not a duplicate', async () => {
+    // The function answers 'recorded' with the row the first attempt wrote
+    // (102). `payments` is append-only, so the alternative — an error the
+    // client has to interpret — ends with a parent recording the payment
+    // again and then having to correct it.
+    withRpc({
+      outcome: 'recorded',
+      payment: paymentRow({ id: 'pay-first', amount_minor: 5_000 }),
+    });
+
+    const result = await new PaymentRepository().recordForTimesheet('ts-1', {
+      ...RECORD_ENTRY,
+      idempotency_key: '11111111-2222-3333-4444-555555555555',
+    });
+
+    expect(result).toEqual({
+      outcome: 'recorded',
+      payment: expect.objectContaining({ id: 'pay-first' }),
     });
   });
 
@@ -413,5 +453,173 @@ describe('PaymentRepository.recordForTimesheet', () => {
     await expect(
       new PaymentRepository().recordForTimesheet('ts-1', RECORD_ENTRY)
     ).rejects.toThrow('Unrecognised payment outcome');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 085 — the correction seam. Untested until now (audit gap #2): every other
+// outcome mapping in this file was pinned while the function name and the six
+// `p_*` parameter names it is reached by were not, and a mock-shaped name
+// passes a unit test and 500s in production (D53). Asserted verbatim against
+// what `085_payment_corrections.sql` declares.
+// ---------------------------------------------------------------------------
+
+const CORRECTION_ENTRY = {
+  // ALREADY NEGATIVE here — the service negates the positive magnitude the
+  // wire carries, so every layer below it sees the number that will be stored.
+  amount_minor: -5_000,
+  paid_at: '2026-08-12',
+  reason: 'recorded twice',
+  recorded_by: 'parent-1',
+};
+
+describe('PaymentRepository.recordCorrection', () => {
+  it('calls the REAL function name with the REAL six parameter names', async () => {
+    withRpc({ outcome: 'recorded', correction: paymentRow() });
+
+    await new PaymentRepository().recordCorrection(
+      'ts-1',
+      'pay-1',
+      CORRECTION_ENTRY
+    );
+
+    expect(rpcCalls[0]?.name).toBe('record_payment_correction');
+    expect(rpcCalls[0]?.args).toEqual({
+      p_timesheet_id: 'ts-1',
+      p_corrects_payment_id: 'pay-1',
+      p_amount_minor: -5_000,
+      p_paid_at: '2026-08-12',
+      p_reason: 'recorded twice',
+      p_recorded_by: 'parent-1',
+    });
+  });
+
+  it('sends NOTHING that describes the money — 085 stamps those from the ORIGINAL payment', async () => {
+    withRpc({ outcome: 'recorded', correction: paymentRow() });
+
+    await new PaymentRepository().recordCorrection(
+      'ts-1',
+      'pay-1',
+      CORRECTION_ENTRY
+    );
+
+    const args = Object.keys(rpcCalls[0]?.args ?? {});
+    expect(args).not.toContain('p_household_id');
+    expect(args).not.toContain('p_carer_id');
+    expect(args).not.toContain('p_currency');
+    expect(args).not.toContain('p_kind');
+  });
+
+  it('maps a recorded payload to the recorded outcome, carrying the negative row', async () => {
+    withRpc({
+      outcome: 'recorded',
+      correction: paymentRow({
+        id: 'corr-1',
+        amount_minor: -5_000,
+        kind: 'correction',
+      }),
+    });
+
+    expect(
+      await new PaymentRepository().recordCorrection(
+        'ts-1',
+        'pay-1',
+        CORRECTION_ENTRY
+      )
+    ).toEqual({
+      outcome: 'recorded',
+      correction: expect.objectContaining({
+        id: 'corr-1',
+        amount_minor: -5_000,
+      }),
+    });
+  });
+
+  it('maps exceeds_original to the under-lock figures the error reports', async () => {
+    withRpc({
+      outcome: 'exceeds_original',
+      original_amount_minor: 46_200,
+      remaining_minor: 12_000,
+    });
+
+    expect(
+      await new PaymentRepository().recordCorrection(
+        'ts-1',
+        'pay-1',
+        CORRECTION_ENTRY
+      )
+    ).toEqual({
+      outcome: 'exceeds_original',
+      originalAmountMinor: 46_200,
+      remainingMinor: 12_000,
+    });
+  });
+
+  it('maps not_correctable, carrying the reason the lock actually saw', async () => {
+    withRpc({ outcome: 'not_correctable', reason: 'not_a_payment' });
+
+    expect(
+      await new PaymentRepository().recordCorrection(
+        'ts-1',
+        'pay-1',
+        CORRECTION_ENTRY
+      )
+    ).toEqual({ outcome: 'not_correctable', reason: 'not_a_payment' });
+  });
+
+  it('refuses an unrecognised answer rather than reporting nothing happened', async () => {
+    withRpc({ outcome: 'recorded' });
+
+    await expect(
+      new PaymentRepository().recordCorrection(
+        'ts-1',
+        'pay-1',
+        CORRECTION_ENTRY
+      )
+    ).rejects.toThrow('Unrecognised correction outcome');
+  });
+
+  it('throws a DatabaseError when the RPC itself fails', async () => {
+    withRpc(null, { message: 'boom' });
+
+    await expect(
+      new PaymentRepository().recordCorrection(
+        'ts-1',
+        'pay-1',
+        CORRECTION_ENTRY
+      )
+    ).rejects.toThrow('Failed to record correction');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P8 — append-only, structurally (`docs/AS-BUILT-PAYMENT.md` §7).
+//
+// The audit's words: "`BaseRepository.update`/`delete` are inherited and
+// callable on every append-only table including `payments`, running as service
+// role where RLS cannot stop them. Append-only there is enforced by nobody
+// having written the call." A comment saying "nothing should start" is not a
+// guard; a method that throws is.
+// ---------------------------------------------------------------------------
+
+describe('PaymentRepository — append-only', () => {
+  it('refuses update: a payment is a fact about money that already moved', async () => {
+    await expect(
+      new PaymentRepository().update('pay-1', { amount_minor: 1 })
+    ).rejects.toThrow('payments is append-only');
+  });
+
+  it('refuses delete: the way back is a correction row, not an erasure', async () => {
+    await expect(new PaymentRepository().delete('pay-1')).rejects.toThrow(
+      'payments is append-only'
+    );
+  });
+
+  it('never reaches the database to find that out', async () => {
+    // The refusal is structural, so it must not depend on a query failing.
+    mockSupabaseService.from.mockClear();
+    await new PaymentRepository().update('pay-1', {}).catch(() => undefined);
+    await new PaymentRepository().delete('pay-1').catch(() => undefined);
+    expect(mockSupabaseService.from).not.toHaveBeenCalled();
   });
 });

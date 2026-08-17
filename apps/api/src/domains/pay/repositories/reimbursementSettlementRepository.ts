@@ -10,12 +10,13 @@
  * still filters `household_id` explicitly, because a bypassed-RLS query with
  * no filter of its own reads across households.
  *
- * There is deliberately NO update and NO delete helper. 086 gives the table no
- * `updated_at` and no trigger, and immutability in this stack is the ABSENCE
- * of a write path rather than a database rule. Inheriting
- * `BaseRepository.update`/`delete` is the same known, accepted wart
- * `paymentRepository` documents: nothing in the domain calls them and nothing
- * should start.
+ * There is deliberately NO update and NO delete PATH. 086 gives the table no
+ * `updated_at` and no trigger. The inherited `BaseRepository.update`/`delete`
+ * used to be a known, accepted wart — real, callable, service-role methods
+ * that RLS could not stop, with "nothing calls them" as the entire guarantee
+ * (`docs/AS-BUILT-PAYMENT.md` §7 P8). They are now OVERRIDDEN TO THROW,
+ * below. Unlike `payments`, this table has no correction row either: a
+ * settlement recorded wrongly is a conversation, not a second write.
  *
  * @module domains/pay/repositories/reimbursementSettlementRepository
  */
@@ -31,6 +32,27 @@ const UNIQUE_VIOLATION = '23505';
 export class ReimbursementSettlementRepository extends BaseRepository<ReimbursementSettlement> {
   constructor() {
     super('reimbursement_settlements');
+  }
+
+  /**
+   * Append-only, structurally — the twin of `paymentRepository`'s pair, and
+   * for the same reason: absence of a call site is not a guard, a method that
+   * throws is. Refused before any query, so the guarantee does not depend on
+   * the database being reachable.
+   */
+  async update(
+    _id: string,
+    _data: Partial<ReimbursementSettlement>
+  ): Promise<ReimbursementSettlement> {
+    throw new Error(
+      'reimbursement_settlements is append-only: 086 gives it no correction path'
+    );
+  }
+
+  async delete(_id: string): Promise<void> {
+    throw new Error(
+      'reimbursement_settlements is append-only: 086 gives it no correction path'
+    );
   }
 
   /**

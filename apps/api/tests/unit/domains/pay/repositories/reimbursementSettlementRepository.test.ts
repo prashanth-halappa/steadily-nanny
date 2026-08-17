@@ -13,8 +13,6 @@
  * its own reads across households (docs/11-MONEY.md §8/§9).
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FIXTURE_TS = new Date(Date.now() - 2 * DAY_MS).toISOString();
@@ -194,17 +192,39 @@ describe('ReimbursementSettlementRepository.create', () => {
   });
 });
 
+/**
+ * Append-only, structurally (`docs/AS-BUILT-PAYMENT.md` §7 P8).
+ *
+ * This used to be a source-text assertion that the file contained no
+ * `async update` / `async delete`, which proved the opposite of what it
+ * looked like: BOTH were inherited from `BaseRepository`, callable, and run
+ * as service role where RLS cannot stop them. Absence in this file was
+ * absence of a guard, not absence of a path. The methods now exist here
+ * precisely so they can refuse.
+ */
 describe('append-only', () => {
-  it('adds no update or delete helper of its own (086: no correction path)', () => {
-    const source = readFileSync(
-      join(
-        __dirname,
-        '../../../../../src/domains/pay/repositories/reimbursementSettlementRepository.ts'
-      ),
-      'utf-8'
-    );
+  it('refuses update — 086 gives this table no correction path at all', async () => {
+    await expect(
+      new ReimbursementSettlementRepository().update('rs-1', {
+        amount_minor: 1,
+      })
+    ).rejects.toThrow('reimbursement_settlements is append-only');
+  });
 
-    expect(source).not.toContain('async update');
-    expect(source).not.toContain('async delete');
+  it('refuses delete', async () => {
+    await expect(
+      new ReimbursementSettlementRepository().delete('rs-1')
+    ).rejects.toThrow('reimbursement_settlements is append-only');
+  });
+
+  it('never reaches the database to find that out', async () => {
+    mockSupabaseService.from.mockClear();
+    await new ReimbursementSettlementRepository()
+      .update('rs-1', {})
+      .catch(() => undefined);
+    await new ReimbursementSettlementRepository()
+      .delete('rs-1')
+      .catch(() => undefined);
+    expect(mockSupabaseService.from).not.toHaveBeenCalled();
   });
 });

@@ -136,6 +136,13 @@
   "reopenDialogCancel": "Todavía no",
   "reopenDialogConfirm": "Reabrir la semana",
   "reopenedToast": "Semana reabierta",
+  "reopen": {
+    "refusedPaid": "Has pagado {{amount}} de esta semana. Ajústalo en el próximo pago."
+  },
+  "paidWeek": {
+    "hoursAdded": "{{name}} añadió horas el {{date}}, después de que se pagara esta semana. El total aprobado y los pagos no han cambiado. Inclúyelas en el próximo pago.",
+    "hoursAddedNanny": "Añadiste horas después de que se pagara esta semana. La familia puede verlas."
+  },
   "widgets": {
     "title": "Esta semana",
     "scheduled": "de {{duration}} previstas",

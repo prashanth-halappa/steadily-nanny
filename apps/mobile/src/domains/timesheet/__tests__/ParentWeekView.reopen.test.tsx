@@ -282,6 +282,17 @@ const reviewExpenseMock = mock(() =>
   Promise.resolve({ id: 'expense-1', status: 'approved' })
 );
 
+// WP-P1(B): the paid-week refusal quotes the paid-so-far figure, so the
+// ledger has to be real here rather than an empty stub.
+const listPaymentsMock = mock(() => Promise.resolve([] as unknown[]));
+mock.module('@/src/api/endpoints/payments', () => ({
+  paymentApi: {
+    list: listPaymentsMock,
+    create: mock(),
+    correct: mock(),
+  },
+}));
+
 mock.module('@/src/api/endpoints/expenses', () => {
   const shared = expenseSchemaModule;
   return {
@@ -422,6 +433,8 @@ beforeEach(() => {
     Promise.resolve(makeTimesheet({ status: 'submitted', approved_at: null }))
   );
   listMembersMock.mockImplementation(() => Promise.resolve([householdMember]));
+  listPaymentsMock.mockReset();
+  listPaymentsMock.mockImplementation(() => Promise.resolve([]));
 
   useAuthStore.setState({
     session: { user: { id: PARENT_ID } } as unknown as never,
@@ -572,5 +585,69 @@ describe('ParentWeekView — reopen affordance', () => {
 
     await waitFor(() => expect(getByTestId('hours-week-list')).toBeTruthy());
     expect(queryByTestId('hours-query-note')).toBeNull();
+  });
+
+  // WP-P1(B). Migration 102 refuses a manual reopen of a week with payment
+  // rows. The dialog is a `BottomSheetBase`, so a toast fired over it is
+  // invisible (GOLDEN-FIXES #40) — the refusal has to stay in the dialog the
+  // parent is looking at, and the dialog has to still be there.
+  it('keeps the reopen dialog open and states the refusal inline when the week has payments', async () => {
+    stubApprovedWeek();
+    listPaymentsMock.mockImplementation(() =>
+      Promise.resolve([
+        {
+          id: 'pay-1',
+          timesheet_id: TIMESHEET_ID,
+          household_id: HOUSEHOLD_ID,
+          carer_id: CARER_ID,
+          amount_minor: 12000,
+          kind: 'payment',
+          corrects_payment_id: null,
+          correction_reason: null,
+          currency: 'GBP',
+          paid_at: '2026-08-11',
+          method_note: null,
+          recorded_by: PARENT_ID,
+          created_at: '2026-08-11T09:30:00.000Z',
+        },
+      ])
+    );
+    reopenMock.mockImplementation(() =>
+      Promise.reject(
+        Object.assign(new Error('not actionable'), {
+          response: {
+            status: 409,
+            data: {
+              error: {
+                code: 'TIMESHEET_NOT_ACTIONABLE',
+                message: 'This timesheet is not awaiting approval',
+                metadata: { timesheetId: TIMESHEET_ID, status: 'has_payments' },
+              },
+            },
+          },
+        })
+      )
+    );
+
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-reopen-button')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-reopen-button'));
+    fireEvent.changeText(
+      getByTestId('hours-reopen-dialog-reason'),
+      'Thursday hours were wrong'
+    );
+    fireEvent.press(getByTestId('hours-reopen-dialog-confirm'));
+
+    await waitFor(() =>
+      expect(getByTestId('hours-reopen-dialog-refusal')).toBeTruthy()
+    );
+    // Still open, still holding the typed reason.
+    expect(getByTestId('hours-reopen-dialog')).toBeTruthy();
+    expect(getByTestId('hours-reopen-dialog-reason').props.value).toBe(
+      'Thursday hours were wrong'
+    );
   });
 });

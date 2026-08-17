@@ -668,23 +668,78 @@ Labelling it "Approved" would imply someone approved a payment (nobody
 does); labelling it "Estimated" would imply it might be wrong (it's a
 record, not a guess).
 
-**The ceiling is enforced by refusal, not by clamping.**
-`apps/api/src/domains/pay/services/paymentCommandService.ts` is the only
-place `sum(payments) <= gross_minor` is checked — a cross-row `SUM` can't be
-a row `CHECK`, and 067 has no insert policy at all (§8), so the service is
-the entire constraint. Gate 4 there computes `alreadyPaidMinor + amountMinor`
-and, if it would exceed the week's frozen `gross_minor`, throws
-`PaymentExceedsGrossError` rather than trimming the amount to what's left —
-a trimmed payment would be a record of money that did not move, which is a
-worse lie than a rejected request. **The service's own header documents a
-known, un-closed race on this gate**, in its own words: the check is
-read-then-write, so two simultaneous first payments could each see `sum = 0`
-and both commit, together exceeding the gross; sequential retries never hit
-it (the first row is visible by the second write), so the window is two
-parents tapping "Record payment" on the same week in the same instant.
-Closing it needs a 051-style database function that sums and inserts in one
-statement — a wider pre-check in the service cannot close a race that lives
-between two reads and two writes.
+**The ceiling is enforced by refusal, not by clamping, and it is enforced
+inside the write.** The rule is `sum(payments) <= gross_minor` per timesheet,
+and an over-gross payment is refused with the figures the check actually saw
+rather than trimmed to what's left — a trimmed payment would be a record of
+money that did not move, which is a worse lie than a rejected request.
+
+**That gate lives in `record_timesheet_payment` (077, re-issued by 085 and
+again by 102), not in TypeScript.** This section used to say
+`paymentCommandService` was "the entire constraint" and to describe an open
+read-then-write race on it. **That is out of date — 077 closed it**, and the
+correction matters because the stale version invites someone to "fix" the
+race that is already fixed, in the one place it cannot be fixed. The function
+takes `select ... for update` on the WEEK's `timesheets` row, re-checks
+approved-and-priced under that lock, sums, refuses, and inserts, all in one
+body. The anchor is the timesheet rather than an advisory key on purpose: the
+invariant attaches to the row CARRYING THE FROZEN GROSS, so locking it also
+serialises payments against a concurrent approve or reopen. The service still
+runs its own gates 1–3 (the week exists and is the caller's, parents only,
+approved and priced) for the right 404/403/409 shapes — that read is unlocked,
+which is exactly why the re-check under the lock is load-bearing rather than
+belt-and-braces.
+
+**A week that has payments cannot be taken back out of `approved` (102).**
+This is the other half of the same invariant, and it was missing: every
+payment is bounded by a `gross_minor` that both ways out of `approved` used to
+clear without looking. The two ways get different answers, because the two
+acts are different.
+
+- **A manual reopen is REFUSED** — `timesheets_refuse_reopen_when_paid`, a
+  trigger, raising `TIMESHEET_HAS_PAYMENTS`. The service checks first so the
+  ordinary case gets a sentence a parent can act on ("You've paid £800.00 on
+  this week. Adjust it in the next payment"), and the trigger closes the
+  window under it. Refusing is honest here because the parent is standing in
+  front of a screen that already shows what has been paid, and adjusting the
+  next payment is a thing she can actually do — unlike un-paying a week.
+- **A clock-out is NOT refused**, ever. The hours already happened, and a
+  clock-out that can fail because a parent tapped Approve is the one thing
+  this path must never be. `roll_up_timesheet_hours` (102) records the
+  minutes, KEEPS the status, the approver and all four snapshot columns on a
+  paid week, and stamps `timesheets.hours_changed_after_payment_at`. Both week
+  views render a note from that column; `approve` clears it. An UNPAID week
+  still demotes to `submitted` with the snapshot cleared, exactly as before.
+
+  It is an RPC for the same reason the payment insert is: the "has this week
+  been paid" question is a cross-row `EXISTS`, and it has to be asked AFTER
+  the row lock. Even in SQL a subquery inside an `UPDATE` reads the statement
+  snapshot — taken before the lock was granted — so a payment that committed
+  while the statement queued would be invisible.
+
+**`approved ⇒ frozen snapshot` is now a CHECK, not a convention (102).**
+`timesheets_approved_has_snapshot` asserts what 042's header always claimed
+and what `042:87` admitted was only "a service-layer invariant". All four
+columns are set together and cleared together, and `status = 'approved'` is
+what makes them mandatory.
+
+**A payment carries an optional `idempotency_key`, minted per INTENT (102).**
+Not per request: the client generates it when the record-payment sheet opens,
+reuses it across every retry of that attempt, and drops it on success. A
+double-tapped POST, or a retry after a response the phone never saw, used to
+file a second real row for money that moved once — bounded only by the gross,
+on a table with no edit path back. `record_timesheet_payment` now reads the
+key under the lock and **returns the row the first attempt wrote**, so the
+retry reads as the success it actually was rather than as an error the client
+would have to interpret. The unique index is PARTIAL (`where idempotency_key
+is not null`) so rows without a key never collide with each other.
+
+**Append-only is now structural, not a comment.** `PaymentRepository` and
+`ReimbursementSettlementRepository` both inherit `BaseRepository.update` and
+`.delete`, which run as service role where RLS cannot stop them; "append-only"
+there was enforced by nobody having written the call. Both now **override both
+methods to throw**, before any query. The way back into a wrong payment is a
+`correction` row; there is no way back into a wrong settlement at all.
 
 **Currency is stamped from the frozen week, never client-chosen.**
 `CreatePaymentSchema` carries no `currency` field at all — the command

@@ -420,8 +420,13 @@ describe('PaymentCommandService.create — the week describes itself', () => {
     } as never);
 
     const entry = paymentRepo.recordForTimesheet.mock.calls[0][1];
+    // An exact key set, not a subset: `idempotency_key` (102) joined the list
+    // and nothing else may. It describes the client's ATTEMPT, never the
+    // money — household, carer and currency are still stamped inside the
+    // locked function and still have nowhere here to be spoofed from.
     expect(Object.keys(entry).sort()).toEqual([
       'amount_minor',
+      'idempotency_key',
       'method_note',
       'paid_at',
       'recorded_by',
@@ -482,5 +487,60 @@ describe('PaymentCommandService.create — the week describes itself', () => {
       currency: 'GBP',
       recorded_by: 'parent-1',
     });
+  });
+});
+
+/**
+ * 102 — the intent key, and the ledger's structural immutability.
+ */
+describe('PaymentCommandService.create — the intent key', () => {
+  it('threads the client key down to the RPC seam untouched', async () => {
+    const { svc, paymentRepo } = makeService();
+
+    await svc.create('parent-1', 'ts-1', {
+      ...VALID_INPUT,
+      idempotency_key: '11111111-2222-3333-4444-555555555555',
+    });
+
+    expect(paymentRepo.recordForTimesheet).toHaveBeenCalledWith(
+      'ts-1',
+      expect.objectContaining({
+        idempotency_key: '11111111-2222-3333-4444-555555555555',
+      })
+    );
+  });
+
+  it('sends undefined when the client minted none — an older build is not a failure', async () => {
+    const { svc, paymentRepo } = makeService();
+
+    await svc.create('parent-1', 'ts-1', VALID_INPUT);
+
+    const entry = paymentRepo.recordForTimesheet.mock.calls[0][1] as Record<
+      string,
+      unknown
+    >;
+    expect(entry.idempotency_key).toBeUndefined();
+  });
+});
+
+/**
+ * The twin of `reimbursementSettlementService.test.ts`'s append-only case,
+ * missing here until now. `payments` has ONE way back — a `correction` row
+ * (085) that leaves the original at its full amount forever — and it is a
+ * separate method with a separate name for exactly that reason.
+ */
+describe('PaymentCommandService — append-only', () => {
+  it('has no update, delete, or in-place correction path anywhere on the service', () => {
+    const { svc } = makeService();
+
+    expect((svc as unknown as Record<string, unknown>).update).toBeUndefined();
+    expect((svc as unknown as Record<string, unknown>).delete).toBeUndefined();
+    expect(
+      (svc as unknown as Record<string, unknown>).correctInPlace
+    ).toBeUndefined();
+    // `correct` DOES exist, and that is the point: the way back is an APPEND.
+    expect(typeof (svc as unknown as Record<string, unknown>).correct).toBe(
+      'function'
+    );
   });
 });

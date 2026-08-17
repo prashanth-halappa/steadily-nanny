@@ -114,6 +114,22 @@ export const CreatePaymentSchema = z.object({
   amount_minor: z.int().min(1).max(MAX_MONEY_MINOR),
   paid_at: z.iso.date(),
   method_note: z.string().max(PAYMENT_METHOD_NOTE_MAX).optional(),
+  /**
+   * A client-minted uuid identifying ONE payment INTENT (migration 102).
+   * `payments` is append-only with no edit path, so a double-tapped POST — or
+   * a retry after a response the phone never saw — files a second real row for
+   * money that moved once, bounded only by the week's gross. The key is
+   * generated when the record-payment sheet opens, reused across every retry
+   * of that same intent, and dropped once it succeeds; 102's partial unique
+   * index makes the second insert impossible and the RPC answers with the row
+   * the first one wrote, so a retry reads as success rather than as a
+   * duplicate the parent then has to correct.
+   *
+   * OPTIONAL, and it stays optional: an older client sends nothing and gets
+   * exactly 077's behaviour. The index is partial (`where idempotency_key is
+   * not null`) precisely so those rows never collide with each other.
+   */
+  idempotency_key: z.uuid().optional(),
 });
 
 /**

@@ -43,9 +43,10 @@ import type {
   CreatePaymentInput,
   Payment,
 } from '@steadily-nanny/shared-types/schemas/payment.schema';
+import * as Crypto from 'expo-crypto';
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
@@ -78,7 +79,10 @@ import {
   overPaymentMetadata,
   useRecordPayment,
 } from '@/src/hooks/mutations/useRecordPayment';
-import { useReopenTimesheet } from '@/src/hooks/mutations/useReopenTimesheet';
+import {
+  isPaidWeekReopenRefusal,
+  useReopenTimesheet,
+} from '@/src/hooks/mutations/useReopenTimesheet';
 import { useReviewExpense } from '@/src/hooks/mutations/useReviewExpense';
 import { useWithdrawTimesheetQuery } from '@/src/hooks/mutations/useWithdrawTimesheetQuery';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
@@ -257,6 +261,16 @@ export function ParentWeekView({
     useState(false);
   const [isApproveDialogOpen, setIsApproveDialogOpen] = useState(false);
   const [isReopenDialogOpen, setIsReopenDialogOpen] = useState(false);
+  // The paid-week reopen refusal, already localized. Held so the dialog can
+  // state it inline; cleared when it opens and on every fresh attempt — the
+  // same discipline as `overPayment`.
+  const [reopenRefusal, setReopenRefusal] = useState<string | null>(null);
+  // ONE payment intent = one uuid, minted when the sheet opens and reused by
+  // every retry of that intent. `payments` is append-only with no edit path,
+  // so a double-tapped POST or a retry after a response the phone never saw
+  // would otherwise file a second real row for money that moved once; the key
+  // makes the server hand back the row the first attempt wrote (102).
+  const paymentIntentKeyRef = useRef<string | null>(null);
   // The week the breakdown is open FOR, not a bare boolean. Paging to
   // another week then closes it for free — no reset effect to get wrong, and
   // no sheet re-appearing on a week the user paged to.
@@ -606,6 +620,23 @@ export function ParentWeekView({
   const approveDialogCarerName =
     carerName ?? timesheet?.carer_display_name ?? tSchedule('detail.someone');
 
+  // 102: hours rolled into this week AFTER money was recorded against it. The
+  // week keeps `approved`, its approver and its frozen snapshot, and the
+  // payments stand — so this caption is the only thing that says the approved
+  // total no longer covers every hour worked. Same zone-aware date shape as
+  // `approvedDateLabel`.
+  const hoursChangedAfterPaymentNote = timesheet?.hours_changed_after_payment_at
+    ? t('paidWeek.hoursAdded', {
+        name: approveDialogCarerName,
+        date: formatEarningsLongDate(
+          localDateInZone(
+            timeZone,
+            new Date(timesheet.hours_changed_after_payment_at)
+          )
+        ),
+      })
+    : null;
+
   // TIER0-CX-SPEC.md §6.3/§7: approved-only, this week's currency.
   // `currency` is deliberately NOT on the wire `Timesheet` (only inside
   // `earnings.currency`, per `TimesheetWeekSchema`'s doc comment), so the
@@ -714,6 +745,7 @@ export function ParentWeekView({
 
   const handleOpenRecordPayment = () => {
     setOverPayment(null);
+    paymentIntentKeyRef.current = Crypto.randomUUID();
     setIsRecordPaymentVisible(true);
   };
 
@@ -724,12 +756,19 @@ export function ParentWeekView({
   const handleRecordPayment = async (input: CreatePaymentInput) => {
     if (!timesheet || recordPayment.isPending) return;
     setOverPayment(null);
+    const idempotencyKey = paymentIntentKeyRef.current;
     try {
-      await recordPayment.mutateAsync({ timesheetId: timesheet.id, input });
+      await recordPayment.mutateAsync({
+        timesheetId: timesheet.id,
+        input: idempotencyKey
+          ? { ...input, idempotency_key: idempotencyKey }
+          : input,
+      });
     } catch (error) {
       setOverPayment(overPaymentMetadata(error));
       return;
     }
+    paymentIntentKeyRef.current = null;
     setIsRecordPaymentVisible(false);
     showSuccessToast(t('paid.recordedToast'));
   };
@@ -794,19 +833,29 @@ export function ParentWeekView({
     void handleApprove();
   };
 
+  // Same sheet-stays-open discipline as `handleRecordPayment`: the dialog is
+  // closed ONLY on success, so the typed reason survives a refusal — and the
+  // paid-week 409 is stated INSIDE the dialog, never as a toast the open
+  // BottomSheetBase would hide (GOLDEN-FIXES #40).
   const handleReopen = async (reason: string) => {
     if (!timesheet || !isApproved || reopenTimesheet.isPending) return;
+    setReopenRefusal(null);
     try {
       await reopenTimesheet.mutateAsync({ timesheetId: timesheet.id, reason });
-    } catch {
+    } catch (error) {
+      if (isPaidWeekReopenRefusal(error)) {
+        // docs/11-MONEY.md: no figure, no sentence about a figure — fall back
+        // to the server's own conflict copy rather than fabricating a total.
+        setReopenRefusal(
+          paidToDateLabel
+            ? t('reopen.refusedPaid', { amount: paidToDateLabel })
+            : getLocalizedErrorMessage(error, tErrors)
+        );
+      }
       return;
     }
-    showSuccessToast(t('reopenedToast'));
-  };
-
-  const handleConfirmReopen = (reason: string) => {
     setIsReopenDialogOpen(false);
-    void handleReopen(reason);
+    showSuccessToast(t('reopenedToast'));
   };
 
   // D-19. Same try/catch discipline as approve/query: `.mutateAsync().then()`
@@ -952,7 +1001,12 @@ export function ParentWeekView({
               // helper never sees `hours-reopen-button` even on an approved
               // week.
               onReopenPress={
-                readOnly ? undefined : () => setIsReopenDialogOpen(true)
+                readOnly
+                  ? undefined
+                  : () => {
+                      setReopenRefusal(null);
+                      setIsReopenDialogOpen(true);
+                    }
               }
               isReopenPending={reopenTimesheet.isPending}
               // Daylight P0-3: Approve/Query move from the FlashList footer
@@ -993,6 +1047,7 @@ export function ParentWeekView({
                       onPress: () => setIsWithdrawDialogOpen(true),
                     }
               }
+              hoursChangedAfterPaymentNote={hoursChangedAfterPaymentNote}
               actionsNote={
                 readOnly || isActionable || isApproved
                   ? null
@@ -1189,7 +1244,8 @@ export function ParentWeekView({
       <ReopenWeekDialog
         open={isReopenDialogOpen}
         onOpenChange={setIsReopenDialogOpen}
-        onConfirm={handleConfirmReopen}
+        onConfirm={reason => void handleReopen(reason)}
+        refusal={reopenRefusal}
         isSubmitting={reopenTimesheet.isPending}
         weekRangeLabel={weekRangeLabel}
         paidToDateLabel={paidToDateLabel}

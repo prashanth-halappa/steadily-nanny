@@ -138,6 +138,12 @@ interface WeekTotalProps {
   tertiaryAction?: WeekTotalAction | null;
   /** Muted explainer shown above the actions (e.g. why Approve is disabled). */
   actionsNote?: string | null;
+  /** Already-formatted note for `hours_changed_after_payment_at` (102) —
+   * hours rolled into this week AFTER money was recorded against it. The week
+   * keeps its status, approver and frozen snapshot and the payments stand, so
+   * this caption is the ONLY signal that the approved total no longer covers
+   * every hour worked. Both roles get it; the caller owns the wording. */
+  hoursChangedAfterPaymentNote?: string | null;
 }
 
 /** `tone` from status × viewer — see module doc's tone-fork list. */
@@ -217,6 +223,7 @@ export function WeekTotal({
   secondaryAction = null,
   tertiaryAction = null,
   actionsNote = null,
+  hoursChangedAfterPaymentNote = null,
 }: WeekTotalProps) {
   const { t } = useTranslation('hours');
   // Locale-key extractor reads the first string literal inside `t(` as the
@@ -251,6 +258,7 @@ export function WeekTotal({
     !showHeadline &&
     !showReopenedNote &&
     !showPayBoundary &&
+    !hoursChangedAfterPaymentNote &&
     !primaryAction &&
     !secondaryAction &&
     !tertiaryAction &&
@@ -328,6 +336,14 @@ export function WeekTotal({
                   { reason: earningsReopenReason }
                 )
               : t('earningsReopenedNote')}
+          </Small>
+        ) : null}
+        {hoursChangedAfterPaymentNote ? (
+          <Small
+            testID="hours-changed-after-payment-note"
+            className="text-muted-foreground"
+          >
+            {hoursChangedAfterPaymentNote}
           </Small>
         ) : null}
         {timesheetStatus === 'approved' && !onReopenPress ? (

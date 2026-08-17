@@ -291,6 +291,26 @@ mock.module('@/src/lib/toast', () => ({
   showSuccessToast: showSuccessToastMock,
 }));
 
+// Deterministic and COUNTABLE: the idempotency-key tests below are entirely
+// about which submits share a key and which mint a new one, so the global
+// constant-uuid mock in `bun.setup.ts` would make every assertion vacuous.
+let uuidCounter = 0;
+const randomUuidMock = mock(
+  () => `00000000-0000-4000-8000-00000000000${++uuidCounter}`
+);
+mock.module('expo-crypto', () => ({
+  randomUUID: randomUuidMock,
+  getRandomBytesAsync: mock(() => Promise.resolve(new Uint8Array(16))),
+}));
+
+/** The `idempotency_key` on the nth `paymentApi.create` call (0-indexed). */
+function keyOfCall(index: number): string | undefined {
+  const call = createPaymentMock.mock.calls[index] as
+    | [string, { idempotency_key?: string }]
+    | undefined;
+  return call?.[1]?.idempotency_key;
+}
+
 let ParentWeekView: typeof import('../components/ParentWeekView').ParentWeekView;
 let getWeekDates: typeof import('../utils/week').getWeekDates;
 let formatWeekRangeLabel: typeof import('../utils/week').formatWeekRangeLabel;
@@ -717,7 +737,64 @@ describe('ParentWeekView — recording a payment', () => {
     expect(createPaymentMock).toHaveBeenCalledWith(TIMESHEET_ID, {
       amount_minor: 23612,
       paid_at: TODAY_IN_HOUSEHOLD_ZONE,
+      idempotency_key: keyOfCall(0),
     });
+    expect(keyOfCall(0)).toBeTruthy();
+  });
+
+  // WP-P1(A). `payments` is append-only with no edit path, so a double-tapped
+  // POST or a retry after a dropped response files a SECOND real row for
+  // money that moved once. The key is minted per INTENT — one sheet opening —
+  // so every retry of that intent collapses onto the row the first attempt
+  // wrote, and the next intent is a genuinely new payment.
+  it('reuses the same idempotency key when a failed submit is retried', async () => {
+    let attempts = 0;
+    createPaymentMock.mockImplementation(() => {
+      attempts += 1;
+      if (attempts === 1) {
+        return Promise.reject(
+          Object.assign(new Error('dropped'), {
+            isAxiosError: true,
+          })
+        );
+      }
+      return Promise.resolve({ id: 'pay-1' });
+    });
+
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-mark-paid-button')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-mark-paid-button'));
+    fireEvent.press(getByTestId('hours-record-payment-submit'));
+    await waitFor(() => expect(createPaymentMock).toHaveBeenCalledTimes(1));
+
+    // Same sheet, same typed figures, same intent — the parent is retrying,
+    // not paying twice.
+    fireEvent.press(getByTestId('hours-record-payment-submit'));
+    await waitFor(() => expect(createPaymentMock).toHaveBeenCalledTimes(2));
+
+    expect(keyOfCall(0)).toBeTruthy();
+    expect(keyOfCall(1)).toBe(keyOfCall(0));
+  });
+
+  it('mints a fresh idempotency key for the next payment after a success', async () => {
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-mark-paid-button')).toBeTruthy()
+    );
+    fireEvent.press(getByTestId('hours-mark-paid-button'));
+    fireEvent.press(getByTestId('hours-record-payment-submit'));
+    await waitFor(() => expect(createPaymentMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.press(getByTestId('hours-mark-paid-button'));
+    fireEvent.press(getByTestId('hours-record-payment-submit'));
+    await waitFor(() => expect(createPaymentMock).toHaveBeenCalledTimes(2));
+
+    expect(keyOfCall(1)).toBeTruthy();
+    expect(keyOfCall(1)).not.toBe(keyOfCall(0));
   });
 
   it('closes the sheet and confirms only after the server accepted it', async () => {
@@ -780,6 +857,46 @@ describe('ParentWeekView — recording a payment', () => {
     expect(getByTestId('hours-record-payment-amount-input').props.value).toBe(
       '236.12'
     );
+  });
+});
+
+// WP-P1(C). The week keeps `approved`, its approver and its frozen snapshot —
+// the payments stand — so the ONLY signal that the approved total no longer
+// covers every hour worked is this timestamp, and it has to be said out loud.
+describe('ParentWeekView — hours added after the week was paid', () => {
+  function stubHoursChangedAfterPayment(at: string | null) {
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(
+        makeTimesheetWeek({
+          status: 'approved',
+          approved_at: '2026-08-10T09:00:00.000Z',
+          approved_by: PARENT_ID,
+          hours_changed_after_payment_at: at,
+        })
+      )
+    );
+  }
+
+  it('names the carer and the day the hours landed', async () => {
+    stubHoursChangedAfterPayment('2026-08-12T09:00:00.000Z');
+
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-changed-after-payment-note')).toBeTruthy()
+    );
+    expect(getByTestId('hours-changed-after-payment-note').props.children).toBe(
+      'paidWeek.hoursAdded'
+    );
+  });
+
+  it('says nothing when the server did not flag it', async () => {
+    stubHoursChangedAfterPayment(null);
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-week-total')).toBeTruthy());
+    expect(queryByTestId('hours-changed-after-payment-note')).toBeNull();
   });
 });
 

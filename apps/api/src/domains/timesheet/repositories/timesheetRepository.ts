@@ -249,6 +249,14 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
         status: 'approved',
         query_note: null,
         reopen_reason: null,
+        // Cleared for the same reason `query_note` and `reopen_reason` are:
+        // it is display state about a week whose approved total no longer
+        // covered every hour worked, and this approval is the parent looking
+        // at the new total and signing it off. Leaving it set would keep
+        // telling both sides "hours were added after payment" about a figure
+        // that now includes them — the stale-note bug class, in a money-
+        // adjacent column (102).
+        hours_changed_after_payment_at: null,
         approved_by: patch.approved_by,
         approved_at: patch.approved_at,
         gross_minor: patch.gross_minor,
@@ -352,6 +360,57 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
       );
     }
     return data as TimesheetRow | null;
+  }
+
+  /**
+   * THE CLOCK-OUT'S ONE WRITE — `roll_up_timesheet_hours` (migration 102).
+   *
+   * It is an RPC, not an update, and neither half of that is optional:
+   *
+   * - **It has to consult `payments`.** Clearing an approved week's
+   *   `gross_minor` is what every payment recorded against that week was
+   *   bounded by (077). Doing it without looking is gap P1: the balance goes
+   *   negative and `payments` is append-only, so nothing takes those rows
+   *   back. A week nobody has paid still demotes to `submitted` with the
+   *   snapshot cleared — D1's rule, unchanged. A PAID week keeps its status,
+   *   its approver and all four snapshot columns, records the minutes, and
+   *   gets `hours_changed_after_payment_at` stamped instead.
+   * - **The consulting has to happen inside the lock.** A read here followed
+   *   by a conditional update is the identical TOCTOU one level up, and even
+   *   in SQL an `exists` subquery inside an UPDATE reads the STATEMENT
+   *   snapshot — taken before the row lock was granted — so a payment that
+   *   committed while the statement queued would be invisible and the week
+   *   would be demoted out from under it anyway. plpgsql after
+   *   `select ... for update` sees what the winner committed. 077's rule,
+   *   applied to the other side of the same lock.
+   *
+   * A CLOCK-OUT MUST NEVER FAIL, so there is no compare-and-swap here and no
+   * lost-race null to handle: the hours happened and have to be recorded. The
+   * caller reads the RETURNED row's status to decide whether the week moved.
+   *
+   * `single()` rather than `maybeSingle()`: the caller has already found this
+   * timesheet, and a roll-up that matched nothing means the row vanished
+   * mid-write, which is a real failure rather than a race to absorb.
+   */
+  async rollUpHours(
+    timesheetId: string,
+    totalMinutes: number
+  ): Promise<TimesheetRow> {
+    const { data, error } = await supabaseService
+      .rpc('roll_up_timesheet_hours', {
+        p_timesheet_id: timesheetId,
+        p_total_minutes: totalMinutes,
+      })
+      .single();
+
+    if (error || !data) {
+      throw new DatabaseError(
+        'Failed to roll hours into timesheet',
+        'DATABASE_ERROR',
+        { details: error?.message, timesheetId }
+      );
+    }
+    return data as TimesheetRow;
   }
 
   /**
