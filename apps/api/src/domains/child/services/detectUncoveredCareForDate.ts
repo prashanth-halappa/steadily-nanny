@@ -35,6 +35,26 @@ export interface DetectUncoveredCareArgs {
   excludeUserId?: string;
 }
 
+/**
+ * Does this shift actually put SOMEBODY in the house?
+ *
+ * `shifts.carer_id` is `on delete set null` (015) and an accepted pattern's
+ * `carer_id` is too (014), so a nanny deleting her account leaves confirmed
+ * shifts behind with nobody assigned — and, until the pattern is ended, keeps
+ * minting more. `toCoveredShift` projects `status` and not `carer_id`, so
+ * every one of those ghosts read as full cover and the parent was never
+ * warned that nobody is coming. Status alone was never the whole question.
+ *
+ * `parent_cover` is the one legitimate carer-less kind — §12.6: `carer_id =
+ * null` BY DESIGN, because the parent is the cover — and must keep counting.
+ * Matched on `kind` rather than on "carer_id is null is fine sometimes",
+ * because that is the actual distinction: a row that says who is covering
+ * versus a row that lost the only person it named.
+ */
+export function providesCover(shift: ShiftWithChildren): boolean {
+  return shift.carer_id !== null || shift.kind === 'parent_cover';
+}
+
 /** DB row -> the pure input shape `computeUncovered` consumes. */
 export function toCoveredShift(shift: ShiftWithChildren): CoveredShiftInput {
   return {
@@ -183,7 +203,7 @@ export async function loadUncoveredInputsForDate(
 
   return {
     timezone: household.timezone,
-    shifts: shifts.map(toCoveredShift),
+    shifts: shifts.filter(providesCover).map(toCoveredShift),
     needWindows: commitments.map(toNeedWindow),
     closures,
   };

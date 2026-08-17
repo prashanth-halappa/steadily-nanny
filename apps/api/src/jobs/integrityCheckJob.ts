@@ -26,11 +26,23 @@
  */
 
 import { supabaseService } from '../config/supabase';
+import { HouseholdRepository } from '../domains/household/repositories/householdRepository';
 import { DatabaseError } from '../errors';
 import { logger } from '../middlewares/logger';
 
 /** How many offending ids each class log carries. */
 const SAMPLE_SIZE = 5;
+
+/**
+ * How settled a household must be before the reaper will look at it.
+ *
+ * `householdCommandService.create` inserts the household and THEN its owner
+ * membership, so for a few milliseconds a perfectly healthy household has no
+ * members. This job runs daily; without this grace period, one creation
+ * landing inside that window on the wrong side of 04:10 deletes a family's
+ * brand-new household and everything cascading off it.
+ */
+const REAP_GRACE_MS = 60 * 60 * 1000;
 
 /** One row of 056's output. */
 export interface IntegrityViolation {
@@ -44,6 +56,14 @@ export interface IntegrityCheckResult {
   errorCount: number;
   /** Violation count per check name, for the `job_runs` summary. */
   violations: Record<string, number>;
+  /**
+   * Households deleted because no membership row was left in them.
+   *
+   * Deliberately NOT folded into `errorCount`: reaping an orphan is this job
+   * doing its work, not the database being broken, and counting it would fail
+   * the run every single time it succeeded.
+   */
+  orphanedHouseholdsRemoved: number;
   message: string;
 }
 
@@ -53,6 +73,9 @@ export type IntegrityCheckRunner = () => Promise<{
   error: { message: string } | null;
 }>;
 
+/** Deletes every household nobody is a member of; returns what it removed. */
+export type MemberlessHouseholdReaper = () => Promise<string[]>;
+
 const defaultRunner: IntegrityCheckRunner = async () => {
   // Awaited here rather than returned: PostgREST's builder is a thenable, not
   // a Promise, so handing it back would not satisfy the contract above.
@@ -60,8 +83,29 @@ const defaultRunner: IntegrityCheckRunner = async () => {
   return { data, error };
 };
 
+/**
+ * `userService.deleteUser` reaps the households ITS user emptied, which
+ * covers the in-app path and nothing else. Households get orphaned by routes
+ * that never touch it — a Supabase dashboard delete of the last member, which
+ * is exactly what happened in production — so the same sweep runs here, over
+ * everything, once a day.
+ *
+ * ponytail: reads every household row to get the ids. Fine while a families
+ * app has thousands of them and this runs once at 04:10; swap in an id-only
+ * `select` (or a `not.in` server-side) when that stops being true.
+ */
+const defaultReaper: MemberlessHouseholdReaper = async () => {
+  const repo = new HouseholdRepository();
+  const settledBefore = Date.now() - REAP_GRACE_MS;
+  const candidates = (await repo.findAll())
+    .filter(household => Date.parse(household.created_at) < settledBefore)
+    .map(household => household.id);
+  return repo.deleteIfMemberless(candidates);
+};
+
 export async function runIntegrityCheckJob(
-  run: IntegrityCheckRunner = defaultRunner
+  run: IntegrityCheckRunner = defaultRunner,
+  reap: MemberlessHouseholdReaper = defaultReaper
 ): Promise<IntegrityCheckResult> {
   const { data, error } = await run();
 
@@ -98,9 +142,21 @@ export async function runIntegrityCheckJob(
     });
   }
 
+  // Deliberately unguarded, same reasoning as the rpc above: a backstop that
+  // could not run must not report a clean result. A throw here fails the run
+  // and leaves a `job_runs` row somebody has to look at.
+  const reaped = await reap();
+  if (reaped.length > 0) {
+    logger.info('Reaped memberless households', {
+      count: reaped.length,
+      householdIds: reaped,
+    });
+  }
+
   return {
     errorCount: rows.length,
     violations,
+    orphanedHouseholdsRemoved: reaped.length,
     message:
       rows.length === 0
         ? 'Integrity checks found no violations'

@@ -724,7 +724,15 @@ function newShiftRow(
     ends_at: occ.endsAt,
     timezone: pattern.timezone,
     kind: 'recurring',
-    status: 'confirmed',
+    // A shift nobody is assigned to must never be born `confirmed` —
+    // `confirmed` is precisely what tells a parent somebody is coming. An
+    // accepted pattern's `carer_id` is `on delete set null` (014), so a nanny
+    // deleting her account leaves a live, carer-less pattern behind;
+    // `userService.deleteUser` ends those, and this is the belt to that
+    // braces for every other route a pattern can lose its carer by.
+    // `pending` still shows on the schedule (`SCHEDULED_SHIFT_STATUSES`) but
+    // is not cover (`COVERING_SHIFT_STATUSES`), so the alarm still rings.
+    status: pattern.carerId ? 'confirmed' : 'pending',
     source_pattern_id: pattern.id,
     origin: 'system_generated',
     note: pattern.note,

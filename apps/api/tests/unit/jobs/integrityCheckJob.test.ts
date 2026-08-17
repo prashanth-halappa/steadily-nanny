@@ -37,6 +37,21 @@ beforeAll(async () => {
   mock.module('../../../src/config/sentry', () => ({
     default: { captureException: mock(() => undefined) },
   }));
+  // The default memberless-household reaper builds a real repository, so the
+  // tests that don't inject one still need a client under it. Empty rows =>
+  // no candidates => no delete.
+  mock.module('../../../src/config/supabase', () => {
+    const chain: any = {
+      select: mock(() => chain),
+      delete: mock(() => chain),
+      in: mock(() => chain),
+      // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
+      then: (resolve: any) =>
+        Promise.resolve({ data: [], error: null }).then(resolve),
+    };
+    const obj = { from: mock(() => chain), rpc: mock(() => chain) };
+    return { supabase: obj, supabaseService: obj };
+  });
 
   runIntegrityCheckJob = (await import('../../../src/jobs/integrityCheckJob'))
     .runIntegrityCheckJob;
@@ -51,6 +66,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   logger.error.mockClear?.();
+  logger.info.mockClear?.();
   JobRunService.start.mockClear?.();
   JobRunService.complete.mockClear?.();
   JobRunService.fail.mockClear?.();
@@ -134,6 +150,74 @@ describe('runIntegrityCheckJob', () => {
     }));
 
     await expect(runIntegrityCheckJob(failingRpc)).rejects.toThrow();
+  });
+});
+
+/**
+ * The memberless-household sweep rides along here rather than in a job of its
+ * own: a household can be orphaned by paths that never touch
+ * `userService.deleteUser` — a Supabase dashboard delete of the last member,
+ * which is exactly what happened in production — and this is already the
+ * daily "is the data still sane" pass.
+ */
+describe('runIntegrityCheckJob — memberless household sweep', () => {
+  it('runs the sweep and reports what it removed', async () => {
+    const reap = mock(async () => ['h1', 'h2']);
+
+    const result = await runIntegrityCheckJob(rpcReturning([]), reap);
+
+    expect(reap).toHaveBeenCalledTimes(1);
+    expect(result.orphanedHouseholdsRemoved).toBe(2);
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.stringContaining('memberless'),
+      expect.objectContaining({ count: 2, householdIds: ['h1', 'h2'] })
+    );
+  });
+
+  it('stays quiet when there is nothing to reap', async () => {
+    const result = await runIntegrityCheckJob(
+      rpcReturning([]),
+      mock(async () => [])
+    );
+
+    expect(result.orphanedHouseholdsRemoved).toBe(0);
+    expect(logger.info).not.toHaveBeenCalled();
+  });
+
+  it('does not count a reaped household as a violation', async () => {
+    // Removing an orphan is the job doing its work, not the database being
+    // broken — counting it would fail the run every time it succeeded.
+    const result = await runIntegrityCheckJob(
+      rpcReturning([]),
+      mock(async () => ['h1'])
+    );
+
+    expect(result.errorCount).toBe(0);
+    expect(logger.error).not.toHaveBeenCalled();
+  });
+
+  it('sweeps even when the checks found violations', async () => {
+    const reap = mock(async () => ['h1']);
+
+    await runIntegrityCheckJob(
+      rpcReturning([violation('stuck_runner', 'te-1')]),
+      reap
+    );
+
+    expect(reap).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails the run when the sweep itself throws', async () => {
+    // Same reasoning as the rpc: a backstop that did not run must not report
+    // a clean result.
+    await expect(
+      runIntegrityCheckJob(
+        rpcReturning([]),
+        mock(async () => {
+          throw new Error('boom');
+        })
+      )
+    ).rejects.toThrow();
   });
 });
 
