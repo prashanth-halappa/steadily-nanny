@@ -64,6 +64,7 @@
     "stateSettledDateOnly": "Reimbursed on {{date}}",
     "stateSettled": "Reimbursed {{amount}} on {{date}}",
     "markReimbursedButton": "Mark reimbursed",
+    "settlementUnknown": "We couldn't load reimbursements for this week.",
     "note": "Reimbursements aren't wages and aren't part of gross pay."
   }
 }

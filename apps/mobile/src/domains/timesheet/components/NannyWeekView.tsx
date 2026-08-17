@@ -47,6 +47,7 @@
  * with extra steps.
  */
 import { FlashList } from '@shopify/flash-list';
+import type { Payment } from '@steadily-nanny/shared-types/schemas/payment.schema';
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
@@ -520,8 +521,15 @@ export function NannyWeekView({
   // exists, else her own arrangement's currency, else the house default.
   const weekExpenses = expensesQuery.data ?? [];
   const approvedExpenses = weekExpenses.filter(e => e.status === 'approved');
+  // D-B1: a failed or still-in-flight settlement read must never render
+  // "not reimbursed yet" over money that may already be back with her
+  // (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B's compound finding) — worse
+  // for her than the parent's side, since she has no button whose absence
+  // would reveal the contradiction.
+  const settlementsUnknown =
+    settlementsQuery.isError || settlementsQuery.isPending;
   const reimbursementSettlement =
-    currentUserId != null
+    !settlementsUnknown && currentUserId != null
       ? (settlementsQuery.data?.find(s => s.carer_id === currentUserId) ?? null)
       : null;
   const reimbursementSettledOn = reimbursementSettlement?.settled_at ?? null;
@@ -535,12 +543,19 @@ export function NannyWeekView({
   // `earningsOk` is null for a week with no server total — `derivePaidState`
   // returns null for that rather than measuring against a fabricated zero
   // (docs/11-MONEY.md §4), and the card then renders nothing.
-  const payments = paymentsQuery.data ?? [];
-  const paidState = earningsOk
-    ? derivePaidState(payments, earningsOk.gross_minor)
-    : timesheet?.reopen_reason != null
-      ? deriveReopenedPaidState(payments)
-      : null;
+  // D-B1: same discipline as `settlementsUnknown` above — a failed or
+  // still-in-flight ledger read must never render "Unpaid" over a week that
+  // may already be settled.
+  const paymentsUnknown =
+    showSettlementHistory && (paymentsQuery.isError || paymentsQuery.isPending);
+  const payments: Payment[] = paymentsUnknown ? [] : (paymentsQuery.data ?? []);
+  const paidState = paymentsUnknown
+    ? null
+    : earningsOk
+      ? derivePaidState(payments, earningsOk.gross_minor)
+      : timesheet?.reopen_reason != null
+        ? deriveReopenedPaidState(payments)
+        : null;
   const settlementCurrency =
     earningsOk?.currency ??
     payments[0]?.currency ??
@@ -660,6 +675,8 @@ export function NannyWeekView({
               paidState={showSettlementHistory ? paidState : null}
               payments={payments}
               settlementCurrency={settlementCurrency}
+              paidStateUnknown={paymentsUnknown}
+              onRetryPayments={() => void paymentsQuery.refetch()}
               onPaymentPress={payment => setSelectedPaymentId(payment.id)}
             />
             {/* §3.1 (M12): the one place a nanny can say a figure is wrong
@@ -684,6 +701,8 @@ export function NannyWeekView({
               currency={expensesCurrency}
               settledOn={reimbursementSettledOn}
               settledAmountMinor={reimbursementSettledAmountMinor}
+              settlementUnknown={settlementsUnknown}
+              onRetrySettlements={() => void settlementsQuery.refetch()}
             />
             {/* Daylight P1: "Add an expense" is now ExpensesListCard's own
                 footer action (it used to float here on a bare mt-4,

@@ -12,6 +12,15 @@
  * several carers' time off doesn't have to coordinate N carers' worth of
  * balances in one place.
  *
+ * GATED ON THE LEDGER/BALANCE READS (D-B1, fixed —
+ * docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B's compound finding): while either
+ * `usePtoLedger`/`usePtoBalance` is pending the row shows no pill at all
+ * (neutral, not "Not marked paid"); on either failing it shows an inline
+ * retry instead of a stale pill. The row is NOT pressable into the payment
+ * sheet in either state — a tap during either window used to open
+ * `MarkTimeOffPaidSheet` with `existingUsageEntry: null`, inviting a second
+ * payment record over one that may already exist.
+ *
  * PAID-NESS IS NETTED, NOT PRESENCE-BASED (Phase 3+4 adversarial review,
  * finding 2): `pto_ledger` is append-only — cancelling a time off that was
  * already marked paid never deletes the `usage` row, it inserts a
@@ -37,6 +46,7 @@ import { View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
 import { spacing } from '@/lib/design-tokens';
 import { useElevation } from '@/lib/design-tokens/elevation';
+import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Body, Small } from '@/src/components/ui/typography';
 import {
@@ -125,6 +135,12 @@ export function HouseholdTimeOffRow({
   const isPaid = netPaidMinutes > 0;
   const paidHours = netPaidMinutes / 60;
 
+  // D-B1: neither read may be trusted alone — a pending balance with a
+  // resolved ledger (or vice versa) is still "we don't know yet".
+  const isLoading = ledger.isPending || balance.isPending;
+  const isErrored = ledger.isError || balance.isError;
+  const canPress = canMarkPaid && !isLoading && !isErrored;
+
   const rangeLabel = formatTimeOffRangeLabel(
     timeOff.starts_at,
     timeOff.ends_at,
@@ -132,8 +148,13 @@ export function HouseholdTimeOffRow({
   );
 
   const handlePress = () => {
-    if (!canMarkPaid) return;
+    if (!canPress) return;
     setSheetOpen(true);
+  };
+
+  const handleRetry = () => {
+    if (ledger.isError) void ledger.refetch();
+    if (balance.isError) void balance.refetch();
   };
 
   const handleSubmit = (input: MarkTimeOffPaidRequest) => {
@@ -152,7 +173,8 @@ export function HouseholdTimeOffRow({
     <>
       <AnimatedPressable
         testID={`household-time-off-${timeOff.id}`}
-        accessibilityRole="button"
+        accessibilityRole={canPress ? 'button' : undefined}
+        disabled={!canPress}
         onPress={handlePress}
       >
         <View
@@ -160,15 +182,23 @@ export function HouseholdTimeOffRow({
           style={[elevation.row, { minHeight: spacing.minTouchTarget }]}
         >
           <Body weight="medium">{rangeLabel}</Body>
-          <StatusPill
-            testID={`household-time-off-status-${timeOff.id}`}
-            variant={isPaid ? 'confirmed' : 'pending'}
-            label={
-              isPaid
-                ? t('householdTimeOff.paidBadge', { hours: paidHours })
-                : t('householdTimeOff.notMarkedPaid')
-            }
-          />
+          {isErrored ? (
+            <InlineRetry
+              testID={`household-time-off-retry-${timeOff.id}`}
+              message={tTimeOff('householdRow.loadError')}
+              onRetry={handleRetry}
+            />
+          ) : isLoading ? null : (
+            <StatusPill
+              testID={`household-time-off-status-${timeOff.id}`}
+              variant={isPaid ? 'confirmed' : 'pending'}
+              label={
+                isPaid
+                  ? t('householdTimeOff.paidBadge', { hours: paidHours })
+                  : t('householdTimeOff.notMarkedPaid')
+              }
+            />
+          )}
           {timeOff.kind === 'sick' ? (
             <StatusPill
               testID={`household-time-off-kind-sick-${timeOff.id}`}

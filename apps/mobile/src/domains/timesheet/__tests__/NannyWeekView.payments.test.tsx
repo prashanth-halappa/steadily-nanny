@@ -171,6 +171,14 @@ const listPaymentsMock = mock(() => Promise.resolve([] as unknown[]));
 mock.module('@/src/api/endpoints/payments', () => ({
   paymentApi: { list: listPaymentsMock, create: mock() },
 }));
+
+const listSettlementsMock = mock(() => Promise.resolve([] as unknown[]));
+mock.module('@/src/api/endpoints/reimbursementSettlements', () => ({
+  reimbursementSettlementApi: {
+    listForWeek: listSettlementsMock,
+    create: mock(),
+  },
+}));
 mock.module('@/src/api/endpoints/expenses', () => {
   const shared = expenseSchemaModule;
   return {
@@ -312,12 +320,14 @@ beforeEach(() => {
   getWeekMock.mockReset();
   listExpensesForWeekMock.mockReset();
   listPaymentsMock.mockReset();
+  listSettlementsMock.mockReset();
   routerPushMock.mockClear();
 
   listEntriesMock.mockImplementation(() => Promise.resolve([entry]));
   getWeekMock.mockImplementation(() => Promise.resolve([makeTimesheetWeek()]));
   listExpensesForWeekMock.mockImplementation(() => Promise.resolve([]));
   listPaymentsMock.mockImplementation(() => Promise.resolve([]));
+  listSettlementsMock.mockImplementation(() => Promise.resolve([]));
   listMembersMock.mockImplementation(() => Promise.resolve(HOUSEHOLD_MEMBERS));
 
   useAuthStore.setState({
@@ -325,6 +335,82 @@ beforeEach(() => {
     user: { id: CARER_ID } as unknown as never,
     isInitialized: true,
   } as never);
+});
+
+function makeApprovedExpense(overrides: Partial<Expense> = {}): Expense {
+  return {
+    id: 'expense-1',
+    household_id: HOUSEHOLD_ID,
+    carer_id: CARER_ID,
+    local_date: WEEK_START,
+    kind: 'expense',
+    description: 'Soft play tickets',
+    amount_minor: 1200,
+    miles: null,
+    currency: 'GBP',
+    status: 'approved',
+    reviewed_by: PARENT_ID,
+    reviewed_at: now,
+    review_note: null,
+    carer_display_name: 'Amara',
+    created_at: now,
+    updated_at: now,
+    ...overrides,
+  };
+}
+
+// D-B1, docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B's compound finding — the
+// nanny is worse off than the parent here: she has no button whose absence
+// would reveal the contradiction, so a false "Unpaid" is the ONLY signal
+// she gets.
+describe('NannyWeekView — a failed or pending payments read', () => {
+  it('hides every Unpaid/Still-to-pay figure and offers a retry', async () => {
+    listPaymentsMock.mockImplementation(() =>
+      Promise.reject(new Error('boom'))
+    );
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() => expect(getByTestId('hours-money-card')).toBeTruthy());
+    expect(queryByTestId('hours-paid-state-badge')).toBeNull();
+    expect(queryByTestId('hours-paid-state-balance-value')).toBeNull();
+    expect(getByTestId('hours-paid-state-retry')).toBeTruthy();
+
+    fireEvent.press(getByTestId('hours-paid-state-retry-button'));
+    await waitFor(() => expect(listPaymentsMock).toHaveBeenCalledTimes(2));
+  });
+
+  it('stays neutral while the payments read is still pending', async () => {
+    listPaymentsMock.mockImplementation(() => new Promise(() => {}));
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() => expect(getByTestId('hours-money-card')).toBeTruthy());
+    expect(queryByTestId('hours-paid-state-badge')).toBeNull();
+    expect(getByTestId('hours-paid-state-retry')).toBeTruthy();
+  });
+});
+
+describe('NannyWeekView — a failed or pending settlements read', () => {
+  it('hides the settled/unsettled claim and offers a retry', async () => {
+    listExpensesForWeekMock.mockImplementation(() =>
+      Promise.resolve([makeApprovedExpense()])
+    );
+    listSettlementsMock.mockImplementation(() =>
+      Promise.reject(new Error('boom'))
+    );
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('reimbursements-card')).toBeTruthy()
+    );
+    expect(queryByTestId('reimbursements-card-state')).toBeNull();
+    expect(getByTestId('reimbursements-card-settlement-retry')).toBeTruthy();
+
+    fireEvent.press(getByTestId('reimbursements-card-settlement-retry-button'));
+    await waitFor(() => expect(listSettlementsMock).toHaveBeenCalledTimes(2));
+  });
 });
 
 describe('NannyWeekView — reading the settlement', () => {

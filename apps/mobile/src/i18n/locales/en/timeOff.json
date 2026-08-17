@@ -39,6 +39,9 @@
   "kind": {
     "sick": "Sick day"
   },
+  "householdRow": {
+    "loadError": "We couldn't load whether this time off has been paid."
+  },
   "sickButton": "I'm sick today",
   "sickConfirmTitle": "Book a sick day?",
   "sickConfirmBody": "The family will be notified. This books today off as a sick day.",

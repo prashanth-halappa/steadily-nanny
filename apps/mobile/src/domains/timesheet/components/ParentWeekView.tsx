@@ -627,14 +627,23 @@ export function ParentWeekView({
   // `earningsOk` is null for a week with no server total, and `derivePaidState`
   // returns null for that — never `?? 0`, which would render "Paid" over a
   // week whose value is simply unknown (docs/11-MONEY.md §4).
-  const payments = paymentsQuery.data ?? [];
+  // D-B1: a failed OR still-in-flight ledger read must never render as
+  // "Unpaid" over a settled week (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B's
+  // compound finding) — `showSettlementHistory` is `usePayments`'s own
+  // `enabled` gate, so this stays false (not "unknown forever") on a week
+  // with no settlement to fetch at all.
+  const paymentsUnknown =
+    showSettlementHistory && (paymentsQuery.isError || paymentsQuery.isPending);
+  const payments: Payment[] = paymentsUnknown ? [] : (paymentsQuery.data ?? []);
   const selectedPayment =
     payments.find(payment => payment.id === selectedPaymentId) ?? null;
-  const paidState = earningsOk
-    ? derivePaidState(payments, earningsOk.gross_minor)
-    : timesheet?.reopen_reason != null
-      ? deriveReopenedPaidState(payments)
-      : null;
+  const paidState = paymentsUnknown
+    ? null
+    : earningsOk
+      ? derivePaidState(payments, earningsOk.gross_minor)
+      : timesheet?.reopen_reason != null
+        ? deriveReopenedPaidState(payments)
+        : null;
   const settlementCurrency =
     earningsOk?.currency ?? payments[0]?.currency ?? expensesCurrency;
   const paidToDateLabel =
@@ -669,8 +678,16 @@ export function ParentWeekView({
   // `carerKeyOf` returns — a departed carer (`carer_id` NULL) has no id to
   // file against, so the action is simply not offered for her.
   const settlementCarerId = timesheet?.carer_id ?? null;
-  const reimbursementSettlement =
-    settlementsQuery.data?.find(s => s.carer_id === settlementCarerId) ?? null;
+  // D-B1: same discipline as `paymentsUnknown` above — a failed or
+  // still-in-flight settlement read must never render "not reimbursed yet"
+  // (or re-offer "Mark reimbursed") over money that may already be back
+  // with her (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B).
+  const settlementsUnknown =
+    settlementsQuery.isError || settlementsQuery.isPending;
+  const reimbursementSettlement = settlementsUnknown
+    ? null
+    : (settlementsQuery.data?.find(s => s.carer_id === settlementCarerId) ??
+      null);
   const reimbursementSettledOn = reimbursementSettlement?.settled_at ?? null;
   const reimbursementSettledAmountMinor =
     reimbursementSettlement?.amount_minor ?? null;
@@ -1021,6 +1038,8 @@ export function ParentWeekView({
               paidState={showSettlementHistory ? paidState : null}
               payments={payments}
               settlementCurrency={settlementCurrency}
+              paidStateUnknown={paymentsUnknown}
+              onRetryPayments={() => void paymentsQuery.refetch()}
               onPaymentPress={payment => setSelectedPaymentId(payment.id)}
               onMarkPaidPress={
                 isApproved && !readOnly ? handleOpenRecordPayment : undefined
@@ -1058,7 +1077,7 @@ export function ParentWeekView({
               // helper (readOnly) and the nanny both get the same card
               // without the action.
               onMarkReimbursedPress={
-                !readOnly && settlementCarerId
+                !readOnly && settlementCarerId && !settlementsUnknown
                   ? handleMarkReimbursed
                   : undefined
               }
@@ -1068,6 +1087,8 @@ export function ParentWeekView({
                   ? getLocalizedErrorMessage(markReimbursed.error, tErrors)
                   : null
               }
+              settlementUnknown={settlementsUnknown}
+              onRetrySettlements={() => void settlementsQuery.refetch()}
             />
             {/* Cross-week record, not gated on this week's approval — a
                 helper reads settlements too, same as ReimbursementsCard. */}

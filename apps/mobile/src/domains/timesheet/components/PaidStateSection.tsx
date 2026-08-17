@@ -46,6 +46,7 @@ import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { spacing } from '@/lib/design-tokens/spacing';
 import { Icon } from '@/lib/icons/iconWithClassName';
+import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { Badge } from '@/src/components/ui/badge';
 import { Button } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';
@@ -136,6 +137,16 @@ interface PaidStateSectionProps {
    * as it was — a chevron with no destination is a lie, so the slot is not
    * even reserved. Every line in the block is pressable, or none is. */
   onPaymentPress?: (payment: Payment) => void;
+  /** The payments ledger read FAILED or is still in flight — distinct from
+   * "loaded, and there's nothing to pay" (`paidState === null` for that
+   * case too, see `hasPaidStateContent`). A dropped read must never render
+   * "Unpaid · Still to pay £X" over a week that may already be settled
+   * (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B) — every figure and the badge
+   * are withheld, `canMarkPaid` is forced false, and an inline retry stands
+   * in their place instead. */
+  paidStateUnknown?: boolean;
+  /** Wired to the payments query's own `refetch`. */
+  onRetryPayments?: () => void;
   testID?: string;
 }
 
@@ -146,9 +157,26 @@ export function PaidStateSection({
   onMarkPaidPress,
   isMarkPaidDisabled = false,
   onPaymentPress,
+  paidStateUnknown = false,
+  onRetryPayments,
   testID = 'hours-paid-state',
 }: PaidStateSectionProps) {
   const { t } = useTranslation('hours');
+
+  // Unknown outranks "nothing to say" — a failed read must still tell her
+  // it failed, even on a week `hasPaidStateContent` would otherwise hide.
+  if (paidStateUnknown) {
+    return (
+      <View testID={testID} className="gap-3">
+        <H4 testID={`${testID}-title`}>{t('paid.title')}</H4>
+        <InlineRetry
+          testID={`${testID}-retry`}
+          message={t('paid.unknown')}
+          onRetry={onRetryPayments ?? (() => {})}
+        />
+      </View>
+    );
+  }
 
   if (!hasPaidStateContent(paidState, payments) || !paidState) return null;
 

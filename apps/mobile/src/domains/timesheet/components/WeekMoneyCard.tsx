@@ -52,6 +52,9 @@ interface WeekMoneyCardProps {
   paidState: WeekPaidState | null;
   payments: Payment[];
   settlementCurrency: string;
+  /** Forwarded verbatim to `PaidStateSection` — see that component's doc. */
+  paidStateUnknown?: boolean;
+  onRetryPayments?: () => void;
   /** PARENT view only — its absence is the read-only contract. */
   onMarkPaidPress?: () => void;
   isMarkPaidDisabled?: boolean;
@@ -85,6 +88,8 @@ export function WeekMoneyCard({
   paidState,
   payments,
   settlementCurrency,
+  paidStateUnknown = false,
+  onRetryPayments,
   onMarkPaidPress,
   isMarkPaidDisabled = false,
   onPaymentPress,
@@ -104,7 +109,16 @@ export function WeekMoneyCard({
   // true to say, and must not vanish along with the two original halves.
   const showAdjustment = adjustment !== null || onAdjustmentPress !== undefined;
 
-  if (earningsKind === 'none' && !showPaidState && !showAdjustment) return null;
+  // paidStateUnknown outranks the disappear guard too — the same reason
+  // PaidStateSection's own early return does.
+  if (
+    earningsKind === 'none' &&
+    !showPaidState &&
+    !showAdjustment &&
+    !paidStateUnknown
+  ) {
+    return null;
+  }
 
   return (
     <Card testID={testID} className="mb-4">
@@ -183,6 +197,8 @@ export function WeekMoneyCard({
           paidState={paidState}
           payments={payments}
           currency={settlementCurrency}
+          paidStateUnknown={paidStateUnknown}
+          onRetryPayments={onRetryPayments}
           onMarkPaidPress={onMarkPaidPress}
           isMarkPaidDisabled={isMarkPaidDisabled}
           onPaymentPress={onPaymentPress}

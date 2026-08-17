@@ -218,7 +218,11 @@ describe('household-time-off route (parent mark-paid entry point)', () => {
     await waitFor(() =>
       expect(getByTestId(`household-time-off-${TIME_OFF_ID}`)).toBeTruthy()
     );
-    expect(getByText('householdTimeOff.notMarkedPaid')).toBeTruthy();
+    // The row now gates its pill on the ledger/balance reads (WP-B1) — wait
+    // for them to settle instead of asserting synchronously.
+    await waitFor(() =>
+      expect(getByText('householdTimeOff.notMarkedPaid')).toBeTruthy()
+    );
     expect(queryByText('confirmed')).toBeNull();
   });
 
