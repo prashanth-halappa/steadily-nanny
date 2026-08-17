@@ -47,6 +47,10 @@ The contract between apps lives in `shared-types`: the API validates requests wi
 | 12 | [NEED-COVERAGE](./12-NEED-COVERAGE.md) | Per-child need windows vs shift cover, `computeUncovered` in shared-types, live UI vs append-only `uncovered_care` events, detection triggers, `parent_cover`, role visibility, push dedupe |
 | — | [ROLLBACK-RUNBOOK](./ROLLBACK-RUNBOOK.md) | Per-risk rollback and kill-switch runbook — which scheduled jobs to unschedule, deploy ordering, and accepted open risks |
 | — | [ONBOARDING-PAY-SCHEDULE-GAPS](./ONBOARDING-PAY-SCHEDULE-GAPS.md) | Parent/nanny onboarding permutations, use-case support matrix, and open gaps across onboarding / pay / schedule |
+| — | [AS-BUILT-PAY-TERMS](./AS-BUILT-PAY-TERMS.md) | The pay/terms contract **as the code implements it** — state model, transitions, entry paths, graded defects, and where the design docs above have gone stale |
+| — | [AS-BUILT-SCHEDULE](./AS-BUILT-SCHEDULE.md) | Scheduling and shift confirmation as built — pattern/shift/care-hours model, materialisation, the cron layer and its **monitoring blind spot**, graded defects |
+| — | [AS-BUILT-PAYMENT](./AS-BUILT-PAYMENT.md) | The payment chain as built — what freezes at approval, the race analysis, money-correctness verdicts, and the reimbursement-settlement gap verified link by link |
+| — | [CROSS-CUTTING-DEFECT-PATTERNS](./CROSS-CUTTING-DEFECT-PATTERNS.md) | Three mobile defect **patterns** with ~47 instances across every domain: wrong-household context, unhandled queries that assert facts, and inconsistent fail-open/fail-closed gates. **Read before fixing any single instance** |
 
 **If you're an AI agent building a new feature:** read 01–02 for the toolchain, 03 for the shared contract, then 04/05 (API) and 06/07 (mobile) for the layer you're working in, with 08/09 always in effect. Follow 10 as the execution order for a brand-new app built from this pattern.
 
