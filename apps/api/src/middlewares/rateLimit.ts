@@ -78,3 +78,37 @@ export const publicInviteRateLimiter = rateLimit({
   // exercise the limit deliberately.
   skip: () => process.env.NODE_ENV === 'test',
 });
+
+/** Requests per IP per window on the job routes. Exported for the route test. */
+export const JOB_MAX_REQUESTS = 60;
+
+/**
+ * S15 — the job routes (`/api/jobs/*`) sit BEFORE the Supabase auth layer
+ * (`app.ts`) and were guarded only by the shared `X-Job-Api-Key` secret, with
+ * no user, household, role or rate limit. IP-keyed for the same reason as
+ * `publicInviteRateLimiter`: there is no user id to key on this far ahead of
+ * auth.
+ *
+ * Mounted in `jobRoutes.ts` AFTER `validateJobApiKey`, not before: a wrong or
+ * missing key already 401s for free (no DB write, no job work), so spending
+ * the rate-limit budget on it would let a key-guessing attacker exhaust a
+ * legitimate caller's window with nothing but failures. What this bounds is
+ * a VALID key being used to hammer the endpoints — the case that matters if
+ * `JOB_API_KEY` ever leaks. Same budget as the invite limiter: the busiest
+ * legitimate cadence here is `cover-ask-expiry` at every 5 minutes, so 60/15min
+ * is generous headroom for the scheduler's own IP while still bounding abuse.
+ */
+export const jobRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: JOB_MAX_REQUESTS,
+
+  message: {
+    error: 'Too many requests, please try again later',
+  },
+
+  standardHeaders: true,
+  legacyHeaders: false,
+
+  // Same test escape hatch as above.
+  skip: () => process.env.NODE_ENV === 'test',
+});

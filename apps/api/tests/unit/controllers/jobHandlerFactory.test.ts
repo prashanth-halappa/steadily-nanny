@@ -58,6 +58,7 @@ beforeEach(() => {
   JobRunService.hasFreshRunningRun.mockClear?.();
   JobRunService.hasFreshRunningRun.mockImplementation(async () => false);
   logger.error.mockClear?.();
+  logger.info.mockClear?.();
 });
 
 function fakeRes(): Response & { statusCode?: number; body?: any } {
@@ -74,10 +75,13 @@ function fakeRes(): Response & { statusCode?: number; body?: any } {
 }
 
 /** Run a handler and capture whatever it hands to `next()`. */
-async function invoke(handler: JobHandler) {
+async function invoke(
+  handler: JobHandler,
+  req: Partial<Request> = { ip: '10.0.0.1' }
+) {
   const res = fakeRes();
   let error: unknown;
-  await handler({} as Request, res, ((e?: unknown) => {
+  await handler(req as Request, res, ((e?: unknown) => {
     error = e;
   }) as NextFunction);
   return { res, error };
@@ -238,5 +242,44 @@ describe('createTrackedJobHandler — F-B4-10: in-flight guard', () => {
 
     expect(jobFn).toHaveBeenCalledTimes(1);
     expect(error).toBeUndefined();
+  });
+});
+
+describe('S15 — job.invoked audit log', () => {
+  test('createTrackedJobHandler logs job, ip and runId on every invocation', async () => {
+    const handler = createTrackedJobHandler(
+      'audited-tracked-job',
+      async () => ({ successCount: 1, errorCount: 0 }),
+      'done'
+    );
+    await invoke(handler, { ip: '203.0.113.7' } as Request);
+
+    const auditCall = logger.info.mock.calls.find(
+      (c: unknown[]) => c[0] === 'job.invoked'
+    );
+    expect(auditCall).toBeDefined();
+    expect(auditCall[1]).toMatchObject({
+      job: 'audited-tracked-job',
+      ip: '203.0.113.7',
+      runId: 'run-1',
+    });
+  });
+
+  test('createSimpleJobHandler logs job and ip on every invocation', async () => {
+    const handler = createSimpleJobHandler(
+      'audited-simple-job',
+      async () => ({ successCount: 1 }),
+      'done'
+    );
+    await invoke(handler, { ip: '203.0.113.9' } as Request);
+
+    const auditCall = logger.info.mock.calls.find(
+      (c: unknown[]) => c[0] === 'job.invoked'
+    );
+    expect(auditCall).toBeDefined();
+    expect(auditCall[1]).toMatchObject({
+      job: 'audited-simple-job',
+      ip: '203.0.113.9',
+    });
   });
 });

@@ -8,7 +8,10 @@
  * an unpaid carer stays unpaid for thirty days of hourly runs.
  */
 import { describe, expect, test } from 'bun:test';
-import { mapReconcileForJobRun } from '../../../src/controllers/jobController';
+import {
+  mapJobHealthForJobRun,
+  mapReconcileForJobRun,
+} from '../../../src/controllers/jobController';
 
 const baseResult = {
   checked: 10,
@@ -69,5 +72,47 @@ describe('mapReconcileForJobRun', () => {
 
     expect(summary.errorCount).toBe(0);
     expect(summary.stillUnpaidCount).toBe(3);
+  });
+});
+
+describe('mapJobHealthForJobRun', () => {
+  const baseHealthResult = {
+    healthy: true,
+    issueCount: 0,
+    errorCount: 0,
+    issues: [],
+    alerted: false,
+    message: 'x',
+  };
+
+  test('a healthy run reports no errors', () => {
+    expect(mapJobHealthForJobRun(baseHealthResult)).toMatchObject({
+      errorCount: 0,
+      healthy: true,
+    });
+  });
+
+  test('folds issueCount into errorCount so an unhealthy run fails the tracked handler loudly', () => {
+    const summary = mapJobHealthForJobRun({
+      ...baseHealthResult,
+      healthy: false,
+      issueCount: 2,
+      issues: [
+        { jobName: 'reminders', kind: 'stale_or_missing', detail: 'x' },
+        { jobName: 'no-show-sweep', kind: 'failed_or_partial', detail: 'y' },
+      ],
+    });
+
+    expect(summary.errorCount).toBe(2);
+    expect(summary.issueCount).toBe(2);
+  });
+
+  test('this job’s own dependency failure also folds into errorCount', () => {
+    const summary = mapJobHealthForJobRun({
+      ...baseHealthResult,
+      errorCount: 1,
+    });
+
+    expect(summary.errorCount).toBe(1);
   });
 });

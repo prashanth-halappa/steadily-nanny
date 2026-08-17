@@ -11,6 +11,8 @@ import { runCancellationPayReconcileJob } from '../jobs/cancellationPayReconcile
 import { runCoverAskExpiryJob } from '../jobs/coverAskExpiryJob';
 import { runExampleMaintenanceJob } from '../jobs/exampleMaintenanceJob';
 import { runIntegrityCheckJob } from '../jobs/integrityCheckJob';
+import type { JobHealthJobResult } from '../jobs/jobHealthJob';
+import { runJobHealthJob } from '../jobs/jobHealthJob';
 import { runNoShowDigestJob } from '../jobs/noShowDigestJob';
 import { runNoShowJob } from '../jobs/noShowJob';
 import { runReminderJob } from '../jobs/reminderJob';
@@ -41,6 +43,26 @@ export function mapReconcileForJobRun(result: CancellationPayReconcileResult) {
     errorCount: result.errorCount + result.needsHumanCount,
     needsHumanCount: result.needsHumanCount,
     stillUnpaidCount: result.stillUnpaidCount,
+  };
+}
+
+/**
+ * Fold `issueCount` into `errorCount` — and only that one.
+ *
+ * An unhealthy job-health run (some OTHER registered job is stale/failed)
+ * must fail loudly through the same 500 + Sentry path every other job gets,
+ * which is the whole point of this job existing. This job's OWN `errorCount`
+ * (a `job_runs`/pg_net query that itself threw) is reported separately in
+ * the summary so a human can tell "job-health is broken" from "job-health
+ * found something broken".
+ */
+export function mapJobHealthForJobRun(result: JobHealthJobResult) {
+  return {
+    errorCount: result.errorCount + result.issueCount,
+    healthy: result.healthy,
+    issueCount: result.issueCount,
+    alerted: result.alerted,
+    issues: result.issues,
   };
 }
 
@@ -176,5 +198,13 @@ export const JobController = {
         digest: result.digest,
       }),
     }
+  ),
+
+  /** POST /api/jobs/job-health — J1-b (S2), daily via 105. */
+  runJobHealth: createTrackedJobHandler(
+    'job-health',
+    runJobHealthJob,
+    'Job health check completed',
+    { mapForJobRun: mapJobHealthForJobRun }
   ),
 };

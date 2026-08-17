@@ -54,6 +54,12 @@ uncovered-digest             35 * * * *
 | `shift-completion` | 089 | nightly 03:40 | D-24/S2. Batch-writes `completed` on past confirmed shifts. Wrong window = wrong statuses at scale. | `select cron.unschedule('shift-completion');` |
 | `no-show-digest` | 090 | `50 * * * *` (job window still `[07:00,10:00)`) | D-26/A1. Morning "you may have missed this" digest. Worst case is push noise, not data damage. | `select cron.unschedule('no-show-digest');` |
 
+**Not yet applied — repo-only as of this section (migration 105, WP-J1/J2):**
+
+| Job | Migration | Schedule | Risk it carries | Kill switch |
+|---|---|---|---|---|
+| `job-health` | 105 | daily 06:15 | J1-b/S2. Read-only — reads `job_runs` and `net._http_response` (via `public.job_http_failures()`), writes nothing. Worst case is a noisy or missing alert, never data damage. **Two switches, softest first:** unset both `OPS_ALERT_EMAILS` and `OPS_ALERT_USER_IDS` (env; needs a redeploy to take effect) to silence alerting while the job keeps recording its findings in `job_runs.summary` — only unschedule it outright if the job itself is the problem (e.g. `job_http_failures()` running expensive against a large `net._http_response`). | `select cron.unschedule('job-health');` |
+
 Verify names against reality before trusting this table — migration 054's
 header records that 047/048 once sat in-repo unapplied:
 

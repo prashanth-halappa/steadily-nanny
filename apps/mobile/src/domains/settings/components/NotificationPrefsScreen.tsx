@@ -108,6 +108,10 @@ const PUSH_TYPE_GROUP: Record<PushNotificationType, NotificationGroup> = {
   uncovered_care_detected: 'schedule',
   uncovered_care_digest: 'schedule',
   week_below_guarantee: 'hoursAndPay',
+  // J1-b — ops-internal alert, never actually sent to a household member.
+  // Grouped under household only because PUSH_TYPE_GROUP is a total Record
+  // and this is the least-wrong bucket among the three.
+  ops_job_health: 'household',
 };
 
 const GROUP_ORDER: NotificationGroup[] = [

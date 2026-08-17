@@ -74,7 +74,7 @@ export function createTrackedJobHandler<T extends AnyResult>(
   }
 ): JobHandler {
   return async (
-    _req: Request,
+    req: Request,
     res: Response,
     next: NextFunction
   ): Promise<void> => {
@@ -92,6 +92,10 @@ export function createTrackedJobHandler<T extends AnyResult>(
 
       runId = await JobRunService.start(jobName);
       logger.info('Job started', { job: jobName, runId });
+      // S15 — the job routes sit before every other auth/audit layer in the
+      // app; this is the only place an invocation of one is ever recorded
+      // with WHO called it (by IP, the only identity these routes have).
+      logger.info('job.invoked', { job: jobName, ip: req.ip, runId });
 
       const result = await jobFn();
 
@@ -145,12 +149,14 @@ export function createSimpleJobHandler<T extends AnyResult>(
   mapForResponse?: (result: T) => AnyResult
 ): JobHandler {
   return async (
-    _req: Request,
+    req: Request,
     res: Response,
     next: NextFunction
   ): Promise<void> => {
     try {
       logger.info(`${jobName} job triggered`, { job: jobName });
+      // S15 — see the tracked handler's identical line for why.
+      logger.info('job.invoked', { job: jobName, ip: req.ip, runId: null });
       const result = await jobFn();
       const responsePayload = mapForResponse ? mapForResponse(result) : result;
       sendSuccessResponse(res, successMessage, {

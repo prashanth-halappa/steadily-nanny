@@ -228,6 +228,15 @@ export const PUSH_NOTIFICATION_TYPES = {
   // then never again. NOT quiet-hours exempt: a missing schedule can wait
   // until the morning, and the exemption list is a closed child-safety set.
   SCHEDULE_NOT_SET: 'schedule_not_set',
+
+  // J1-b (S2 audit closeout): `jobHealthJob`'s own alert, fired when a
+  // registered cron job's latest success is stale/missing or something
+  // failed/partial in the last 24h. NOT a household-scoped fact — it goes
+  // only to the user ids in `OPS_ALERT_USER_IDS` (an internal ops roster,
+  // never a parent or carer in practice). Audience is classified 'both'
+  // below only because the fixed union has no "ops-only" value; see that
+  // entry's comment.
+  OPS_JOB_HEALTH: 'ops_job_health',
 } as const;
 
 export type PushNotificationType =
@@ -335,4 +344,10 @@ export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
   // Only the family can answer "when do you need her" — `reminderJob` sends
   // it through `listParentUserIds`, so 'parent' by the header's rule.
   [PUSH_NOTIFICATION_TYPES.SCHEDULE_NOT_SET]: 'parent',
+  // J1-b: never actually sent to a parent or carer — only to
+  // `OPS_ALERT_USER_IDS`. 'parent' would be actively wrong (nobody in that
+  // role emits or receives it); the union has no ops-only value, so 'both'
+  // is the least-wrong classification and is commented here for exactly
+  // that reason. Its real gate is the env var, not this table.
+  [PUSH_NOTIFICATION_TYPES.OPS_JOB_HEALTH]: 'both',
 } as const;

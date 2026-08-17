@@ -17,8 +17,14 @@
  * DOING something, none by nobody doing anything — so an unanswered request
  * stayed `pending` long after the shift it was about. `EXPIRY_DAYS` days after
  * `created_at` the sweep flips it to `expired`, which is deliberately not
- * `withdrawn`: withdrawn means the requester acted. A hard failure of the
- * sweep itself is logged and swallowed rather than failing the whole job.
+ * `withdrawn`: withdrawn means the requester acted.
+ *
+ * J1-a (S2): a hard failure of any sweep is logged AND counted into the run's
+ * `errorCount` — every sweep still runs to completion (one arm's failure
+ * never skips another), but the run itself is no longer allowed to report
+ * `success` while a sweep silently did nothing. Before this, only the
+ * materialise loop's failures reached `errorCount`; a run where every sweep
+ * failed recorded `errorCount: 0, status: 'success'`.
  *
  * SETUP: scheduled daily via pg_cron in migration
  * `026_schedule_horizon_cron.sql` (POST `/api/jobs/schedule-horizon`). Requires
@@ -187,14 +193,14 @@ export async function runScheduleHorizonJob(
   const patterns = await patternRepo.listAccepted();
 
   let successCount = 0;
-  let errorCount = 0;
+  let materialiseErrorCount = 0;
 
   for (const pattern of patterns) {
     try {
       await commandService.materialiseForHorizon(pattern);
       successCount++;
     } catch (error) {
-      errorCount++;
+      materialiseErrorCount++;
       logger.error('Schedule horizon job failed to materialise a pattern', {
         patternId: pattern.id,
         error,
@@ -202,25 +208,34 @@ export async function runScheduleHorizonJob(
     }
   }
 
-  const changeRequestsExpired = await expireStaleChangeRequests(
+  const changeRequestsResult = await expireStaleChangeRequests(
     changeRequests,
     deps
   );
 
-  const changeRequestsExpiredForStartedShifts =
-    await expireChangeRequestsForStartedShifts(changeRequests, deps);
+  const startedShiftsResult = await expireChangeRequestsForStartedShifts(
+    changeRequests,
+    deps
+  );
 
-  await sweepUncoveredCare(deps);
+  const uncoveredCareResult = await sweepUncoveredCare(deps);
 
-  const eventsSwept = await sweepOldMachineEvents(deps);
+  const eventsResult = await sweepOldMachineEvents(deps);
+
+  const errorCount =
+    materialiseErrorCount +
+    changeRequestsResult.errorCount +
+    startedShiftsResult.errorCount +
+    uncoveredCareResult.errorCount +
+    eventsResult.errorCount;
 
   return {
     patternsProcessed: patterns.length,
     successCount,
     errorCount,
-    changeRequestsExpired,
-    changeRequestsExpiredForStartedShifts,
-    eventsSwept,
+    changeRequestsExpired: changeRequestsResult.expired,
+    changeRequestsExpiredForStartedShifts: startedShiftsResult.expired,
+    eventsSwept: eventsResult.swept,
     message: `Rolled the materialisation horizon forward for ${successCount}/${patterns.length} accepted schedule pattern(s)`,
   };
 }
@@ -240,7 +255,7 @@ export async function runScheduleHorizonJob(
 async function expireStaleChangeRequests(
   changeRequests: HorizonChangeRequestExpiryRepository,
   deps: ScheduleHorizonJobDeps
-): Promise<number> {
+): Promise<{ expired: number; errorCount: number }> {
   try {
     const cutoff = new Date(
       Date.now() - EXPIRY_DAYS * 24 * 60 * 60 * 1000
@@ -253,12 +268,12 @@ async function expireStaleChangeRequests(
         error,
       });
     }
-    return expired.length;
+    return { expired: expired.length, errorCount: 0 };
   } catch (error) {
     logger.error('Schedule horizon job: shift_change_requests expiry failed', {
       error,
     });
-    return 0;
+    return { expired: 0, errorCount: 1 };
   }
 }
 
@@ -293,7 +308,7 @@ async function expireStaleChangeRequests(
 async function expireChangeRequestsForStartedShifts(
   changeRequests: HorizonChangeRequestExpiryRepository,
   deps: ScheduleHorizonJobDeps
-): Promise<number> {
+): Promise<{ expired: number; errorCount: number }> {
   try {
     const expired = await changeRequests.expirePendingForStartedShifts(
       new Date().toISOString()
@@ -305,42 +320,45 @@ async function expireChangeRequestsForStartedShifts(
         error,
       });
     }
-    return expired.length;
+    return { expired: expired.length, errorCount: 0 };
   } catch (error) {
     logger.error(
       'Schedule horizon job: started-shift change-request expiry failed',
       { error }
     );
-    return 0;
+    return { expired: 0, errorCount: 1 };
   }
 }
 
 /**
  * S8 — age out machine-generated `shift_events`.
  *
- * Isolated and swallowed like every other arm: a retention sweep failing is a
- * disk-space problem, never a reason to fail a run that already rolled the
- * horizon forward. See `SWEEPABLE_EVENT_TYPES` for what is in scope and
- * `ShiftEventRepository.deleteSweptEventsOlderThan` for why the list is an
- * allowlist.
+ * Isolated like every other arm — its failure never skips a sibling sweep —
+ * but J1-a: no longer swallowed. A retention sweep failing is still logged
+ * and still counted into the run's `errorCount`, because "the sweep threw"
+ * is itself worth a human looking at even though the consequence (a slowly
+ * growing table) is not urgent. See `SWEEPABLE_EVENT_TYPES` for what is in
+ * scope and `ShiftEventRepository.deleteSweptEventsOlderThan` for why the
+ * list is an allowlist.
  */
 async function sweepOldMachineEvents(
   deps: ScheduleHorizonJobDeps
-): Promise<number> {
+): Promise<{ swept: number; errorCount: number }> {
   const eventRepo = deps.events ?? new ShiftEventRepository();
   try {
     const cutoff = new Date(
       Date.now() - EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000
     ).toISOString();
-    return await eventRepo.deleteSweptEventsOlderThan(
+    const swept = await eventRepo.deleteSweptEventsOlderThan(
       cutoff,
       SWEEPABLE_EVENT_TYPES
     );
+    return { swept, errorCount: 0 };
   } catch (error) {
     logger.error('Schedule horizon job: shift_events retention sweep failed', {
       error,
     });
-    return 0;
+    return { swept: 0, errorCount: 1 };
   }
 }
 
@@ -415,7 +433,16 @@ function formatLocalDateLabel(localDate: string): string {
   );
 }
 
-async function sweepUncoveredCare(deps: ScheduleHorizonJobDeps): Promise<void> {
+/**
+ * J1-a: every failure branch here used to return `void` — logged, then lost.
+ * Each now contributes to the returned `errorCount` so a backstop that never
+ * ran (listing households failed, loading them failed) or a household whose
+ * detection loop threw is reflected in the run's own status, not just a log
+ * line nobody is paged on.
+ */
+async function sweepUncoveredCare(
+  deps: ScheduleHorizonJobDeps
+): Promise<{ errorCount: number }> {
   const commitmentRepo = deps.commitments ?? new ChildCommitmentRepository();
   const householdRepo = deps.households ?? new HouseholdRepository();
   const detect =
@@ -431,11 +458,11 @@ async function sweepUncoveredCare(deps: ScheduleHorizonJobDeps): Promise<void> {
         error,
       }
     );
-    return;
+    return { errorCount: 1 };
   }
 
   if (householdIds.length === 0) {
-    return;
+    return { errorCount: 0 };
   }
 
   let households: Awaited<ReturnType<HorizonHouseholdRepository['findByIds']>>;
@@ -448,9 +475,10 @@ async function sweepUncoveredCare(deps: ScheduleHorizonJobDeps): Promise<void> {
         error,
       }
     );
-    return;
+    return { errorCount: 1 };
   }
 
+  let errorCount = 0;
   for (const household of households) {
     try {
       const today = localDateOf(new Date(), household.timezone);
@@ -467,6 +495,7 @@ async function sweepUncoveredCare(deps: ScheduleHorizonJobDeps): Promise<void> {
         });
       }
     } catch (error) {
+      errorCount++;
       logger.error(
         'Schedule horizon job: uncovered-care sweep failed for household',
         {
@@ -476,4 +505,5 @@ async function sweepUncoveredCare(deps: ScheduleHorizonJobDeps): Promise<void> {
       );
     }
   }
+  return { errorCount };
 }

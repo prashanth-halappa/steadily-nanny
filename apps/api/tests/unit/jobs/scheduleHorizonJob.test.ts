@@ -279,6 +279,26 @@ describe('runScheduleHorizonJob — stale change-request sweep (F-B5-5)', () => 
     expect(result.changeRequestsExpired).toBe(0);
   });
 
+  it('J1-a: counts the age-based sweep failure into the run-level errorCount', async () => {
+    const changeRequests = {
+      ...noChangeRequests(),
+      expirePendingOlderThan: mock(async () => {
+        throw new Error('shift_change_requests unreachable');
+      }) as unknown as ReturnType<
+        typeof noChangeRequests
+      >['expirePendingOlderThan'],
+    };
+
+    const result = await runScheduleHorizonJob(
+      { listAccepted: mock(async () => []) },
+      noOpMaterialiser(),
+      changeRequests,
+      noOpJobDeps()
+    );
+
+    expect(result.errorCount).toBeGreaterThan(0);
+  });
+
   it('pushes to the requester when an expired row has requested_by', async () => {
     const notifyUser = mock(() => undefined);
     const changeRequests = {
@@ -443,6 +463,29 @@ describe('runScheduleHorizonJob — uncovered-care backstop sweep', () => {
       localDate: '2026-08-31',
       cause: 'nothingScheduled',
     });
+    // J1-a: a failed household in the uncovered-care backstop must count
+    // toward the run-level errorCount, not vanish silently.
+    expect(result.errorCount).toBe(1);
+  });
+
+  it('J1-a: counts as an error when listing households with care hours fails', async () => {
+    setSystemTime(new Date('2026-08-01T12:00:00.000Z'));
+    const deps = noOpJobDeps({
+      commitments: {
+        listHouseholdIdsWithCommitments: mock(async () => {
+          throw new Error('commitments unreachable');
+        }),
+      },
+    });
+
+    const result = await runScheduleHorizonJob(
+      { listAccepted: mock(async () => []) },
+      noOpMaterialiser(),
+      noChangeRequests(),
+      deps
+    );
+
+    expect(result.errorCount).toBeGreaterThan(0);
   });
 });
 
@@ -520,6 +563,26 @@ describe('runScheduleHorizonJob — A5: a request must not outlive its shift', (
     expect(result.changeRequestsExpiredForStartedShifts).toBe(0);
     expect(result.patternsProcessed).toBe(1);
   });
+
+  it('J1-a: counts the started-shift sweep failure into the run-level errorCount', async () => {
+    const changeRequests = {
+      ...noChangeRequests(),
+      expirePendingForStartedShifts: mock(async () => {
+        throw new Error('unreachable');
+      }) as unknown as ReturnType<
+        typeof noChangeRequests
+      >['expirePendingForStartedShifts'],
+    };
+
+    const result = await runScheduleHorizonJob(
+      { listAccepted: mock(async () => []) },
+      noOpMaterialiser(),
+      changeRequests,
+      noOpJobDeps()
+    );
+
+    expect(result.errorCount).toBeGreaterThan(0);
+  });
 });
 
 describe('runScheduleHorizonJob — S8: shift_events retention', () => {
@@ -576,7 +639,7 @@ describe('runScheduleHorizonJob — S8: shift_events retention', () => {
     }
   });
 
-  it('a failed retention sweep is a disk-space problem, never a failed run', async () => {
+  it('J1-a: a failed retention sweep is still counted into the run-level errorCount', async () => {
     const result = await runScheduleHorizonJob(
       { listAccepted: mock(async () => [patternFor()]) },
       noOpMaterialiser(),
@@ -592,5 +655,6 @@ describe('runScheduleHorizonJob — S8: shift_events retention', () => {
 
     expect(result.eventsSwept).toBe(0);
     expect(result.patternsProcessed).toBe(1);
+    expect(result.errorCount).toBeGreaterThan(0);
   });
 });
