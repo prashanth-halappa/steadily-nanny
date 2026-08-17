@@ -156,6 +156,61 @@ describe('NannyWeekLine', () => {
     expect(queryByTestId('today-week-line-card')).toBeNull();
   });
 
+  // False alarm (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): a failed read
+  // used to fall through `?? []`, showing "0h logged" and a bare
+  // not-submitted status over a week she genuinely worked.
+  it('renders InlineRetry, never "0h logged", when a week query fails', () => {
+    mockUseWeekTimeEntries.mockImplementation(() => ({
+      data: undefined,
+      isLoading: false,
+      isPending: false,
+      isError: true,
+      refetch: mock(),
+    }));
+
+    const { getByTestId, queryByTestId, queryByText } = render(
+      <NannyWeekLine
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
+    );
+
+    expect(getByTestId('today-week-line-retry')).toBeTruthy();
+    expect(queryByTestId('today-week-line')).toBeNull();
+    expect(queryByText(/weekLine/)).toBeNull();
+  });
+
+  it('wires the retry to both underlying queries', () => {
+    const refetchEntries = mock();
+    const refetchTimesheet = mock();
+    mockUseWeekTimeEntries.mockImplementation(() => ({
+      data: undefined,
+      isLoading: false,
+      isPending: false,
+      isError: true,
+      refetch: refetchEntries,
+    }));
+    mockUseWeekTimesheet.mockImplementation(() => ({
+      data: undefined,
+      isLoading: false,
+      isPending: false,
+      isError: false,
+      refetch: refetchTimesheet,
+    }));
+
+    const { getByTestId } = render(
+      <NannyWeekLine
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
+    );
+
+    fireEvent.press(getByTestId('today-week-line-retry-button'));
+    expect(refetchEntries).toHaveBeenCalledTimes(1);
+  });
+
   it('renders a pressable line with week duration and nanny status vocabulary', () => {
     const { getByTestId, getByText } = render(
       <NannyWeekLine

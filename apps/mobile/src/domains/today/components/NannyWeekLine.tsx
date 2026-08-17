@@ -11,6 +11,7 @@ import { type Href, useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
+import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { Small } from '@/src/components/ui/typography';
 import { timesheetPillLabel } from '@/src/domains/timesheet/components/WeekTotal';
@@ -18,6 +19,7 @@ import { formatDuration } from '@/src/domains/timesheet/utils/duration';
 import { formatEarningsDuration } from '@/src/domains/timesheet/utils/earningsFormat';
 import { sumEntryMinutes } from '@/src/domains/timesheet/utils/entryMinutes';
 import { getWeekStartISO } from '@/src/domains/timesheet/utils/week';
+import { queryState } from '@/src/hooks/queries/queryState';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useWeekTimesheet } from '@/src/hooks/queries/useWeekTimesheet';
 import { useAuthStore } from '@/src/store/auth';
@@ -38,6 +40,7 @@ export function NannyWeekLine({
 }: NannyWeekLineProps) {
   const { t: tToday } = useTranslation('today');
   const { t: tHours } = useTranslation('hours');
+  const { t: tErrors } = useTranslation('errors');
   const router = useRouter();
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
   const weekStart = useMemo(
@@ -47,13 +50,22 @@ export function NannyWeekLine({
   const entriesQuery = useWeekTimeEntries(householdId, weekStart);
   const timesheetQuery = useWeekTimesheet(householdId, weekStart);
 
-  if (
-    entriesQuery.isLoading ||
-    entriesQuery.isPending ||
-    timesheetQuery.isLoading ||
-    timesheetQuery.isPending
-  ) {
+  const qs = queryState(entriesQuery, timesheetQuery);
+  if (qs.status === 'loading') {
     return null;
+  }
+  // False alarm (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): a failed read
+  // used to fall through the entries/timesheet `?? []`, showing "0h logged"
+  // and an honest-looking "not submitted" status over a week she genuinely
+  // worked.
+  if (qs.status === 'error') {
+    return (
+      <InlineRetry
+        testID="today-week-line-retry"
+        message={tErrors('network')}
+        onRetry={qs.retry}
+      />
+    );
   }
 
   const entries = (entriesQuery.data ?? []).filter(

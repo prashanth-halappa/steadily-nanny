@@ -95,10 +95,15 @@ describe('ManageCommitmentsSection — confirm-as-usual-week offer (P3.3)', () =
     expect(sectionSource).toContain('hasActiveNanny');
   });
 
-  it('hides the offer once a pattern has been accepted, and until both gating queries have resolved', () => {
+  it('hides the offer once a pattern has been accepted, and until both gating queries have resolved (loading OR errored)', () => {
     expect(sectionSource).toContain('useSchedulePatterns');
     expect(sectionSource).toContain('SCHEDULE_PATTERN_STATUSES.ACCEPTED');
-    expect(sectionSource).toMatch(/canOfferWeek[\s\S]{0,300}isLoading/);
+    // `queryState(carers, patterns)` — not a bare `isLoading` check — is
+    // what lets `canOfferWeek` also stay false on a settled-with-error read
+    // (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B: `isLoading` alone can't
+    // tell "still loading" from "failed").
+    expect(sectionSource).toMatch(/canOfferWeek[\s\S]{0,300}gatingQs\.status/);
+    expect(sectionSource).toContain('queryState(carers, patterns)');
   });
 
   it('shows nothing before the child has any care hours at all', () => {

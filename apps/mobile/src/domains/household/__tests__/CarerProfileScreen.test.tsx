@@ -83,6 +83,8 @@ describe('CarerProfileScreen — render (Pattern B)', () => {
       },
     ],
     isLoading: false,
+    isError: false,
+    refetch: mock(),
   }));
 
   mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
@@ -118,7 +120,12 @@ describe('CarerProfileScreen — render (Pattern B)', () => {
       // file — only the member LIST changes, exactly the state a household
       // reaches once that carer is removed (soft `status: 'removed'`,
       // 009_households.sql) or deletes her account.
-      mockUseHouseholdMembers.mockReturnValue({ data: [], isLoading: false });
+      mockUseHouseholdMembers.mockReturnValue({
+        data: [],
+        isLoading: false,
+        isError: false,
+        refetch: mock(),
+      });
     });
 
     it('renders a not-found state instead of a "Nanny" profile with a "?" avatar', () => {
@@ -147,6 +154,42 @@ describe('CarerProfileScreen — render (Pattern B)', () => {
       // button to press at all, that no-op can't be reached in the first
       // place.
       expect(queryByTestId('carer-profile-remove-button')).toBeNull();
+    });
+  });
+
+  // False alarm (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): the not-found
+  // branch above is reached on ANY empty member list — including a FAILED
+  // read, whose `data` is also `undefined ?? []`. A dropped connection must
+  // never assert "No longer on this household" — that's a fact about a
+  // real person, not a guess to make off a network blip.
+  describe('members.isError — a dropped connection, not a departure', () => {
+    const refetchMembers = mock();
+
+    beforeAll(() => {
+      mockUseHouseholdMembers.mockReturnValue({
+        data: [],
+        isLoading: false,
+        isError: true,
+        refetch: refetchMembers,
+      });
+    });
+
+    it('renders a network ErrorState, never the not-found "no longer on this household" copy', () => {
+      const { getByTestId, queryByTestId, queryByText } = render(
+        <CarerProfileScreen />
+      );
+
+      expect(getByTestId('error-state')).toBeTruthy();
+      expect(queryByTestId('carer-profile-avatar')).toBeNull();
+      expect(queryByText('carerProfile.notFoundTitle')).toBeNull();
+    });
+
+    it('wires the retry to the members query', () => {
+      refetchMembers.mockClear();
+      const { getByText } = render(<CarerProfileScreen />);
+
+      fireEvent.press(getByText('tryAgain'));
+      expect(refetchMembers).toHaveBeenCalledTimes(1);
     });
   });
 });

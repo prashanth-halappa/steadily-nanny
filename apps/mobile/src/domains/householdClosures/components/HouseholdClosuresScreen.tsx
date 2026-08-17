@@ -33,6 +33,7 @@ import { KeyboardAvoidingView, Platform, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
+import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -71,6 +72,7 @@ export function HouseholdClosuresScreen() {
   const router = useRouter();
   const { t } = useTranslation('household');
   const { t: tCommon } = useTranslation('common');
+  const { t: tErrors } = useTranslation('errors');
   const onboarding = useIsOnboarded();
   const householdId = onboarding.householdId;
   const closures = useHouseholdClosures(householdId);
@@ -265,6 +267,18 @@ export function HouseholdClosuresScreen() {
           ListEmptyComponent={
             closures.isLoading ? (
               <LoadingIndicator testID="household-closures-loading" />
+            ) : closures.isError ? (
+              // False alarm (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): only
+              // `isLoading` was checked — a settled-with-error read has
+              // `isLoading: false` too, and used to print the "no closures"
+              // empty state over rows that genuinely exist.
+              <View className="mt-4">
+                <InlineRetry
+                  testID="household-closures-retry"
+                  message={tErrors('network')}
+                  onRetry={() => void closures.refetch()}
+                />
+              </View>
             ) : (
               <View testID="household-closures-empty">
                 <EmptyState

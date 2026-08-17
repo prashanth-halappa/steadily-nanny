@@ -141,6 +141,8 @@ export function NoWeekYetCard() {
     state.kind === 'hidden' ||
     patterns.isLoading ||
     members.isLoading ||
+    patterns.isError ||
+    members.isError ||
     !shifts.isSuccess
   ) {
     return null;

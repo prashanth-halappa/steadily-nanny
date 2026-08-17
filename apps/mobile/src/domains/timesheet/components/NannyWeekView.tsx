@@ -272,6 +272,16 @@ export function NannyWeekView({
   const timesheet = currentUserId
     ? (weekTimesheets.find(t => t.carer_id === currentUserId) ?? null)
     : null;
+  // False alarm (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): every
+  // `timesheetStatus` prop below used to pre-coerce `timesheet?.status ??
+  // null`, and `WeekTotal`'s `hasStatus` reads `null` as "genuinely not
+  // submitted" — printing a false pill/status over a week whose real
+  // status this component simply failed (or hasn't yet managed) to read.
+  // `undefined` is what keeps that distinction alive downstream.
+  const timesheetStatusForDisplay =
+    timesheetQuery.isPending || timesheetQuery.isError
+      ? undefined
+      : (timesheet?.status ?? null);
   const reopened = useReopenedNotice(timesheet?.id, timesheet?.status);
   // Read-only for her. Fetch once approved OR reopened — the ledger survives
   // a reopen even when the earnings snapshot clears.
@@ -592,7 +602,7 @@ export function NannyWeekView({
             nowMs={nowMs}
             timeZone={timeZone}
             onEditEntry={readOnly ? undefined : openEditor}
-            timesheetStatus={timesheet?.status ?? null}
+            timesheetStatus={timesheetStatusForDisplay}
           />
         )}
         ListHeaderComponent={
@@ -614,7 +624,7 @@ export function NannyWeekView({
             />
             <WeekTotal
               testID="hours-week-total"
-              timesheetStatus={timesheet?.status ?? null}
+              timesheetStatus={timesheetStatusForDisplay}
               earnings={earnings}
               earningsRole="nanny"
               approvedDateLabel={approvedDateLabel}
@@ -639,7 +649,7 @@ export function NannyWeekView({
               messages={threadQuery.data?.messages ?? []}
               currentUserId={currentUserId}
               timeZone={timeZone}
-              timesheetStatus={timesheet?.status ?? null}
+              timesheetStatus={timesheetStatusForDisplay}
               viewerRole="nanny"
               composerReopened={composerReopened}
               onSend={handleSendThreadMessage}
@@ -659,7 +669,7 @@ export function NannyWeekView({
                 card (screens-hours.md §5). */}
             <WeekMoneyCard
               earnings={earnings ?? null}
-              timesheetStatus={timesheet?.status ?? null}
+              timesheetStatus={timesheetStatusForDisplay}
               viewerRole="nanny"
               carerId={timesheet?.carer_id ?? null}
               carerDisplayName={timesheet?.carer_display_name ?? ''}

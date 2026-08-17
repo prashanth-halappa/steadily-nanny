@@ -43,14 +43,20 @@ function yearOfInZone(startsAtIso: string, timeZone: string): number {
 
 export interface PaidFamilyCounts {
   /** A time-off id absent from this map means "no family has paid it" —
-   * ONLY once `isLoading` is false. While loading, an absent id says
-   * nothing either way (the underlying ledger fetches simply haven't
-   * resolved yet); callers must check `isLoading` before treating an
-   * absent id as a resolved zero. */
+   * ONLY once `isLoading` is false AND `isError` is false. While loading,
+   * or on a failed read, an absent id says nothing either way (the
+   * underlying ledger fetches simply haven't resolved, or didn't
+   * succeed); callers must check both before treating an absent id as a
+   * resolved zero. */
   counts: Map<string, number>;
   /** True while any of the underlying per-household ledger fetches this
    * hook needs are still in flight. */
   isLoading: boolean;
+  /** True when the household list OR any per-household ledger fetch
+   * failed. A dropped connection must never render as "no family has
+   * paid this" — the whole reason `counts` documents its own caveat
+   * above. */
+  isError: boolean;
 }
 
 /**
@@ -115,6 +121,8 @@ export function usePaidFamilyCounts(
   const isLoading =
     households.isPending ||
     (pairs.length > 0 && ledgerQueries.some(query => query.isPending));
+  const isError =
+    households.isError || ledgerQueries.some(query => query.isError);
 
-  return { counts, isLoading };
+  return { counts, isLoading, isError };
 }

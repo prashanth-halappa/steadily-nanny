@@ -498,6 +498,85 @@ describe('PayArrangementScreen', () => {
     expect(ptoBalanceMock).not.toHaveBeenCalled();
   });
 
+  // F15 (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): the gate only ever
+  // checked `current`/`history` — a failed acks or balance read rendered
+  // the detail anyway, computing an ack pill / agreement fact off data that
+  // never arrived.
+  describe('widened gate — acks/balance failures (F15)', () => {
+    it('a failed acks read shows ErrorState instead of the detail', async () => {
+      payCurrentMock.mockImplementation(() =>
+        Promise.resolve(arrangementFor(NANNY_A_ID))
+      );
+      listAcksMock.mockImplementation(() =>
+        Promise.reject(new Error('acks boom'))
+      );
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <PayArrangementScreen />
+      );
+
+      await waitFor(() => expect(getByTestId('error-state')).toBeTruthy());
+      expect(queryByTestId('pay-current-rate')).toBeNull();
+    });
+
+    it('a failed balance read (entitlement set) shows ErrorState instead of the detail', async () => {
+      payCurrentMock.mockImplementation(() =>
+        Promise.resolve({
+          ...arrangementFor(NANNY_A_ID),
+          pto_entitlement_minutes_per_year: 8400,
+        })
+      );
+      ptoBalanceMock.mockImplementation(() =>
+        Promise.reject(new Error('balance boom'))
+      );
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <PayArrangementScreen />
+      );
+
+      await waitFor(() => expect(getByTestId('error-state')).toBeTruthy());
+      expect(queryByTestId('pay-current-rate')).toBeNull();
+    });
+
+    it('retry refetches current, history, acks and balance together', async () => {
+      payCurrentMock.mockImplementation(() =>
+        Promise.resolve({
+          ...arrangementFor(NANNY_A_ID),
+          pto_entitlement_minutes_per_year: 8400,
+        })
+      );
+      ptoBalanceMock.mockImplementation(() =>
+        Promise.reject(new Error('balance boom'))
+      );
+
+      const { getByText } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() => expect(ptoBalanceMock).toHaveBeenCalled());
+      payCurrentMock.mockClear();
+      payHistoryMock.mockClear();
+      listAcksMock.mockClear();
+      ptoBalanceMock.mockClear();
+
+      fireEvent.press(getByText('tryAgain'));
+
+      await waitFor(() => expect(ptoBalanceMock).toHaveBeenCalled());
+      expect(payCurrentMock).toHaveBeenCalled();
+      expect(payHistoryMock).toHaveBeenCalled();
+      expect(listAcksMock).toHaveBeenCalled();
+    });
+
+    it('an ordinary (non-entitlement) week never fetches balance and is unaffected by the widened gate', async () => {
+      payCurrentMock.mockImplementation(() =>
+        Promise.resolve(arrangementFor(NANNY_A_ID))
+      );
+
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() => expect(getByTestId('pay-current-rate')).toBeTruthy());
+      expect(ptoBalanceMock).not.toHaveBeenCalled();
+    });
+  });
+
   /**
    * P1. "Change terms" no longer writes `pay_arrangements` — it opens a
    * ROUND the nanny has to agree to. That is the whole point: an arrangement
@@ -755,6 +834,26 @@ describe('PayArrangementScreen', () => {
 
     await waitFor(() => expect(getByTestId('pay-not-available')).toBeTruthy());
     expect(queryByTestId('pay-current-terms-card')).toBeNull();
+  });
+
+  // C6 (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §C): `onboarding.status` stays
+  // 'loading' FOREVER on a failed memberships read — checking only that made
+  // this outer gate a permanent spinner with no reachable retry.
+  it('a failed memberships read shows a retry, not a permanent spinner (C6)', async () => {
+    membershipsListMock.mockImplementation(() =>
+      Promise.reject(new Error('memberships boom'))
+    );
+
+    const { getByTestId, queryByTestId, getByText } = renderWithProviders(
+      <PayArrangementScreen />
+    );
+
+    await waitFor(() => expect(getByTestId('error-state')).toBeTruthy());
+    expect(queryByTestId('pay-loading')).toBeNull();
+
+    membershipsListMock.mockClear();
+    fireEvent.press(getByText('tryAgain'));
+    await waitFor(() => expect(membershipsListMock).toHaveBeenCalled());
   });
 
   describe('review finding 7: the picker rate label while its own rate query is pending', () => {

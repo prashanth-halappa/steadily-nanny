@@ -774,3 +774,104 @@ describe('MyPayScreen', () => {
     });
   });
 });
+
+// False alarm (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): a failed read used
+// to fall through the same `?? []`/`?? null` a genuinely empty one does, so
+// a dropped connection told her "not agreed in Steadily" over terms she DID
+// agree, or "Not read yet" over a read she recorded.
+describe('MyPayScreen — a failed read never asserts a fact (false alarm)', () => {
+  it('current.isError renders ErrorState with a working retry, not the empty state', async () => {
+    payCurrentMock.mockImplementation((householdId: string) =>
+      householdId === HOUSEHOLD_A
+        ? Promise.reject(new Error('current boom'))
+        : Promise.resolve(null)
+    );
+
+    const { getByTestId, queryByTestId, getByText } = renderWithProviders(
+      <MyPayScreen />
+    );
+
+    await waitFor(() =>
+      expect(getByTestId(`my-pay-error-${HOUSEHOLD_A}`)).toBeTruthy()
+    );
+    expect(queryByTestId(`my-pay-empty-${HOUSEHOLD_A}`)).toBeNull();
+
+    payCurrentMock.mockClear();
+    fireEvent.press(getByText('tryAgain'));
+    await waitFor(() => expect(payCurrentMock).toHaveBeenCalled());
+  });
+
+  it('a failed history read hides the terms-state label rather than claiming "not agreed in Steadily"', async () => {
+    payHistoryMock.mockImplementation(() =>
+      Promise.reject(new Error('history boom'))
+    );
+
+    const { getByTestId, queryByTestId } = renderWithProviders(<MyPayScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId(`my-pay-household-${HOUSEHOLD_A}`)).toBeTruthy()
+    );
+    await waitFor(() =>
+      expect(getByTestId(`my-pay-side-data-retry-${HOUSEHOLD_A}`)).toBeTruthy()
+    );
+    expect(queryByTestId(`my-pay-terms-state-${HOUSEHOLD_A}`)).toBeNull();
+  });
+
+  it('a failed acks read hides the ack state line rather than claiming "Not read yet"', async () => {
+    listAcksMock.mockImplementation(() =>
+      Promise.reject(new Error('acks boom'))
+    );
+
+    const { getByTestId, queryByTestId } = renderWithProviders(<MyPayScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId(`my-pay-side-data-retry-${HOUSEHOLD_A}`)).toBeTruthy()
+    );
+    expect(queryByTestId(`my-pay-ack-state-${HOUSEHOLD_A}`)).toBeNull();
+    expect(queryByTestId(`my-pay-ack-disagree-${HOUSEHOLD_A}`)).toBeNull();
+  });
+
+  // C6 (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §C): a failed memberships read
+  // used to pin `onboarding.status` at 'loading' forever — the outer gate
+  // checked ONLY `status === 'loading'`, so this was a permanent spinner
+  // with no reachable retry.
+  it('a failed memberships read shows a retry, not a permanent spinner (C6)', async () => {
+    membershipsListMock.mockImplementation(() =>
+      Promise.reject(new Error('memberships boom'))
+    );
+
+    const { getByTestId, queryByTestId, getByText } = renderWithProviders(
+      <MyPayScreen />
+    );
+
+    await waitFor(() =>
+      expect(getByTestId('my-pay-membership-error')).toBeTruthy()
+    );
+    expect(queryByTestId('my-pay-loading')).toBeNull();
+
+    membershipsListMock.mockClear();
+    fireEvent.press(getByText('tryAgain'));
+    await waitFor(() => expect(membershipsListMock).toHaveBeenCalled());
+  });
+
+  it('retrying the side-data InlineRetry refetches history and acks', async () => {
+    listAcksMock.mockImplementation(() =>
+      Promise.reject(new Error('acks boom'))
+    );
+
+    const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId(`my-pay-side-data-retry-${HOUSEHOLD_A}`)).toBeTruthy()
+    );
+    listAcksMock.mockClear();
+    payHistoryMock.mockClear();
+
+    fireEvent.press(
+      getByTestId(`my-pay-side-data-retry-${HOUSEHOLD_A}-button`)
+    );
+
+    await waitFor(() => expect(listAcksMock).toHaveBeenCalled());
+    expect(payHistoryMock).toHaveBeenCalled();
+  });
+});

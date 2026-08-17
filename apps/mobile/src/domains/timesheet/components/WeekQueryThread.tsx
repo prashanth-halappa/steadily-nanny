@@ -63,7 +63,11 @@ interface WeekQueryThreadProps {
   /** Household IANA zone — every timestamp is stated in it, never the
    * device's (GOLDEN-FIXES #21 bug class). */
   timeZone: string;
-  timesheetStatus: TimesheetStatus | null;
+  /** `undefined` while the timesheet read is pending or has failed — kept
+   * distinct from `null` ("settled: genuinely not submitted") so callers
+   * never have to pre-coerce an unknown status
+   * (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B). */
+  timesheetStatus: TimesheetStatus | null | undefined;
   /** Who is looking — the composer fork ONLY; never the message list. */
   viewerRole: EarningsRole;
   /** §3.1: she opened a thread on an approved week, so the composer comes
@@ -94,7 +98,7 @@ function formatMessageAt(createdAtISO: string, timeZone: string): string {
  * herself, which is the whole point of §3.1's last paragraph.
  */
 function showComposerFor(
-  status: TimesheetStatus | null,
+  status: TimesheetStatus | null | undefined,
   role: EarningsRole,
   composerReopened: boolean
 ): boolean {

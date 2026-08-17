@@ -19,6 +19,8 @@ import { type Href, useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
+import { InlineRetry } from '@/src/components/custom/InlineRetry';
+import { SkeletonShimmer } from '@/src/components/ui/skeleton-shimmer';
 import {
   StatusPill,
   type StatusPillProps,
@@ -28,6 +30,7 @@ import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName
 import { resolveActivePattern } from '@/src/domains/schedule/utils/patternPrecedence';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
+import { queryState } from '@/src/hooks/queries/queryState';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
@@ -89,6 +92,7 @@ function firstNameOf(name: string): string {
 
 export function ThisWeeksShiftsCard() {
   const { t } = useTranslation('schedule');
+  const { t: tErrors } = useTranslation('errors');
   const router = useRouter();
   const elevation = useElevation();
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
@@ -164,6 +168,29 @@ export function ThisWeeksShiftsCard() {
     explainsMissingWeek && !isNannyVoice
       ? '/(private)/schedule/build'
       : '/(private)/schedule/shifts';
+
+  // False alarm (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): this card had
+  // NO loading or error gate at all — `emptyLine` above falls through
+  // straight from `?? []`, so a still-loading or failed read used to
+  // accuse the parent of never setting up a week she DID set up.
+  const qs = queryState(shiftsQuery, membersQuery, patternsQuery);
+  if (qs.status === 'loading') {
+    return (
+      <View testID="today-shifts-skeleton" className="gap-2">
+        <SkeletonShimmer width="40%" height={12} />
+        <SkeletonShimmer width="100%" height={36} />
+      </View>
+    );
+  }
+  if (qs.status === 'error') {
+    return (
+      <InlineRetry
+        testID="today-shifts-retry"
+        message={tErrors('network')}
+        onRetry={qs.retry}
+      />
+    );
+  }
 
   return (
     <View testID="today-shifts-card" className="gap-2">

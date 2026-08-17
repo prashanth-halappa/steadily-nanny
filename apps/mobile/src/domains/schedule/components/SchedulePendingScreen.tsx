@@ -50,6 +50,7 @@ import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
+import { ErrorState } from '@/src/components/custom/ErrorState';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -79,6 +80,7 @@ import {
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useAmendSchedulePattern } from '@/src/hooks/mutations/useAmendSchedulePattern';
 import { useWithdrawSchedulePattern } from '@/src/hooks/mutations/useWithdrawSchedulePattern';
+import { onboardingAsQuery, queryState } from '@/src/hooks/queries/queryState';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
@@ -144,6 +146,32 @@ export function SchedulePendingScreen() {
 
   const canEditSchedule = isParentEditorRole(onboarding.role);
 
+  // C5 (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §C): a loading/error guard
+  // must precede the role gate below — otherwise `onboarding.role` is still
+  // null while onboarding resolves (or forever, on a failed read), and the
+  // household's OWN parent is told this screen "isn't available to you".
+  // Mirrors ScheduleBuildScreen.tsx's ordering (loading/error first, role
+  // gate second).
+  const onboardingQs = queryState(onboardingAsQuery(onboarding));
+  if (onboardingQs.status === 'error') {
+    return (
+      <View testID="schedule-pending-screen" className="flex-1 bg-background">
+        <ErrorState variant="network" onRetry={onboardingQs.retry} />
+      </View>
+    );
+  }
+  if (onboardingQs.status === 'loading') {
+    return (
+      <View
+        testID="schedule-pending-screen"
+        style={{ flex: 1 }}
+        className="items-center justify-center bg-background"
+      >
+        <LoadingIndicator />
+      </View>
+    );
+  }
+
   // Parent/helper only. Normal navigation never sends a nanny here, but a
   // bare `null` used to leave a deep-linked nanny staring at a blank
   // screen — no message, no back affordance, nothing. Mirrors
@@ -205,7 +233,10 @@ export function SchedulePendingScreen() {
     showSuccessToast(t('pending.adjustSuccessToast'));
   };
 
-  const isLoading = onboarding.status === 'loading' || patterns.isLoading;
+  // `onboarding.status === 'loading'` is already handled by the guard
+  // above (which now precedes the role gate) — `patterns` is the one query
+  // still in flight past that point.
+  const isLoading = patterns.isLoading;
 
   const patternStatus = ():
     | 'pending'
@@ -243,6 +274,13 @@ export function SchedulePendingScreen() {
 
       {isLoading ? (
         <LoadingIndicator messages={[t('pending.loading')]} />
+      ) : patterns.isError ? (
+        // False alarm: a failed patterns read fell through the same
+        // `?? []` a genuinely-empty list does, showing "build a week"
+        // over a real pending/accepted week the parent already sent.
+        <View testID="schedule-pending-error" className="mt-6">
+          <ErrorState variant="network" onRetry={() => patterns.refetch()} />
+        </View>
       ) : !pattern ? (
         <View testID="schedule-pending-empty" className="mt-6 gap-4">
           <EmptyState

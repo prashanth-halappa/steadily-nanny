@@ -57,6 +57,7 @@ import { DEFAULT_WEEK_STARTS_ON } from '@/src/domains/timesheet/utils/week';
 import { useCancelScheduledPayArrangement } from '@/src/hooks/mutations/useCancelScheduledPayArrangement';
 import { useProposeTerms } from '@/src/hooks/mutations/useProposeTerms';
 import { useWithdrawTerms } from '@/src/hooks/mutations/useWithdrawTerms';
+import { onboardingAsQuery, queryState } from '@/src/hooks/queries/queryState';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
@@ -213,16 +214,37 @@ function CarerPayDetail({
     hasEntitlement ? currentYear : undefined
   );
 
-  if (current.isPending || history.isPending) {
+  // F15 (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): `acks` feeds the ack
+  // pill and `balance` feeds the PTO row below — a failed read on either
+  // used to render the detail anyway, computing that pill / row off data
+  // that never arrived. Both `acks` and `balance` gate on `hasArrangement`/
+  // `hasEntitlement` before being checked — each is `enabled: false` (and
+  // therefore `isPending` FOREVER, per TanStack Query v5) until there's an
+  // arrangement/entitlement to ask about, and including either unconditionally
+  // would pin the "no arrangement yet" empty state on a spinner forever.
+  const hasArrangement = !!current.data;
+  if (
+    current.isPending ||
+    history.isPending ||
+    (hasArrangement && acks.isPending) ||
+    (hasEntitlement && balance.isPending)
+  ) {
     return <LoadingIndicator testID="pay-loading" />;
   }
-  if (current.isError || history.isError) {
+  if (
+    current.isError ||
+    history.isError ||
+    (hasArrangement && acks.isError) ||
+    (hasEntitlement && balance.isError)
+  ) {
     return (
       <ErrorState
         variant="network"
         onRetry={() => {
           void current.refetch();
           void history.refetch();
+          if (hasArrangement) void acks.refetch();
+          if (hasEntitlement) void balance.refetch();
         }}
       />
     );
@@ -637,7 +659,19 @@ export function PayArrangementScreen() {
     [members.data]
   );
 
-  if (onboarding.status === 'loading' || activeHousehold.isLoading) {
+  // C6 (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §C): `onboarding.status`
+  // stays 'loading' FOREVER on a failed memberships read — checking that
+  // alone made this a permanent spinner with no reachable retry.
+  const onboardingQs = queryState(onboardingAsQuery(onboarding));
+  if (onboardingQs.status === 'error') {
+    return (
+      <View testID="pay-screen" className="flex-1 bg-background">
+        <ErrorState variant="network" onRetry={onboardingQs.retry} />
+      </View>
+    );
+  }
+
+  if (onboardingQs.status === 'loading' || activeHousehold.isLoading) {
     return (
       <View testID="pay-screen" className="flex-1 bg-background">
         <LoadingIndicator testID="pay-loading" />

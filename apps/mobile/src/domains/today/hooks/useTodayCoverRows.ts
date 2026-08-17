@@ -26,6 +26,7 @@ import {
 } from '@/src/domains/timesheet/utils/duration';
 import { sumEntryMinutes } from '@/src/domains/timesheet/utils/entryMinutes';
 import { getWeekStartISO } from '@/src/domains/timesheet/utils/week';
+import { queryState } from '@/src/hooks/queries/queryState';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
@@ -88,7 +89,17 @@ export function useTodayCoverRows(
   /** The household's `week_starts_on` — the entries query is keyed on the
    * household's own business week, never a hardcoded Monday. */
   weekStartsOn: number
-): { rows: CoverRow[]; isLoading: boolean } {
+): {
+  rows: CoverRow[];
+  isLoading: boolean;
+  /** Three-state read of the underlying queries — see
+   * `src/hooks/queries/queryState.ts`. `isLoading` above is kept for
+   * existing callers; a caller that must tell "loading" apart from "the
+   * read failed" (never render "Nothing scheduled today" for the latter —
+   * docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B) should read this instead. */
+  status: 'loading' | 'error' | 'ready';
+  retry: () => void;
+} {
   const { t } = useTranslation('today');
   const { t: tSchedule } = useTranslation('schedule');
   const membersQuery = useHouseholdMembers(householdId);
@@ -268,8 +279,12 @@ export function useTodayCoverRows(
     tSchedule,
   ]);
 
+  const qs = queryState(entries, shifts, membersQuery);
+
   return {
     rows,
     isLoading: entries.isLoading || shifts.isLoading || membersQuery.isLoading,
+    status: qs.status,
+    retry: qs.retry,
   };
 }

@@ -224,6 +224,42 @@ describe('useInboxItems isError channel', () => {
     expect(result.current.isError).toBe(false);
     expect(result.current.items).toEqual([]);
   });
+
+  // C6: a failed memberships read used to be omitted from the OR-chain
+  // entirely, AND `isLoading` stayed true forever (useIsOnboarded reports a
+  // failed read as `status: 'loading'` permanently) — so even once isError
+  // is true, a caller that checks isLoading first never reaches it. Both
+  // must be fixed together or the retry branch stays unreachable.
+  it('surfaces isError AND clears isLoading when the memberships read fails', async () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: null,
+      status: 'loading' as const,
+      membershipsError: true,
+      retryMemberships: mock(),
+    }));
+
+    const { result } = renderHookWithProviders(() => useInboxItems());
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isError).toBe(true);
+  });
+
+  it('refetch() also retries the memberships query, not just the other ten', async () => {
+    const retryMemberships = mock();
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: null,
+      status: 'loading' as const,
+      membershipsError: true,
+      retryMemberships,
+    }));
+
+    const { result } = renderHookWithProviders(() => useInboxItems());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    result.current.refetch();
+
+    expect(retryMemberships).toHaveBeenCalledTimes(1);
+  });
 });
 
 // D-38's redemption leaves the nanny a `candidate` member until the terms are

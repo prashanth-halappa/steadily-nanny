@@ -31,6 +31,8 @@ import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { cn } from '@/lib/utils';
+import { ErrorState } from '@/src/components/custom/ErrorState';
+import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { BackButton } from '@/src/components/ui/back-button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -38,6 +40,7 @@ import { H1, MetadataLabel, Small } from '@/src/components/ui/typography';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useCancelTimeOff } from '@/src/hooks/mutations/useCancelTimeOff';
 import { useUpdateTimeOff } from '@/src/hooks/mutations/useUpdateTimeOff';
+import { onboardingAsQuery, queryState } from '@/src/hooks/queries/queryState';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useTimeOff } from '@/src/hooks/queries/useTimeOff';
@@ -59,6 +62,7 @@ export function TimeOffScreen() {
   const router = useRouter();
   const { t } = useTranslation('timeOff');
   const { t: tCommon } = useTranslation('common');
+  const { t: tErrors } = useTranslation('errors');
   const onboarding = useIsOnboarded();
   const { household } = useActiveHousehold();
   const timeOff = useTimeOff();
@@ -107,7 +111,28 @@ export function TimeOffScreen() {
   // is omitted (`undefined`) rather than guessing "not marked paid".
   const paidFamilyCounts = usePaidFamilyCounts(allRows);
 
-  if (onboarding.status === 'loading') {
+  // C6 (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §C): `onboarding.status`
+  // stays 'loading' FOREVER on a failed memberships read — checking that
+  // alone made this a permanent spinner with no reachable retry, on the
+  // screen whose job includes "I'm sick today".
+  const onboardingQs = queryState(onboardingAsQuery(onboarding));
+  if (onboardingQs.status === 'error') {
+    return (
+      <View testID="time-off-screen" className="flex-1 bg-background">
+        <View
+          style={{
+            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingTop: SCREEN_CONTENT_STYLE.padding,
+          }}
+        >
+          {backHeader}
+        </View>
+        <ErrorState variant="network" onRetry={onboardingQs.retry} />
+      </View>
+    );
+  }
+
+  if (onboardingQs.status === 'loading') {
     return (
       <View testID="time-off-screen" className="flex-1 bg-background">
         <View
@@ -167,7 +192,7 @@ export function TimeOffScreen() {
             isCancelling={cancelTimeOff.isPending}
             isEditing={updateTimeOff.isPending}
             paidFamilyCount={
-              paidFamilyCounts.isLoading
+              paidFamilyCounts.isLoading || paidFamilyCounts.isError
                 ? undefined
                 : (paidFamilyCounts.counts.get(item.id) ?? 0)
             }
@@ -222,6 +247,18 @@ export function TimeOffScreen() {
         ListEmptyComponent={
           timeOff.isLoading ? (
             <LoadingIndicator testID="time-off-loading" />
+          ) : timeOff.isError ? (
+            // False alarm (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): only
+            // `isLoading` was checked — a settled-with-error read has
+            // `isLoading: false` too, and used to print "No time off
+            // requests yet" over rows that genuinely exist.
+            <View className="mt-4">
+              <InlineRetry
+                testID="time-off-retry"
+                message={tErrors('network')}
+                onRetry={() => void timeOff.refetch()}
+              />
+            </View>
           ) : (
             <View testID="time-off-empty">
               <EmptyState

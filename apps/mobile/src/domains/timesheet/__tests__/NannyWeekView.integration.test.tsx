@@ -645,6 +645,35 @@ describe('NannyWeekView — earnings arms', () => {
   });
 });
 
+// False alarm (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): entries succeed
+// but the timesheet read fails — `timesheetStatus={timesheet?.status ??
+// null}` used to pre-coerce the unknown into a settled `null`, and
+// `WeekTotal`'s `hasStatus` reads `null` as "genuinely not submitted",
+// printing a false pill/timeline over a week whose real status the app
+// simply failed to read.
+describe('NannyWeekView — a timesheet-only failure (entries OK, timesheet errored)', () => {
+  it('never prints a status pill or timeline off an unknown timesheet', async () => {
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.reject(new Error('timesheet boom'))
+    );
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    // The day rows still render, and the money line shows its own retry —
+    // proves this is not the full-screen entriesQuery.isError gate.
+    await waitFor(() =>
+      expect(getByTestId('hours-earnings-line-retry')).toBeTruthy()
+    );
+    // `WeekTotal` has nothing true left to say for the nanny viewer once
+    // `hasStatus` is false (no pill/timeline props of its own to fall back
+    // on) — it correctly disappears rather than showing a status card with
+    // a false pill inside it.
+    expect(queryByTestId('hours-week-total')).toBeNull();
+    expect(queryByTestId('hours-timesheet-status')).toBeNull();
+    expect(queryByTestId('hours-status-timeline')).toBeNull();
+  });
+});
+
 // Daylight v2 (screens-hours.md §2/§3/§5): the statement is five blocks, and
 // which block owns which fact is the whole point of the rebuild. These pin
 // the placement, not just the presence.

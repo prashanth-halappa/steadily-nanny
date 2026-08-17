@@ -26,6 +26,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { Icon } from '@/lib/icons/iconWithClassName';
+import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
@@ -40,6 +41,7 @@ import { formatCareHoursPrimary } from '@/src/domains/setup/utils/careHoursDispl
 import { parseWeeklyDays } from '@/src/domains/setup/utils/commitmentRrule';
 import { useCreateCommitment } from '@/src/hooks/mutations/useCreateCommitment';
 import { useDeleteCommitment } from '@/src/hooks/mutations/useDeleteCommitment';
+import { queryState } from '@/src/hooks/queries/queryState';
 import { useCommitments } from '@/src/hooks/queries/useCommitments';
 import { useSchedulePatterns } from '@/src/hooks/queries/useSchedulePatterns';
 
@@ -97,6 +99,7 @@ export function ManageCommitmentsSection({
   childName,
 }: ManageCommitmentsSectionProps) {
   const { t } = useTranslation('household');
+  const { t: tErrors } = useTranslation('errors');
   const router = useRouter();
   const commitments = useCommitments(householdId, childId);
   const carers = useHouseholdCarers(householdId);
@@ -117,15 +120,22 @@ export function ManageCommitmentsSection({
       pattern.status === SCHEDULE_PATTERN_STATUSES.ACCEPTED ||
       pattern.status === SCHEDULE_PATTERN_STATUSES.PENDING
   );
+  // False alarm (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): `isLoading`
+  // alone can't tell "still loading" from "settled with an error" — a
+  // failed carers/patterns read has `isLoading: false` too, and used to
+  // offer "confirm this as your usual week" (or hide a genuinely pending
+  // one) off data that never arrived.
+  const gatingQs = queryState(carers, patterns);
   // Both gating queries must have resolved first, or the offer flashes in
   // and then disappears on a household that already has a week.
   const canOfferWeek =
-    !isEmpty && !carers.isLoading && !patterns.isLoading && hasActiveNanny;
+    !isEmpty && gatingQs.status === 'ready' && hasActiveNanny;
   const showConfirmWeek = canOfferWeek && !openPattern;
   // Say where the week got to rather than going silent — the parent has just
   // added hours and is owed the reason they aren't on the calendar yet.
   const showWeekPending =
     canOfferWeek && openPattern?.status === SCHEDULE_PATTERN_STATUSES.PENDING;
+  const showGatingError = !isEmpty && gatingQs.status === 'error';
 
   const handleSubmit = (values: CommitmentFormValues) => {
     createCommitment.mutate(
@@ -198,6 +208,19 @@ export function ManageCommitmentsSection({
         >
           {t('careHours.weekPendingBody')}
         </Small>
+      ) : null}
+
+      {showGatingError ? (
+        <View className="border-border border-t pt-3">
+          <InlineRetry
+            testID={`commitment-retry-${childId}`}
+            message={tErrors('network')}
+            onRetry={() => {
+              void carers.refetch();
+              void patterns.refetch();
+            }}
+          />
+        </View>
       ) : null}
 
       <CommitmentFormSheet

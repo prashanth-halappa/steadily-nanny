@@ -35,6 +35,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { ErrorState } from '@/src/components/custom/ErrorState';
 import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
@@ -51,6 +52,7 @@ import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShel
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { useProposeTerms } from '@/src/hooks/mutations/useProposeTerms';
 import { useWithdrawTerms } from '@/src/hooks/mutations/useWithdrawTerms';
+import { onboardingAsQuery, queryState } from '@/src/hooks/queries/queryState';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
@@ -180,7 +182,19 @@ export function PaySetupScreen() {
     }
   }, [currentArrangement.data, router]);
 
-  if (onboarding.status === 'loading' || activeHousehold.isLoading) {
+  // C6 (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §C): `onboarding.status`
+  // stays 'loading' FOREVER on a failed memberships read — checking that
+  // alone made this a permanent spinner with no reachable retry.
+  const onboardingQs = queryState(onboardingAsQuery(onboarding));
+  if (onboardingQs.status === 'error') {
+    return (
+      <View testID="pay-setup-screen" className="flex-1 bg-background">
+        <ErrorState variant="network" onRetry={onboardingQs.retry} />
+      </View>
+    );
+  }
+
+  if (onboardingQs.status === 'loading' || activeHousehold.isLoading) {
     return (
       <View testID="pay-setup-screen" className="flex-1 bg-background">
         <LoadingIndicator testID="pay-loading" />

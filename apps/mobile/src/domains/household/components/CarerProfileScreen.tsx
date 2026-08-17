@@ -104,6 +104,22 @@ export function CarerProfileScreen() {
     );
   }
 
+  // False alarm (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): a FAILED members
+  // read is also an empty `data`, which the `!member` branch below cannot
+  // tell apart from a genuine departure — checked first, or a dropped
+  // connection would assert "No longer on this household" about a real
+  // person who never left.
+  if (members.isError) {
+    return (
+      <View testID="carer-profile-screen" className="flex-1 bg-background">
+        <View style={{ padding: SCREEN_CONTENT_STYLE.padding }}>
+          <BackButton onPress={() => router.back()} label={tCommon('back')} />
+        </View>
+        <ErrorState variant="network" onRetry={() => members.refetch()} />
+      </View>
+    );
+  }
+
   // No longer resolvable: removed from the household (soft
   // `status: 'removed'`, 009_households.sql) or her account deleted. Render
   // a not-found state rather than a full profile titled "Nanny" with a "?"
