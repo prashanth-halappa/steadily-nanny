@@ -69,6 +69,37 @@ export interface ThreadContext {
   householdName: string | null | undefined;
 }
 
+/**
+ * WHICH SIDE WROTE IT — derived from the KIND, never from comparing two ids
+ * that may both be gone (033).
+ *
+ * `query` and `withdrawQuery` are owner/parent-only writes
+ * (`timesheetCommandService`), so `timesheet_queried` and
+ * `timesheet_query_withdrawn` are the household's by construction. Only
+ * `timesheet_note_added` can come from either side, and only there does the
+ * actor id get a say.
+ *
+ * That last comparison is deliberately NOT guarded on `actor_id !== null`.
+ * When the carer deletes her account, `shift_events.actor_id` and the
+ * timesheet's `carer_id` BOTH go NULL together — so `null === null` is
+ * precisely the case that identifies her, and the guard that used to sit
+ * there re-labelled every word she ever wrote with the family's name, leaving
+ * a pay dispute that reads as the family arguing with itself.
+ *
+ * ponytail: a note from a parent who ALSO deleted their account, on a week
+ * whose carer left too, lands on her side — both ids are null and nothing
+ * remaining distinguishes them. The alternative (assume the household) loses
+ * the nanny's half of a dispute, which is the failure that matters.
+ */
+function isCarerAuthored(
+  kind: TimesheetThreadMessageKind,
+  actorId: string | null,
+  carerId: string | null
+): boolean {
+  if (kind !== TIMESHEET_THREAD_MESSAGE_KINDS.NOTE) return false;
+  return actorId === carerId;
+}
+
 /** Where each kind keeps its text. `query_withdrawn` has none, by design. */
 function bodyOf(
   kind: TimesheetThreadMessageKind,
@@ -110,10 +141,9 @@ export function toThreadMessages(
       id: event.id,
       kind,
       author_id: event.actor_id,
-      author_name:
-        event.actor_id !== null && event.actor_id === context.carerId
-          ? context.carerName
-          : householdName,
+      author_name: isCarerAuthored(kind, event.actor_id, context.carerId)
+        ? context.carerName
+        : householdName,
       body,
       created_at: event.created_at,
     });

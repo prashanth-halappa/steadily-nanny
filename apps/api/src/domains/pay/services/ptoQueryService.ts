@@ -84,6 +84,13 @@ const PTO_READ_ROLES: ReadonlySet<string> = new Set([
   HOUSEHOLD_ROLES.PARENT,
 ]);
 
+/**
+ * The `carerId` slot in the 404's metadata when the read names no single
+ * carer — mirroring `payArrangementQueryService`'s constant of the same name,
+ * so a household-wide refusal is indistinguishable from a per-carer one.
+ */
+const HOUSEHOLD_SCOPE = 'household';
+
 /** A ledger row moves the balance up (accrual, or a positive adjustment). */
 function isCredit(row: PtoLedgerEntry): boolean {
   return row.minutes > 0;
@@ -183,6 +190,48 @@ export class PtoQueryService {
       membership
     );
     return this.ptoRepo.listForCarerYear(householdId, carerId, year);
+  }
+
+  /**
+   * THE WHOLE HOUSEHOLD'S ledger rows for one calendar year, oldest first —
+   * every carer who has ever accrued or used PTO here, INCLUDING the ones
+   * whose accounts are gone.
+   *
+   * 033 NULLs `carer_id` and keeps the row; `balance`/`ledger` both take a
+   * required `carerId` that can never match it again, and both routes into
+   * them put that id in the URL. So a departed carer's leave record — what
+   * she accrued, what she took, what a family may still owe — had no API
+   * address at all. This is it. Rows keep `carer_id`, 058's
+   * `household_member_id` and the `carer_display_name` snapshot, so the
+   * caller groups with `carerKeyOf`.
+   *
+   * NO LAZY GRANT (see `listForHouseholdYear`'s own doc): the per-carer reads
+   * write on a read, this one must not. Minting a permanent, un-re-grantable
+   * accrual row for a carer whose account no longer exists — because someone
+   * opened a household summary — is the write nobody could undo.
+   *
+   * PARENTS/OWNER ONLY, for the same reason as
+   * `payArrangementQueryService.getHouseholdHistory`: the per-carer gate's one
+   * non-parent arm is "the carer reading her OWN rows", which a household-wide
+   * read cannot honour, and she already has that endpoint.
+   */
+  async householdLedger(
+    callerId: string,
+    householdId: string,
+    year: number
+  ): Promise<PtoLedgerEntry[]> {
+    const membership = await this.memberRepo.findMembershipAnyStatus(
+      householdId,
+      callerId
+    );
+    if (!membership || !PTO_READ_ROLES.has(membership.role)) {
+      throw new PtoNotFoundError(householdId, HOUSEHOLD_SCOPE, {
+        reason: membership
+          ? 'pto_not_visible_to_role'
+          : 'household_not_accessible',
+      });
+    }
+    return this.ptoRepo.listForHouseholdYear(householdId, year);
   }
 
   /**

@@ -559,3 +559,76 @@ describe('PtoLedgerRepository.applyCorrection', () => {
     });
   });
 });
+
+/**
+ * 033/058: once the carer deletes her account her ledger rows keep
+ * `carer_id = null`, so `listForCarerYear` — the only read the PTO routes had
+ * — can never reach them again. This is the household-scoped read that can.
+ */
+describe('PtoLedgerRepository.listForHouseholdYear', () => {
+  it('returns every carer’s rows for the year, including a departed carer’s', async () => {
+    withRows([
+      accrualRow({ id: 'live', carer_id: 'carer-1' }),
+      usageRow({
+        id: 'departed',
+        carer_id: null,
+        household_member_id: 'hm-2',
+        effective_date: '2026-06-01',
+      }),
+    ]);
+    const repo = new PtoLedgerRepository();
+
+    const rows = await repo.listForHouseholdYear('h1', 2026);
+
+    expect(rows.map((r: FakeRow) => r.id)).toEqual(['live', 'departed']);
+  });
+
+  it('never filters carer_id — that is the whole point', async () => {
+    withRows([]);
+    const repo = new PtoLedgerRepository();
+
+    await repo.listForHouseholdYear('h1', 2026);
+
+    expect(lastCalls).toContainEqual({
+      method: 'eq',
+      args: ['household_id', 'h1'],
+    });
+    expect(
+      lastCalls.some(c => c.method === 'eq' && c.args[0] === 'carer_id')
+    ).toBe(false);
+  });
+
+  it('keeps the same inclusive calendar-year window as listForCarerYear', async () => {
+    withRows([]);
+    const repo = new PtoLedgerRepository();
+
+    await repo.listForHouseholdYear('h1', 2026);
+
+    expect(lastCalls).toContainEqual({
+      method: 'gte',
+      args: ['effective_date', '2026-01-01'],
+    });
+    expect(lastCalls).toContainEqual({
+      method: 'lte',
+      args: ['effective_date', '2026-12-31'],
+    });
+  });
+
+  it('still scopes to ONE household', async () => {
+    withRows([
+      accrualRow({ id: 'mine' }),
+      accrualRow({ id: 'theirs', household_id: 'h2' }),
+    ]);
+    const repo = new PtoLedgerRepository();
+
+    expect(
+      (await repo.listForHouseholdYear('h1', 2026)).map((r: FakeRow) => r.id)
+    ).toEqual(['mine']);
+  });
+
+  it('throws a DatabaseError when the query fails', async () => {
+    withRows([], { message: 'boom' });
+    const repo = new PtoLedgerRepository();
+    await expect(repo.listForHouseholdYear('h1', 2026)).rejects.toThrow();
+  });
+});

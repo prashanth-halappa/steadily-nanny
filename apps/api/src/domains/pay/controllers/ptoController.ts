@@ -57,6 +57,32 @@ export class PtoController {
     }
   }
 
+  /**
+   * GET /households/:householdId/pto/ledger?year=YYYY — every carer's rows,
+   * parents only. The address a DEPARTED carer's ledger has (033: her
+   * `carer_id` is NULL, so the carer-nested route can never reach her again).
+   */
+  static async householdLedger(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const householdId = req.params.householdId as string;
+      const { year } = req.validatedQuery as unknown as PtoYearQuery;
+      const pto_ledger_entries = await ptoQueryService.householdLedger(
+        getAuthUserId(req),
+        householdId,
+        year
+      );
+      return sendSuccessResponse(res, 'Household PTO ledger fetched', {
+        pto_ledger_entries,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   /** POST /households/:householdId/pto/mark-paid — parents only. */
   static async markPaid(req: Request, res: Response, next: NextFunction) {
     try {

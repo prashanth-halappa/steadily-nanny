@@ -145,4 +145,37 @@ export class PayArrangementRepository extends BaseRepository<PayArrangement> {
     }
     return (data ?? []) as PayArrangement[];
   }
+
+  /**
+   * The whole household's append-only terms history, newest first —
+   * `listForCarer` with the `carer_id` filter deliberately absent.
+   *
+   * WHY IT EXISTS: 033 NULLs `carer_id` when a carer deletes her account and
+   * keeps the row, and both arrangement reads (`effectiveOn`, `listForCarer`)
+   * take a required `carerId` that can never match again. So the terms a
+   * departed carer actually worked under — the row a dispute or a back-pay
+   * question is settled against — had no API address at all.
+   *
+   * Same ordering keys as `listForCarer`, so a caller grouping by
+   * `carerKeyOf` gets each carer's rows in the order `effectiveOn` would pick
+   * from. Deliberately NOT date-filtered, for the same reason: this is the
+   * audit trail, not a resolution.
+   */
+  async listForHousehold(householdId: string): Promise<PayArrangement[]> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*')
+      .eq('household_id', householdId)
+      .order('valid_from', { ascending: false })
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list pay arrangements for household',
+        'DATABASE_ERROR',
+        { details: error.message, householdId }
+      );
+    }
+    return (data ?? []) as PayArrangement[];
+  }
 }

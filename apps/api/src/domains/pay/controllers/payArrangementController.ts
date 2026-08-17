@@ -71,6 +71,31 @@ export class PayArrangementController {
     }
   }
 
+  /**
+   * GET /households/:householdId/pay-arrangements — the whole household's
+   * terms history, parents only. The address a DEPARTED carer's terms have
+   * (033: her `carer_id` is NULL, so the carer-nested list can never reach
+   * her again).
+   */
+  static async listForHousehold(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const householdId = req.params.householdId as string;
+      const history = await payArrangementQueryService.getHouseholdHistory(
+        getAuthUserId(req),
+        householdId
+      );
+      return sendSuccessResponse(res, 'Pay arrangements fetched', {
+        pay_arrangements: history.map(withWeeklyEquivalent),
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   /** POST /households/:householdId/carers/:carerId/pay-arrangements — parents only. */
   static async create(req: Request, res: Response, next: NextFunction) {
     try {

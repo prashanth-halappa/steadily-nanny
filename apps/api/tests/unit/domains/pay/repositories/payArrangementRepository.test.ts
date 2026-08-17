@@ -499,3 +499,63 @@ describe('PayArrangementRepository.endForCarer (065)', () => {
     ).rejects.toThrow('Failed to end pay arrangements for carer');
   });
 });
+
+/**
+ * 033/058: a departed carer's `pay_arrangements` rows keep `carer_id = null`,
+ * so `listForCarer` — the only history read the routes had — can never reach
+ * the terms she actually worked under. This is the household-scoped read.
+ */
+describe('PayArrangementRepository.listForHousehold', () => {
+  it('returns every carer’s history, including a departed carer’s', async () => {
+    withRows([
+      arrangement({
+        id: 'live',
+        carer_id: 'carer-1',
+        valid_from: '2026-01-01',
+      }),
+      arrangement({
+        id: 'departed',
+        carer_id: null,
+        household_member_id: 'hm-2',
+        valid_from: '2026-03-01',
+      }),
+    ]);
+    const repo = new PayArrangementRepository();
+
+    const rows = await repo.listForHousehold('h1');
+
+    // Newest first, same ordering keys as `listForCarer`.
+    expect(rows.map((r: FakeRow) => r.id)).toEqual(['departed', 'live']);
+  });
+
+  it('never filters carer_id — that is the whole point', async () => {
+    withRows([]);
+    const repo = new PayArrangementRepository();
+
+    await repo.listForHousehold('h1');
+
+    const eqs = lastCalls.filter(call => call.method === 'eq').map(c => c.args);
+    expect(eqs).toContainEqual(['household_id', 'h1']);
+    expect(eqs.some(args => args[0] === 'carer_id')).toBe(false);
+  });
+
+  it('still scopes to ONE household', async () => {
+    withRows([
+      arrangement({ id: 'mine' }),
+      arrangement({ id: 'theirs', household_id: 'h2' }),
+    ]);
+    const repo = new PayArrangementRepository();
+
+    expect(
+      (await repo.listForHousehold('h1')).map((r: FakeRow) => r.id)
+    ).toEqual(['mine']);
+  });
+
+  it('throws a DatabaseError when the query fails', async () => {
+    withRows([arrangement()], { message: 'boom' });
+    const repo = new PayArrangementRepository();
+    await expect(repo.listForHousehold('h1')).rejects.toThrow(
+      'Failed to list pay arrangements for household'
+    );
+  });
+});

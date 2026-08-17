@@ -111,6 +111,48 @@ export class PtoLedgerRepository extends BaseRepository<PtoLedgerEntry> {
   }
 
   /**
+   * EVERY carer's ledger rows for one household in one CALENDAR year —
+   * `listForCarerYear` with the `carer_id` filter deliberately absent.
+   *
+   * WHY IT EXISTS: 033 NULLs `carer_id` when a carer deletes her account and
+   * keeps the ledger row, and every PTO route until now required a `carerId`
+   * in the URL. So a departed carer's accrued/used/adjusted minutes — the
+   * record of leave a family may still owe, or have already paid — had no API
+   * address at all. Rows are returned with `carer_id`, `household_member_id`
+   * and the `carer_display_name` snapshot intact; grouping them is the
+   * caller's job (`carerKeyOf`), because only the caller knows whether it is
+   * rendering one carer or a whole household.
+   *
+   * NO LAZY GRANT ON THIS PATH, unlike `ptoQueryService.balance`/`ledger`:
+   * granting a year for every carer a household has ever had — including ones
+   * whose accounts are gone — would mint permanent, un-re-grantable accrual
+   * rows nobody asked for (043's partial unique index makes them permanent).
+   * This read is a read.
+   */
+  async listForHouseholdYear(
+    householdId: string,
+    year: number
+  ): Promise<PtoLedgerEntry[]> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*')
+      .eq('household_id', householdId)
+      .gte('effective_date', `${year}-01-01`)
+      .lte('effective_date', `${year}-12-31`)
+      .order('effective_date', { ascending: true })
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list PTO ledger rows for household year',
+        'DATABASE_ERROR',
+        { details: error.message, householdId, year }
+      );
+    }
+    return (data ?? []) as PtoLedgerEntry[];
+  }
+
+  /**
    * EVERY row THIS household holds against one time off — the `usage` row
    * and all of its `adjustment` corrections. Scoped by `household_id`
    * because a nanny working two families can have an independent marking of

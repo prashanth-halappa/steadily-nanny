@@ -79,6 +79,7 @@ import {
   type PayrollReadScope,
   timesheetQueryService,
 } from '../../timesheet/services/timesheetQueryService';
+import { carerKeyOf } from '../../timesheet/utils/carerKey';
 import {
   DEFAULT_WEEK_STARTS_ON,
   weekEndExclusive,
@@ -179,14 +180,29 @@ export class ReimbursementSettlementService {
       await this.expenseRepo.listApprovedForHousehold(householdId);
     const settlements = await this.settlementRepo.listForHousehold(householdId);
 
-    const settledKeys = new Set(
-      settlements.map(row => `${row.carer_id}:${row.week_start}`)
-    );
+    // 086 predates 058 and has NO `household_member_id`, so a settlement for a
+    // carer who has since deleted her account can no longer name her: all that
+    // survives is `(household_id, NULL, week_start)`. Live carers therefore key
+    // exactly; departed ones are COUNTED per week and reconciled below.
+    const settledKeys = new Set<string>();
+    const departedSettlementsPerWeek = new Map<string, number>();
+    for (const row of settlements) {
+      if (row.carer_id) {
+        settledKeys.add(`${row.carer_id}:${row.week_start}`);
+      } else {
+        departedSettlementsPerWeek.set(
+          row.week_start,
+          (departedSettlementsPerWeek.get(row.week_start) ?? 0) + 1
+        );
+      }
+    }
 
     const grouped = new Map<
       string,
       {
-        carerId: string;
+        carerId: string | null;
+        householdMemberId: string | null;
+        carerDisplayName: string;
         weekStart: string;
         total: number;
         currencies: Set<string>;
@@ -194,15 +210,16 @@ export class ReimbursementSettlementService {
     >();
 
     for (const claim of approved) {
-      if (!claim.carer_id) {
-        continue;
-      }
+      // NO `!claim.carer_id` SKIP (033). The claim was approved, the money was
+      // spent and the family still owes it — her deleting her account settles
+      // nothing. The bucket key is the same coalesce 061/069 use in SQL and
+      // `carerKey.ts` uses on the client, so two departed carers stay two rows.
       if (scope.kind === 'own' && claim.carer_id !== scope.carerId) {
         continue;
       }
       const weekStart = weekStartOfLocalDate(claim.local_date, weekStartsOn);
-      const key = `${claim.carer_id}:${weekStart}`;
-      if (settledKeys.has(key)) {
+      const key = `${carerKeyOf(claim)}:${weekStart}`;
+      if (claim.carer_id && settledKeys.has(`${claim.carer_id}:${weekStart}`)) {
         continue;
       }
       if (claim.amount_minor == null) {
@@ -211,6 +228,8 @@ export class ReimbursementSettlementService {
 
       const bucket = grouped.get(key) ?? {
         carerId: claim.carer_id,
+        householdMemberId: claim.household_member_id ?? null,
+        carerDisplayName: claim.carer_display_name,
         weekStart,
         total: 0,
         currencies: new Set<string>(),
@@ -220,9 +239,36 @@ export class ReimbursementSettlementService {
       grouped.set(key, bucket);
     }
 
+    // Every carer-less settlement in a week belongs to SOME departed bucket in
+    // that week (the write path only ever sums a real carer's approved claims,
+    // so a settlement implies claims). When the counts match, all of them are
+    // accounted for and the week is quiet. When they do not, we cannot tell
+    // WHICH are settled — so we report them all. Over-reporting a repayment is
+    // visible and correctable; hiding one is a nanny who is never paid back.
+    //
+    // ponytail: exact attribution needs 058's `household_member_id` stamped on
+    // `reimbursement_settlements`, which 086 never got. Add that column and
+    // this whole reconciliation collapses back into `settledKeys`.
+    const departedBucketsPerWeek = new Map<string, number>();
+    for (const bucket of grouped.values()) {
+      if (bucket.carerId === null) {
+        departedBucketsPerWeek.set(
+          bucket.weekStart,
+          (departedBucketsPerWeek.get(bucket.weekStart) ?? 0) + 1
+        );
+      }
+    }
+
     const weeks: UnsettledReimbursementWeek[] = [];
     for (const bucket of grouped.values()) {
       if (bucket.total === 0) {
+        continue;
+      }
+      if (
+        bucket.carerId === null &&
+        departedSettlementsPerWeek.get(bucket.weekStart) ===
+          departedBucketsPerWeek.get(bucket.weekStart)
+      ) {
         continue;
       }
       if (
@@ -233,6 +279,8 @@ export class ReimbursementSettlementService {
       }
       weeks.push({
         carer_id: bucket.carerId,
+        household_member_id: bucket.householdMemberId,
+        carer_display_name: bucket.carerDisplayName,
         week_start: bucket.weekStart,
         amount_minor: bucket.total,
         currency: householdCurrency,
@@ -244,7 +292,9 @@ export class ReimbursementSettlementService {
       if (byWeek !== 0) {
         return byWeek;
       }
-      return a.carer_id.localeCompare(b.carer_id);
+      // The same coalesce again — `a.carer_id.localeCompare` would throw on a
+      // departed carer, which is how an aggregate becomes a 500.
+      return carerKeyOf(a).localeCompare(carerKeyOf(b));
     });
 
     return weeks;

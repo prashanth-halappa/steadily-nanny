@@ -81,7 +81,20 @@ export const ReimbursementSettlementListResponseSchema = z.object({
  * nothing owed is simply absent from the list.
  */
 export const UnsettledReimbursementWeekSchema = z.object({
-  carer_id: z.uuid(),
+  // NULLABLE, on the same 033 discipline as `ReimbursementSettlementSchema`
+  // above: the claims are still owed after she deletes her account, and the
+  // client `safeParse`s this list and THROWS on the first bad row — so a
+  // required uuid here does not hide one departed carer, it blanks the whole
+  // Today inbox for the household.
+  carer_id: z.uuid().nullable(),
+  // 058's membership stamp — the identity that survives the account, and the
+  // only thing that keeps two departed carers in one week apart. Nullable +
+  // optional for the same reason as every other row schema carrying it: a
+  // pre-058 row has none, and a stored response replayed to an older API must
+  // still parse.
+  household_member_id: z.uuid().nullable().optional(),
+  // The snapshot the client labels the row with once `carer_id` is gone.
+  carer_display_name: z.string(),
   week_start: z.iso.date(),
   amount_minor: z.int().min(1).max(MAX_MONEY_MINOR),
   currency: CurrencyCodeSchema,

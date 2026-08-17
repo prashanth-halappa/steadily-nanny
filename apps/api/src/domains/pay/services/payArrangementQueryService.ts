@@ -47,6 +47,13 @@ const PAY_READ_ROLES: ReadonlySet<string> = new Set([
   HOUSEHOLD_ROLES.PARENT,
 ]);
 
+/**
+ * The `carerId` slot in the 404's metadata when the read names no single
+ * carer. The error shape is shared with every per-carer denial on purpose —
+ * a household-wide refusal must not be distinguishable from a per-carer one.
+ */
+const HOUSEHOLD_SCOPE = 'household';
+
 export class PayArrangementQueryService {
   constructor(
     private readonly payRepo: PayArrangementRepository = new PayArrangementRepository(),
@@ -90,6 +97,41 @@ export class PayArrangementQueryService {
   ): Promise<PayArrangement[]> {
     await this.assertCanReadPay(callerId, householdId, carerId);
     return this.payRepo.listForCarer(householdId, carerId);
+  }
+
+  /**
+   * THE WHOLE HOUSEHOLD'S terms history, newest first — every carer who has
+   * ever been paid here, INCLUDING the ones whose accounts are gone.
+   *
+   * 033 NULLs `carer_id` and keeps the row; `getCurrent`/`getHistory` both
+   * take a required `carerId` that can never match it again, and every route
+   * into them puts that id in the URL. So a departed carer's terms — the row a
+   * back-pay question is settled against — had no API address at all. This is
+   * it. Rows keep `carer_id`, 058's `household_member_id` and the
+   * `carer_display_name` snapshot, so the caller groups with `carerKeyOf`.
+   *
+   * PARENTS/OWNER ONLY, and deliberately NOT the per-carer gate: that gate's
+   * one non-parent arm is "the carer reading her OWN terms", which a
+   * household-wide read cannot honour. A nanny already has the carer-nested
+   * endpoints for her own row, so refusing her here widens nothing and keeps
+   * one nanny out of another's rate. Status is ignored, exactly as above.
+   */
+  async getHouseholdHistory(
+    callerId: string,
+    householdId: string
+  ): Promise<PayArrangement[]> {
+    const membership = await this.memberRepo.findMembershipAnyStatus(
+      householdId,
+      callerId
+    );
+    if (!membership || !PAY_READ_ROLES.has(membership.role)) {
+      throw new PayArrangementNotFoundError(householdId, HOUSEHOLD_SCOPE, {
+        reason: membership
+          ? 'pay_not_visible_to_role'
+          : 'household_not_accessible',
+      });
+    }
+    return this.payRepo.listForHousehold(householdId);
   }
 
   /**

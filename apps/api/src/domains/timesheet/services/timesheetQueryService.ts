@@ -76,6 +76,7 @@ import {
   type TimesheetRow,
 } from '../repositories/timesheetRepository';
 import type { TimeEntry, Timesheet } from '../types';
+import { carerKeyOf } from '../utils/carerKey';
 import {
   type CarerPaySummaryCsv,
   type CarerPaySummaryRow,
@@ -632,13 +633,18 @@ export class TimesheetQueryService {
     >();
     const currencies = new Set<string>();
     for (const row of rows) {
-      if (!row.carer_id) continue;
       if (row.week_start < from || row.week_start > to) continue;
       if (row.status !== TIMESHEET_STATUSES.APPROVED) continue;
-      const earnings = await this.earningsFor(row);
+      // `frozenEarningsFor`, NOT `earningsFor`: the latter answers
+      // `carer_removed` the moment `carer_id` is NULL, which would drop from
+      // the tax report exactly the history 033 preserved it for. An APPROVED
+      // week has nothing left to resolve against an arrangement — the
+      // snapshot IS the figure — so the departed carer prices from it.
+      const earnings = this.frozenEarningsFor(row);
       if (earnings.status !== WEEK_EARNINGS_STATES.OK) continue;
       currencies.add(earnings.currency);
-      const entry = byCarer.get(row.carer_id) ?? {
+      const key = carerKeyOf(row);
+      const entry = byCarer.get(key) ?? {
         name: row.carer_display_name ?? 'Carer',
         gross: 0,
         reimb: 0,
@@ -647,7 +653,7 @@ export class TimesheetQueryService {
       entry.gross += earnings.gross_minor;
       entry.reimb += earnings.reimbursements_minor;
       entry.weeks += 1;
-      byCarer.set(row.carer_id, entry);
+      byCarer.set(key, entry);
     }
     if (currencies.size > 1) {
       throw new PaySummaryExportError('mixed_currency', {
@@ -725,6 +731,21 @@ export class TimesheetQueryService {
         row.week_start
       );
     }
+    return this.frozenEarningsFor(row);
+  }
+
+  /**
+   * The FROZEN half of `earningsFor`, on its own: what an APPROVED week's own
+   * snapshot says, with no opinion about whether the carer still has an
+   * account. Nothing here recomputes, so there is nothing a NULL `carer_id`
+   * could fail to resolve — which is why the year-end tax export reads this
+   * directly (033: the whole point of keeping the row).
+   *
+   * Callers that MUST keep refusing a departed carer (`exportWeekCsv`'s
+   * one-week file, `getWeekWithEarnings`'s on-screen week) go through
+   * `earningsFor`, whose `carer_removed` arm still fires first.
+   */
+  private frozenEarningsFor(row: TimesheetRow): WeekEarningsStateResult {
     if (row.earnings === null || row.earnings === undefined) {
       return this.hoursOnly(row, HOURS_ONLY_REASONS.LEGACY_APPROVAL);
     }

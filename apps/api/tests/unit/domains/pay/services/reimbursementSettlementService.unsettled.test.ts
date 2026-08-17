@@ -43,6 +43,8 @@ function approvedClaim(
     id: 'e1',
     household_id: 'h1',
     carer_id: 'carer-1',
+    household_member_id: 'hm-1',
+    carer_display_name: 'Marisol Reyes',
     local_date: '2026-08-04',
     kind: 'expense',
     description: 'Craft supplies',
@@ -127,10 +129,9 @@ describe('ReimbursementSettlementService.listUnsettled — read scope (assertPay
       ],
     });
     const rows = await svc.listUnsettled('parent-1', 'h1');
-    expect(rows.map((r: { carer_id: string }) => r.carer_id).sort()).toEqual([
-      'carer-1',
-      'carer-2',
-    ]);
+    expect(
+      rows.map((r: { carer_id: string | null }) => r.carer_id).sort()
+    ).toEqual(['carer-1', 'carer-2']);
   });
 
   it('a nanny sees ONLY her own unsettled weeks', async () => {
@@ -176,6 +177,8 @@ describe('ReimbursementSettlementService.listUnsettled — unsettled math', () =
     expect(rows).toEqual([
       {
         carer_id: 'carer-1',
+        household_member_id: 'hm-1',
+        carer_display_name: 'Marisol Reyes',
         week_start: '2026-08-03',
         amount_minor: 2_240,
         currency: 'GBP',

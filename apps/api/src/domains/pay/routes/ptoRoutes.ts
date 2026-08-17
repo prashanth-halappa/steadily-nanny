@@ -4,14 +4,16 @@
  * assertion, the status guard) lives in
  * `ptoQueryService`/`ptoCommandService`; see those modules' docs.
  *
- * ONE router covering all three endpoints, because they split across TWO
+ * ONE router covering FIVE endpoints, because they split across TWO
  * different address shapes and this domain's file surface keeps them
  * together (unlike `expenseRoutes.ts`'s two-router split for a genuinely
  * flat id-scoped resource): balance/ledger are addressed by
  * (household, carer) — carer-nested, same shape as `payArrangementRoutes` —
- * while mark-paid is addressed by household alone (the carer is DERIVED
- * from the time off's `user_id`, never accepted as a URL param, so there is
- * no carer-nested address for it). `mergeParams: true` on this router plus
+ * while mark-paid and the two DEPARTED-CARER reads are addressed by
+ * household alone. For mark-paid the carer is DERIVED from the time off's
+ * `user_id`, never accepted as a URL param; for the two reads there is no
+ * carer id left to accept (033 NULLs it), which is the whole point of them.
+ * `mergeParams: true` on this router plus
  * mounting it at `/households/:householdId` (see the mount note below)
  * lets both shapes share one file without a param mismatch: `householdId`
  * always comes from the mount, `carerId` only exists on the two routes that
@@ -40,10 +42,11 @@ import { z } from 'zod';
 import { authWithValidation } from '../../../middlewares/presets';
 import { validate } from '../../../middlewares/validator';
 import { asyncHandler } from '../../../utils/asyncHandler';
+import { PayArrangementController } from '../controllers/payArrangementController';
 import { PtoController } from '../controllers/ptoController';
 import { HouseholdCarerParamSchema, PtoYearQuerySchema } from '../schemas';
 
-/** URL param validation for POST /households/:householdId/pto/mark-paid. */
+/** URL param validation for every household-only route in this file. */
 const HouseholdIdParamSchema = z.object({
   householdId: z.uuid(),
 });
@@ -64,6 +67,31 @@ router.get(
   ...authWithValidation(HouseholdCarerParamSchema, 'params'),
   validate(PtoYearQuerySchema, 'query'),
   asyncHandler(PtoController.ledger)
+);
+
+// THE DEPARTED-CARER READS (033/058). Both are household-only addresses:
+// `carer_id` goes NULL when a carer deletes her account, so every
+// carer-nested route above becomes unreachable for her while her ledger rows
+// and her agreed terms sit in the tables being the record a back-pay question
+// is settled against. Parents/owner only — the services gate it.
+//
+// `/pay-arrangements` lives in THIS file rather than
+// `payArrangementRoutes.ts` because that router is mounted at
+// `/households/:householdId/carers/:carerId/pay-arrangements` and this
+// address has no `:carerId` in it; this is the router already mounted at the
+// bare household prefix. Move it out the day a household-scoped pay router
+// earns its own mount line in `routes/index.ts`.
+router.get(
+  '/pto/ledger',
+  ...authWithValidation(HouseholdIdParamSchema, 'params'),
+  validate(PtoYearQuerySchema, 'query'),
+  asyncHandler(PtoController.householdLedger)
+);
+
+router.get(
+  '/pay-arrangements',
+  ...authWithValidation(HouseholdIdParamSchema, 'params'),
+  asyncHandler(PayArrangementController.listForHousehold)
 );
 
 router.post(
