@@ -84,7 +84,7 @@ Both SQL bodies are pinned as source by tests asserting the lock precedes the su
 
 **P2 — the `approved ⇒ frozen snapshot` invariant has no database constraint.** `042:87` calls it *"a service-layer invariant"*. There is no CHECK asserting `status='approved' ⇒ gross_minor is not null`, and `rollUpIntoTimesheet` reaches the table through the generic unconditional `BaseRepository.update`. Correct today purely because of what that one call site passes.
 
-**P3 — a money-CAS invariant with a single untested enforcement point.** `stampParentViewed` must not bump `updated_at`, or every concurrent approve silently loses its CAS. That guarantee lives entirely in a migration-100 trigger and **no test at any layer asserts it**.
+**P3 — a money-CAS invariant, tested at the unit layer only (audit correction, WP-T1).** `stampParentViewed` must not bump `updated_at`, or every concurrent approve silently loses its CAS. That guarantee lives entirely in a migration-100 trigger — this audit's original pass said **no test at any layer asserts it**, which missed `apps/api/tests/integration/timesheetParentViewed.integration.test.ts`: it runs the trigger against a real Postgres and asserts exactly this (a `parent_viewed_at`-only update leaves `updated_at` unchanged, a `total_minutes` update still bumps it, and the CAS still matches after a viewed stamp). Not part of `bun run qc` — it's the DB integration tier (`bun run test:db`, `docs/09-TESTING.md` §8), so it needs a live Supabase stack and CI's `db-migrations-and-rls` job to actually run.
 
 ---
 
@@ -139,7 +139,7 @@ A removed nanny reads what she was paid and writes nothing; a removed parent rea
 
 1. **No append-only assertion on `PaymentCommandService`.** Settlements have an explicit test that `update`, `delete` and `correct` are `undefined`; payments have no equivalent — so the strongest guarantee in the design is unasserted on the table where it matters most.
 2. **`recordCorrection`'s repository→Supabase wiring is unpinned.** Its sibling pins the exact RPC name and five `p_*` params; renaming a param on `record_payment_correction` fails no unit test.
-3. **P3 is untested** — nothing asserts the migration-100 trigger preserves `updated_at`.
+3. ~~**P3 is untested**~~ **Corrected (WP-T1):** `apps/api/tests/integration/timesheetParentViewed.integration.test.ts` asserts the migration-100 trigger preserves `updated_at` on a `parent_viewed_at`-only write, against a real Postgres — this audit's original pass missed it because it's the DB integration tier, not `bun run qc`.
 4. **P1 is untested end to end** — no test reopens a week with payment rows, re-approves lower, or drives a negative balance.
 5. **The accepted double-tap is untested as behaviour** — if a unique index is ever added, nothing goes red to prompt the reserved handler.
 

@@ -13,6 +13,7 @@
     "format": "biome check --write --unsafe . && biome format --write .",
     "format:check": "biome format .",
     "test": "bash scripts/run-tests-one-file.sh tests/unit",
+    "test:db": "bash scripts/run-tests-one-file.sh tests/integration",
     "test:coverage": "bun test --coverage",
     "db:migrate": "bash scripts/db-migrate.sh",
     "qa:smoke": "bun scripts/qa-smoke.ts",

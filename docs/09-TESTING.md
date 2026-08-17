@@ -329,7 +329,64 @@ appId: com.jetto.steadily.nanny
 
 ---
 
-## 8. TDD Workflow (run before every "done")
+## 8. Integration tier (`bun run test:db`)
+
+`apps/api/tests/integration/` is a separate, opt-in tier — real Postgres,
+real auth users, real materialisation code paths. It is **NOT** part of
+`bun run test` / `bun run qc`; those sweep `tests/unit` only, and `qc` stays
+read-only and DB-free on purpose (`docs/DEFECT-LOG.md` D52 — never put a
+writing command in `qc`'s `CHECKS`). Nobody runs `bun run test:db` by
+accident.
+
+**What belongs here, and what doesn't.** Anything a text assertion cannot
+prove: RPC bodies, RLS policies driven by a real JWT, a trigger's exact
+behaviour (does it bump a column or not), a unique index accepting/rejecting
+the right rows. If a unit test with a mocked Supabase client can prove it,
+it belongs in `tests/unit`, not here — this tier exists for the residue a
+mock can't reach, not as a second home for ordinary service tests.
+
+**Shared plumbing:** `tests/integration/helpers/localStack.ts` —
+`requireEnv`, the loopback guard (imported from the repo-root
+`scripts/localSupabaseGuard.ts`, GOLDEN-FIXES #26), `serviceClient()` /
+`anonClient()`, `createUser()` / `deleteUsers()` (mint + sign in a real auth
+user for a real JWT), `insertOne()`, and `withHousehold()` (seed a household
++ parent/nanny/helper members in one call). Every file in this tier imports
+from it rather than reinventing env/guard boilerplate — see
+`rls.integration.test.ts` and `timesheetParentViewed.integration.test.ts` for
+the shape.
+
+**Running locally:**
+
+```bash
+supabase start
+supabase db reset --local   # replays supabase/migrations onto an empty DB
+eval "$(supabase status -o env | \
+  sed 's/^API_URL=/SUPABASE_URL=/;s/^ANON_KEY=/SUPABASE_ANON_KEY=/;s/^SERVICE_ROLE_KEY=/SUPABASE_SERVICE_KEY=/' | \
+  sed 's/^/export /')"
+cd apps/api && bun run test:db   # or from the repo root: bun run test:db
+```
+
+To run one file directly during development: `bun test
+tests/integration/<file>.integration.test.ts` (same exported env).
+
+**The lock convention.** More than one agent/session can share the same
+local stack. Before `supabase db reset --local` + a `test:db` run, take a
+simple `mkdir`-based lock so a reset doesn't land mid-run for someone else:
+
+```bash
+until mkdir /tmp/steadily-local-db.lock 2>/dev/null; do sleep 5; done
+trap 'rmdir /tmp/steadily-local-db.lock' EXIT
+supabase db reset --local && bun run test:db
+```
+
+**CI:** the `db-migrations-and-rls` job (`.github/workflows/ci.yml`) starts
+the local stack, runs `supabase db reset --local` (the only place the
+migration set is actually EXECUTED, not just grepped — F-B11-2), exports the
+stack's credentials, then runs `bun run test:db` once for the whole tier.
+
+---
+
+## 9. TDD Workflow (run before every "done")
 
 ```
 1. Write failing tests (red)

@@ -15,6 +15,8 @@
  *   bun test tests/integration/rls.integration.test.ts
  *
  * CI runs it in the `db-migrations-and-rls` job after `supabase db reset`.
+ * Client/user/guard plumbing lives in `./helpers/localStack` — see there for
+ * how the loopback guard and per-file suffix work.
  *
  * ASSERTION SHAPE. RLS denies a write two different ways and denies a read a
  * third: INSERT without a policy errors (42501), UPDATE/DELETE without a
@@ -26,115 +28,16 @@
  * typo'd uuid would make all twelve pass.
  */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import {
+  createUser,
+  deleteUsers,
+  insertOne,
+  type SeedUser,
+  serviceClient,
+  suffix,
+} from './helpers/localStack';
 
-function requireEnv(...names: string[]): string {
-  for (const name of names) {
-    const value = process.env[name];
-    if (value) {
-      return value;
-    }
-  }
-  throw new Error(
-    `rls.integration.test.ts needs a live Supabase stack: missing ${names.join(' / ')}.\n` +
-      '  Start one with `supabase start`, then export SUPABASE_URL, SUPABASE_ANON_KEY\n' +
-      '  and SUPABASE_SERVICE_KEY (SERVICE_ROLE_KEY) from `supabase status -o env`.'
-  );
-}
-
-const SUPABASE_URL = requireEnv('SUPABASE_URL', 'API_URL');
-const SUPABASE_ANON_KEY = requireEnv('SUPABASE_ANON_KEY', 'ANON_KEY');
-const SUPABASE_SERVICE_KEY = requireEnv(
-  'SUPABASE_SERVICE_KEY',
-  'SUPABASE_SERVICE_ROLE_KEY',
-  'SERVICE_ROLE_KEY'
-);
-
-// LOCAL ONLY, and this guard is load-bearing. This file creates auth users and
-// writes real rows. Bun auto-loads `apps/api/.env` for anything the shell did
-// not already export, and that file points at the REMOTE project — so running
-// this without exporting the local stack's env silently seeds and deletes rows
-// in production. Refuse anything that is not loopback.
-// `URL.hostname` keeps the brackets on an IPv6 literal, so `http://[::1]:54321`
-// arrives as `[::1]` and would fail a bare `=== '::1'` — i.e. the guard would
-// refuse a loopback host. Strip them before comparing.
-const host = new URL(SUPABASE_URL).hostname.replace(/^\[|\]$/g, '');
-if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') {
-  throw new Error(
-    `rls.integration.test.ts refuses to run against ${host}: it creates users and writes rows.\n` +
-      '  Export the local stack first (see the header) — never a hosted project.'
-  );
-}
-
-const service = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
-
-const suffix = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-const PASSWORD = `Rls-${Math.random().toString(36).slice(2)}-9A!`;
-
-interface SeedUser {
-  id: string;
-  email: string;
-  client: SupabaseClient;
-}
-
-/** Creates a confirmed auth user + its `user_profiles` row, signs it in. */
-async function createUser(label: string): Promise<SeedUser> {
-  const email = `rls-${label}+${suffix}@example.test`;
-  const { data: created, error: createErr } =
-    await service.auth.admin.createUser({
-      email,
-      password: PASSWORD,
-      email_confirm: true,
-    });
-  if (createErr || !created.user) {
-    throw new Error(`createUser(${label}) failed: ${createErr?.message}`);
-  }
-  const id = created.user.id;
-
-  // No trigger backfills user_profiles; every household FK points at it.
-  const { error: profileErr } = await service
-    .from('user_profiles')
-    .insert({ user_id: id, name: `RLS ${label}` });
-  if (profileErr) {
-    throw new Error(`user_profiles(${label}) failed: ${profileErr.message}`);
-  }
-
-  const anon = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { data: session, error: signInErr } =
-    await anon.auth.signInWithPassword({ email, password: PASSWORD });
-  const token = session?.session?.access_token;
-  if (signInErr || !token) {
-    throw new Error(`signIn(${label}) failed: ${signInErr?.message}`);
-  }
-
-  return {
-    id,
-    email,
-    client: createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: { persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: `Bearer ${token}` } },
-    }),
-  };
-}
-
-async function insertOne<T extends Record<string, unknown>>(
-  table: string,
-  row: T
-): Promise<string> {
-  const { data, error } = await service
-    .from(table)
-    .insert(row)
-    .select('id')
-    .single();
-  if (error || !data) {
-    throw new Error(`seed ${table} failed: ${error?.message}`);
-  }
-  return data.id as string;
-}
+const service = serviceClient();
 
 /** The service client bypasses RLS — proof the row a denial targeted exists. */
 async function serviceSees(table: string, id: string): Promise<number> {
@@ -261,11 +164,7 @@ afterAll(async () => {
   if (n1TimeOffId) {
     await service.from('carer_time_off').delete().eq('id', n1TimeOffId);
   }
-  for (const user of [p1, n1, c2]) {
-    if (user?.id) {
-      await service.auth.admin.deleteUser(user.id);
-    }
-  }
+  await deleteUsers([p1?.id, n1?.id, c2?.id]);
 });
 
 describe('RLS — a parent cannot write through PostgREST (049/052)', () => {
