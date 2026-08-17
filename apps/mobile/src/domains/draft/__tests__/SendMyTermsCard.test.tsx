@@ -19,6 +19,12 @@ const DRAFT_HOUSEHOLD_ID = 'draft-hh-1';
 const LIVE_HOUSEHOLD_ID = 'live-hh-1';
 const MY_USER_ID = 'nanny-1';
 
+// A stale draft date guaranteed to be in the past relative to whenever this
+// test runs, so it can never collide with the real "today" (see D-stale-date
+// bug: a hardcoded future literal eventually became today and broke this
+// suite).
+const STALE_DRAFT_VALID_FROM = '2000-01-01';
+
 const DRAFT_HOUSEHOLD = {
   id: DRAFT_HOUSEHOLD_ID,
   name: null,
@@ -56,7 +62,7 @@ const DRAFT_PROPOSAL = {
     rate_minor: 2800,
     currency: 'USD',
     overtime_multiplier: 1.5,
-    valid_from: '2026-08-17', // written for a DIFFERENT family
+    valid_from: STALE_DRAFT_VALID_FROM, // written for a DIFFERENT family
     terms: null,
   },
 };
@@ -306,7 +312,9 @@ describe('SendMyTermsCard — seeding and confirmation', () => {
       currentArrangement: { valid_from: string };
       todayISO: string;
     };
-    expect(props.currentArrangement.valid_from).not.toBe('2026-08-17');
+    expect(props.currentArrangement.valid_from).not.toBe(
+      STALE_DRAFT_VALID_FROM
+    );
     expect(props.currentArrangement.valid_from).toBe(props.todayISO);
   });
 
