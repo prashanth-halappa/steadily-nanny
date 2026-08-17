@@ -29,7 +29,7 @@ import type { HouseholdClosure } from '@steadily-nanny/shared-types/schemas/avai
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { KeyboardAvoidingView, Platform, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import {
@@ -175,97 +175,107 @@ export function HouseholdClosuresScreen() {
 
   return (
     <View testID="household-closures-screen" className="flex-1 bg-background">
-      <FlashList
-        testID="household-closures-list"
-        data={closures.data ?? []}
-        keyExtractor={(row: HouseholdClosure) => row.id}
-        renderItem={({ item }: { item: HouseholdClosure }) => {
-          const isPast = isPastTimeOff(item.ends_at);
-          return (
-            <Card
-              testID={`household-closures-row-${item.id}`}
-              className="mb-3 gap-1 p-4"
-            >
-              <Body>
-                {formatTimeOffRangeLabel(
-                  item.starts_at,
-                  item.ends_at,
-                  timeZone
-                )}
-              </Body>
-              {item.message ? (
-                <Small className="text-muted-foreground">{item.message}</Small>
-              ) : null}
-              {isPast ? null : (
-                <View className="mt-2 flex-row">
-                  <Button
-                    testID={`household-closures-delete-${item.id}`}
-                    variant="ghost"
-                    disabled={deleteClosure.isPending}
-                    onPress={() => setPendingDeleteId(item.id)}
-                  >
-                    <Text className="text-destructive">
-                      {t('closures.deleteButton')}
-                    </Text>
-                  </Button>
-                </View>
-              )}
-            </Card>
-          );
-        }}
-        ListHeaderComponent={
-          <View className="mb-2 gap-1">
-            {backHeader}
-            <H1 testID="household-closures-header">
-              {t('closures.screenTitle')}
-            </H1>
-            <Small className="mb-2 text-muted-foreground">
-              {t('closures.screenSubtitle')}
-            </Small>
-            <View testID="household-closures-form" className="mb-6 gap-4">
-              <Body weight="medium">{t('closures.formTitle')}</Body>
-              <TimeOffDateRangePicker
-                testID="household-closures-dates"
-                start={startDate}
-                end={endDate}
-                onChange={(start, end) => {
-                  setStartDate(start);
-                  setEndDate(end);
-                }}
-              />
-              <Textarea
-                testID="household-closures-message"
-                accessibilityLabel={t('closures.messageLabel')}
-                placeholder={t('closures.messagePlaceholder')}
-                value={message}
-                onChangeText={setMessage}
-              />
-              <Button
-                testID="household-closures-submit"
-                disabled={invalid || createClosure.isPending}
-                onPress={() => void handleSubmit()}
+      {/* The message Textarea lives in the list header; without this the
+          keyboard covers it and the submit button together. */}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <FlashList
+          testID="household-closures-list"
+          data={closures.data ?? []}
+          keyExtractor={(row: HouseholdClosure) => row.id}
+          renderItem={({ item }: { item: HouseholdClosure }) => {
+            const isPast = isPastTimeOff(item.ends_at);
+            return (
+              <Card
+                testID={`household-closures-row-${item.id}`}
+                className="mb-3 gap-1 p-4"
               >
-                <Text>{t('closures.submitButton')}</Text>
-              </Button>
+                <Body>
+                  {formatTimeOffRangeLabel(
+                    item.starts_at,
+                    item.ends_at,
+                    timeZone
+                  )}
+                </Body>
+                {item.message ? (
+                  <Small className="text-muted-foreground">
+                    {item.message}
+                  </Small>
+                ) : null}
+                {isPast ? null : (
+                  <View className="mt-2 flex-row">
+                    <Button
+                      testID={`household-closures-delete-${item.id}`}
+                      variant="ghost"
+                      disabled={deleteClosure.isPending}
+                      onPress={() => setPendingDeleteId(item.id)}
+                    >
+                      <Text className="text-destructive">
+                        {t('closures.deleteButton')}
+                      </Text>
+                    </Button>
+                  </View>
+                )}
+              </Card>
+            );
+          }}
+          ListHeaderComponent={
+            <View className="mb-2 gap-1">
+              {backHeader}
+              <H1 testID="household-closures-header">
+                {t('closures.screenTitle')}
+              </H1>
+              <Small className="mb-2 text-muted-foreground">
+                {t('closures.screenSubtitle')}
+              </Small>
+              <View testID="household-closures-form" className="mb-6 gap-4">
+                <Body weight="medium">{t('closures.formTitle')}</Body>
+                <TimeOffDateRangePicker
+                  testID="household-closures-dates"
+                  start={startDate}
+                  end={endDate}
+                  onChange={(start, end) => {
+                    setStartDate(start);
+                    setEndDate(end);
+                  }}
+                />
+                <Textarea
+                  testID="household-closures-message"
+                  accessibilityLabel={t('closures.messageLabel')}
+                  placeholder={t('closures.messagePlaceholder')}
+                  value={message}
+                  onChangeText={setMessage}
+                />
+                <Button
+                  testID="household-closures-submit"
+                  disabled={invalid || createClosure.isPending}
+                  onPress={() => void handleSubmit()}
+                >
+                  <Text>{t('closures.submitButton')}</Text>
+                </Button>
+              </View>
             </View>
-          </View>
-        }
-        ListEmptyComponent={
-          closures.isLoading ? (
-            <LoadingIndicator testID="household-closures-loading" />
-          ) : (
-            <View testID="household-closures-empty">
-              <EmptyState
-                variant="inline"
-                image={illustrations.emptyHousehold}
-                title={t('closures.emptyTitle')}
-                description={t('closures.emptyDescription')}
-              />
-            </View>
-          )
-        }
-        contentContainerStyle={SCREEN_CONTENT_STYLE}
-      />
+          }
+          ListEmptyComponent={
+            closures.isLoading ? (
+              <LoadingIndicator testID="household-closures-loading" />
+            ) : (
+              <View testID="household-closures-empty">
+                <EmptyState
+                  variant="inline"
+                  image={illustrations.emptyHousehold}
+                  title={t('closures.emptyTitle')}
+                  description={t('closures.emptyDescription')}
+                />
+              </View>
+            )
+          }
+          contentContainerStyle={SCREEN_CONTENT_STYLE}
+          keyboardShouldPersistTaps="handled"
+        />
+      </KeyboardAvoidingView>
 
       <AlertDialog
         open={pendingDeleteId !== null}

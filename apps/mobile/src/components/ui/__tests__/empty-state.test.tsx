@@ -81,6 +81,8 @@ describe('EmptyState animated root', () => {
 
 describe('EmptyState illustration ground', () => {
   it('places a chipPlum circle at 1.6× the default illustration width', () => {
+    // 200 × 1.6 = 320. The default image was 240 (⇒ a 384 ground) until that
+    // ground was found painting over the Schedule tab's view switcher.
     const { UNSAFE_root } = render(
       <EmptyState
         variant="default"
@@ -93,11 +95,11 @@ describe('EmptyState illustration ground', () => {
       UNSAFE_root,
       node =>
         backgroundColor(node.props.style) === palette.light.chipPlum.hex &&
-        node.props.style?.width === 384
+        node.props.style?.width === 320
     );
     expect(grounds.length).toBe(1);
-    expect(grounds[0]?.props.style.height).toBe(384);
-    expect(grounds[0]?.props.style.borderRadius).toBe(192);
+    expect(grounds[0]?.props.style.height).toBe(320);
+    expect(grounds[0]?.props.style.borderRadius).toBe(160);
   });
 
   it('places a chipPlum circle at 1.6× the inline illustration width', () => {
@@ -118,6 +120,35 @@ describe('EmptyState illustration ground', () => {
     expect(grounds.length).toBe(1);
     expect(grounds[0]?.props.style.height).toBe(256);
     expect(grounds[0]?.props.style.borderRadius).toBe(128);
+  });
+});
+
+describe('EmptyState illustration footprint', () => {
+  // THE REGRESSION THIS FILE EXISTS FOR. The ground is absolutely positioned
+  // and RN does not clip, so a wrapper sized to the IMAGE let a 1.6× circle
+  // paint 0.3x outside itself in every direction — over the Agenda/Week/Rhythm
+  // switcher sitting directly above it on the Schedule tab. The wrapper must
+  // report the ground's size, so layout can account for what actually paints.
+  it.each([
+    ['default' as const, 320],
+    ['inline' as const, 256],
+  ])('sizes the %s wrapper to the ground, not the image', (variant, ground) => {
+    const { UNSAFE_root } = render(
+      <EmptyState
+        variant={variant}
+        image={TEST_IMAGE}
+        title="Nothing here"
+        description="No items yet"
+      />
+    );
+    const wrappers = findNodes(
+      UNSAFE_root,
+      node =>
+        node.props.style?.width === ground &&
+        node.props.style?.height === ground &&
+        backgroundColor(node.props.style) === undefined
+    );
+    expect(wrappers.length).toBeGreaterThan(0);
   });
 });
 

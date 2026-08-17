@@ -31,7 +31,7 @@ import { Share, View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
-import { Body, Small } from '@/src/components/ui/typography';
+import { Small } from '@/src/components/ui/typography';
 import { PayChangeSheet } from '@/src/domains/pay/components/PayChangeSheet';
 import {
   formatDisplayDateWithYear,
@@ -47,6 +47,7 @@ import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { getDeviceCurrency } from '@/src/lib/deviceLocale';
 import { localDateInZone } from '@/src/lib/localDate';
 import { formatRate } from '@/src/lib/money';
+import { InviteOfferSummary } from './InviteOfferSummary';
 
 export function ManageInviteScreen() {
   const router = useRouter();
@@ -132,15 +133,16 @@ export function ManageInviteScreen() {
     <Card testID="invite-offer-card" className="gap-3 p-4">
       {offerForEdit ? (
         <View className="gap-1">
-          <Body testID="invite-offer-summary">
-            {t('invite.offer.summary', {
-              rate: formatRate(
-                offerForEdit.rate_minor,
-                offerForEdit.currency ?? currency
-              ),
-              date: formatDisplayDateWithYear(offerForEdit.valid_from),
-            })}
-          </Body>
+          <InviteOfferSummary
+            rate={formatRate(
+              offerForEdit.rate_minor,
+              offerForEdit.currency ?? currency
+            )}
+            startDate={formatDisplayDateWithYear(offerForEdit.valid_from)}
+            cancellationPaidWithinHours={
+              offerForEdit.cancellation_paid_within_hours
+            }
+          />
           <Small
             testID="invite-offer-draft-state"
             className="text-muted-foreground"

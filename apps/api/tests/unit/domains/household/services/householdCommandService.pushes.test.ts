@@ -126,6 +126,46 @@ function makeHouseholdRepo() {
 }
 
 describe('HouseholdCommandService.redeemInvite — invite_redeemed', () => {
+  it('names the person who joined, not "someone"', async () => {
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo() as never,
+      makeMemberRepo() as never,
+      makeInviteRepo() as never,
+      { getMembership: mock() } as never,
+      {
+        ensureProfile: mock(async () => {}),
+        getProfileById: mock(async () => ({ name: '  Priya  ' })),
+      } as never
+    );
+
+    await svc.redeemInvite('u2', { code: 'ABC-234' });
+
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({ title: 'Priya joined your household' })
+    );
+  });
+
+  it('falls back to the role when the profile has no name yet', async () => {
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo() as never,
+      makeMemberRepo() as never,
+      makeInviteRepo() as never,
+      { getMembership: mock() } as never,
+      {
+        ensureProfile: mock(async () => {}),
+        getProfileById: mock(async () => ({ name: '   ' })),
+      } as never
+    );
+
+    await svc.redeemInvite('u2', { code: 'ABC-234' });
+
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({ title: 'A nanny joined your household' })
+    );
+  });
+
   it('notifies household parents with the redeemed role in the body', async () => {
     const svc = new HouseholdCommandService(
       makeHouseholdRepo() as never,

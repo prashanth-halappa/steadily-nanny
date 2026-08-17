@@ -54,6 +54,11 @@ export const queryKeys = {
       [...queryKeys.household.all, 'members', householdId] as const,
     invitePreview: (code?: string) =>
       [...queryKeys.household.all, 'invitePreview', code] as const,
+    // Every code this household has minted. Shape must stay
+    // ['household','invites',id] — `draftQueryKeys.invites` has been using
+    // that literal since before this block existed and now delegates here.
+    invites: (householdId?: string) =>
+      [...queryKeys.household.all, 'invites', householdId] as const,
   },
 
   // A household's children

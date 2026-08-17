@@ -102,12 +102,54 @@ describe('HouseholdScreen — a screen of its own for the two names', () => {
     expect(screen.getByTestId('parent-name-input')).toBeTruthy();
   });
 
-  it('pre-fills the parent name from auth metadata', async () => {
+  // Was: "pre-fills the parent name from auth metadata" — but the fixture's
+  // `user_metadata` is empty, so what it actually asserted was the EMAIL
+  // LOCAL-PART fallback. A parent signing up as parent@… landed on "Name your
+  // family" with the word "parent" already typed into a field labelled "Your
+  // name", kept it, and that became the name their nanny read on every shift,
+  // hour and payment. Only a name the person actually gave us is worth
+  // prefilling; otherwise the placeholder asks the question.
+  it('leaves the name empty when auth has no real name to offer', async () => {
     getProfileMock.mockImplementation(() => Promise.resolve(undefined));
     const screen = renderWithProviders(<HouseholdScreen />);
     await waitFor(() =>
-      expect(screen.getByTestId('parent-name-input').props.value).toBe('ana')
+      expect(screen.getByTestId('parent-name-input')).toBeTruthy()
     );
+    expect(screen.getByTestId('parent-name-input').props.value).toBe('');
+  });
+
+  it('pre-fills a real name from auth metadata', async () => {
+    getProfileMock.mockImplementation(() => Promise.resolve(undefined));
+    useAuthStore.setState({
+      session: {
+        user: {
+          id: 'user-1',
+          email: 'ana@example.com',
+          user_metadata: { full_name: 'Ana Ruiz' },
+        },
+      } as unknown as never,
+      isInitialized: true,
+    } as never);
+    const screen = renderWithProviders(<HouseholdScreen />);
+    await waitFor(() =>
+      expect(screen.getByTestId('parent-name-input').props.value).toBe(
+        'Ana Ruiz'
+      )
+    );
+  });
+
+  it('blocks Continue until a name is typed — it is what the nanny reads', async () => {
+    getProfileMock.mockImplementation(() => Promise.resolve(undefined));
+    const screen = renderWithProviders(<HouseholdScreen />);
+    await waitFor(() =>
+      expect(screen.getByTestId('household-name-input')).toBeTruthy()
+    );
+    fireEvent.changeText(
+      screen.getByTestId('household-name-input'),
+      'The Ruiz Family'
+    );
+    fireEvent.press(screen.getByTestId('household-screen-cta'));
+    expect(createHouseholdMock).not.toHaveBeenCalled();
   });
 
   it('does not create anything until Continue is pressed', async () => {

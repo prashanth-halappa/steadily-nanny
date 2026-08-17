@@ -84,7 +84,7 @@ import { useInvitePreview } from '@/src/hooks/queries/useInvitePreview';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
 import {
   buildBootstrapProfileRequest,
-  deriveBootstrapName,
+  deriveSeedName,
 } from '@/src/lib/bootstrapUserProfile';
 import { getDeviceRegion } from '@/src/lib/deviceLocale';
 import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
@@ -201,12 +201,9 @@ export function CodeEntryScreen({
     enabled: !lockInvitePreview,
   });
 
-  // Untouched field falls back to the saved name, then to the same auth
-  // derivation the parent bootstrap uses — never to an empty box.
-  const name =
-    nameDraft ??
-    profile.data?.name ??
-    (authUser ? deriveBootstrapName(authUser) : '');
+  // Untouched field falls back to the saved name, then to a name the user
+  // actually gave us. Never the email local-part — see `deriveSeedName`.
+  const name = nameDraft ?? profile.data?.name ?? deriveSeedName(authUser);
   const phone = phoneDraft ?? profile.data?.phone ?? '';
 
   const onCheckCode = () => {

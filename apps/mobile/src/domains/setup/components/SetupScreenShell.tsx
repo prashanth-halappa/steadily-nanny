@@ -19,6 +19,8 @@ import type { ReactNode } from 'react';
 import {
   Image,
   type ImageSourcePropType,
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   View,
 } from 'react-native';
@@ -71,7 +73,7 @@ export function SetupScreenShell({
     <SafeAreaView
       style={{ flex: 1 }}
       className="bg-background"
-      edges={['bottom', 'left', 'right']}
+      edges={['left', 'right']}
       testID={testID}
     >
       {/* Clears the Expo dev-client's quick-access gear (top-right) so it
@@ -94,58 +96,79 @@ export function SetupScreenShell({
         </View>
       ) : null}
 
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
+      {/* Wraps the scroll body AND the pinned CTA so both ride above the
+          keyboard — several of these screens are multi-input forms where the
+          keyboard otherwise covers a field and Continue at the same time.
+          Sits below the back button / progress bar so the chrome stays put,
+          and `edges` above drops `bottom` so the safe-area inset is not
+          counted twice against the CTA's own `pb-8`. Android is left on the
+          window's own `adjustResize` (Expo default) — `behavior="height"`
+          there would shrink the layout a second time. */}
+      <KeyboardAvoidingView
         style={{ flex: 1 }}
-        contentContainerStyle={{
-          flexGrow: 1,
-          padding: SCREEN_GUTTER,
-          paddingTop: heroImage ? 8 : SCREEN_GUTTER,
-          paddingBottom: 120,
-        }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View>
-          {heroImage ? (
-            <Image
-              source={heroImage}
-              accessibilityElementsHidden
-              style={{
-                width: 160,
-                height: 160,
-                alignSelf: 'center',
-                marginBottom: 12,
-              }}
-              resizeMode="contain"
-            />
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            flexGrow: 1,
+            padding: SCREEN_GUTTER,
+            paddingTop: heroImage ? 8 : SCREEN_GUTTER,
+            paddingBottom: 120,
+          }}
+        >
+          <View>
+            {heroImage ? (
+              <Image
+                source={heroImage}
+                accessibilityElementsHidden
+                style={{
+                  width: 160,
+                  height: 160,
+                  alignSelf: 'center',
+                  marginBottom: 12,
+                }}
+                resizeMode="contain"
+              />
+            ) : null}
+            <H1>{title}</H1>
+            {subtitle ? (
+              <Body className="mt-2 text-muted-foreground">{subtitle}</Body>
+            ) : null}
+          </View>
+          {children ? (
+            <View
+              className={
+                heroImage
+                  ? 'mt-6 flex-1 justify-start gap-4'
+                  : 'mt-8 flex-1 justify-center gap-4'
+              }
+            >
+              {children}
+            </View>
           ) : null}
-          <H1>{title}</H1>
-          {subtitle ? (
-            <Body className="mt-2 text-muted-foreground">{subtitle}</Body>
+        </ScrollView>
+
+        <View
+          className="gap-3 pb-8"
+          style={{ paddingHorizontal: SCREEN_GUTTER }}
+        >
+          <Button
+            testID={`${testID}-cta`}
+            onPress={onCta}
+            disabled={ctaDisabled}
+          >
+            <Text>{ctaLabel}</Text>
+          </Button>
+          {onSkip ? (
+            <Button testID={`${testID}-skip`} variant="ghost" onPress={onSkip}>
+              <Text>{skipLabel}</Text>
+            </Button>
           ) : null}
         </View>
-        {children ? (
-          <View
-            className={
-              heroImage
-                ? 'mt-6 flex-1 justify-start gap-4'
-                : 'mt-8 flex-1 justify-center gap-4'
-            }
-          >
-            {children}
-          </View>
-        ) : null}
-      </ScrollView>
-
-      <View className="gap-3 pb-8" style={{ paddingHorizontal: SCREEN_GUTTER }}>
-        <Button testID={`${testID}-cta`} onPress={onCta} disabled={ctaDisabled}>
-          <Text>{ctaLabel}</Text>
-        </Button>
-        {onSkip ? (
-          <Button testID={`${testID}-skip`} variant="ghost" onPress={onSkip}>
-            <Text>{skipLabel}</Text>
-          </Button>
-        ) : null}
-      </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

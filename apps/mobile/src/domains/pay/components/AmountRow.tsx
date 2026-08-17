@@ -39,10 +39,10 @@ export function AmountRow({
   return (
     <View testID={testID} className="gap-1">
       <View className="flex-row items-baseline justify-between gap-3">
-        <Body className="flex-1 text-foreground">{label}</Body>
+        <Body className="shrink text-foreground">{label}</Body>
         <Body
           testID={testID ? `${testID}-value` : undefined}
-          className="font-medium text-foreground"
+          className="flex-1 text-right font-medium text-foreground"
           tabular
         >
           {displayValue}

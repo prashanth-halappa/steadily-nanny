@@ -22,10 +22,9 @@
  */
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
-import { Button } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
-import { Text } from '@/src/components/ui/text';
-import { Body, Label, Small } from '@/src/components/ui/typography';
+import { Body, Label } from '@/src/components/ui/typography';
+import { CancellationTermField } from '@/src/domains/pay/components/CancellationTermField';
 import { CurrencySelect } from '@/src/domains/pay/components/CurrencySelect';
 import { EffectiveDateField } from '@/src/domains/pay/components/EffectiveDateField';
 import {
@@ -97,50 +96,15 @@ export function PayTermsRequiredCore({
         todayISO={todayISO}
       />
 
-      <View className="gap-2">
-        <Label>{t('changeSheet.cancellationsFieldLabel')}</Label>
-        <View className="flex-row flex-wrap gap-2">
-          <Button
-            testID={`${testIDPrefix}-cancellation-chip-window`}
-            variant={
-              state.cancellationChoice === 'window' ? 'default' : 'outline'
-            }
-            size="sm"
-            onPress={() => onChange({ cancellationChoice: 'window' })}
-          >
-            <Text>{t('changeSheet.cancellationWindowChip')}</Text>
-          </Button>
-          <Button
-            testID={`${testIDPrefix}-cancellation-chip-none`}
-            variant={
-              state.cancellationChoice === 'none' ? 'default' : 'outline'
-            }
-            size="sm"
-            onPress={() => onChange({ cancellationChoice: 'none' })}
-          >
-            <Text>{t('changeSheet.cancellationNoneChip')}</Text>
-          </Button>
-        </View>
-        {state.cancellationChoice === 'window' ? (
-          <Input
-            testID={`${testIDPrefix}-cancellation-hours-input`}
-            accessibilityLabel={t('changeSheet.cancellationHoursLabel')}
-            value={state.cancellationHoursText}
-            onChangeText={cancellationHoursText =>
-              onChange({ cancellationHoursText })
-            }
-            keyboardType="number-pad"
-          />
-        ) : null}
-        {state.cancellationChoice === null ? (
-          <Small
-            testID={`${testIDPrefix}-cancellation-required-hint`}
-            className="text-muted-foreground"
-          >
-            {t('setup.cancellationRequiredHint')}
-          </Small>
-        ) : null}
-      </View>
+      <CancellationTermField
+        testIDPrefix={testIDPrefix}
+        choice={state.cancellationChoice}
+        hoursText={state.cancellationHoursText}
+        onChoiceChange={cancellationChoice => onChange({ cancellationChoice })}
+        onHoursChange={cancellationHoursText =>
+          onChange({ cancellationHoursText })
+        }
+      />
     </>
   );
 }

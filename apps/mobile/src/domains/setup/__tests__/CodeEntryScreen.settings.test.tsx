@@ -111,6 +111,15 @@ async function enterCode(
   await waitFor(() =>
     expect(screen.getByTestId('code-preview-card')).toBeTruthy()
   );
+  // The name box no longer arrives prefilled with the email local-part, and
+  // `onJoin` refuses an empty name — so a wizard-path test has to type one,
+  // exactly as a real nanny now does. ONLY when it is empty: a test seeding an
+  // existing profile name is asserting that an UNCHANGED name is not re-sent,
+  // and typing over it here would fake the change it is checking for.
+  const nameInput = screen.queryByTestId('name-input');
+  if (nameInput && !nameInput.props.value) {
+    fireEvent.changeText(nameInput, 'Ana Ruiz');
+  }
 }
 
 describe('CodeEntryScreen — settings variant (onJoined)', () => {

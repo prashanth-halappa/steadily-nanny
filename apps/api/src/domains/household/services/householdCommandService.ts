@@ -707,11 +707,26 @@ export class HouseholdCommandService {
     const carriedPto = rejoined
       ? await this.carriedOverPtoSentence(invite.household_id, userId)
       : '';
+    // NAME HER. This is the one push a parent has been waiting on since she
+    // finished setting up, and "Someone joined your household" answers the
+    // wrong question — she knows something happened, she wants to know who.
+    // Falls back to the role when the profile has no name yet, which is the
+    // ordinary case for a nanny whose first ever API call was this redeem.
     try {
+      // Inside the swallow-everything block on purpose: a display name is
+      // decoration on a push, and nothing decorative may fail a redeem. If the
+      // lookup throws we fall back to the role and carry on.
+      let who = `A ${roleLabel}`;
+      try {
+        const profile = await this.users.getProfileById(userId);
+        who = profile?.name?.trim() || who;
+      } catch {
+        // keep the role fallback
+      }
       notifyHouseholdParents(invite.household_id, {
         title: rejoined
-          ? 'Someone rejoined your household'
-          : 'Someone joined your household',
+          ? `${who} rejoined your household`
+          : `${who} joined your household`,
         body: rejoined
           ? `Your invite was redeemed — a ${roleLabel} rejoined the household.${carriedPto}`
           : `Your invite was redeemed — a new ${roleLabel} joined the household.`,

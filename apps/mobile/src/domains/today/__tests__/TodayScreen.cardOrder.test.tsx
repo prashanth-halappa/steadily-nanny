@@ -134,6 +134,10 @@ mock.module(
 mock.module('@/src/domains/today/components/CrossFamilyStrip', () => ({
   CrossFamilyStrip: () => null,
 }));
+// Renders a real `useQuery`; this file has no QueryClient and is about ORDER.
+mock.module('@/src/domains/today/components/InviteWaitingCard', () => ({
+  InviteWaitingCard: marker('invite-waiting'),
+}));
 mock.module('@/src/domains/today/components/NannyJoinedMomentCard', () => ({
   NannyJoinedMomentCard: () => null,
 }));
@@ -589,6 +593,23 @@ describe('TodayScreen — feed order beneath the slot', () => {
     );
     // The timer owns the slot, so it must not also sit in the feed.
     expect(feed).not.toContain('clock-in');
+  });
+
+  it('puts the invite waiting card above the attention band for a parent', () => {
+    const { feed } = renderScreen('parent');
+
+    // It is a feed card, not a slot rung — it displaces nothing, it just has
+    // to be readable before the attention group rather than under the week.
+    expect(feed.indexOf('invite-waiting')).toBeGreaterThanOrEqual(0);
+    expect(feed.indexOf('invite-waiting')).toBeLessThan(
+      feed.indexOf('needs-attention')
+    );
+  });
+
+  it('never mounts the invite waiting card for a nanny', () => {
+    const { feed } = renderScreen('nanny');
+
+    expect(feed).not.toContain('invite-waiting');
   });
 
   it('folds the handoff chips into the coverage surface for a parent', () => {

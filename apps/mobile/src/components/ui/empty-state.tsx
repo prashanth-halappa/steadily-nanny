@@ -40,7 +40,7 @@ const VARIANT_STYLES = {
     iconWrapper:
       'w-24 h-24 rounded-full bg-muted items-center justify-center mb-4',
     iconSize: 40,
-    imageSize: 240,
+    imageSize: 200,
     titleClassName: 'text-center mb-2',
     descriptionClassName: 'text-center text-muted-foreground mb-6 max-w-sm',
   },
@@ -66,11 +66,17 @@ function EmptyStateIllustration({
 }) {
   const groundSize = imageSize * ILLUSTRATION_GROUND_SCALE;
 
+  // The wrapper is sized to the GROUND, not the image. The ground is 1.6x the
+  // image and absolutely positioned, and RN does not clip by default — sizing
+  // this box to `imageSize` made it overflow 0.3x in every direction and paint
+  // over whatever sat above it (on the Schedule tab, the Agenda/Week/Rhythm
+  // switcher). Don't "fix" that with overflow-hidden: it crops the circle into
+  // a rounded square. A view that reports its true footprint just lays out.
   return (
     <View
       style={{
-        width: imageSize,
-        height: imageSize,
+        width: groundSize,
+        height: groundSize,
         marginBottom: 16,
         alignItems: 'center',
         justifyContent: 'center',

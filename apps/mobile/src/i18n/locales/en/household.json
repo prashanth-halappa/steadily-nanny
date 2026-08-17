@@ -5,6 +5,7 @@
     "wizardSubtitle": "This is what your nanny sees on shifts, hours, and pay. You can change it later in settings.",
     "parentNameLabel": "Your name",
     "parentNamePlaceholder": "e.g. Ana Ruiz",
+    "parentNameHint": "Your nanny sees this on shifts, hours, and pay.",
     "householdNameLabel": "Family name",
     "householdNamePlaceholder": "e.g. The Ruiz family",
     "phoneLabel": "Your mobile number",
@@ -63,6 +64,7 @@
     "continueButton": "Continue",
     "generateButton": "Generate invite code",
     "shareButton": "Share code",
+    "shareHint": "She types this code when she signs up. Then she sees the family name, your number, and the terms above.",
     "shareMessage": "Join our household on Steadily Nanny — use invite code {{code}} when you sign in.",
     "errorTitle": "Couldn't generate an invite code.",
     "retryButton": "Try again",
@@ -85,7 +87,7 @@
     "offer": {
       "addButton": "Add a pay offer",
       "editButton": "Edit offer",
-      "summary": "{{rate}} · starts {{date}}",
+      "starts": "Starts {{date}}",
       "draftState": "Draft offer · nobody has seen this yet",
       "sheetTitle": "Offer pay terms",
       "submitButton": "Save offer",
@@ -110,11 +112,17 @@
   },
   "availability": {
     "wizardTitle": "When are you available?",
-    "wizardSubtitle": "Select the days you can work, then set your usual hours for each.",
+    "wizardSubtitle": "Turn on the days you can work, then set your usual hours.",
     "manageTitle": "Availability",
     "manageSubtitle": "Update the days and hours you're available to work.",
     "finishButton": "Finish",
-    "doneButton": "Done"
+    "doneButton": "Done",
+    "applyToOtherDays": "Use these times on my other days",
+    "appliedToOtherDays_one": "Applied to {{count}} other day.",
+    "appliedToOtherDays_other": "Applied to {{count}} other days.",
+    "finishBlockedReason": "Turn on at least one day to finish.",
+    "skipButton": "Set this up later",
+    "skipReassurance": "This is not a commitment. You can change your hours any time."
   },
   "householdSettings": {
     "manageTitle": "Household settings",
@@ -240,5 +248,16 @@
     "removeButton": "Remove from this household",
     "notFoundTitle": "No longer on this household",
     "notFoundMessage": "This person has left the household or deleted their account."
+  },
+  "invites": {
+    "title": "Invite codes",
+    "subtitle": "Every code you've made, and what happened to each one.",
+    "emptyTitle": "No codes yet",
+    "emptyBody": "Make one when you're ready to invite someone.",
+    "groupWaiting": "Waiting to be used",
+    "groupSettled": "Already used",
+    "newCodeButton": "Make a new code",
+    "footnote": "A code stops working once someone joins with it.",
+    "seeAllButton": "See all invite codes"
   }
 }

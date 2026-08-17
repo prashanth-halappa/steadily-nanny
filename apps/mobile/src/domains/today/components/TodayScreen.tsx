@@ -38,7 +38,10 @@
  * no pending week, so it costs an ordinary day nothing.
  */
 
-import { HOUSEHOLD_STATES } from '@steadily-nanny/shared-types/schemas/household.schema';
+import {
+  HOUSEHOLD_MEMBER_STATUSES,
+  HOUSEHOLD_STATES,
+} from '@steadily-nanny/shared-types/schemas/household.schema';
 import { TIMESHEET_STATUSES } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { type Href, useRouter } from 'expo-router';
 import { useEffect } from 'react';
@@ -101,6 +104,7 @@ import { EmergencyContactPromptCard } from './EmergencyContactPromptCard';
 import { FirstClockInMomentCard } from './FirstClockInMomentCard';
 import { FirstWeekApprovedMomentCard } from './FirstWeekApprovedMomentCard';
 import { HandoffChipsCard } from './HandoffChipsCard';
+import { InviteWaitingCard } from './InviteWaitingCard';
 import { NannyJoinedMomentCard } from './NannyJoinedMomentCard';
 import { PinnedSlot } from './PinnedSlot';
 import { ThisWeekCard } from './ThisWeekCard';
@@ -311,6 +315,13 @@ export function TodayScreen() {
       (a, b) =>
         new Date(b.joined_at).getTime() - new Date(a.joined_at).getTime()
     )[0];
+  // Someone has already joined as a nanny — the complement of the invite
+  // waiting card's gate, so the two can never both be on screen.
+  const hasNannyMember = (householdMembers.data ?? []).some(
+    member =>
+      member.role === 'nanny' &&
+      member.status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE
+  );
   const parentJoinedKey =
     isParentView &&
     household?.state === HOUSEHOLD_STATES.LIVE &&
@@ -549,6 +560,12 @@ export function TodayScreen() {
                 copies of one obligation is the collision the slot exists to
                 end. In the feed they keep their content and CTA at default
                 tone (`usePinnedTone`). */}
+            {isParentView && household.state === HOUSEHOLD_STATES.LIVE ? (
+              <InviteWaitingCard
+                householdId={household.id}
+                hasActiveNanny={hasNannyMember}
+              />
+            ) : null}
             {slotOccupant === 'inbox' ? null : <NeedsAttentionCard />}
             {/* Quiet on every day it is not blocking, which is nearly all of
                 them — it renders nothing at all when there is no live offer

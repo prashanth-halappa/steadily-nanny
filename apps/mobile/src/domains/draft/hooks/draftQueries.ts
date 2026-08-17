@@ -11,10 +11,11 @@
  * └──────────────────────────────────────────────────────────────────────┘
  *
  * `useDraftInvites` — every `household_invites` row for a household, which is
- * §5.2's "Sent to" list. There is no list-invites endpoint today; the parent
- * flow only ever held the ONE invite it had just minted, which is why
- * `useRevokeInvite`'s header says there is no query to invalidate. A nanny
- * running four interviews needs the list.
+ * §5.2's "Sent to" list. `GET /v1/households/:id/invites` now backs this — it did not
+ * exist when this hook was written, so every call fell through to an
+ * unregistered path. The parent flow used to hold only the ONE invite it had
+ * just minted; both a nanny running four interviews and a parent who closed
+ * the app after generating a code need the list.
  *
  * `useDraftProposal` — her drafted terms. In a draft household nothing can
  * insert a `pay_arrangements` row (there is no owner and no parent, so
@@ -37,6 +38,7 @@ import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { apiClient } from '@/src/api/client';
+import { queryKeys } from '@/src/api/queryKeys';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { QUERY_TIMING } from '@/src/hooks/queries/utils';
 import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
@@ -45,8 +47,7 @@ import { useAuthStore } from '@/src/store/auth';
 
 /** Namespaced so a move into `queryKeys.ts` keeps the same shape. */
 export const draftQueryKeys = {
-  invites: (householdId?: string) =>
-    ['household', 'invites', householdId] as const,
+  invites: queryKeys.household.invites,
   proposal: (householdId?: string) =>
     ['termsProposal', 'draft', householdId] as const,
 };

@@ -147,6 +147,15 @@ async function enterCode(
   await waitFor(() =>
     expect(screen.getByTestId('code-preview-card')).toBeTruthy()
   );
+  // The name box no longer arrives prefilled with the email local-part, and
+  // `onJoin` refuses an empty name — so a wizard-path test has to type one,
+  // exactly as a real nanny now does. ONLY when it is empty: a test seeding an
+  // existing profile name is asserting that an UNCHANGED name is not re-sent,
+  // and typing over it here would fake the change it is checking for.
+  const nameInput = screen.queryByTestId('name-input');
+  if (nameInput && !nameInput.props.value) {
+    fireEvent.changeText(nameInput, 'Ana Ruiz');
+  }
 }
 
 describe('CodeEntryScreen — nanny name (GAP 1)', () => {
@@ -221,12 +230,16 @@ describe('CodeEntryScreen — nanny name (GAP 1)', () => {
     expect(updateNameMock).not.toHaveBeenCalled();
   });
 
-  it('falls back to the auth-derived name, same as the parent bootstrap does', async () => {
+  // Was: "falls back to the auth-derived name". It fell back to the EMAIL
+  // LOCAL-PART, so signing up as ana@… prefilled the box with "ana" and
+  // parent@… prefilled it with "parent" — which is then the name the other
+  // party reads on every shift, hour and payment. A name we invented is worse
+  // than no name: the placeholder can ask the question, a prefill cannot.
+  it('leaves the box empty rather than inventing a name from the email', async () => {
     const screen = renderWithProviders(<CodeEntryScreen />);
 
-    await waitFor(() =>
-      expect(screen.getByTestId('name-input').props.value).toBe('ana')
-    );
+    await waitFor(() => expect(screen.getByTestId('name-input')).toBeTruthy());
+    expect(screen.getByTestId('name-input').props.value).toBe('');
   });
 });
 

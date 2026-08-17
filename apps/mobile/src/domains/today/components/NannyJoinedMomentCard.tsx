@@ -29,7 +29,7 @@ export function NannyJoinedMomentCard({
       testID="today-nanny-joined-moment"
       illustration="welcomeHero"
       title={t('moments.nannyJoined.title', { name, family })}
-      body={t('moments.nannyJoined.body')}
+      body={t('moments.nannyJoined.body', { name })}
       momentKey={momentKey}
       action={{
         label: t('moments.nannyJoined.cta', { name }),

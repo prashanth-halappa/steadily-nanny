@@ -4,7 +4,7 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ScrollView, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
@@ -36,29 +36,36 @@ export default function EditNameScreen() {
   };
 
   return (
-    <ScrollView
-      testID="settings-edit-name-screen"
-      className="flex-1 bg-background"
-      contentContainerStyle={SCREEN_CONTENT_STYLE}
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      className="bg-background"
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <BackButton onPress={() => router.back()} label={tCommon('back')} />
-      <H1 className="mt-1">{t('name.label')}</H1>
-      <View className="mt-4 gap-3">
-        <Input
-          testID="settings-name-input"
-          accessibilityLabel={t('name.label')}
-          value={name}
-          onChangeText={setName}
-          placeholder={t('name.placeholder')}
-        />
-        <Button
-          testID="settings-name-save"
-          disabled={updateName.isPending || name.trim().length === 0}
-          onPress={() => void handleSave()}
-        >
-          <Text>{t('name.saveButton')}</Text>
-        </Button>
-      </View>
-    </ScrollView>
+      <ScrollView
+        testID="settings-edit-name-screen"
+        className="flex-1 bg-background"
+        contentContainerStyle={SCREEN_CONTENT_STYLE}
+        keyboardShouldPersistTaps="handled"
+      >
+        <BackButton onPress={() => router.back()} label={tCommon('back')} />
+        <H1 className="mt-1">{t('name.label')}</H1>
+        <View className="mt-4 gap-3">
+          <Input
+            testID="settings-name-input"
+            accessibilityLabel={t('name.label')}
+            value={name}
+            onChangeText={setName}
+            placeholder={t('name.placeholder')}
+          />
+          <Button
+            testID="settings-name-save"
+            disabled={updateName.isPending || name.trim().length === 0}
+            onPress={() => void handleSave()}
+          >
+            <Text>{t('name.saveButton')}</Text>
+          </Button>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }

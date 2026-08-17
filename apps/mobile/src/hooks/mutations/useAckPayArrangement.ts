@@ -11,6 +11,12 @@ import { queryKeys } from '@/src/api/queryKeys';
  *
  * No error toast: a failure surfaces inline on the card next to the button
  * that failed, where the person who pressed it is already looking.
+ *
+ * The row the server just wrote is written into the cache BEFORE the
+ * invalidate: the prompt she pressed must go away on the press, not one
+ * round-trip later, and a refetch that then fails must not put it back —
+ * the write has already happened, and showing the button again reads as the
+ * app having lost her tap.
  */
 export function useAckPayArrangement(householdId: string, carerId: string) {
   const queryClient = useQueryClient();
@@ -18,10 +24,12 @@ export function useAckPayArrangement(householdId: string, carerId: string) {
   return useMutation<PayArrangementAck, Error, string>({
     mutationFn: arrangementId =>
       payArrangementApi.ack(householdId, carerId, arrangementId),
-    onSuccess: (_ack, arrangementId) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.pay.acks(householdId, carerId, arrangementId),
-      });
+    onSuccess: (ack, arrangementId) => {
+      const key = queryKeys.pay.acks(householdId, carerId, arrangementId);
+      queryClient.setQueryData<PayArrangementAck[]>(key, rows =>
+        rows ? [...rows, ack] : [ack]
+      );
+      queryClient.invalidateQueries({ queryKey: key });
     },
   });
 }

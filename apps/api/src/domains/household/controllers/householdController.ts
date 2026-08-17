@@ -125,6 +125,25 @@ export class HouseholdController {
     }
   }
 
+  /**
+   * The parent's own record of every code she has minted. Parents only — the
+   * role check lives in the query service, because only it can see the roster.
+   */
+  static async listInvites(req: Request, res: Response, next: NextFunction) {
+    try {
+      const householdId = req.params.householdId as string;
+      const household_invites = await householdQueryService.listInvites(
+        getAuthUserId(req),
+        householdId
+      );
+      return sendSuccessResponse(res, 'Invites retrieved', {
+        household_invites,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   static async createInvite(req: Request, res: Response, next: NextFunction) {
     try {
       const householdId = req.params.householdId as string;

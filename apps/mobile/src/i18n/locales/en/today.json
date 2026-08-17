@@ -257,8 +257,8 @@
   },
   "moments": {
     "nannyJoined": {
-      "title": "{{name}} has joined the {{family}}",
-      "body": "She can see the week and clock in from now on.",
+      "title": "{{name}} has joined {{family}}",
+      "body": "{{name}} can see the week now, and she can clock in from her first shift.",
       "cta": "See {{name}}'s profile"
     },
     "firstClockIn": {
@@ -282,5 +282,13 @@
       "done": "Clocked out {{time}} — {{duration}} today.",
       "quiet": "Nothing scheduled today."
     }
+  },
+  "waitingOnNanny": {
+    "title": "Nobody has used your invite code yet",
+    "body": "The week stays empty until someone joins with it.",
+    "quietLine": "Your invite code is still {{code}}.",
+    "codeA11y": "Invite code {{code}}. Opens your invite codes.",
+    "shareButton": "Share code",
+    "dismissButton": "Hide this"
   }
 }

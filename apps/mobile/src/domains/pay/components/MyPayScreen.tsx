@@ -67,7 +67,7 @@ import { localDateInZone } from '@/src/lib/localDate';
 import { formatMoney } from '@/src/lib/money';
 import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
-import { resolveAckState } from '../utils/ackState';
+import { hasSeenAck, resolveAckState, seenAckAt } from '../utils/ackState';
 import { formatDisplayDateWithYear } from '../utils/payArrangementForm';
 import {
   proposalHistoryLabel,
@@ -198,12 +198,17 @@ function MyPayHouseholdCard({
     : null;
   // Household-local, because the date she saw her terms is a date in HER
   // working week, not in whatever zone the device happens to sit in.
-  const ackDate =
-    ackState.kind === 'none'
-      ? null
-      : formatDisplayDateWithYear(
-          localDateInZone(household.timezone, new Date(ackState.createdAt))
-        );
+  const cardDate = (createdAt: string) =>
+    formatDisplayDateWithYear(
+      localDateInZone(household.timezone, new Date(createdAt))
+    );
+  // The two dates are independent facts and are read independently: a
+  // disagreement must never swallow the date she read them (§8.4 outranks
+  // the WORD, not the row).
+  const seenAt = seenAckAt(acks.data);
+  const seenDate = seenAt ? cardDate(seenAt) : null;
+  const disagreedDate =
+    ackState.kind === 'disagreed' ? cardDate(ackState.createdAt) : null;
   // Exactly one proposal can be open at a time; everything else is history —
   // one read, not a `current` and a `history` that can disagree.
   const openProposal = (proposals.data ?? []).find(
@@ -228,17 +233,19 @@ function MyPayHouseholdCard({
   const openProposalIsHers = openProposal?.proposed_by === carerId;
   const carerName = arrangement?.carer_display_name;
   // D-41: 'seen' NEVER renders as agreement. See this module's header.
-  const ackStateWord =
-    ackState.kind === 'disagreed'
-      ? t('ack.disagreed', { date: ackDate })
-      : ackState.kind === 'seen'
-        ? carerName
-          ? t('ack.seenBy', { name: carerName, date: ackDate })
-          : t('ack.seen', { date: ackDate })
-        : t('ack.notSeenYet');
-  // The prompt is offered until she has recorded that she saw THIS version.
-  // A recorded disagreement is not a substitute — she may want both rows.
-  const showAckPrompt = arrangement != null && ackState.kind !== 'seen';
+  // It also never reads "Not read yet" once a 'seen' row exists — a
+  // disagreement gets its OWN line below rather than erasing the read date.
+  const ackStateWord = seenDate
+    ? carerName
+      ? t('ack.seenBy', { name: carerName, date: seenDate })
+      : t('ack.seen', { date: seenDate })
+    : t('ack.notSeenYet');
+  // Gated on the ROW, not on the state word (see ackState's header), and not
+  // shown at all until the ack list has actually loaded — the query is
+  // disabled until the arrangement id lands, so gating on `!hasSeenAck` alone
+  // would flash the prompt at a nanny who has already read her terms.
+  const showAckPrompt =
+    arrangement != null && acks.isSuccess && !hasSeenAck(acks.data);
   const ackError = ackTerms.isError || dissentTerms.isError;
 
   return (
@@ -288,7 +295,7 @@ function MyPayHouseholdCard({
                   variant="ghost"
                   onPress={() => setDissentOpen(true)}
                 >
-                  <Text>{t('ack.disagreeButton')}</Text>
+                  <Text>{t('ack.needsUpdatingButton')}</Text>
                 </Button>
                 {/* Load-bearing, and must not soften into reassurance-speak
                  * (§8.3.1): the button above is a receipt, not a waiver. */}
@@ -300,14 +307,6 @@ function MyPayHouseholdCard({
                     testID={`my-pay-ack-error-${household.id}`}
                     message={t('ack.recordFailed')}
                   />
-                ) : null}
-                {ackTerms.isSuccess ? (
-                  <Small
-                    testID={`my-pay-ack-recorded-${household.id}`}
-                    className="text-muted-strong"
-                  >
-                    {t('ack.recordedNow')}
-                  </Small>
                 ) : null}
               </View>
             ) : null}
@@ -333,6 +332,27 @@ function MyPayHouseholdCard({
             >
               {ackStateWord}
             </Small>
+            {/* Its own line, never a replacement for the one above: both are
+                true at once, and hiding either is the contradiction a nanny
+                read as the app losing her tap. */}
+            {disagreedDate ? (
+              <Small
+                testID={`my-pay-ack-disagreed-${household.id}`}
+                className="text-muted-foreground"
+              >
+                {t('ack.needsUpdatingLine', { date: disagreedDate })}
+              </Small>
+            ) : null}
+            {/* Outside the prompt, because the prompt is gone the instant the
+                ack lands (the optimistic row in `useAckPayArrangement`). */}
+            {ackTerms.isSuccess ? (
+              <Small
+                testID={`my-pay-ack-recorded-${household.id}`}
+                className="text-muted-strong"
+              >
+                {t('ack.recordedNow')}
+              </Small>
+            ) : null}
             {dissentTerms.isSuccess ? (
               <Small
                 testID={`my-pay-dissent-recorded-${household.id}`}
@@ -448,12 +468,12 @@ function MyPayHouseholdCard({
                           ? summarizeTermsDiff(buildTermsDiff(older, row, t))
                           : t('history.firstTermsSet')}
                       </Small>
-                      {row.id === arrangement.id && ackState.kind === 'seen' ? (
+                      {row.id === arrangement.id && seenDate ? (
                         <Small
                           testID={`my-pay-history-seen-${row.id}`}
                           className="text-muted-foreground"
                         >
-                          {t('ack.historySeen', { date: ackDate })}
+                          {t('ack.historySeen', { date: seenDate })}
                         </Small>
                       ) : null}
                       {row.note ? (

@@ -1,7 +1,7 @@
 import { type Href, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { KeyboardAvoidingView, Platform, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { Button } from '@/src/components/ui/button';
@@ -37,58 +37,63 @@ export default function ForgotPassword() {
       className="bg-background"
       testID="forgot-password-screen"
     >
-      <View
-        style={{
-          flex: 1,
-          paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
-          paddingBottom: SCREEN_CONTENT_STYLE.padding,
-        }}
-        className="justify-start gap-3 pt-16"
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <H1>{t('forgotPasswordTitle')}</H1>
-        <Body className="text-muted-foreground">
-          {t('forgotPasswordSubtitle')}
-        </Body>
-        {sent ? (
-          <Body testID="forgot-password-success" className="text-primary">
-            {t('forgotPasswordSuccess')}
-          </Body>
-        ) : (
-          <>
-            <Input
-              testID="forgot-password-email"
-              accessibilityLabel={t('email')}
-              value={email}
-              onChangeText={setEmail}
-              placeholder={t('email')}
-              error={Boolean(error)}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              autoComplete="email"
-            />
-            {error ? (
-              <InlineError testID="forgot-password-error" message={error} />
-            ) : null}
-            <Button
-              testID="forgot-password-submit"
-              onPress={() => void onSubmit()}
-              disabled={isLoading || !email.trim()}
-            >
-              <Text>{t('forgotPasswordSubmit')}</Text>
-            </Button>
-          </>
-        )}
-        <Button
-          variant="ghost"
-          testID="forgot-password-back"
-          onPress={() => {
-            clearError();
-            router.replace('/auth/login' as Href);
+        <View
+          style={{
+            flex: 1,
+            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingBottom: SCREEN_CONTENT_STYLE.padding,
           }}
+          className="justify-start gap-3 pt-16"
         >
-          <Text>{t('backToSignIn')}</Text>
-        </Button>
-      </View>
+          <H1>{t('forgotPasswordTitle')}</H1>
+          <Body className="text-muted-foreground">
+            {t('forgotPasswordSubtitle')}
+          </Body>
+          {sent ? (
+            <Body testID="forgot-password-success" className="text-primary">
+              {t('forgotPasswordSuccess')}
+            </Body>
+          ) : (
+            <>
+              <Input
+                testID="forgot-password-email"
+                accessibilityLabel={t('email')}
+                value={email}
+                onChangeText={setEmail}
+                placeholder={t('email')}
+                error={Boolean(error)}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                autoComplete="email"
+              />
+              {error ? (
+                <InlineError testID="forgot-password-error" message={error} />
+              ) : null}
+              <Button
+                testID="forgot-password-submit"
+                onPress={() => void onSubmit()}
+                disabled={isLoading || !email.trim()}
+              >
+                <Text>{t('forgotPasswordSubmit')}</Text>
+              </Button>
+            </>
+          )}
+          <Button
+            variant="ghost"
+            testID="forgot-password-back"
+            onPress={() => {
+              clearError();
+              router.replace('/auth/login' as Href);
+            }}
+          >
+            <Text>{t('backToSignIn')}</Text>
+          </Button>
+        </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

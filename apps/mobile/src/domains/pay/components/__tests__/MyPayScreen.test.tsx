@@ -435,6 +435,66 @@ describe('MyPayScreen', () => {
       expect(getByTestId(`my-pay-ack-disagree-${HOUSEHOLD_A}`)).toBeTruthy();
     });
 
+    const disagreedRow = {
+      ...seenRow,
+      id: 'ack-2',
+      kind: 'disagreed',
+      note: 'The rate went down.',
+      created_at: '2026-08-12T09:00:00.000Z',
+    };
+
+    // The defect: she disagreed once, so §8.4's outranking rule hid her
+    // 'seen' row and no amount of pressing "I've read these terms" could
+    // clear the prompt.
+    it('a seen row clears the prompt even when a disagreement outranks it', async () => {
+      listAcksMock.mockImplementation(() =>
+        Promise.resolve([disagreedRow, seenRow])
+      );
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <MyPayScreen />
+      );
+
+      await waitFor(() =>
+        expect(
+          getByTestId(`my-pay-ack-state-${HOUSEHOLD_A}`).props.children
+        ).toBe('ack.seenBy')
+      );
+      expect(queryByTestId(`my-pay-ack-prompt-${HOUSEHOLD_A}`)).toBeNull();
+      expect(queryByTestId(`my-pay-ack-seen-${HOUSEHOLD_A}`)).toBeNull();
+      // ...and the disagreement is still on the card, as its own line.
+      expect(
+        getByTestId(`my-pay-ack-disagreed-${HOUSEHOLD_A}`).props.children
+      ).toBe('ack.needsUpdatingLine');
+    });
+
+    it('never renders the prompt before the ack list has loaded', async () => {
+      listAcksMock.mockImplementation(() => new Promise(() => {}));
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <MyPayScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-ack-state-${HOUSEHOLD_A}`)).toBeTruthy()
+      );
+      expect(queryByTestId(`my-pay-ack-prompt-${HOUSEHOLD_A}`)).toBeNull();
+    });
+
+    it('the secondary button asks for an update rather than picking a fight', async () => {
+      const { getByTestId, getByText } = renderWithProviders(<MyPayScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-ack-disagree-${HOUSEHOLD_A}`)).toBeTruthy()
+      );
+      expect(getByText('ack.needsUpdatingButton')).toBeTruthy();
+      // Key-echo cannot see the copy, so the catalogue is the check: a nanny
+      // told a real user she would never press "I don't agree with this"
+      // because she read it as costing her the job.
+      expect(enPay.ack.needsUpdatingButton).not.toMatch(/agree/i);
+      expect(esPay.ack.needsUpdatingButton).not.toMatch(/acuerdo/i);
+    });
+
     it('the ack button copy resolves to the "read" wording, never "seen"', async () => {
       const { getByTestId, getByText } = renderWithProviders(<MyPayScreen />);
 

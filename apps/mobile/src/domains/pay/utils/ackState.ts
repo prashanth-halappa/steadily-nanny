@@ -17,6 +17,14 @@
  * and disagreeing with it are different facts, and the unique key allows
  * both) — the state word reports the disagreement, because that is the one
  * the reader would be misled by not seeing.
+ *
+ * WHICH FUNCTION TO CALL. Anything that WORDS the state uses
+ * `resolveAckState`. Anything that GATES THE PROMPT — or asks the plain
+ * question "has she recorded reading this version?" — uses `hasSeenAck` /
+ * `seenAckAt`. Gating on `resolveAckState(...).kind === 'seen'` is the bug
+ * that stranded a real nanny: she had disagreed once, so the outranking rule
+ * hid her 'seen' row forever and "I've read these terms" could never clear
+ * the prompt however many times she pressed it.
  */
 import type { PayArrangementAck } from '@steadily-nanny/shared-types/schemas/payArrangementAck.schema';
 import { PAY_ARRANGEMENT_ACK_KINDS } from '@steadily-nanny/shared-types/schemas/payArrangementAck.schema';
@@ -43,6 +51,22 @@ function newestOfKind(
           : newest,
       undefined
     );
+}
+
+/** When she recorded seeing this version, regardless of any disagreement. */
+export function seenAckAt(
+  acks: readonly PayArrangementAck[] | undefined
+): string | null {
+  return (
+    newestOfKind(acks ?? [], PAY_ARRANGEMENT_ACK_KINDS.SEEN)?.created_at ?? null
+  );
+}
+
+/** Whether she has recorded seeing this version. The prompt's only gate. */
+export function hasSeenAck(
+  acks: readonly PayArrangementAck[] | undefined
+): boolean {
+  return seenAckAt(acks) !== null;
 }
 
 export function resolveAckState(

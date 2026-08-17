@@ -4,7 +4,7 @@
  * screens branch on.
  */
 import { describe, expect, it } from 'bun:test';
-import { resolveAckState } from '../ackState';
+import { hasSeenAck, resolveAckState, seenAckAt } from '../ackState';
 
 const row = (
   kind: 'seen' | 'disagreed',
@@ -70,5 +70,44 @@ describe('resolveAckState', () => {
       createdAt: '2026-08-12T09:00:00.500+00:00',
       note: 'the newer note',
     });
+  });
+});
+
+// The bug this pair of functions exists to prevent: a nanny who had once
+// pressed the secondary button was prompted to read her terms forever,
+// because the prompt was gated on the WORD (which a disagreement outranks)
+// rather than on the row.
+describe('hasSeenAck / seenAckAt', () => {
+  it('is true with BOTH rows, while the state word still reports the disagreement', () => {
+    const acks = [
+      row('disagreed', '2026-08-10T09:00:00.000Z', 'The rate went down.'),
+      row('seen', '2026-08-12T09:00:00.000Z'),
+    ];
+
+    expect(hasSeenAck(acks)).toBe(true);
+    expect(seenAckAt(acks)).toBe('2026-08-12T09:00:00.000Z');
+    expect(resolveAckState(acks).kind).toBe('disagreed');
+  });
+
+  it('is false with no rows, and with a disagreement alone', () => {
+    expect(hasSeenAck(undefined)).toBe(false);
+    expect(hasSeenAck([])).toBe(false);
+    expect(hasSeenAck([row('disagreed', '2026-08-10T09:00:00.000Z')])).toBe(
+      false
+    );
+    expect(
+      seenAckAt([row('disagreed', '2026-08-10T09:00:00.000Z')])
+    ).toBeNull();
+  });
+
+  // GOLDEN #25, same reason as resolveAckState's: the date rendered next to
+  // "Read" must be the latest INSTANT, not the highest string.
+  it('reports the newest seen row by instant across mixed serialisations', () => {
+    expect(
+      seenAckAt([
+        row('seen', '2026-08-12T09:00:00Z'),
+        row('seen', '2026-08-12T09:00:00.500+00:00'),
+      ])
+    ).toBe('2026-08-12T09:00:00.500+00:00');
   });
 });

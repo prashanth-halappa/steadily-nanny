@@ -109,6 +109,11 @@ mock.module(
 mock.module('@/src/domains/today/components/CrossFamilyStrip', () => ({
   CrossFamilyStrip: () => null,
 }));
+// Renders a real `useQuery`; this file has no QueryClient and is about which
+// MOMENT shows, not the invite card.
+mock.module('@/src/domains/today/components/InviteWaitingCard', () => ({
+  InviteWaitingCard: () => null,
+}));
 mock.module('@/src/domains/today/components/NannyJoinedMomentCard', () => ({
   NannyJoinedMomentCard: marker('nanny-joined'),
 }));

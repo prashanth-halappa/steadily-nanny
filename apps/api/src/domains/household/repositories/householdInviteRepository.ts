@@ -65,6 +65,30 @@ export class HouseholdInviteRepository extends BaseRepository<HouseholdInvite> {
   }
 
   /**
+   * Every invite this household has ever minted, newest first — the parent's
+   * own record of what she sent and what became of it.
+   *
+   * Backed by `household_invites_household_idx (household_id, created_at desc)`
+   * from 009, so the ordering here is the index's ordering, not a sort.
+   */
+  async listByHousehold(householdId: string): Promise<HouseholdInvite[]> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*')
+      .eq('household_id', householdId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list household invites',
+        'DATABASE_ERROR',
+        { details: error.message, householdId }
+      );
+    }
+    return (data ?? []) as HouseholdInvite[];
+  }
+
+  /**
    * Claim a still-`pending` invite for `acceptedBy`. Compare-and-set on
    * `status = 'pending'`, so exactly ONE of N concurrent redeemers of the same
    * code gets a row back and the rest get `null` — the in-memory status checks

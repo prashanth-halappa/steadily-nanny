@@ -12,6 +12,7 @@ import { TermsProposalRepository } from '../../termsProposal/repositories/termsP
 import {
   HouseholdNotFoundError,
   InviteNotFoundError,
+  NotAHouseholdParentError,
 } from '../errors/householdErrors';
 import { HouseholdHolidayRepository } from '../repositories/householdHolidayRepository';
 import { HouseholdInviteRepository } from '../repositories/householdInviteRepository';
@@ -25,10 +26,15 @@ import {
 import type {
   Household,
   HouseholdHoliday,
+  HouseholdInvite,
   HouseholdMember,
   InvitePreview,
   TermsPreviewSource,
 } from '../types';
+import {
+  HOUSEHOLD_WRITE_ROLES,
+  isDraftAuthor,
+} from '../utils/assertHouseholdRole';
 
 export class HouseholdQueryService {
   constructor(
@@ -163,6 +169,48 @@ export class HouseholdQueryService {
       member.status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE
         ? member
         : { ...member, profile_phone: null }
+    );
+  }
+
+  /**
+   * Every invite this household has minted. PARENTS ONLY (or the §2.2 draft
+   * author) — the same gate the create and revoke writes use, for a stronger
+   * reason than symmetry: each row carries a live `code`, and a code is a
+   * bearer token for joining this family. A nanny who could read this list
+   * could mint herself a second membership, or hand the family's open code to
+   * somebody else.
+   *
+   * `status` is REPAIRED on read: nothing flips a `pending` row to `expired`
+   * on a schedule, so a code whose `expires_at` has passed is still literally
+   * `pending` in the table while being dead at redeem time (the redeem path
+   * checks the clock, not the column). Reporting that row as "waiting" would
+   * be the app telling a parent to keep waiting on a code that can no longer
+   * work. Derive it here, once, rather than leaving every reader to remember
+   * the clock — and do NOT write the repair back: the column is the audit of
+   * what was decided, and expiry is not a decision anybody made.
+   */
+  async listInvites(
+    userId: string,
+    householdId: string,
+    now: () => Date = () => new Date()
+  ): Promise<HouseholdInvite[]> {
+    const membership = await this.getMembership(userId, householdId);
+    if (!HOUSEHOLD_WRITE_ROLES.has(membership.role)) {
+      const household = await this.householdRepo.findById(householdId);
+      if (!isDraftAuthor(household, membership)) {
+        throw new NotAHouseholdParentError(householdId, membership.role);
+      }
+    }
+
+    const invites = await this.inviteRepo.listByHousehold(householdId);
+    const nowMs = now().getTime();
+    return invites.map(invite =>
+      invite.status === HOUSEHOLD_INVITE_STATUSES.PENDING &&
+      // GOLDEN-FIXES #25: never compare two timestamp STRINGS. PostgREST
+      // returns `+00:00` where JS writes `.000Z`, and they sort differently.
+      new Date(invite.expires_at).getTime() <= nowMs
+        ? { ...invite, status: HOUSEHOLD_INVITE_STATUSES.EXPIRED }
+        : invite
     );
   }
 

@@ -49,6 +49,7 @@ import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
 import {
   buildBootstrapProfileRequest,
   deriveBootstrapName,
+  deriveSeedName,
 } from '@/src/lib/bootstrapUserProfile';
 import { getDeviceCurrency, getDeviceRegion } from '@/src/lib/deviceLocale';
 import { getDeviceTimeZone } from '@/src/lib/deviceTimeZone';
@@ -89,10 +90,9 @@ export function HouseholdScreen() {
     : null;
 
   const [householdName, setHouseholdName] = useState('');
-  const [displayName, setDisplayName] = useState(() => {
-    const user = session?.user;
-    return user ? deriveBootstrapName(user) : '';
-  });
+  const [displayName, setDisplayName] = useState(() =>
+    deriveSeedName(session?.user)
+  );
   const [phone, setPhone] = useState('');
   const [phoneError, setPhoneError] = useState<'required' | 'invalid' | null>(
     null
@@ -107,6 +107,14 @@ export function HouseholdScreen() {
     if (existing) setHouseholdName(current => current || (existing.name ?? ''));
   }, [existing]);
 
+  // Same reason as the phone below: a parent who already saved a name should
+  // see it. This runs after the profile query resolves, so it can only ever
+  // fill an untouched box — `current ||` keeps whatever they have typed.
+  useEffect(() => {
+    const saved = profile.data?.name;
+    if (saved) setDisplayName(current => current || saved);
+  }, [profile.data?.name]);
+
   // A returning parent who already saved a number should see it, not an
   // empty box that looks like we lost it.
   useEffect(() => {
@@ -115,7 +123,8 @@ export function HouseholdScreen() {
   }, [profile.data?.phone]);
 
   const trimmedHouseholdName = householdName.trim();
-  const canContinue = trimmedHouseholdName.length > 0;
+  const canContinue =
+    trimmedHouseholdName.length > 0 && displayName.trim().length > 0;
   const isBusy =
     createHousehold.isPending ||
     updateHousehold.isPending ||
@@ -244,6 +253,9 @@ export function HouseholdScreen() {
           placeholder={t('setup.parentNamePlaceholder')}
           autoCapitalize="words"
         />
+        <Small testID="parent-name-hint" className="text-muted-foreground">
+          {t('setup.parentNameHint')}
+        </Small>
       </View>
       <View className="gap-2">
         <FieldLabel>{t('setup.phoneLabel')}</FieldLabel>

@@ -29,7 +29,7 @@ import { Share, View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
-import { Body, Small } from '@/src/components/ui/typography';
+import { Small } from '@/src/components/ui/typography';
 import { PayChangeSheet } from '@/src/domains/pay/components/PayChangeSheet';
 import {
   formatDisplayDateWithYear,
@@ -50,6 +50,7 @@ import { getDeviceCurrency } from '@/src/lib/deviceLocale';
 import { localDateInZone } from '@/src/lib/localDate';
 import { formatRate } from '@/src/lib/money';
 import { useSetupProgressStore } from '@/src/store/setupProgress';
+import { InviteOfferSummary } from './InviteOfferSummary';
 
 export function InviteScreen() {
   const router = useRouter();
@@ -148,6 +149,20 @@ export function InviteScreen() {
           >
             <Text>{t('invite.shareButton')}</Text>
           </Button>
+          {/* Rule M: this sits on the screen wash, not on a tint. */}
+          <Small testID="invite-share-hint" className="text-muted-strong">
+            {t('invite.shareHint')}
+          </Small>
+          {/* The way back to this code after she leaves the wizard. Without
+              it the code exists only in mutation state and is gone for good
+              the moment she navigates on. */}
+          <Button
+            testID="invite-see-all-button"
+            variant="ghost"
+            onPress={() => router.push('/(private)/settings/invites' as Href)}
+          >
+            <Text>{t('invites.seeAllButton')}</Text>
+          </Button>
         </View>
       ) : (
         <>
@@ -162,16 +177,17 @@ export function InviteScreen() {
           {selectedRole === HOUSEHOLD_INVITE_ROLES.NANNY ? (
             <Card testID="invite-offer-card" className="gap-3 p-4">
               {payOffer ? (
-                <View className="gap-1">
-                  <Body testID="invite-offer-summary">
-                    {t('invite.offer.summary', {
-                      rate: formatRate(
-                        payOffer.rate_minor,
-                        payOffer.currency ?? currency
-                      ),
-                      date: formatDisplayDateWithYear(payOffer.valid_from),
-                    })}
-                  </Body>
+                <View className="gap-2">
+                  <InviteOfferSummary
+                    rate={formatRate(
+                      payOffer.rate_minor,
+                      payOffer.currency ?? currency
+                    )}
+                    startDate={formatDisplayDateWithYear(payOffer.valid_from)}
+                    cancellationPaidWithinHours={
+                      payOffer.cancellation_paid_within_hours
+                    }
+                  />
                   <Small
                     testID="invite-offer-draft-state"
                     className="text-muted-foreground"

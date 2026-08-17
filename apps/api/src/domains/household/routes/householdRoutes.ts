@@ -114,6 +114,16 @@ router.put(
   asyncHandler(HouseholdController.setHolidays)
 );
 
+// The parent's record of every code minted for this household — parents only
+// (role check in the query service). Registered alongside the POST on the same
+// path: the schema envelope for it has existed since 009 and the mobile draft
+// hook has been calling this exact path against nothing.
+router.get(
+  '/:householdId/invites',
+  ...authWithOwnership(HouseholdIdParamSchema, householdOwnership),
+  asyncHandler(HouseholdController.listInvites)
+);
+
 // Generate an invite code — parents only (role check in the command service).
 router.post(
   '/:householdId/invites',

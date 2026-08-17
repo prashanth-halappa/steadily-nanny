@@ -315,6 +315,13 @@ export default function SettingsScreen() {
                       onPress={() => router.push('/settings/invite' as Href)}
                     />
                     <SettingsNavRow
+                      testID="settings-invite-codes"
+                      label={t('household:invites.title')}
+                      icon={UserPlus}
+                      tone="schedule"
+                      onPress={() => router.push('/settings/invites' as Href)}
+                    />
+                    <SettingsNavRow
                       testID="settings-manage-household"
                       label={t('household:householdSettings.manageTitle')}
                       icon={Home}

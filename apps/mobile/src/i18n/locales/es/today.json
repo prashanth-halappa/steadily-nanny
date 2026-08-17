@@ -258,7 +258,7 @@
   "moments": {
     "nannyJoined": {
       "title": "{{name}} se ha unido a {{family}}",
-      "body": "A partir de ahora puede ver la semana y fichar la entrada.",
+      "body": "{{name}} ya puede ver la semana y fichar desde su primer turno.",
       "cta": "Ver el perfil de {{name}}"
     },
     "firstClockIn": {
@@ -282,5 +282,13 @@
       "done": "Salida {{time}} — {{duration}} hoy.",
       "quiet": "Nada programado hoy."
     }
+  },
+  "waitingOnNanny": {
+    "title": "Nadie ha usado tu código de invitación todavía",
+    "body": "La semana sigue vacía hasta que alguien se una con él.",
+    "quietLine": "Tu código de invitación sigue siendo {{code}}.",
+    "codeA11y": "Código de invitación {{code}}. Abre tus códigos de invitación.",
+    "shareButton": "Compartir código",
+    "dismissButton": "Ocultar esto"
   }
 }

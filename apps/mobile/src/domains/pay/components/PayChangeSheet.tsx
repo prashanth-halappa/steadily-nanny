@@ -36,13 +36,10 @@ import type {
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
-import { cn } from '@/lib/utils';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
-import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { Input } from '@/src/components/ui/input';
 import { LoadingButton } from '@/src/components/ui/loading-button';
-import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { Body, H4, Label, Small } from '@/src/components/ui/typography';
 import { localDateInZone } from '@/src/lib/localDate';
@@ -62,6 +59,7 @@ import {
   buildTermsChangeConsequence,
   buildTermsDiff,
 } from '../utils/termsDiff';
+import { CancellationTermField } from './CancellationTermField';
 import { CurrencySelect } from './CurrencySelect';
 import { EffectiveDateField } from './EffectiveDateField';
 import { PayScheduleFields } from './PayScheduleFields';
@@ -345,58 +343,15 @@ export function PayChangeSheet({
           </Card>
         ) : null}
 
-        <View className="gap-2">
-          <Label>{t('changeSheet.cancellationsFieldLabel')}</Label>
-          <View className="flex-row flex-wrap gap-2">
-            <Button
-              testID={`${testIDPrefix}-cancellation-chip-window`}
-              variant={
-                form.cancellationChoice === 'window' ? 'default' : 'outline'
-              }
-              size="sm"
-              onPress={() => patch({ cancellationChoice: 'window' })}
-            >
-              <Text
-                className={cn(
-                  form.cancellationChoice === 'window'
-                    ? undefined
-                    : 'text-foreground'
-                )}
-              >
-                {t('changeSheet.cancellationWindowChip')}
-              </Text>
-            </Button>
-            <Button
-              testID={`${testIDPrefix}-cancellation-chip-none`}
-              variant={
-                form.cancellationChoice === 'none' ? 'default' : 'outline'
-              }
-              size="sm"
-              onPress={() => patch({ cancellationChoice: 'none' })}
-            >
-              <Text
-                className={cn(
-                  form.cancellationChoice === 'none'
-                    ? undefined
-                    : 'text-foreground'
-                )}
-              >
-                {t('changeSheet.cancellationNoneChip')}
-              </Text>
-            </Button>
-          </View>
-          {form.cancellationChoice === 'window' ? (
-            <Input
-              testID={`${testIDPrefix}-cancellation-hours-input`}
-              accessibilityLabel={t('changeSheet.cancellationHoursLabel')}
-              value={form.cancellationHoursText}
-              onChangeText={cancellationHoursText =>
-                patch({ cancellationHoursText })
-              }
-              keyboardType="number-pad"
-            />
-          ) : null}
-        </View>
+        <CancellationTermField
+          testIDPrefix={testIDPrefix}
+          choice={form.cancellationChoice}
+          hoursText={form.cancellationHoursText}
+          onChoiceChange={cancellationChoice => patch({ cancellationChoice })}
+          onHoursChange={cancellationHoursText =>
+            patch({ cancellationHoursText })
+          }
+        />
 
         <PayTermsGroups
           testIDPrefix={testIDPrefix}

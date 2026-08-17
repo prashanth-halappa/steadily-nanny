@@ -5,6 +5,7 @@
     "wizardSubtitle": "Es lo que tu niñera verá en los turnos, las horas y el pago. Puedes cambiarlo más adelante en los ajustes.",
     "parentNameLabel": "Tu nombre",
     "parentNamePlaceholder": "p. ej. Ana Ruiz",
+    "parentNameHint": "Tu niñera ve este nombre en los turnos, las horas y los pagos.",
     "householdNameLabel": "Nombre de la familia",
     "householdNamePlaceholder": "p. ej. La familia Ruiz",
     "phoneLabel": "Tu número de móvil",
@@ -63,6 +64,7 @@
     "continueButton": "Continuar",
     "generateButton": "Generar código de invitación",
     "shareButton": "Compartir código",
+    "shareHint": "Ella escribe este código al registrarse. Después ve el nombre de la familia, tu número y las condiciones de arriba.",
     "shareMessage": "Únete a nuestro hogar en Steadily Nanny — usa el código de invitación {{code}} al iniciar sesión.",
     "errorTitle": "No se pudo generar un código de invitación.",
     "retryButton": "Intentar de nuevo",
@@ -85,7 +87,7 @@
     "offer": {
       "addButton": "Añadir una oferta de pago",
       "editButton": "Editar oferta",
-      "summary": "{{rate}} · comienza el {{date}}",
+      "starts": "Empieza el {{date}}",
       "draftState": "Oferta borrador · nadie la ha visto todavía",
       "sheetTitle": "Ofrecer condiciones de pago",
       "submitButton": "Guardar oferta",
@@ -110,11 +112,17 @@
   },
   "availability": {
     "wizardTitle": "¿Cuándo estás disponible?",
-    "wizardSubtitle": "Selecciona los días que puedes trabajar y luego indica tu horario habitual para cada uno.",
+    "wizardSubtitle": "Activa los días que puedes trabajar y luego indica tu horario habitual.",
     "manageTitle": "Disponibilidad",
     "manageSubtitle": "Actualiza los días y horas en que estás disponible para trabajar.",
     "finishButton": "Finalizar",
-    "doneButton": "Listo"
+    "doneButton": "Listo",
+    "applyToOtherDays": "Usar estos horarios en mis otros días",
+    "appliedToOtherDays_one": "Aplicado a {{count}} día más.",
+    "appliedToOtherDays_other": "Aplicado a {{count}} días más.",
+    "finishBlockedReason": "Activa al menos un día para finalizar.",
+    "skipButton": "Configurar esto más tarde",
+    "skipReassurance": "Esto no es un compromiso. Puedes cambiar tu horario cuando quieras."
   },
   "householdSettings": {
     "manageTitle": "Ajustes del hogar",
@@ -240,5 +248,16 @@
     "removeButton": "Eliminar de este hogar",
     "notFoundTitle": "Ya no está en este hogar",
     "notFoundMessage": "Esta persona ha dejado el hogar o ha eliminado su cuenta."
+  },
+  "invites": {
+    "title": "Códigos de invitación",
+    "subtitle": "Todos los códigos que has creado y qué pasó con cada uno.",
+    "emptyTitle": "Aún no hay códigos",
+    "emptyBody": "Crea uno cuando quieras invitar a alguien.",
+    "groupWaiting": "Esperando a que se use",
+    "groupSettled": "Ya usados",
+    "newCodeButton": "Crear un código nuevo",
+    "footnote": "Un código deja de funcionar en cuanto alguien lo usa para unirse.",
+    "seeAllButton": "Ver todos los códigos"
   }
 }

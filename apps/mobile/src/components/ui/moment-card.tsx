@@ -81,11 +81,15 @@ export function MomentCard({
   const card = (
     <Card testID={testID}>
       <CardContent className="items-center gap-4">
+        {/* Sized to the GROUND, not the image — same trap as `empty-state`:
+            the ground is 1.6x and absolutely positioned, so a box sized to the
+            image overflows and paints over the card's own padding and rounded
+            corners. */}
         <View
           testID={`${testID}-art`}
           style={{
-            width: ILLUSTRATION_SIZE,
-            height: ILLUSTRATION_SIZE,
+            width: groundSize,
+            height: groundSize,
             alignItems: 'center',
             justifyContent: 'center',
           }}

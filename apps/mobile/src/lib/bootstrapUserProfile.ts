@@ -32,6 +32,27 @@ export function deriveBootstrapName(user: User): string {
   return 'User';
 }
 
+/**
+ * The name to PREFILL an input with, as opposed to the name to WRITE.
+ *
+ * `deriveBootstrapName` falls back to the email local-part and then to
+ * "User" so a profile upsert always validates — correct at write time, wrong
+ * in a text box. A parent signing up as `parent@…` was landing on "Name your
+ * family" with the word "parent" already typed into a field labelled "Your
+ * name", and because the field was prefilled they kept it: "parent" then
+ * became the name their nanny read on every shift, hour, and payment.
+ *
+ * Only a name the user actually gave us (Apple/Google `full_name`) is worth
+ * prefilling. Anything else should leave the box empty so the placeholder can
+ * ask the question.
+ */
+export function deriveSeedName(user: User | null | undefined): string {
+  const meta = user?.user_metadata;
+  const fullName =
+    typeof meta?.full_name === 'string' ? meta.full_name.trim() : '';
+  return fullName ? fullName.slice(0, 200) : '';
+}
+
 export function buildBootstrapProfileRequest(
   user: User,
   options?: { name?: string }

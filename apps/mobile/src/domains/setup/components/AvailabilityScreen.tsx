@@ -8,9 +8,17 @@
  * "Finish" gating (>= 1 selected day). NOT the last wizard step — advances
  * to NOTIFICATIONS_PERMISSION, same as InviteScreen advancing on the parent
  * side. See `getNextSetupStep` in `domains/setup/types`.
+ *
+ * THE SKIP IS SAFE. `useIsOnboarded`'s server-derived predicate reports an
+ * active nanny membership as onboarded on the membership alone — availability
+ * rows are not part of it (`isOnboardedForMembership`). So "Set this up later"
+ * can advance the wizard without writing a single row and nobody gets stranded
+ * in a resume loop; it takes the same step transition Finish does, which is
+ * what keeps `getUnfinishedSetupResumeRoute` from pointing back here.
  */
 import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
+import { Small } from '@/src/components/ui/typography';
 import { AvailabilityEditor } from '@/src/domains/setup/components/AvailabilityEditor';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import {
@@ -33,7 +41,10 @@ export function AvailabilityScreen() {
     .filter(row => row.is_available)
     .map(row => row.weekday);
 
-  const onFinish = () => {
+  // Skip and Finish take the SAME transition — the only difference is that
+  // skipping leaves the availability table empty, which the onboarded
+  // predicate does not care about (see the module note).
+  const goToNotifications = () => {
     setCurrentStep(SETUP_STEPS.NOTIFICATIONS_PERMISSION);
     router.push(
       getSetupStepRoute(SETUP_STEPS.NOTIFICATIONS_PERMISSION) as Href
@@ -48,9 +59,28 @@ export function AvailabilityScreen() {
       subtitle={t('availability.wizardSubtitle')}
       ctaLabel={t('availability.finishButton')}
       ctaDisabled={selectedDays.length === 0}
-      onCta={onFinish}
+      onCta={goToNotifications}
+      onSkip={goToNotifications}
+      skipLabel={t('availability.skipButton')}
     >
       <AvailabilityEditor />
+      {/* Both lines sit at the bottom of the scroll body, directly above the
+          pinned CTA. `text-muted-strong`, not `text-muted-foreground`: this
+          sits on the screen wash, where the lighter token fails contrast. */}
+      {selectedDays.length === 0 ? (
+        <Small
+          testID="availability-cta-reason"
+          className="text-center text-muted-strong"
+        >
+          {t('availability.finishBlockedReason')}
+        </Small>
+      ) : null}
+      <Small
+        testID="availability-skip-reassurance"
+        className="text-center text-muted-strong"
+      >
+        {t('availability.skipReassurance')}
+      </Small>
     </SetupScreenShell>
   );
 }

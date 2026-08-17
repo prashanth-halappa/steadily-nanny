@@ -34,4 +34,22 @@ describe('AvailabilityScreen (wizard)', () => {
   it('keeps its wizard testID', () => {
     expect(source).toContain('availability-screen');
   });
+
+  it('offers a skip that takes the same step transition Finish does', () => {
+    expect(source).toContain('onSkip={goToNotifications}');
+    expect(source).toContain('availability.skipButton');
+    expect(source).toContain('availability.skipReassurance');
+  });
+
+  // `text-muted-strong`, not `text-muted-foreground` — these two lines sit on
+  // the screen wash, where the lighter token fails contrast (Rule M).
+  it('states why Finish is disabled, on the wash-safe muted token', () => {
+    expect(source).toContain('availability.finishBlockedReason');
+    expect(source).toMatch(
+      /availability-cta-reason[\s\S]{0,80}text-muted-strong/
+    );
+    expect(source).toMatch(
+      /availability-skip-reassurance[\s\S]{0,80}text-muted-strong/
+    );
+  });
 });
