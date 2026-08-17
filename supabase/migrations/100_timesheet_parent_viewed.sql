@@ -2,7 +2,7 @@
 -- 100_timesheet_parent_viewed.sql — one-way receipt that a parent opened
 -- this week in the app (CX stream U2)
 --
--- NOT YET APPLIED TO PROD. Apply via the Supabase MCP `apply_migration` in
+-- Applied to prod 2026-08-16. Apply via the Supabase MCP `apply_migration` in
 -- order after 099 — never `supabase db push` (version-scheme mismatch; see
 -- 092's header and the note in docs/ROLLBACK-RUNBOOK.md).
 --

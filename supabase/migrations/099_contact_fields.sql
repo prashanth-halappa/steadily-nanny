@@ -1,7 +1,7 @@
 -- ---------------------------------------------------------------------------
 -- 099_contact_fields.sql — a phone number, at last (P4 / direction §6)
 --
--- NOT YET APPLIED TO PROD. Apply via the Supabase MCP `apply_migration` in
+-- Applied to prod 2026-08-16. Apply via the Supabase MCP `apply_migration` in
 -- order after 098 — never `supabase db push` (version-scheme mismatch; see
 -- 092's header and the note in docs/ROLLBACK-RUNBOOK.md).
 --
