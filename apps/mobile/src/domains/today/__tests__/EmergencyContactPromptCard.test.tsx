@@ -9,12 +9,11 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, render } from '@testing-library/react-native';
 
 let EmergencyContactPromptCard: typeof import('../components/EmergencyContactPromptCard').EmergencyContactPromptCard;
+let store: typeof import('@/src/store/todayCardDismissalStore').useTodayCardDismissalStore;
 
 let mockUseIsOnboarded: ReturnType<typeof mock>;
 let mockUseActiveHousehold: ReturnType<typeof mock>;
 let mockUseHouseholdMembers: ReturnType<typeof mock>;
-let mockIsDismissed: ReturnType<typeof mock>;
-let mockDismiss: ReturnType<typeof mock>;
 let mockMutateAsync: ReturnType<typeof mock>;
 
 const HOUSEHOLD_ID = 'household-1';
@@ -103,6 +102,8 @@ beforeAll(async () => {
 
   const mod = await import('../components/EmergencyContactPromptCard');
   EmergencyContactPromptCard = mod.EmergencyContactPromptCard;
+  store = (await import('@/src/store/todayCardDismissalStore'))
+    .useTodayCardDismissalStore;
 });
 
 beforeEach(() => {
@@ -124,16 +125,7 @@ beforeEach(() => {
     data: [ACTIVE_NANNY],
     isLoading: false,
   }));
-  mockIsDismissed = mock(() => false);
-  mockDismiss = mock();
-  mock.module('@/src/store/todayCardDismissalStore', () => ({
-    useTodayCardDismissalStore: (
-      selector: (s: {
-        isDismissed: typeof mockIsDismissed;
-        dismiss: typeof mockDismiss;
-      }) => unknown
-    ) => selector({ isDismissed: mockIsDismissed, dismiss: mockDismiss }),
-  }));
+  store.getState().reset();
   mockMutateAsync.mockClear();
 });
 
@@ -177,25 +169,17 @@ describe('EmergencyContactPromptCard', () => {
   });
 
   it('renders nothing once dismissed', () => {
-    mockIsDismissed = mock(() => true);
-    mock.module('@/src/store/todayCardDismissalStore', () => ({
-      useTodayCardDismissalStore: (
-        selector: (s: {
-          isDismissed: typeof mockIsDismissed;
-          dismiss: typeof mockDismiss;
-        }) => unknown
-      ) => selector({ isDismissed: mockIsDismissed, dismiss: mockDismiss }),
-    }));
+    store.getState().dismiss(`emergencyContact:${HOUSEHOLD_ID}`);
     const { queryByTestId } = render(<EmergencyContactPromptCard />);
     expect(queryByTestId('emergency-contact-prompt-card')).toBeNull();
   });
 
   it('"Not now" dismisses via the shared today-card dismissal store, keyed by household', () => {
-    const { getByTestId } = render(<EmergencyContactPromptCard />);
-    fireEvent.press(getByTestId('emergency-contact-not-now'));
-    expect(mockDismiss).toHaveBeenCalledWith(
-      `emergencyContact:${HOUSEHOLD_ID}`
+    const { getByTestId, queryByTestId } = render(
+      <EmergencyContactPromptCard />
     );
+    fireEvent.press(getByTestId('emergency-contact-not-now'));
+    expect(queryByTestId('emergency-contact-prompt-card')).toBeNull();
   });
 
   it('never uses the word "emergency" in a field label — the copy itself, not the mocked t()', () => {

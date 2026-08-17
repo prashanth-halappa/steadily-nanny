@@ -172,6 +172,7 @@ beforeAll(async () => {
         dismiss: () => void;
       }) => unknown
     ) => selector({ isDismissed: () => false, dismiss: () => {} }),
+    useCardDismissal: () => ({ isDismissed: () => false, dismiss: () => {} }),
   }));
 
   const mod = await import('../components/TodayScreen');

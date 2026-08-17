@@ -32,7 +32,7 @@ import { useUpdateHousehold } from '@/src/hooks/mutations/useUpdateHousehold';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
-import { useTodayCardDismissalStore } from '@/src/store/todayCardDismissalStore';
+import { useCardDismissal } from '@/src/store/todayCardDismissalStore';
 
 function dismissalKey(householdId: string) {
   return `emergencyContact:${householdId}`;
@@ -49,8 +49,7 @@ export function EmergencyContactPromptCard() {
   const active = useActiveHousehold();
   const household = active.household;
   const members = useHouseholdMembers(household?.id);
-  const isDismissed = useTodayCardDismissalStore(s => s.isDismissed);
-  const dismiss = useTodayCardDismissalStore(s => s.dismiss);
+  const { isDismissed, dismiss } = useCardDismissal();
   const updateHousehold = useUpdateHousehold();
 
   const hasActiveCarer = (members.data ?? []).some(

@@ -75,8 +75,7 @@ let mockUseDraftProposal: ReturnType<typeof mock>;
 let mockUseTermsProposals: ReturnType<typeof mock>;
 let mockMutateAsync: ReturnType<typeof mock>;
 let mockUseProposeTerms: ReturnType<typeof mock>;
-let mockIsDismissed: ReturnType<typeof mock>;
-let mockDismiss: ReturnType<typeof mock>;
+let store: typeof import('@/src/store/todayCardDismissalStore').useTodayCardDismissalStore;
 let lastSheetProps: Record<string, unknown> | null;
 
 function setActiveHousehold(opts: {
@@ -149,17 +148,6 @@ beforeAll(async () => {
     useProposeTerms: mockUseProposeTerms,
   }));
 
-  mockIsDismissed = mock(() => false);
-  mockDismiss = mock();
-  mock.module('@/src/store/todayCardDismissalStore', () => ({
-    useTodayCardDismissalStore: (
-      selector: (s: {
-        isDismissed: typeof mockIsDismissed;
-        dismiss: typeof mockDismiss;
-      }) => unknown
-    ) => selector({ isDismissed: mockIsDismissed, dismiss: mockDismiss }),
-  }));
-
   mock.module('@/src/domains/pay/components/PayChangeSheet', () => {
     const React = require('react');
     const { Pressable, Text } = require('react-native');
@@ -187,12 +175,14 @@ beforeAll(async () => {
 
   const mod = await import('../components/SendMyTermsCard');
   SendMyTermsCard = mod.SendMyTermsCard;
+  store = (await import('@/src/store/todayCardDismissalStore'))
+    .useTodayCardDismissalStore;
 });
 
 beforeEach(() => {
   lastSheetProps = null;
   mockMutateAsync.mockClear?.();
-  mockDismiss.mockClear?.();
+  store.getState().reset();
   mockUseIsOnboarded.mockImplementation(() => ({
     role: 'nanny',
     isPastMember: false,
@@ -207,7 +197,6 @@ beforeEach(() => {
     isPending: false,
     isError: false,
   }));
-  mockIsDismissed.mockImplementation(() => false);
   setActiveHousehold({
     households: [DRAFT_HOUSEHOLD],
     household: LIVE_HOUSEHOLD,
@@ -260,7 +249,9 @@ describe('SendMyTermsCard — render conditions', () => {
   });
 
   it('renders nothing once dismissed for this (draft, live) pair', () => {
-    mockIsDismissed.mockImplementation(() => true);
+    store
+      .getState()
+      .dismiss(`sendTerms:${DRAFT_HOUSEHOLD_ID}:${LIVE_HOUSEHOLD_ID}`);
     const { queryByTestId } = render(<SendMyTermsCard />);
     expect(queryByTestId('send-my-terms-card')).toBeNull();
   });
@@ -331,12 +322,10 @@ describe('SendMyTermsCard — seeding and confirmation', () => {
   });
 
   it('"Not now" dismisses without submitting anything', () => {
-    const { getByTestId } = render(<SendMyTermsCard />);
+    const { getByTestId, queryByTestId } = render(<SendMyTermsCard />);
     fireEvent.press(getByTestId('send-my-terms-not-now'));
 
-    expect(mockDismiss).toHaveBeenCalledWith(
-      `sendTerms:${DRAFT_HOUSEHOLD_ID}:${LIVE_HOUSEHOLD_ID}`
-    );
+    expect(queryByTestId('send-my-terms-card')).toBeNull();
     expect(mockMutateAsync).not.toHaveBeenCalled();
   });
 });

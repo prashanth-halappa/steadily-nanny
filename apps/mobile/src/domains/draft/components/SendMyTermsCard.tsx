@@ -43,7 +43,7 @@ import {
 } from '@/src/hooks/queries/useTermsProposals';
 import { localDateInZone } from '@/src/lib/localDate';
 import { useAuthStore } from '@/src/store/auth';
-import { useTodayCardDismissalStore } from '@/src/store/todayCardDismissalStore';
+import { useCardDismissal } from '@/src/store/todayCardDismissalStore';
 import { useDraftProposal } from '../hooks/draftQueries';
 
 function dismissalKey(draftHouseholdId: string, liveHouseholdId: string) {
@@ -57,8 +57,7 @@ export function SendMyTermsCard() {
   const onboarding = useIsOnboarded();
   const activeHousehold = useActiveHousehold();
   const myUserId = useAuthStore(s => s.session?.user?.id);
-  const isDismissed = useTodayCardDismissalStore(s => s.isDismissed);
-  const dismiss = useTodayCardDismissalStore(s => s.dismiss);
+  const { isDismissed, dismiss } = useCardDismissal();
 
   const draftHousehold = activeHousehold.households.find(
     h => h.state === HOUSEHOLD_STATES.DRAFT && h.created_by === myUserId

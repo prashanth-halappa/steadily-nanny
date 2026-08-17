@@ -66,15 +66,12 @@ export const useTodayCardDismissalStore =
  * completely dead. Selecting `dismissedKeys` subscribes to the VALUE, so the
  * dismissal is visible in the same render pass.
  *
- * ponytail: `SendMyTermsCard`, `InviteWaitingCard` and
- * `EmergencyContactPromptCard` still select the function refs and therefore
- * still have this bug — their "Not now" / "Hide this" buttons look dead until
- * the next launch. Not migrated here because six test files mock this module
- * and would each need the new export; swap them over when one of them is
- * touched for another reason. `useMomentOnce` and `TodayScreen` are FINE and
- * must not be migrated: both keep their own `useState`/effect and re-render
- * themselves, and making `TodayScreen` reactive would hide the joined-household
- * card mid-reveal.
+ * Three callers deliberately keep the NON-reactive read and must not be
+ * migrated: `useMomentOnce` and `TodayScreen` both keep their own
+ * `useState`/effect and re-render themselves, and making `TodayScreen`
+ * reactive would hide the joined-household card mid-reveal; and
+ * `WeeklyHoursNotSetCard`'s `useMomentPeek` snapshots on mount on purpose, so
+ * it does not pop up underneath a celebration that marks itself seen mid-mount.
  */
 export function useCardDismissal(): {
   isDismissed: (key: string) => boolean;

@@ -34,7 +34,7 @@ import { Card, CardContent } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
 import { Body, Display, Small } from '@/src/components/ui/typography';
 import { useHouseholdInvites } from '@/src/hooks/queries/useHouseholdInvites';
-import { useTodayCardDismissalStore } from '@/src/store/todayCardDismissalStore';
+import { useCardDismissal } from '@/src/store/todayCardDismissalStore';
 import { resolveInviteWaiting } from './InviteWaitingCard.utils';
 
 const INVITES_ROUTE = '/(private)/settings/invites' as Href;
@@ -55,8 +55,7 @@ export function InviteWaitingCard({
   const { t } = useTranslation('today');
   const router = useRouter();
   const invitesQuery = useHouseholdInvites(householdId);
-  const isDismissed = useTodayCardDismissalStore(s => s.isDismissed);
-  const dismiss = useTodayCardDismissalStore(s => s.dismiss);
+  const { isDismissed, dismiss } = useCardDismissal();
 
   const state = resolveInviteWaiting({
     householdId,
