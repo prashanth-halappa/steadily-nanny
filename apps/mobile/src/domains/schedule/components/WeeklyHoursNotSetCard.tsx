@@ -44,7 +44,10 @@ import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useSchedulePatterns } from '@/src/hooks/queries/useSchedulePatterns';
-import { useTodayCardDismissalStore } from '@/src/store/todayCardDismissalStore';
+import {
+  useCardDismissal,
+  useTodayCardDismissalStore,
+} from '@/src/store/todayCardDismissalStore';
 import { useHouseholdCarers } from '../hooks/useHouseholdCarers';
 import { resolveCarerName } from '../utils/memberDisplayName';
 import { resolveActivePattern } from '../utils/patternPrecedence';
@@ -73,6 +76,9 @@ const JOINED_CARD_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
  * one does not.)
  */
 function useMomentPeek(key: string | null): boolean {
+  // The one place the NON-reactive read is the right one: this must not
+  // re-render when the moment marks itself seen mid-mount, which is the whole
+  // point of snapshotting. Do not swap this for `useCardDismissal`.
   const isDismissed = useTodayCardDismissalStore(s => s.isDismissed);
   const [alreadySeen, setAlreadySeen] = useState(
     () => key !== null && isDismissed(key)
@@ -105,8 +111,7 @@ export function WeeklyHoursNotSetCard() {
   const household = activeHousehold.household;
   const householdId = household?.id ?? null;
 
-  const isDismissed = useTodayCardDismissalStore(s => s.isDismissed);
-  const dismiss = useTodayCardDismissalStore(s => s.dismiss);
+  const { isDismissed, dismiss } = useCardDismissal();
 
   const carers = useHouseholdCarers(householdId);
   // Wave 1 households have exactly one nanny. With two, this card speaks for

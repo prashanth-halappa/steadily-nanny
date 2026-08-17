@@ -48,7 +48,7 @@ import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { wallClockToUtcIso } from '@/src/lib/wallClock';
 import { useAuthStore } from '@/src/store/auth';
-import { useTodayCardDismissalStore } from '@/src/store/todayCardDismissalStore';
+import { useCardDismissal } from '@/src/store/todayCardDismissalStore';
 import { resolveActivePattern } from '../utils/patternPrecedence';
 import { resolveNoWeekYet } from './NoWeekYetCard.utils';
 
@@ -70,8 +70,7 @@ export function NoWeekYetCard() {
   const household = activeHousehold.household;
   const householdId = household?.id;
 
-  const isDismissed = useTodayCardDismissalStore(s => s.isDismissed);
-  const dismiss = useTodayCardDismissalStore(s => s.dismiss);
+  const { isDismissed, dismiss } = useCardDismissal();
 
   // `useTermsGate` is the single place that answers "are terms agreed in this
   // household" (it wraps `useCurrentPayArrangement` + the open proposal, and
@@ -166,7 +165,11 @@ export function NoWeekYetCard() {
         <Body className="text-muted-foreground">
           {t('todayCard.noWeekNannyBody')}
         </Body>
-        <View className="flex-row gap-2">
+        {/* Stacked, not a row: side by side these two ghost labels overflow a
+            402pt screen and "Hide this" renders clipped, with its right edge
+            past the screen bounds — Maestro's a11y-driven tap reaches it, a
+            finger does not. */}
+        <View className="gap-2">
           <Button
             testID="today-no-week-yet-availability"
             variant="ghost"
