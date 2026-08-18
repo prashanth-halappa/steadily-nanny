@@ -33,10 +33,19 @@
  * `youSent` state, and two cards saying that is the collision the pinned slot
  * exists to end.
  *
- * DEFERRED, both for lack of a mechanism rather than a decision: "Send a
- * reminder" (there is no reminder endpoint) and "she tried to clock in" as a
- * second consequence trigger (it needs a day-thread event type that does not
- * exist).
+ * "SEND A REMINDER" (WP-G) is the card's third axis, and it obeys the same
+ * rule as everything else here: it never changes the tone, and it is offered
+ * only in the middle of the offer's life. Not on the day it was sent —
+ * nobody has had an ordinary chance to read it — and never while blocking,
+ * because when she is standing in the house unable to record her hours the
+ * fix is to move the terms, not to ask again more politely. The server holds
+ * the real limit: one reminder every 48 hours, on the round's age and on the
+ * last nudge alike, and its refusal renders inline under the button rather
+ * than as a toast that vanishes before it can be acted on.
+ *
+ * STILL DEFERRED for lack of a mechanism rather than a decision: "she tried
+ * to clock in" as a second consequence trigger (it needs a day-thread event
+ * type that does not exist).
  */
 import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -45,10 +54,14 @@ import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { PersonAvatar } from '@/src/components/ui/person-avatar';
 import { Text } from '@/src/components/ui/text';
-import { Body, Caption, H3 } from '@/src/components/ui/typography';
+import { Body, Caption, H3, Small } from '@/src/components/ui/typography';
 import { formatDuration } from '@/src/domains/timesheet/utils/duration';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { usePinnedTone } from '@/src/domains/today/components/PinnedSlot';
+import {
+  isRemindTooSoon,
+  useRemindTerms,
+} from '@/src/hooks/mutations/useRemindTerms';
 import { useWithdrawTerms } from '@/src/hooks/mutations/useWithdrawTerms';
 import { localDateInZone } from '@/src/lib/localDate';
 import { usePendingOffer } from '../hooks/usePendingOffer';
@@ -66,6 +79,7 @@ export function PendingOfferCard({ nowMs = Date.now() }: { nowMs?: number }) {
   const { offer, state, scheduledMinutesToday, timeZone } =
     usePendingOffer(nowMs);
   const withdrawTerms = useWithdrawTerms(offer?.id ?? '');
+  const remindTerms = useRemindTerms(offer?.id ?? '');
 
   if (!offer || !state) return null;
 
@@ -105,6 +119,12 @@ export function PendingOfferCard({ nowMs = Date.now() }: { nowMs?: number }) {
   // Never on a blocking offer: when she is standing in the house unable to
   // record her hours, the fix is to move the terms, not to drop them.
   const canWithdraw = !blocking && state.days >= WITHDRAW_FROM_DAY;
+  // The middle of its life: past the day it went out, short of the day it is
+  // standing between her and her hours.
+  const canRemind = !blocking && state.variant !== 'sentToday';
+  // The mutation IS the session memory — it holds the answer for as long as
+  // this card is mounted, so no second copy of the fact has to be kept.
+  const remindedAt = remindTerms.data?.reminded_at ?? null;
   const person = personOf(offer);
 
   return (
@@ -168,6 +188,40 @@ export function PendingOfferCard({ nowMs = Date.now() }: { nowMs?: number }) {
               : t('pendingOfferCard.ctaSee')}
           </Text>
         </Button>
+        {canRemind && remindedAt ? (
+          <Small
+            testID="today-pending-offer-reminded"
+            className="text-muted-foreground"
+          >
+            {t('pendingOfferCard.reminded', {
+              date: formatDisplayDate(
+                localDateInZone(timeZone, new Date(remindedAt))
+              ),
+            })}
+          </Small>
+        ) : null}
+        {canRemind && !remindedAt ? (
+          <Button
+            testID="today-pending-offer-remind"
+            variant="ghost"
+            disabled={remindTerms.isPending}
+            onPress={() => {
+              // A refusal renders below; the toast path is for failures that
+              // mean the nudge never left the device.
+              remindTerms.mutateAsync().catch(() => undefined);
+            }}
+          >
+            <Text className="font-medium">{t('pendingOfferCard.remind')}</Text>
+          </Button>
+        ) : null}
+        {canRemind && !remindedAt && isRemindTooSoon(remindTerms.error) ? (
+          <Small
+            testID="today-pending-offer-remind-too-soon"
+            className="text-muted-foreground"
+          >
+            {t('pendingOfferCard.remindTooSoon')}
+          </Small>
+        ) : null}
         {canWithdraw ? (
           <Button
             testID="today-pending-offer-withdraw"

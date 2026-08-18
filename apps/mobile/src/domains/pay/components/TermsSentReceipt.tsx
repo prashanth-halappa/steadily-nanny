@@ -20,6 +20,14 @@
  * `viewed_at` is the seen line, and it is a fact the server already stamps on
  * the review screen's first mount with data. "Not opened yet" is the honest
  * negative: the app knows whether the screen was opened, and says only that.
+ *
+ * WP-G ADDS THE NUDGE, AND IT IS ON BOTH RECEIPTS. This card is the AUTHOR's
+ * own side of the negotiation whoever authored it — the parent's in
+ * `PayArrangementScreen`/`PaySetupScreen`, the nanny's in `MyPayScreen` —
+ * and the person waiting is the person who may ask. The 48-hour limit is the
+ * server's (`termsProposalCommandService.remind`); this component only
+ * renders one of three states, and the "too soon" one goes INLINE, because a
+ * toast that vanishes is the wrong shape for "come back on Thursday".
  */
 import type { TermsProposal } from '@steadily-nanny/shared-types/schemas/termsProposal.schema';
 import { useTranslation } from 'react-i18next';
@@ -44,6 +52,12 @@ interface TermsSentReceiptProps {
   viewer: 'parent' | 'carer';
   onWithdraw: () => void;
   isWithdrawing: boolean;
+  /** WP-G — send the counterparty a reminder about this round. */
+  onRemind: () => void;
+  /** When one was last sent from this screen, or null while none has been. */
+  remindedAt: string | null;
+  /** The last attempt was refused by the 48-hour rule (`isRemindTooSoon`). */
+  remindTooSoon: boolean;
   testID?: string;
 }
 
@@ -54,6 +68,9 @@ export function TermsSentReceipt({
   viewer,
   onWithdraw,
   isWithdrawing,
+  onRemind,
+  remindedAt,
+  remindTooSoon,
   testID = 'pay-terms-receipt',
 }: TermsSentReceiptProps) {
   const { t } = useTranslation('pay');
@@ -103,7 +120,39 @@ export function TermsSentReceipt({
         <Small testID={`${testID}-seen`} className="text-muted-foreground">
           {seenLine}
         </Small>
-        <View className="flex-row">
+        {remindedAt ? (
+          <Small
+            testID={`${testID}-reminded`}
+            className="text-muted-foreground"
+          >
+            {t('receipt.reminded', {
+              date: formatShortDate(
+                localDateInZone(householdTimezone, new Date(remindedAt))
+              ),
+            })}
+          </Small>
+        ) : null}
+        {!remindedAt && remindTooSoon ? (
+          <Small
+            testID={`${testID}-remind-too-soon`}
+            className="text-muted-foreground"
+          >
+            {t('receipt.remindTooSoon')}
+          </Small>
+        ) : null}
+        {/* Two ghost actions, both plain-left: "ask again" and "take it back",
+            in the order a person actually reaches for them. */}
+        <View className="flex-row gap-5">
+          {remindedAt ? null : (
+            <Button
+              testID={`${testID}-remind`}
+              variant="ghost"
+              className="self-start px-0"
+              onPress={onRemind}
+            >
+              <Text>{t('receipt.remind')}</Text>
+            </Button>
+          )}
           <Button
             testID={`${testID}-withdraw`}
             variant="ghost"

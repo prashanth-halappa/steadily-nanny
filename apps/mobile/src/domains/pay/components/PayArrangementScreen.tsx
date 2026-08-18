@@ -55,6 +55,10 @@ import { isParentEditorRole } from '@/src/domains/setup/types';
 import { DEFAULT_WEEK_STARTS_ON } from '@/src/domains/timesheet/utils/week';
 import { useCancelScheduledPayArrangement } from '@/src/hooks/mutations/useCancelScheduledPayArrangement';
 import { useProposeTerms } from '@/src/hooks/mutations/useProposeTerms';
+import {
+  isRemindTooSoon,
+  useRemindTerms,
+} from '@/src/hooks/mutations/useRemindTerms';
 import { useWithdrawTerms } from '@/src/hooks/mutations/useWithdrawTerms';
 import { onboardingAsQuery, queryState } from '@/src/hooks/queries/queryState';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
@@ -195,6 +199,9 @@ function CarerPayDetail({
   // simply has nothing to withdraw.
   const openProposal = findOpenTermsProposal(proposals.data);
   const withdrawTerms = useWithdrawTerms(openProposal?.id ?? '');
+  // WP-G — the author's nudge. Same empty-id-is-inert shape as the
+  // withdraw hook above, for the same reason: hooks cannot be conditional.
+  const remindTerms = useRemindTerms(openProposal?.id ?? '');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const elevation = useElevation();
@@ -382,6 +389,9 @@ function CarerPayDetail({
           viewer="parent"
           onWithdraw={() => withdrawTerms.mutate()}
           isWithdrawing={withdrawTerms.isPending}
+          onRemind={() => remindTerms.mutate()}
+          remindedAt={remindTerms.data?.reminded_at ?? null}
+          remindTooSoon={isRemindTooSoon(remindTerms.error)}
         />
       ) : null}
       {openProposal && openProposal.direction !== 'parent' ? (

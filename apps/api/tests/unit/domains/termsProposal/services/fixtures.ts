@@ -170,3 +170,16 @@ export function makeArrangements(overrides: Record<string, unknown> = {}): any {
 export function makeCandidates(): any {
   return { activateCandidate: mock(async () => ({ status: 'active' })) };
 }
+
+/**
+ * The `push_reminder_log` seam `remind` rate-limits against. `lastSentAt` is
+ * what the ledger already holds for this proposal — `null` means "never
+ * nudged", which is the only state a first reminder is allowed from.
+ */
+export function makeReminderLog(lastSentAt: string | null = null): any {
+  return {
+    findLastSentAt: mock(async () => lastSentAt),
+    claim: mock(async () => true),
+    confirm: mock(async () => undefined),
+  };
+}
