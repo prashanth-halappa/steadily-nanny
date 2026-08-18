@@ -85,6 +85,7 @@ import { useReimbursementSettlements } from '@/src/hooks/queries/useReimbursemen
 import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
 import { useTimesheetThread } from '@/src/hooks/queries/useTimesheetThread';
 import { useWeekExpenses } from '@/src/hooks/queries/useWeekExpenses';
+import { useWeekPayDueDate } from '@/src/hooks/queries/useWeekPayDueDate';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useWeekTimesheet } from '@/src/hooks/queries/useWeekTimesheet';
 import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
@@ -178,8 +179,22 @@ export function NannyWeekView({
   // second request — rather than threading a new prop through a file this
   // task doesn't own.
   const activeHousehold = useActiveHousehold();
+  // Declared up here with the hooks, not beside its first use below: the
+  // due-date hook needs it, and this component early-returns on loading and
+  // on error long before that point.
+  const weekStartsOn =
+    activeHousehold.household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON;
   const entriesQuery = useWeekTimeEntries(householdId, weekStartISO);
   const timesheetQuery = useWeekTimesheet(householdId, weekStartISO);
+  // WP-F: the SAME due date the paying family reads, off the same
+  // arrangement — presentation only, three-valued. See the hook's doc.
+  const dueDate = useWeekPayDueDate({
+    householdId,
+    carerId: currentUserId,
+    weekStartISO,
+    weekEndISO: weekDates[weekDates.length - 1] ?? weekStartISO,
+    weekStartsOn,
+  });
   // Inclusive weekDates[0]..weekDates[6] as a [from, to) instant range —
   // `useShiftsRange` 400s on a plain YYYY-MM-DD.
   const weekFromDate = weekDates[0] ?? weekStartISO;
@@ -486,8 +501,6 @@ export function NannyWeekView({
   const scheduledMinutes = scheduledMinutesFor(entries);
   const overtimeLabel = formatOvertimeDelta(totalMinutes, scheduledMinutes);
   const todayISO = localDateInZone(timeZone, new Date(nowMs));
-  const weekStartsOn =
-    activeHousehold.household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON;
   const dayMinutes = [0, 0, 0, 0, 0, 0, 0];
   for (let i = 0; i < weekDates.length; i++) {
     const date = weekDates[i];
@@ -696,6 +709,8 @@ export function NannyWeekView({
               settlementCurrency={settlementCurrency}
               paidStateUnknown={paymentsUnknown}
               onRetryPayments={() => void paymentsQuery.refetch()}
+              dueDate={dueDate}
+              todayISO={todayISO}
               onPaymentPress={payment => setSelectedPaymentId(payment.id)}
             />
             {/* §3.1 (M12): the one place a nanny can say a figure is wrong

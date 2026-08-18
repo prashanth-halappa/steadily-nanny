@@ -32,6 +32,8 @@
  * @module domains/timesheet/utils/weekStart
  */
 
+import { weekStartOfLocalDate } from '@steadily-nanny/shared-types/payPeriod';
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 const DAYS_PER_WEEK = 7;
 
@@ -49,11 +51,6 @@ function parseDateOnly(dateStr: string): CalendarDate {
 /** Pure calendar-date arithmetic — always UTC-anchored midnight, never a real instant. */
 function toEpochDay(date: CalendarDate): number {
   return Date.UTC(date.y, date.m - 1, date.d);
-}
-
-/** 0 = Sunday .. 6 = Saturday. */
-function weekdayOf(epochMillis: number): number {
-  return new Date(epochMillis).getUTCDay();
 }
 
 function formatDateOnly(epochMillis: number): string {
@@ -102,34 +99,16 @@ export function weekStartOf(
 }
 
 /**
- * The first day of the household's workweek for the week containing an
- * ALREADY-LOCAL `YYYY-MM-DD` calendar date.
- *
  * The sibling of `weekStartOf` for the (common) case where the caller holds a
  * household-local date rather than an instant — `expenses.local_date`,
- * `time_entries.local_date`, `pto_ledger.effective_date`. Those columns were
- * resolved in the household's timezone when they were written, so converting
- * them back through an instant + a timezone would mean inventing a
- * time-of-day and re-applying a zone offset to a value that has already had
- * one applied: the classic way a date slips a day. This is pure calendar
- * arithmetic and takes no timezone at all, deliberately.
+ * `time_entries.local_date`, `pto_ledger.effective_date`.
  *
- * @param weekStartsOn `households.week_starts_on`, 0=Sunday..6=Saturday.
+ * Re-exported, not reimplemented: the canonical copy lives in
+ * `@steadily-nanny/shared-types/payPeriod`, because the app needs the same
+ * week-rounding rule to derive a pay period's due date. Every caller here
+ * keeps importing it from this module.
  */
-export function weekStartOfLocalDate(
-  localDate: string,
-  weekStartsOn: number
-): string {
-  const epoch = toEpochDay(parseDateOnly(localDate));
-  const dow = weekdayOf(epoch); // 0=Sun..6=Sat
-  // `+ 7` before the modulo because `dow - weekStartsOn` is negative for any
-  // day earlier in the calendar week than the household's start day, and JS
-  // `%` keeps the sign of the dividend — `-2 % 7` is `-2`, which would step
-  // the week start FORWARD two days instead of back five.
-  const daysSinceWeekStart =
-    (dow - weekStartsOn + DAYS_PER_WEEK) % DAYS_PER_WEEK;
-  return formatDateOnly(epoch - daysSinceWeekStart * MS_PER_DAY);
-}
+export { weekStartOfLocalDate } from '@steadily-nanny/shared-types/payPeriod';
 
 /**
  * The exclusive end ('YYYY-MM-DD') of the week starting `weekStart` — i.e.

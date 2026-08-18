@@ -59,6 +59,7 @@ function renderCard(
           : derivePaidState(payments, 23612)
       }
       currency="GBP"
+      todayISO="2026-08-18"
       {...props}
     />
   );
@@ -452,5 +453,101 @@ describe('PaidStateSection — corrections', () => {
     expect(getByTestId('hours-paid-state-line-c1-value').props.children).toBe(
       '-£462.00'
     );
+  });
+});
+
+/**
+ * The due line (WP-F). Three states plus a fourth that says nothing at all:
+ * an arrangement still loading or errored must NOT read as "no pay day set",
+ * so `dueDate: undefined` renders nothing (docs/11-MONEY.md §4's unknown ≠
+ * zero, applied to a date).
+ */
+describe('PaidStateSection — due date', () => {
+  const FULLY_PAID = [makePayment({ amount_minor: 23612 })];
+
+  it('says when an unpaid week falls due', () => {
+    const { getByTestId } = renderCard({
+      payments: [],
+      dueDate: '2026-08-21',
+      todayISO: '2026-08-18',
+    });
+
+    expect(getByTestId('hours-paid-state-due').props.children).toBe(
+      'paid.dueOn'
+    );
+  });
+
+  it('says a week is overdue once the due date has passed', () => {
+    const { getByTestId } = renderCard({
+      payments: [],
+      dueDate: '2026-08-14',
+      todayISO: '2026-08-18',
+    });
+
+    expect(getByTestId('hours-paid-state-due').props.children).toBe(
+      'paid.overdueSince'
+    );
+  });
+
+  it('still reads as due, not overdue, ON the due date itself', () => {
+    const { getByTestId } = renderCard({
+      payments: [],
+      dueDate: '2026-08-18',
+      todayISO: '2026-08-18',
+    });
+
+    expect(getByTestId('hours-paid-state-due').props.children).toBe(
+      'paid.dueOn'
+    );
+  });
+
+  it('reads overdue on a PARTIALLY paid week too — some of it is still late', () => {
+    const payments = [makePayment({ amount_minor: 12000 })];
+    const { getByTestId } = renderCard({
+      payments,
+      paidState: derivePaidState(payments, 23612),
+      dueDate: '2026-08-14',
+      todayISO: '2026-08-18',
+    });
+
+    expect(getByTestId('hours-paid-state-due').props.children).toBe(
+      'paid.overdueSince'
+    );
+  });
+
+  it('points at Pay & terms when the family has stated no pay schedule', () => {
+    const { getByTestId } = renderCard({
+      payments: [],
+      dueDate: null,
+      todayISO: '2026-08-18',
+    });
+
+    expect(getByTestId('hours-paid-state-due').props.children).toBe(
+      'paid.noSchedule'
+    );
+  });
+
+  it('says NOTHING while the arrangement is unknown — undefined is not "no schedule"', () => {
+    const { queryByTestId } = renderCard({
+      payments: [],
+      dueDate: undefined,
+      todayISO: '2026-08-18',
+    });
+
+    expect(queryByTestId('hours-paid-state-due')).toBeNull();
+  });
+
+  it('says nothing on a settled week — a paid week has no due date left to state', () => {
+    const { getByTestId, queryByTestId } = renderCard({
+      payments: FULLY_PAID,
+      paidState: derivePaidState(FULLY_PAID, 23612),
+      dueDate: '2026-08-14',
+      todayISO: '2026-08-18',
+    });
+
+    expect(getByTestId('hours-paid-state-badge').props.children).toBe(
+      'paid.badgePaid'
+    );
+    expect(queryByTestId('hours-paid-state-due')).toBeNull();
   });
 });

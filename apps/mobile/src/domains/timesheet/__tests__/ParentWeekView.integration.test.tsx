@@ -304,6 +304,15 @@ const reviewExpenseMock = mock(() =>
   Promise.resolve({ id: 'expense-1', status: 'approved' })
 );
 
+// WP-F: the view now reads the arrangement to say when the week falls due.
+// Mocked so a blanket `invalidateQueries()` below refetches a stub, not axios.
+mock.module('@/src/api/endpoints/payArrangements', () => ({
+  payArrangementApi: {
+    getCurrent: mock(() => Promise.resolve(null)),
+    listHistory: mock(() => Promise.resolve([])),
+  },
+}));
+
 mock.module('@/src/api/endpoints/expenses', () => {
   const shared = expenseSchemaModule;
   return {

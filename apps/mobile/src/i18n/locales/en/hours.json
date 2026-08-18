@@ -173,7 +173,10 @@
     "notCorrectableError": "That payment can't be corrected.",
     "note": "Steadily records that the money moved — it doesn't move it.",
     "exceedsGrossError": "That's more than this week still has left to pay.",
-    "weekNotApprovedError": "Approve the week first — payments are recorded against an approved total."
+    "weekNotApprovedError": "Approve the week first — payments are recorded against an approved total.",
+    "dueOn": "Due {{date}}",
+    "overdueSince": "Overdue since {{date}}",
+    "noSchedule": "No pay day set — see Pay & terms"
   },
   "export": {
     "button": "Export week",

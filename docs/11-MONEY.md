@@ -329,6 +329,32 @@ is worse than no button.
 
 ---
 
+## 4a. Due dates are presentation only
+
+"Due 14 Aug" and "Overdue since 7 Aug" under the Unpaid badge are calendar
+statements, not money facts. They are DERIVED — from `pay_frequency` plus the
+anchor the family already stated (`pay_day_of_week` for weekly/biweekly,
+`pay_day_of_month` for semimonthly) — by `computePayDueDate` in
+`packages/shared-types/src/payPeriod.ts`, alongside the `computePayPeriodEnd`
+that stamps an export row's `period_end` (§14). One implementation, imported by
+both apps: the API re-exports it from `apps/api/src/domains/pay/utils/
+payPeriod.ts`, and the app reads it through `useWeekPayDueDate`.
+
+Three rules, all of them §4's "unknown is not zero" applied to a date:
+
+- **A due date never affects a total.** Nothing sums it, gates on it, or
+  changes a figure because a week is late. It is a sentence, and only that.
+- **No schedule stated → no date.** `computePayDueDate` returns `null` when
+  `pay_frequency` is unset (or a semimonthly schedule has no day-of-month),
+  and the UI says "No pay day set — see Pay & terms" rather than guessing at
+  a fortnight.
+- **Not yet known → say nothing.** While the arrangement read is in flight or
+  failed, the value is `undefined` and the line does not render AT ALL.
+  Collapsing that onto `null` would tell a family who HAS a pay day that they
+  have none — the same class of lie as printing `£0.00` over an unpriced week.
+
+---
+
 ## 5. PTO is a household-side ledger, not a flag on time off
 
 `carer_time_off` deliberately carries **no household reference**
