@@ -358,7 +358,10 @@
     "mustAgreeParent": "{{name}} tiene que aceptar antes de poder fichar.",
     "mustAgreeCarer": "{{name}} tiene que aceptar antes de que puedas fichar.",
     "seenBy": "Visto por {{name}} el {{date}}",
-    "notOpened": "Aún sin abrir"
+    "notOpened": "Aún sin abrir",
+    "remind": "Enviar un recordatorio",
+    "reminded": "Recordatorio enviado el {{date}}",
+    "remindTooSoon": "Puedes enviar un recordatorio cada dos días."
   },
   "notAgreedSetBy": "Fijado por {{name}} el {{date}} · no aceptado en Steadily"
 }

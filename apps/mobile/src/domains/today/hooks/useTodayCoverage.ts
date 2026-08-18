@@ -68,15 +68,64 @@ export function gapEscalationHours(
 
 export type TodayCoverage =
   | { status: 'loading' }
+  | { status: 'error'; retry: () => void }
   | { status: 'setup' }
   | { status: 'noNeedToday'; weekday: string }
   | {
       status: 'gap';
       windows: UncoveredWindowDisplay[];
       plan: PlanLine[];
+      dayBar: DayBarSegment[];
       localDate: string;
     }
-  | { status: 'booked'; plan: PlanLine[]; localDate: string };
+  | {
+      status: 'booked';
+      plan: PlanLine[];
+      dayBar: DayBarSegment[];
+      localDate: string;
+    };
+
+/** One stretch of today, as who has it. `minutes` is the segment's width. */
+export interface DayBarSegment {
+  kind: 'nanny' | 'parentCover' | 'gap';
+  minutes: number;
+  startsAt: string;
+}
+
+const minutesBetween = (startsAt: string, endsAt: string): number =>
+  (Date.parse(endsAt) - Date.parse(startsAt)) / 60_000;
+
+/**
+ * Today, left to right, as who has it — the plan lines' story in one picture.
+ * Same `COVERING_SHIFT_STATUSES` filter as everything else on this surface,
+ * so a pending ask never paints over the gap that produced it.
+ */
+// ponytail: overlapping shifts double-count; merge intervals if it ever matters
+export function buildDayBar(
+  shifts: readonly Shift[],
+  windows: readonly UncoveredWindowDisplay[],
+  today: string
+): DayBarSegment[] {
+  const segments: DayBarSegment[] = [];
+  for (const shift of shifts) {
+    if (shift.local_date !== today || !COVERING_STATUS_SET.has(shift.status)) {
+      continue;
+    }
+    segments.push({
+      kind: shift.kind === SHIFT_KINDS.PARENT_COVER ? 'parentCover' : 'nanny',
+      minutes: minutesBetween(shift.starts_at, shift.ends_at),
+      startsAt: shift.starts_at,
+    });
+  }
+  for (const window of windows) {
+    segments.push({
+      kind: 'gap',
+      minutes: minutesBetween(window.startsAt, window.endsAt),
+      startsAt: window.startsAt,
+    });
+  }
+  return segments.sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+}
 
 export interface PlanLine {
   key: string;
@@ -203,47 +252,67 @@ export function useTodayCoverage(
     );
   }, [coverQuery.rows, shiftsQuery.data, localDate]);
 
-  return useMemo(() => {
+  // A failed read is not a slow one: the coverage surface OWNS the parent's
+  // pinned slot, so "still loading" here renders as an indefinite blank where
+  // the one fact he opened the app for should be.
+  const settled = uncovered.status === 'error' ? null : uncovered;
+
+  const state = useMemo((): TodayCoverage => {
     if (
       !householdId ||
       !timeZone ||
-      uncovered.status === 'loading' ||
+      settled === null ||
+      settled.status === 'loading' ||
       coverQuery.isLoading ||
       shiftsQuery.isLoading
     ) {
       return { status: 'loading' };
     }
-    if (uncovered.status === 'error') {
-      return { status: 'loading' };
-    }
-    if (uncovered.status === 'setup') {
+    if (settled.status === 'setup') {
       return { status: 'setup' };
     }
-    if (uncovered.status === 'noNeedToday') {
+    if (settled.status === 'noNeedToday') {
       return {
         status: 'noNeedToday',
-        weekday: String(localDateToWeekday(uncovered.localDate)),
+        weekday: String(localDateToWeekday(settled.localDate)),
       };
     }
-    if (uncovered.status === 'uncovered') {
+    const shifts = shiftsQuery.data ?? [];
+    if (settled.status === 'uncovered') {
       return {
         status: 'gap',
-        windows: uncovered.windows,
+        windows: settled.windows,
         plan,
-        localDate: uncovered.localDate,
+        dayBar: buildDayBar(shifts, settled.windows, settled.localDate),
+        localDate: settled.localDate,
       };
     }
     return {
       status: 'booked',
       plan,
-      localDate: uncovered.localDate,
+      dayBar: buildDayBar(shifts, [], settled.localDate),
+      localDate: settled.localDate,
     };
   }, [
     householdId,
     timeZone,
-    uncovered,
+    settled,
     coverQuery.isLoading,
     shiftsQuery.isLoading,
+    shiftsQuery.data,
     plan,
   ]);
+
+  // After every hook, so the early return is safe. Error wins over loading,
+  // and `retry` fans out to whichever sources actually failed.
+  if (uncovered.status === 'error' || coverQuery.status === 'error') {
+    return {
+      status: 'error',
+      retry: () => {
+        if (uncovered.status === 'error') uncovered.retry();
+        if (coverQuery.status === 'error') coverQuery.retry();
+      },
+    };
+  }
+  return state;
 }

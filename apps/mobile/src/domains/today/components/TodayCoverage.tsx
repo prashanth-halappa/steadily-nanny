@@ -4,14 +4,23 @@
  * One parent coverage surface — need-centric headline, shift-centric plan lines
  * below. T4 on the bare ground except gap (`attention`) and live (`live`) cards.
  *
- * This card has ONE look — no quiet second rung, no per-card emphasis prop.
- * A gap it renders is a gap that owns Today's pinned slot: a parent's `uncoveredCare` can only ever lose the slot
- * to nanny-only rungs (`termsBlocked`, `overdue`, a running clock), so the
- * promoted look is the only look it needs. `TodayScreen` skips the FEED mount
- * entirely when this surface is the slot's occupant.
+ * This card has ONE look — no quiet second rung, no per-card emphasis prop,
+ * and deliberately no `usePinnedTone()`: its own state machine already
+ * decides gap (attention) vs routine (default), so asking the slot as well
+ * would let two answers disagree. A gap it renders is a gap that owns Today's
+ * pinned slot: a parent's `uncoveredCare` can only ever lose the slot to
+ * nanny-only rungs (`termsBlocked`, `overdue`, a running clock), so the
+ * promoted look is the only look it needs. On an ordinary day the ROUTINE
+ * surface owns the slot too (`slotOccupant: 'coverage'`) — at default tone.
+ * `TodayScreen` skips the FEED mount entirely in either case.
  *
  * `footer` is where the handoff chips fold in on the parent side (#9's
- * merge) — under the plan lines, in every non-loading state.
+ * merge) — under the plan lines, in every non-loading state, the failed read
+ * included.
+ *
+ * `error` is a real state here, not a silent `null`: this surface owns the
+ * parent's slot, so a withheld read has to SAY it was withheld rather than
+ * render as a quiet day (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B).
  */
 import type { Child } from '@steadily-nanny/shared-types/schemas/child.schema';
 import { type Href, useRouter } from 'expo-router';
@@ -19,6 +28,7 @@ import { AlertCircle } from 'lucide-react-native';
 import { type ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
+import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { RestrictedActionButton } from '@/src/components/custom/RestrictedActionButton';
 import {
   AlertDialog,
@@ -35,6 +45,7 @@ import { Card } from '@/src/components/ui/card';
 import { IconChip } from '@/src/components/ui/icon-chip';
 import { InlineError } from '@/src/components/ui/inline-error';
 import { LiveDot } from '@/src/components/ui/live-dot';
+import { SplitTrack } from '@/src/components/ui/split-track';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Body, Caption, H3, Small } from '@/src/components/ui/typography';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
@@ -57,6 +68,7 @@ import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { utcIsoToWallClockHHMM, wallClockToUtcIso } from '@/src/lib/wallClock';
 import { spacing } from '~/lib/design-tokens/spacing';
+import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
 import {
   gapEscalationHours,
   type PlanLine,
@@ -187,6 +199,7 @@ export function TodayCoverage({
   const { t: tSchedule } = useTranslation('schedule');
   const { t: tError } = useTranslation('errors');
   const router = useRouter();
+  const colors = useThemeColors();
   const state = useTodayCoverage(householdId, timeZone, weekStartsOn);
   const [withdrawConfirmOpen, setWithdrawConfirmOpen] = useState(false);
   const [withdrawError, setWithdrawError] = useState<string | null>(null);
@@ -236,6 +249,22 @@ export function TodayCoverage({
     return null;
   }
 
+  // Withheld, not fabricated: a blank card here is indistinguishable from a
+  // day with nothing to report, and this surface's only job is telling him
+  // whether his children are covered.
+  if (state.status === 'error') {
+    return (
+      <View className="gap-3">
+        <InlineRetry
+          testID="today-coverage-retry"
+          message={tError('network')}
+          onRetry={state.retry}
+        />
+        {footer}
+      </View>
+    );
+  }
+
   if (state.status === 'setup') {
     return (
       <View className="gap-3">
@@ -270,8 +299,23 @@ export function TodayCoverage({
     );
   }
 
+  // Today at a glance, above the sentences that spell it out. Hues are the
+  // caller's job (`SplitTrack` picks none) and come through `useThemeColors`
+  // because a `className` cannot reach a per-segment `flex` style.
+  const dayBarSegments = state.dayBar.map((segment, index) => ({
+    value: segment.minutes,
+    colour:
+      segment.kind === 'gap'
+        ? colors.warning
+        : segment.kind === 'parentCover'
+          ? colors.primaryLight
+          : colors.primary,
+    testID: `today-coverage-day-bar-${segment.kind}-${index}`,
+  }));
+
   const planLines = (
     <View className="gap-2">
+      <SplitTrack testID="today-coverage-day-bar" segments={dayBarSegments} />
       {state.plan.map(line => (
         <PlanLineView key={line.key} line={line} timeZone={timeZone} />
       ))}

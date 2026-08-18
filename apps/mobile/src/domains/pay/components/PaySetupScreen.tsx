@@ -51,6 +51,10 @@ import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { useProposeTerms } from '@/src/hooks/mutations/useProposeTerms';
+import {
+  isRemindTooSoon,
+  useRemindTerms,
+} from '@/src/hooks/mutations/useRemindTerms';
 import { useWithdrawTerms } from '@/src/hooks/mutations/useWithdrawTerms';
 import { onboardingAsQuery, queryState } from '@/src/hooks/queries/queryState';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
@@ -110,6 +114,9 @@ export function PaySetupScreen() {
   const openProposal = findOpenTermsProposal(proposals.data);
   const proposeTerms = useProposeTerms(householdId ?? '', carerId ?? '');
   const withdrawTerms = useWithdrawTerms(openProposal?.id ?? '');
+  // WP-G — the author's nudge. Same empty-id-is-inert shape as the
+  // withdraw hook above, for the same reason: hooks cannot be conditional.
+  const remindTerms = useRemindTerms(openProposal?.id ?? '');
   // F3(c) — the offer this carer's invite carried, if any, so the seed
   // effect below can prefill from what the parent already typed instead of
   // asking him to retype it.
@@ -326,6 +333,9 @@ export function PaySetupScreen() {
               viewer="parent"
               onWithdraw={() => withdrawTerms.mutate()}
               isWithdrawing={withdrawTerms.isPending}
+              onRemind={() => remindTerms.mutate()}
+              remindedAt={remindTerms.data?.reminded_at ?? null}
+              remindTooSoon={isRemindTooSoon(remindTerms.error)}
             />
           ) : (
             <Card testID="pay-setup-open-proposal">

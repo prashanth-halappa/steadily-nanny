@@ -72,6 +72,15 @@ router.post(
   asyncHandler(TermsProposalController.decline)
 );
 
+// WP-G — the author's nudge. No body: there is nothing to say beyond "again",
+// and a body would be a place to attach a message this feature deliberately
+// does not carry. The 48-hour gate lives in the service, not here.
+router.post(
+  '/:proposalId/remind',
+  ...authWithValidation(TermsProposalIdParamSchema, 'params'),
+  asyncHandler(TermsProposalController.remind)
+);
+
 // §5.3's one-way "Viewed" receipt — see the controller for why it is a POST
 // and not a side effect of the GET above.
 router.post(

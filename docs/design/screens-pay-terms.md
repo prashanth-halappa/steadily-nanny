@@ -901,6 +901,47 @@ is an ordinary change with an ordinary consequence line; the affected-weeks
 table is a reduction affordance, not a backdating affordance, because a raise
 that reaches back does not need to be defended against.
 
+### 7.5 Nudging a round nobody has answered (WP-G)
+
+A round can sit unanswered for a week. Until now the only thing the author
+could do about it was send a text message at 11pm, which is precisely the
+out-of-app negotiation this whole feature exists to replace.
+
+**One tap, never automatic.** `POST /terms-proposals/:id/remind` is the only
+way a reminder is ever sent. There is no job, no digest, and no "we noticed
+you haven't replied" — the app never chases anybody on its own initiative,
+because only a person knows whether chasing is the right move today.
+
+**Both sides may nudge, and only the author may.** Chasing is the AUTHOR's
+move — the same gate `withdraw` uses, not `decline`'s. The counterparty's move
+is to answer. So the parent's `TermsSentReceipt` carries it and the nanny's
+carries the identical affordance, and neither side gets a button that means
+"remind me to remind you".
+
+**Once every two days, on both clocks.** The server refuses unless the round
+is at least 48h old AND at least 48h have passed since the last reminder for
+it. The first clock stops a nudge on the same evening the terms went out — at
+that point it is a second notification about a message nobody has had an
+ordinary chance to read. The second stops the button being tap-to-repeat.
+Persistence is the existing `push_reminder_log` ledger (047/060) under
+`terms_proposal_remind:<proposalId>:<instant>`; no new table.
+
+**Where it appears.**
+
+| Surface | Shown when | Not shown when |
+|---|---|---|
+| `TermsSentReceipt` (both roles) | any open round the reader authored | once a reminder has gone this session — the button is replaced by "Reminded {date}" |
+| `PendingOfferCard` (Today, parent) | `waiting` and `stale` | `sentToday` (nobody has had a chance) and `blocking` (§A7 — when she is standing in the house unable to record her hours, the fix is to move the terms, not to ask again more politely) |
+
+**The refusal is inline, not a toast.** "You can send one reminder every two
+days." renders as a muted line under the button that was just tapped. It is
+the answer to that tap and it has to stay on screen long enough to be acted
+on; a toast that vanishes is the wrong shape for "come back on Thursday".
+
+**The push carries no figure** (A8) and the row does not move: no status
+change, no `updated_at`. §7.2's chain is a record of what was OFFERED, not of
+who was impatient.
+
 ---
 
 ## 8. Acknowledgment and version history (D-31)

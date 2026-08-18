@@ -12,6 +12,10 @@
  * Change requests and shifts both use their `me` fan-in endpoint so
  * NeedsAttentionCard on Today does not fire one per-shift/per-household list
  * in the glance window.
+ *
+ * WP-H — a change request names who asked, resolved against the household
+ * member rosters fetched here (`membersQueries`, now every role's, not just
+ * a parent's — see its own comment).
  */
 import {
   HOUSEHOLD_MEMBER_STATUSES,
@@ -136,22 +140,34 @@ export function useInboxItems() {
 
   // §7.1 — the proposal read is per (household, carer). A carer has exactly
   // one target per household (herself, no roster needed); a parent has to ask
-  // per nanny, so the member lists feed the proposal queries below. Members
-  // are fetched for parents only, and `candidate` rows count: D-38's
-  // redemption leaves the nanny a candidate until her terms are accepted,
-  // which is precisely when this item matters most.
+  // per nanny, so the member lists feed the proposal queries below, and
+  // `candidate` rows count: D-38's redemption leaves the nanny a candidate
+  // until her terms are accepted, which is precisely when this item matters
+  // most. WP-H also reads this same roster — regardless of role — to name a
+  // change request's author, so it is fetched for every viewer now, not
+  // parents only; still one query per household, the fan-in this module doc
+  // asks for.
   //
-  // ponytail: N+1 by household x carer. There is no `GET /me/terms-proposals`
-  // fan-in yet; when one lands this collapses to a single query the way
-  // change requests and shifts already have.
+  // ponytail: N+1 by household x carer for the proposal reads specifically.
+  // There is no `GET /me/terms-proposals` fan-in yet; when one lands this
+  // collapses to a single query the way change requests and shifts already
+  // have.
   const membersQueries = useQueries({
     queries: households.map(h => ({
       queryKey: queryKeys.household.members(h.id),
       queryFn: () => householdApi.listMembers(h.id),
       staleTime: QUERY_TIMING.STALE_5M,
-      enabled: baseEnabled && isValidId(h.id) && isParentEditorRole(role),
+      enabled: baseEnabled && isValidId(h.id),
     })),
   });
+
+  // WP-H — every household's roster, flattened: `buildInboxItems` can name a
+  // change request's author without knowing which household it belongs to
+  // (the wire carries no household id on that row).
+  const householdMembers = useMemo(
+    () => membersQueries.flatMap(q => q.data ?? []),
+    [membersQueries]
+  );
 
   const proposalTargets = useMemo(() => {
     if (role === SETUP_ROLES.NANNY) {
@@ -330,6 +346,8 @@ export function useInboxItems() {
         termsProposals,
         termsAcks,
         unsettledReimbursements,
+        households,
+        householdMembers,
       }),
     [
       role,
@@ -344,6 +362,8 @@ export function useInboxItems() {
       termsProposals,
       termsAcks,
       unsettledReimbursements,
+      households,
+      householdMembers,
     ]
   );
 

@@ -66,6 +66,10 @@ import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useAckPayArrangement } from '@/src/hooks/mutations/useAckPayArrangement';
 import { useDissentPayArrangement } from '@/src/hooks/mutations/useDissentPayArrangement';
 import { useProposeTerms } from '@/src/hooks/mutations/useProposeTerms';
+import {
+  isRemindTooSoon,
+  useRemindTerms,
+} from '@/src/hooks/mutations/useRemindTerms';
 import { useWithdrawTerms } from '@/src/hooks/mutations/useWithdrawTerms';
 import { onboardingAsQuery, queryState } from '@/src/hooks/queries/queryState';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
@@ -240,6 +244,9 @@ function MyPayHouseholdCard({
   // Unconditional, like every hook: an empty id simply has nothing to
   // withdraw, and the button that would call it is not on screen.
   const withdrawTerms = useWithdrawTerms(openProposal?.id ?? '');
+  // WP-G — the author's nudge. Same empty-id-is-inert shape as the
+  // withdraw hook above, for the same reason: hooks cannot be conditional.
+  const remindTerms = useRemindTerms(openProposal?.id ?? '');
   // A household with no name yet is still a household she is negotiating
   // with — it reads as "the family" rather than as a blank.
   const householdName = household.name ?? t('proposal.theFamily');
@@ -365,6 +372,9 @@ function MyPayHouseholdCard({
                 viewer="carer"
                 onWithdraw={() => withdrawTerms.mutate()}
                 isWithdrawing={withdrawTerms.isPending}
+                onRemind={() => remindTerms.mutate()}
+                remindedAt={remindTerms.data?.reminded_at ?? null}
+                remindTooSoon={isRemindTooSoon(remindTerms.error)}
               />
             ) : openProposal && openProposalState ? (
               <>

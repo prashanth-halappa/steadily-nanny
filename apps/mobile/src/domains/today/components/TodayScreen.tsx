@@ -469,6 +469,19 @@ export function TodayScreen() {
             householdChildren={children.data ?? []}
           />
         );
+      case 'coverage':
+        // The ordinary day. Same surface, at default tone — and the handoff
+        // fold travels with it, because it is the FEED mount that moved here,
+        // not a second card.
+        return (
+          <TodayCoverage
+            householdId={household.id}
+            timeZone={household.timezone}
+            weekStartsOn={household.week_starts_on}
+            householdChildren={children.data ?? []}
+            footer={handoffCard}
+          />
+        );
       case 'termsProposal':
         return <TermsProposalCard />;
       case 'inbox':
@@ -708,7 +721,9 @@ export function TodayScreen() {
               householdName={household.name ?? t('household:untitledDraft')}
             />
 
-            {isParentView && slotOccupant !== 'coverageGap' ? (
+            {isParentView &&
+            slotOccupant !== 'coverage' &&
+            slotOccupant !== 'coverageGap' ? (
               <TodayCoverage
                 householdId={household.id}
                 timeZone={household.timezone}

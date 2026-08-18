@@ -12,7 +12,11 @@
   "items": {
     "changeRequest": {
       "title": "Respond to {{kind}}",
+      "titleCounterOffer": "{{name}} suggested a different time",
+      "titleTimeChange": "{{name}} asked to change a shift",
+      "titleCancel": "{{name}} asked to cancel a shift",
       "subtitle": "A schedule change is waiting on your reply.",
+      "subtitleAsked": "Asked {{askedDate}}",
       "cta": "Review request",
       "kind": {
         "time_change": "time change",
@@ -95,7 +99,10 @@
     "scheduledToday": "{{carer}} has {{hours}} hours scheduled today that can't be recorded yet.",
     "ctaSee": "See what you sent",
     "ctaChange": "Change what you sent",
-    "withdraw": "Withdraw"
+    "withdraw": "Withdraw",
+    "remind": "Send a reminder",
+    "reminded": "Reminded {{date}}",
+    "remindTooSoon": "You can send one reminder every two days."
   },
   "lead_one": "{{count}} thing waiting on you.",
   "lead_other": "{{count}} things waiting on you.",

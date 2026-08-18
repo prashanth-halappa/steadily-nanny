@@ -45,6 +45,7 @@ describe('buildInboxItems', () => {
           requested_by: OTHER,
           kind: 'time_change',
           status: 'pending',
+          created_at: '2026-08-20T09:00:00.000Z',
         },
         {
           id: 'cr-mine',
@@ -52,6 +53,7 @@ describe('buildInboxItems', () => {
           requested_by: ME,
           kind: 'cancel',
           status: 'pending',
+          created_at: '2026-08-20T09:00:00.000Z',
         },
         {
           id: 'cr-done',
@@ -59,6 +61,7 @@ describe('buildInboxItems', () => {
           requested_by: OTHER,
           kind: 'time_change',
           status: 'accepted',
+          created_at: '2026-08-20T09:00:00.000Z',
         },
       ],
       patterns: [],
@@ -71,6 +74,9 @@ describe('buildInboxItems', () => {
         id: 'cr-1',
         shiftId: 'shift-1',
         requestKind: 'time_change',
+        requestedAt: '2026-08-20T09:00:00.000Z',
+        requesterName: null,
+        shiftStartsAt: null,
       },
     ]);
   });
@@ -92,6 +98,7 @@ describe('buildInboxItems', () => {
           requested_by: null,
           kind: 'time_change',
           status: 'pending',
+          created_at: '2026-08-20T09:00:00.000Z',
         },
       ],
       patterns: [],
@@ -99,6 +106,131 @@ describe('buildInboxItems', () => {
     });
 
     expect(items).toEqual([]);
+  });
+
+  // WP-H — a change_request item names who asked and when.
+  it('resolves the requester name against the household member roster', () => {
+    const items = buildInboxItems({
+      role: SETUP_ROLES.NANNY,
+      currentUserId: ME,
+      todayISO: '2026-08-25',
+      changeRequests: [
+        {
+          id: 'cr-1',
+          shift_id: 'shift-1',
+          requested_by: OTHER,
+          kind: 'time_change',
+          status: 'pending',
+          created_at: '2026-08-20T09:00:00.000Z',
+        },
+      ],
+      patterns: [],
+      timesheets: [],
+      householdMembers: [
+        {
+          user_id: OTHER,
+          display_name_override: null,
+          profile_name: 'Dana Lee',
+        },
+      ],
+    });
+
+    expect(items[0]).toMatchObject({
+      kind: 'change_request',
+      requesterName: 'Dana Lee',
+    });
+  });
+
+  it('names the shift start when the shift is already in scope (the viewer’s own me/shifts window)', () => {
+    const items = buildInboxItems({
+      role: SETUP_ROLES.NANNY,
+      currentUserId: ME,
+      todayISO: '2026-08-25',
+      changeRequests: [
+        {
+          id: 'cr-1',
+          shift_id: 'shift-1',
+          requested_by: OTHER,
+          kind: 'time_change',
+          status: 'pending',
+          created_at: '2026-08-20T09:00:00.000Z',
+        },
+      ],
+      patterns: [],
+      timesheets: [],
+      shifts: [
+        {
+          id: 'shift-1',
+          household_id: 'hh-1',
+          carer_id: ME,
+          status: 'confirmed',
+          local_date: '2026-08-26',
+          starts_at: '2026-08-26T08:00:00.000Z',
+          ends_at: '2026-08-26T13:00:00.000Z',
+          created_at: '2026-08-19T00:00:00.000Z',
+        },
+      ],
+    });
+
+    expect(items[0]).toMatchObject({
+      shiftStartsAt: '2026-08-26T08:00:00.000Z',
+    });
+  });
+
+  it('sorts two change requests within the same rank by requestedAt, oldest first', () => {
+    const items = buildInboxItems({
+      role: SETUP_ROLES.NANNY,
+      currentUserId: ME,
+      todayISO: '2026-08-25',
+      changeRequests: [
+        {
+          id: 'cr-newer',
+          shift_id: 'shift-2',
+          requested_by: OTHER,
+          kind: 'time_change',
+          status: 'pending',
+          created_at: '2026-08-22T09:00:00.000Z',
+        },
+        {
+          id: 'cr-older',
+          shift_id: 'shift-1',
+          requested_by: OTHER,
+          kind: 'time_change',
+          status: 'pending',
+          created_at: '2026-08-18T09:00:00.000Z',
+        },
+      ],
+      patterns: [],
+      timesheets: [],
+    });
+
+    expect(items.map(i => i.id)).toEqual(['cr-older', 'cr-newer']);
+  });
+
+  it('names the household a queried week belongs to', () => {
+    const items = buildInboxItems({
+      role: SETUP_ROLES.NANNY,
+      currentUserId: ME,
+      todayISO: '2026-08-25',
+      changeRequests: [],
+      patterns: [],
+      timesheets: [
+        {
+          household_id: 'hh-1',
+          id: 'ts-1',
+          carer_id: ME,
+          week_start: '2026-07-28',
+          status: 'queried',
+          query_note: null,
+        },
+      ],
+      households: [{ id: 'hh-1', name: 'The Ortiz Family' }],
+    });
+
+    expect(items[0]).toMatchObject({
+      kind: 'queried_week',
+      householdName: 'The Ortiz Family',
+    });
   });
 
   it('includes pending schedule patterns addressed to me', () => {
@@ -188,6 +320,7 @@ describe('buildInboxItems', () => {
         householdId: 'hh-1',
         weekStart: '2026-07-28',
         queryNote: 'Break looks long',
+        householdName: null,
       },
     ]);
 
@@ -1310,6 +1443,7 @@ describe('buildInboxItems — person on the item', () => {
           requested_by: OTHER,
           kind: 'time_change',
           status: 'pending',
+          created_at: '2026-08-20T09:00:00.000Z',
         },
       ],
       patterns: [
