@@ -495,9 +495,17 @@ alone.
 `tabBarLabelStyle: { fontSize: 11, fontWeight: '600' }`;
 `tabBarStyle: { backgroundColor: colors.card, borderTopWidth: 0 }` plus
 `elevation.card` inline — separation by light here too, never a hairline.
-Active icon `strokeWidth: 2.25`, inactive `1.75`. No badge dot on any tab —
-inbox count lives in Settings, and a second unread affordance is how a calm
-app stops being calm.
+Active icon `strokeWidth: 2.25`, inactive `1.75`.
+
+**Four tabs: Today / Schedule / Hours / Inbox.** Settings is not one of them —
+it is a pushed screen behind the `header-settings` gear every root screen
+carries (`components/ui/settings-header-button.tsx`), because it is visited
+monthly while the shared record between a family and its carer is visited
+daily.
+
+**No badge dot on any tab** — the count lives in the Inbox screen's own lead
+line, where it says what it is instead of only that there is one, and a
+second unread affordance is how a calm app stops being calm.
 
 ### 8.6 Shape primitives — week/day chrome
 
@@ -595,7 +603,7 @@ Every one of these is gated by `useReducedMotion()`.
 - No apricot outside register 3 (§3.3).
 - No `className` on any Reanimated `Animated.View` (§7).
 - No literal hex in a `className` — every colour ships as a CSS var.
-- No badge dot beyond the one place it is used (§8.5 explicitly refuses a second).
+- No badge dot anywhere — no tab carries one (§8.5), and no card introduces a second unread affordance.
 
 ---
 

@@ -1,5 +1,9 @@
 /**
- * @module app/(private)/(tabs)/settings
+ * @module app/(private)/settings/index
+ *
+ * Route: `/settings`. Pushed from the `header-settings` icon on every root
+ * screen (WP-C) — it used to be the fourth tab, but it is visited monthly
+ * while the Inbox that replaced it is visited daily.
  */
 
 import Constants from 'expo-constants';
@@ -16,7 +20,6 @@ import {
   FileText,
   HelpCircle,
   Home,
-  Inbox,
   KeyRound,
   type LucideIcon,
   PartyPopper,
@@ -32,9 +35,9 @@ import { AnimatedPressable } from '@/lib/animations';
 import { SCREEN_CONTENT_STYLE, spacing } from '@/lib/design-tokens';
 import { Icon } from '@/lib/icons/iconWithClassName';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
-import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { cn } from '@/lib/utils';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
+import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { IconChip, type IconChipTone } from '@/src/components/ui/icon-chip';
@@ -48,7 +51,6 @@ import { Text } from '@/src/components/ui/text';
 import { Body, H1, H3, H4, Small } from '@/src/components/ui/typography';
 import { appIdentity } from '@/src/config/appIdentity';
 import { HouseholdSwitcher } from '@/src/domains/household';
-import { useInboxItems } from '@/src/domains/inbox';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useDeleteAccount } from '@/src/hooks/mutations/useDeleteAccount';
 import { useUpdatePreferredLocale } from '@/src/hooks/mutations/useUpdatePreferredLocale';
@@ -77,7 +79,6 @@ function SettingsNavRow({
   tone,
   value,
   valuePending,
-  valueBadge,
   onPress,
 }: {
   testID: string;
@@ -86,12 +87,8 @@ function SettingsNavRow({
   tone: IconChipTone;
   value?: string;
   valuePending?: boolean;
-  /** Renders as a filled chipPlum pill instead of plain text — reserved for
-   * the one actionable value on the screen (the inbox count). */
-  valueBadge?: string;
   onPress: () => void;
 }) {
-  const colors = useThemeColors();
   return (
     <AnimatedPressable testID={testID} onPress={onPress}>
       <View
@@ -100,14 +97,7 @@ function SettingsNavRow({
       >
         <IconChip tone={tone} icon={icon} size="sm" />
         <Body className="flex-1 text-foreground">{label}</Body>
-        {valueBadge ? (
-          <View
-            className="rounded-chip px-2 py-0.5"
-            style={{ backgroundColor: colors.chip.plum }}
-          >
-            <Small className="font-semibold text-primary">{valueBadge}</Small>
-          </View>
-        ) : valuePending ? (
+        {valuePending ? (
           <SkeletonShimmer
             testID={`${testID}-value-skeleton`}
             width={60}
@@ -154,12 +144,6 @@ function SettingsExternalRow({
 export default function SettingsScreen() {
   const { t } = useTranslation();
   const colors = useThemeColors();
-  // The floating tab bar overlays this screen's content rather than
-  // reserving its own layout space (React Navigation bottom-tabs default —
-  // see useTabBarScrollPadding's header comment); without this, a row that
-  // ends up under the bar is a permanent dead zone: taps land on the tab
-  // bar underneath instead of the row.
-  const tabBarScrollPadding = useTabBarScrollPadding();
   const { refreshControl } = usePullToRefresh();
   const language = useLanguageStore(s => s.language);
   const setLanguage = useLanguageStore(s => s.setLanguage);
@@ -192,9 +176,6 @@ export default function SettingsScreen() {
   // useIsOnboarded's header comment / TodayScreen for the same pattern).
   const onboarding = useIsOnboarded();
   const members = useHouseholdMembers(onboarding.householdId);
-  const inbox = useInboxItems();
-  const inboxBadge =
-    inbox.items.length > 0 ? String(inbox.items.length) : undefined;
 
   const appVersion =
     Constants.expoConfig?.version ?? Constants.nativeAppVersion ?? '—';
@@ -235,11 +216,13 @@ export default function SettingsScreen() {
         testID="settings-screen"
         className="flex-1"
         refreshControl={refreshControl}
-        contentContainerStyle={{
-          ...SCREEN_CONTENT_STYLE,
-          paddingBottom: tabBarScrollPadding,
-        }}
+        contentContainerStyle={SCREEN_CONTENT_STYLE}
       >
+        <BackButton
+          testID="settings-back"
+          onPress={() => router.back()}
+          label={t('common:back')}
+        />
         {/* Hero band — no card, on the wash. The identity block used to sit
             mid-list in muted grey (docs/design/01-LAWS.md) — the one genuinely
             brand-level thing on the screen was the only block not in plum.
@@ -473,14 +456,6 @@ export default function SettingsScreen() {
                 icon={Clock}
                 tone="brand"
                 onPress={() => router.push('/settings/time' as Href)}
-              />
-              <SettingsNavRow
-                testID="settings-inbox"
-                label={t('settings:inbox')}
-                icon={Inbox}
-                tone="brand"
-                valueBadge={inboxBadge}
-                onPress={() => router.push('/inbox' as Href)}
               />
               <SettingsNavRow
                 testID="settings-notifications"

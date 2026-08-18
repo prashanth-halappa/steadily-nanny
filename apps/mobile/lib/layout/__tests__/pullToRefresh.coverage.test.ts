@@ -26,7 +26,7 @@ const SCREEN_PATHS = [
   'src/domains/pay/components/MyPayScreen.tsx',
   'src/domains/pay/components/PayArrangementScreen.tsx',
   'src/domains/pay/components/ProposalReviewScreen.tsx',
-  'src/app/(private)/(tabs)/settings.tsx',
+  'src/app/(private)/settings/index.tsx',
   'src/app/(private)/settings/carer-availability.tsx',
   'src/app/(private)/settings/household-time-off.tsx',
   'src/domains/timeOff/components/TimeOffScreen.tsx',

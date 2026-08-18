@@ -10,7 +10,7 @@ const screenPath = join(__dirname, '../components/InboxScreen.tsx');
 const hookPath = join(__dirname, '../hooks/useInboxItems.ts');
 const buildPath = join(__dirname, '../utils/buildInboxItems.ts');
 const copyPath = join(__dirname, '../utils/inboxItemCopy.ts');
-const routePath = join(__dirname, '../../../app/(private)/inbox.tsx');
+const routePath = join(__dirname, '../../../app/(private)/(tabs)/inbox.tsx');
 
 let screenSource: string;
 let hookSource: string;
@@ -27,6 +27,16 @@ beforeAll(async () => {
 });
 
 describe('InboxScreen source', () => {
+  // WP-C: a tab root has nothing behind it to go back to — the back button
+  // came out and the settings icon went in, and the scroll has to clear the
+  // floating tab bar the way every other tab root does.
+  it('is a tab root: settings icon, no back button, tab-bar scroll padding', () => {
+    expect(screenSource).toContain('SettingsHeaderButton');
+    expect(screenSource).not.toContain('inbox-back');
+    expect(screenSource).not.toContain('BackButton');
+    expect(screenSource).toContain('useTabBarScrollPadding');
+  });
+
   it('exports the screen and wires root + empty testIDs', () => {
     expect(screenSource).toContain('export function InboxScreen');
     expect(screenSource).toContain('inbox-screen');
@@ -116,7 +126,7 @@ describe('buildInboxItems source', () => {
 });
 
 describe('inbox route', () => {
-  it('is a thin delegate to InboxScreen', () => {
+  it('is a thin delegate to InboxScreen, living in the tab group', () => {
     expect(routeSource).toContain('InboxScreen');
     expect(routeSource).toContain('export default');
   });

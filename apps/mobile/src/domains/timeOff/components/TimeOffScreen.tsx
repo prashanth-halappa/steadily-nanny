@@ -2,7 +2,7 @@
  * @module domains/timeOff/components/TimeOffScreen
  *
  * Settings -> Time off (nanny only, reached from `settings-request-time-off`
- * in `app/(private)/(tabs)/settings.tsx`). Role gate mirrors `TodayScreen`'s
+ * in `app/(private)/settings/index.tsx`). Role gate mirrors `TodayScreen`'s
  * pattern: server-derived `useIsOnboarded().role`, never local
  * setup-wizard state — see that hook's header comment for why the
  * distinction is ship-blocking. There is no entry point for a parent to

@@ -35,6 +35,21 @@ describe('TodayScreen layout', () => {
     expect(slotAt).toBeGreaterThan(headerAt);
   });
 
+  // WP-C: Settings lost its tab, so Today's hero band carries the only way
+  // in from this screen. It must sit in the band itself (`today-header`),
+  // above the feed — not somewhere down the scroll where it can't be found.
+  it('carries the settings header button inside the today-header band', () => {
+    const headerAt = screenSource.indexOf('testID="today-header"');
+    const trailingAt = screenSource.indexOf(
+      'trailingAction={<SettingsHeaderButton'
+    );
+    const slotAt = screenSource.indexOf('<PinnedSlot>{');
+
+    expect(screenSource).toContain('SettingsHeaderButton');
+    expect(trailingAt).toBeGreaterThan(headerAt);
+    expect(trailingAt).toBeLessThan(slotAt);
+  });
+
   it('keeps the slot above the household switcher, the first card in the feed', () => {
     const slotAt = screenSource.indexOf('<PinnedSlot>{');
     const switcherAt = screenSource.indexOf('<HouseholdSwitcher />');

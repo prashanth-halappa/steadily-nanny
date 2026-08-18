@@ -162,7 +162,7 @@ anywhere in the tree.
 | `(private)/(tabs)/home.tsx` | `TodayScreen` | both |
 | `(private)/(tabs)/schedule.tsx` | `SchedulePendingScreen` | parent only (`href: null` for nanny) |
 | `(private)/(tabs)/hours.tsx` | `HoursScreen` → `NannyWeekView` / `ParentWeekView` | both (role-branches internally) |
-| `(private)/(tabs)/settings.tsx` | inline | both |
+| `(private)/settings/index.tsx` | inline | both |
 | `(private)/schedule/build.tsx` | `ScheduleBuildScreen` | parent only |
 | `(private)/schedule/respond/[patternId].tsx` | `ScheduleRespondScreen` | nanny (carer) only |
 | `(private)/schedule/shifts.tsx` | `ScheduleShiftsScreen` | both |
@@ -372,7 +372,7 @@ not just a passing mention.
 
 **MANDATORY RETAKE, both baseline rows, per Revision 4:** confirmed via
 source (not yet device-verified) that `apps/mobile/src/app/(private)/
-(tabs)/settings.tsx` now also renders `settings-manage-household` for the
+(private)/settings/index.tsx` now also renders `settings-manage-household` for the
 parent (D21, → `/settings/household`) and `settings-request-time-off` for
 the nanny (D22, → `/settings/time-off`), both under the same "Household"
 section header as the existing entries. The baseline descriptions below

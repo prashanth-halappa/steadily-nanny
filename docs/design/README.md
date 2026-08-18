@@ -23,7 +23,7 @@ leave a link.
 | [`screens-today.md`](./screens-today.md) | Today tab, both personas |
 | [`screens-schedule.md`](./screens-schedule.md) | Schedule tab, usual-week patterns, multi-nanny |
 | [`screens-hours.md`](./screens-hours.md) | Hours tab (timesheets) |
-| [`screens-settings.md`](./screens-settings.md) | Settings tab and its pushed screens |
+| [`screens-settings.md`](./screens-settings.md) | The Settings screen (pushed from the header gear, not a tab) and its own pushed screens |
 | [`screens-pay-terms.md`](./screens-pay-terms.md) | Pay & terms entry, jurisdiction presets, changes, acknowledgment |
 | [`screens-onboarding-terms-proposal.md`](./screens-onboarding-terms-proposal.md) | Onboarding, nanny-authored draft terms, parent-side proposal review |
 | [`attention-and-notifications.md`](./attention-and-notifications.md) | The notification matrix, inbox/attention states, dispute threads, cover-ask lifecycle |

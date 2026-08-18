@@ -39,6 +39,7 @@ import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { IconChip } from '@/src/components/ui/icon-chip';
 import { ScreenWash } from '@/src/components/ui/screen-wash';
+import { SettingsHeaderButton } from '@/src/components/ui/settings-header-button';
 import { Text } from '@/src/components/ui/text';
 import {
   Body,
@@ -311,6 +312,9 @@ export function DraftHomeScreen() {
             style={{ width: 104, height: 104 }}
             resizeMode="contain"
           />
+          {/* B3 again, for Settings: this screen is a draft user's whole
+              app, and sign-out now lives behind the header gear only. */}
+          <SettingsHeaderButton />
         </View>
 
         {isLoading ? (

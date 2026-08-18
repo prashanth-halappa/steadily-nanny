@@ -22,7 +22,21 @@ describe('TabsLayout', () => {
     expect(layoutSource).toContain('name="home"');
     expect(layoutSource).toContain('name="schedule"');
     expect(layoutSource).toContain('name="hours"');
-    expect(layoutSource).toContain('name="settings"');
+    expect(layoutSource).toContain('name="inbox"');
+  });
+
+  // WP-C: Settings is a pushed screen reached from `header-settings`, not a
+  // tab. A leftover `Tabs.Screen name="settings"` would render a fifth tab
+  // pointing at a route that no longer lives in this group.
+  it('has no settings tab — Settings is pushed from the header icon', () => {
+    expect(layoutSource).not.toContain('name="settings"');
+    expect(layoutSource).not.toContain('tab-settings');
+  });
+
+  // docs/design/00-FOUNDATIONS.md §8.5 — no badge dot on any tab. The count
+  // lives in the Inbox screen's own lead line, where it can be read.
+  it('never puts a badge on a tab', () => {
+    expect(layoutSource).not.toContain('tabBarBadge');
   });
 
   it('does not hide the Schedule tab via href: null (role fork lives in schedule.tsx)', () => {
@@ -42,6 +56,6 @@ describe('TabsLayout', () => {
     expect(layoutSource).toContain("t('tabs.today')");
     expect(layoutSource).toContain("t('tabs.schedule')");
     expect(layoutSource).toContain("t('tabs.hours')");
-    expect(layoutSource).toContain("t('tabs.settings')");
+    expect(layoutSource).toContain("t('tabs.inbox')");
   });
 });

@@ -69,7 +69,7 @@ Sign in as **parent** for the first block, then as **nanny** for the second.
 7. Hours (`hours-screen`) — `WeekTotal` card, tabular figures
 8. Calendar views — `calendar-agenda-view` (check `DayGroup` headers are 17px sentence case, **not** uppercase micro-labels), plus `calendar-week-ribbon-view` and `calendar-coverage-lanes-view`
 9. Time off (`TimeOffScreen`) — compact rows
-10. Settings (`(tabs)/settings`) — list rows and the 22px screen gutter
+10. Settings (`(private)/settings/index.tsx`) — list rows and the 22px screen gutter
 11. **An alert dialog open** (e.g. the withdraw confirm on the pending screen) — it should now **lift with a shadow** and have no border
 12. **A loading state** — any screen mid-fetch, so a `skeleton-card` is on screen. Its radius/padding/shadow must match a real card exactly; if the skeleton and the loaded card don't line up, the transition visibly jumps
 

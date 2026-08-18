@@ -20,6 +20,7 @@
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { useThemeColors } from '@/lib/design-tokens/useThemeColors';
+import { SettingsHeaderButton } from '@/src/components/ui/settings-header-button';
 import { SkeletonShimmer } from '@/src/components/ui/skeleton-shimmer';
 import { SplitTrack } from '@/src/components/ui/split-track';
 import {
@@ -92,7 +93,14 @@ export function HoursHeroBand({
 
   return (
     <View testID={testID} className="mb-4 gap-3">
-      <H1 testID="hours-title">{t('title')}</H1>
+      {/* The gear is the only way into Settings from this tab (WP-C) — it
+          rides the title line, not a row of its own. */}
+      <View className="flex-row items-start justify-between gap-3">
+        <H1 testID="hours-title" className="flex-1">
+          {t('title')}
+        </H1>
+        <SettingsHeaderButton />
+      </View>
       <WeekNavHeader
         label={weekRangeLabel}
         onPreviousWeek={onPreviousWeek}

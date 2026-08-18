@@ -20,9 +20,9 @@
 appId: com.jetto.steadily.nanny
 ---
 # The soft-ask FIRST, and on its own bounded window: while it is up it hides
-# the whole hierarchy underneath, tab bar included, so tapping `tab-settings`
-# before clearing it fails with "Element not found" on a tab that is plainly
-# there.
+# the whole hierarchy underneath, the header included, so tapping
+# `header-settings` before clearing it fails with "Element not found" on a
+# control that is plainly there.
 - extendedWaitUntil:
     visible:
       text: 'Maybe later'
@@ -37,11 +37,12 @@ appId: com.jetto.steadily.nanny
           text: 'Maybe later'
       - waitForAnimationToEnd
 # Guarded, not a bare tapOn: a freshly-onboarding user (no household yet,
-# still in the wizard) has no tab bar at all, so 'tab-settings' does not
-# exist — confirmed root cause of flow 14's "Element not found: tab-settings"
-# (2026-08-12). The header's "safe to call unconditionally" claim only
-# accounted for HouseholdSwitcher rendering null; it did not account for the
-# tab bar itself being absent pre-onboarding-completion.
+# still in the wizard) has no root screen at all, so 'header-settings' does
+# not exist — confirmed root cause of flow 14's "Element not found:
+# tab-settings" (2026-08-12, when this was the Settings tab). The header's
+# "safe to call unconditionally" claim only accounted for HouseholdSwitcher
+# rendering null; it did not account for the shell itself being absent
+# pre-onboarding-completion.
 #
 # `extendedWaitUntil` (optional, bounded) BEFORE every `when: visible` guard
 # below — 2026-08-16: a bare `when: visible:` is a single instantaneous poll,
@@ -50,8 +51,8 @@ appId: com.jetto.steadily.nanny
 # makes the ENTIRE guarded block a silent no-op — no assertion fails, the
 # flow just carries on with whatever household was already active.
 # Root-caused via flow 07's `commands-*.json`: the outer guard's
-# `runFlowCommand` came back `SKIPPED` (tab-settings genuinely not yet
-# visible at that instant), so the flow never switched off the household a
+# `runFlowCommand` came back `SKIPPED` (the settings entry point genuinely
+# not yet visible at that instant), so the flow never switched off the household a
 # PRIOR run had left active, and that household's pre-existing pay
 # arrangement made `PaySetupScreen`'s own (unrelated, pre-existing)
 # redirect-when-arrangement-exists behaviour bounce the flow before it typed
@@ -61,18 +62,18 @@ appId: com.jetto.steadily.nanny
 # screen after `login-nanny.yaml` + a tap on Today).
 - extendedWaitUntil:
     visible:
-      id: 'tab-settings'
+      id: 'header-settings'
     timeout: 6000
     optional: true
 - runFlow:
     when:
       visible:
-        id: 'tab-settings'
+        id: 'header-settings'
     commands:
       - tapOn:
-          id: 'tab-settings'
+          id: 'header-settings'
       - waitForAnimationToEnd
-      # It can also arrive AFTER the tab switch — same sheet, different moment.
+      # It can also arrive AFTER the push — same sheet, different moment.
       - runFlow:
           when:
             visible:
@@ -101,3 +102,9 @@ appId: com.jetto.steadily.nanny
             - waitForAnimationToEnd
             - assertNotVisible:
                 id: 'household-switcher-sheet'
+      # WP-C: Settings is PUSHED now, so leaving this flow on it would hide
+      # the tab bar from every caller whose next step is `tapOn: tab-*`.
+      # Pop back to the root the caller was standing on.
+      - tapOn:
+          id: 'settings-back'
+      - waitForAnimationToEnd

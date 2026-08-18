@@ -670,8 +670,9 @@ Rules for this card:
   is `queried` (both sides), and on a `submitted` week for the nanny (§3.1). On
   an `approved` week the thread renders read-only with no input: history, not a
   chat. If the parent reopens the week, the composer comes back with it.
-- **Never a badge, never an unread dot.** `00-FOUNDATIONS.md` §8.5 refuses a second
-  unread affordance and this is not the place to introduce one.
+- **Never a badge, never an unread dot.** `00-FOUNDATIONS.md` §8.5 puts no badge
+  on any tab — not even the Inbox tab, whose count lives in its own lead line —
+  and this is not the place to introduce one.
 - **The disputed day stays editable while the week is `queried` (D16).** This is
   the mechanism by which a query actually resolves: the parent asks about
   Thursday, the nanny fixes Thursday, the roll-up returns the week to

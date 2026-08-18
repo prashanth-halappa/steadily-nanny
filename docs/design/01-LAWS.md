@@ -149,6 +149,11 @@ band exceeds 20px except the anchor figure, and **the anchor is never bolder
 than the title**. Any trailing action goes inline on the title line, never on
 its own row.
 
+`ScreenHeader`'s `backButton` and `trailingAction` slots are **navigation
+chrome, not band elements** — they do not count against the three, and
+`trailingAction` (the `header-settings` gear) renders in the outer row beside
+the title column, never inside it, so it can never squeeze the H1.
+
 *Evidence:* the Schedule header stacked seven things in an earlier draft of
 that spec, five of them drawn in the same layout block.
 

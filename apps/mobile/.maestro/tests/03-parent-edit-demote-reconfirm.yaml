@@ -70,10 +70,11 @@ tags:
 - takeScreenshot: parent-edited-demoted-shift
 
 # --- Nanny: re-confirm demoted shift ---
-# Pop back to a tab first — logout.yaml is wrapped in `when: visible:
-# tab-settings`, and this screen (a pushed /(private)/schedule/shifts/[id]
-# route outside (tabs)) has no tab bar, so logout would silently no-op and
-# the nanny leg below would run as the still-signed-in parent.
+# Pop back to a tab root first — logout.yaml's entry guard is the
+# `header-settings` gear, and this screen (a pushed
+# /(private)/schedule/shifts/[id] route outside (tabs)) carries no header
+# chrome, so logout would fail to find its way into Settings and the nanny
+# leg below would run as the still-signed-in parent.
 - back
 - waitForAnimationToEnd
 - runFlow: ../flows/logout.yaml

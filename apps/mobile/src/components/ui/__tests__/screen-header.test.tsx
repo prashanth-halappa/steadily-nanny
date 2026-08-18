@@ -100,6 +100,34 @@ describe('ScreenHeader', () => {
     expect(containsTestId(toJSON(), 'header-title-action')).toBe(true);
   });
 
+  // WP-C: `trailingAction` is navigation chrome (the settings icon), not one
+  // of Rule H's three band elements — it belongs to the OUTER row beside the
+  // title column, never inside it, so it can never squeeze the title.
+  it('renders trailingAction in the outer row, outside the title column', () => {
+    const { getByTestId, toJSON } = render(
+      <ScreenHeader
+        testID="header"
+        title="Today"
+        contextLine="Tuesday"
+        trailingAction={<Text testID="header-trailing">gear</Text>}
+      />
+    );
+    expect(containsTestId(toJSON(), 'header-trailing')).toBe(true);
+    expect(
+      containsTestId(getByTestId('header-title-column'), 'header-trailing')
+    ).toBe(false);
+    expect(
+      containsTestId(getByTestId('header-title-row'), 'header-trailing')
+    ).toBe(false);
+  });
+
+  it('omits the trailing action slot when not given', () => {
+    const { queryByTestId } = render(
+      <ScreenHeader testID="header" title="Today" />
+    );
+    expect(queryByTestId('header-trailing')).toBeNull();
+  });
+
   it('renders the back button slot when given', () => {
     const { getByTestId } = render(
       <ScreenHeader

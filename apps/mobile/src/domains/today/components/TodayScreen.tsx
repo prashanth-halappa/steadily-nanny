@@ -58,6 +58,7 @@ import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { ScreenHeader } from '@/src/components/ui/screen-header';
 import { ScreenWash } from '@/src/components/ui/screen-wash';
+import { SettingsHeaderButton } from '@/src/components/ui/settings-header-button';
 import { SkeletonShimmer } from '@/src/components/ui/skeleton-shimmer';
 import { Body, Small } from '@/src/components/ui/typography';
 import {
@@ -523,6 +524,7 @@ export function TodayScreen() {
         <ScreenHeader
           testID="today-header"
           title={t('screenTitle')}
+          trailingAction={<SettingsHeaderButton />}
           anchor={
             <>
               {/* The date always shows (a screen called Today with no date
