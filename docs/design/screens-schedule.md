@@ -194,6 +194,13 @@ intends, and it should stay. Two deltas:
 - The AM/PM/Eve column headers are `Caption` today; make them `metadataLabel`
   13/600 so the grid has a spine.
 
+Cross-family clashes are advisory and persisted nightly: a shift that
+overlaps one of her shifts at another family is never blocked and never a
+409, but the nightly `scheduleHorizonJob` now writes a `cross_family_clash`
+day-thread event on both shifts and surfaces one inbox row per flagged
+shift — so the heads-up outlives the moment it was first raised, instead of
+living only on the HTTP response that happened to be on screen when it fired.
+
 **Parent / helper.** Same calendar, plus `SchedulePatternBanner` above it and
 the uncovered-row actions (`showUncoveredActions`). The banner is the screen's
 L1 whenever the usual week still needs a human: `surfaceAttention`,

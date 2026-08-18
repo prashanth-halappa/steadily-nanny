@@ -21,6 +21,7 @@
 import type { MeShift } from '@steadily-nanny/shared-types/schemas/me.schema';
 import type { ShiftChangeRequest } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { HouseholdMemberRepository } from '../../household';
+import { findCrossHouseholdClashes } from '../../schedule/utils/crossHouseholdClashes';
 import { ShiftChangeRequestRepository } from '../../shift/repositories/shiftChangeRequestRepository';
 import {
   ShiftRepository,
@@ -84,7 +85,37 @@ export class MeQueryService {
         if (shift.carer_id !== userId) continue;
         const membership_role = roleByHousehold.get(shift.household_id);
         if (!membership_role) continue;
-        mine.push({ ...shift, membership_role });
+        mine.push({
+          ...shift,
+          membership_role,
+          clashes_with_other_household: false,
+        });
+      }
+    }
+
+    // S4b — computed in memory over exactly the rows this call already
+    // fetched, never a persisted flag: self-healing the instant a shift
+    // moves off the clash, with no second write path to keep in sync. Same
+    // sweep-line the nightly job's `findCrossHouseholdClashes` uses; every
+    // row here already has `carer_id === userId` (the filter above), so
+    // `carer_id: userId` narrows the wire's nullable field to the
+    // non-null string the scan needs, without lying about anything.
+    const clashedShiftIds = new Set(
+      findCrossHouseholdClashes(
+        mine.map(shift => ({
+          id: shift.id,
+          household_id: shift.household_id,
+          carer_id: userId,
+          starts_at: shift.starts_at,
+          ends_at: shift.ends_at,
+          local_date: shift.local_date,
+          ical_uid: shift.ical_uid,
+        }))
+      ).map(event => event.shift_id)
+    );
+    for (const shift of mine) {
+      if (clashedShiftIds.has(shift.id)) {
+        shift.clashes_with_other_household = true;
       }
     }
 

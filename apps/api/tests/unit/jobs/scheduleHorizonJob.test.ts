@@ -74,6 +74,13 @@ function noOpJobDeps(
     // S8: injected in every test so the retention sweep never reaches for a
     // real Supabase client (which times the whole file out, slowly).
     events: { deleteSweptEventsOlderThan: mock(async () => 0) },
+    // S4b: same reason — the cross-household clash sweep never reaches for a
+    // real Supabase client unless a test overrides these.
+    clashScan: { listLiveForClashScan: mock(async () => []) },
+    clashEvents: {
+      listEventKeysForDate: mock(async () => new Set<string>()),
+      insertMany: mock(async () => []),
+    },
     ...overrides,
   };
 }
@@ -621,7 +628,14 @@ describe('runScheduleHorizonJob — S8: shift_events retention', () => {
     );
 
     const types = deleteSweptEventsOlderThan.mock.calls[0]?.[1] as string[];
-    expect([...types].sort()).toEqual(['pattern_conflict', 'uncovered_care']);
+    // S4b: cross_family_clash joins pattern_conflict/uncovered_care — it is
+    // machine output too, recomputed nightly by the same sweep-line, never
+    // hand-edited.
+    expect([...types].sort()).toEqual([
+      'cross_family_clash',
+      'pattern_conflict',
+      'uncovered_care',
+    ]);
 
     // The rows a dispute is argued from. If any of these ever appears in that
     // list, the week thread (3-T1 / D-18) and the cancellation-pay verdict
@@ -656,5 +670,134 @@ describe('runScheduleHorizonJob — S8: shift_events retention', () => {
     expect(result.eventsSwept).toBe(0);
     expect(result.patternsProcessed).toBe(1);
     expect(result.errorCount).toBeGreaterThan(0);
+  });
+});
+
+describe('runScheduleHorizonJob — S4b: cross-household clash persistence', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  const shiftA = {
+    id: 's1',
+    household_id: 'hh-a',
+    carer_id: 'carer-1',
+    starts_at: '2026-08-10T09:00:00.000Z',
+    ends_at: '2026-08-10T14:00:00.000Z',
+    local_date: '2026-08-10',
+    ical_uid: 'uid-s1',
+  };
+  const shiftB = {
+    id: 's2',
+    household_id: 'hh-b',
+    carer_id: 'carer-1',
+    starts_at: '2026-08-10T13:00:00.000Z',
+    ends_at: '2026-08-10T18:00:00.000Z',
+    local_date: '2026-08-10',
+    ical_uid: 'uid-s2',
+  };
+
+  it('scans an 84-day window from today and raises both sides of a clashing pair', async () => {
+    const before = Date.now();
+    const insertMany = mock(async (_rows: unknown[]) => []);
+    const listLiveForClashScan = mock(async (_from: string, _to: string) => [
+      shiftA,
+      shiftB,
+    ]);
+    const result = await runScheduleHorizonJob(
+      { listAccepted: mock(async () => []) },
+      noOpMaterialiser(),
+      noChangeRequests(),
+      noOpJobDeps({
+        clashScan: { listLiveForClashScan },
+        clashEvents: {
+          listEventKeysForDate: mock(async () => new Set<string>()),
+          insertMany,
+        },
+      })
+    );
+    const after = Date.now();
+
+    expect(listLiveForClashScan).toHaveBeenCalledTimes(1);
+    const [fromIso, toIso] = listLiveForClashScan.mock.calls[0] ?? [];
+    expect(Date.parse(String(fromIso))).toBeGreaterThanOrEqual(before);
+    expect(Date.parse(String(fromIso))).toBeLessThanOrEqual(after);
+    expect(Date.parse(String(toIso))).toBeGreaterThanOrEqual(
+      before + 84 * DAY_MS
+    );
+    expect(Date.parse(String(toIso))).toBeLessThanOrEqual(after + 84 * DAY_MS);
+
+    expect(insertMany).toHaveBeenCalledTimes(1);
+    const rows = insertMany.mock.calls[0]?.[0] as Array<{
+      household_id: string;
+      shift_id: string;
+      event_type: string;
+    }>;
+    expect(rows).toHaveLength(2);
+    expect(rows.map(r => r.household_id).sort()).toEqual(['hh-a', 'hh-b']);
+    expect(rows.every(r => r.event_type === 'cross_family_clash')).toBe(true);
+    expect(result.errorCount).toBe(0);
+  });
+
+  it('is idempotent — an already-raised key is not re-inserted', async () => {
+    const insertMany = mock(async (_rows: unknown[]) => []);
+    // hh-a already has s1's half of the pair raised; hh-b does not yet.
+    const listEventKeysForDate = mock(
+      async (householdId: string, _localDate: string, _eventType: string) =>
+        householdId === 'hh-a' ? new Set(['s1|uid-s2']) : new Set<string>()
+    );
+
+    await runScheduleHorizonJob(
+      { listAccepted: mock(async () => []) },
+      noOpMaterialiser(),
+      noChangeRequests(),
+      noOpJobDeps({
+        clashScan: {
+          listLiveForClashScan: mock(async () => [shiftA, shiftB]),
+        },
+        clashEvents: { listEventKeysForDate, insertMany },
+      })
+    );
+
+    expect(insertMany).toHaveBeenCalledTimes(1);
+    const rows = insertMany.mock.calls[0]?.[0] as Array<{
+      household_id: string;
+    }>;
+    // Only hh-b's half is new; hh-a's was already raised.
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.household_id).toBe('hh-b');
+  });
+
+  it('a sweep failure is isolated and counted into the run-level errorCount', async () => {
+    const result = await runScheduleHorizonJob(
+      { listAccepted: mock(async () => [patternFor()]) },
+      noOpMaterialiser(),
+      noChangeRequests(),
+      noOpJobDeps({
+        clashScan: {
+          listLiveForClashScan: mock(async () => {
+            throw new Error('unreachable');
+          }),
+        },
+      })
+    );
+
+    expect(result.patternsProcessed).toBe(1);
+    expect(result.errorCount).toBe(1);
+  });
+
+  it('does not query for keys or insert anything when nothing clashes', async () => {
+    const listEventKeysForDate = mock(async () => new Set<string>());
+    const insertMany = mock(async (_rows: unknown[]) => []);
+    await runScheduleHorizonJob(
+      { listAccepted: mock(async () => []) },
+      noOpMaterialiser(),
+      noChangeRequests(),
+      noOpJobDeps({
+        clashScan: { listLiveForClashScan: mock(async () => []) },
+        clashEvents: { listEventKeysForDate, insertMany },
+      })
+    );
+
+    expect(listEventKeysForDate).not.toHaveBeenCalled();
+    expect(insertMany).not.toHaveBeenCalled();
   });
 });

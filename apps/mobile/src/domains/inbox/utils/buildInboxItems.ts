@@ -107,6 +107,12 @@ export type InboxShiftInput = {
   created_at: string;
   /** Null on any shift that is not an outstanding ask (migration 088). */
   cover_ask_expires_at?: string | null;
+  /**
+   * S4b — computed by `meQueryService.listMyShifts` in memory on every read,
+   * never a stored flag. Optional so a legacy response missing the field
+   * reads as "no clash" rather than throwing.
+   */
+  clashes_with_other_household?: boolean;
 };
 
 /**
@@ -207,6 +213,16 @@ export type InboxItem =
       endsAt: string;
       createdAt: string;
       coverAskExpiresAt: string | null;
+    }
+  | {
+      // S4b — the nanny's own shift overlaps a shift with another family.
+      // Advisory only (never blocking); the shift itself carries the
+      // `cross_family_clash` day-thread event this item deep-links to.
+      kind: 'cross_family_clash';
+      id: string;
+      shiftId: string;
+      householdId: string;
+      startsAt: string;
     }
   | {
       kind: 'terms_proposal';
@@ -442,6 +458,23 @@ export function buildInboxItems(input: {
     }
   }
 
+  // S4b — same explicit role + identity gate as pending_shift (B5): the
+  // shift is already hers by the time `meQueryService` flags it, but the
+  // check stays explicit rather than relying on that by construction.
+  if (input.role === SETUP_ROLES.NANNY) {
+    for (const shift of input.shifts ?? []) {
+      if (!shift.clashes_with_other_household) continue;
+      if (!me || shift.carer_id !== me) continue;
+      items.push({
+        kind: 'cross_family_clash',
+        id: shift.id,
+        shiftId: shift.id,
+        householdId: shift.household_id,
+        startsAt: shift.starts_at,
+      });
+    }
+  }
+
   // §7.1 — a live proposal is always the OTHER side's item: the person who
   // wrote it has nothing to answer, and a row about your own sent contract is
   // not pending work. Direction decides the side; the role check is explicit
@@ -568,6 +601,10 @@ function sortKey(item: InboxItem, nowMs: number): number {
     // somebody else, so it must never push an answerable item down the list.
     case 'terms_proposal_sent':
       return 10;
+    // S4b — advisory, nothing to answer: both shifts stand either way. It
+    // must never outrank a row the viewer can actually resolve.
+    case 'cross_family_clash':
+      return 11;
   }
 }
 
@@ -575,6 +612,7 @@ function sortKey(item: InboxItem, nowMs: number): number {
 function sortDateFor(item: InboxItem): string | null {
   switch (item.kind) {
     case 'pending_shift':
+    case 'cross_family_clash':
       return item.startsAt;
     case 'pending_pattern':
       return item.dtstart;

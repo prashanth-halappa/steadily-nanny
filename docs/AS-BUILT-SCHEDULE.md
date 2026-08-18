@@ -96,8 +96,9 @@ Three routes into a `pending` shift needing per-shift confirmation: an extra/cov
 > day-thread READ, replacing it with a parent-only
 > `POST /households/:hid/day-thread/refresh`.
 >
-> **Still open:** S2, S4b (cross-household, deliberately still advisory), S6,
-> S7, S8–S11, S15. Part of §7's coverage hole is closed too — the RPC bodies
+> **Still open:** S2, S6, S7, S8–S11, S15. (S4b landed separately, still same
+> day — see the S4b status note below the S4 finding: persisted, still
+> deliberately advisory.) Part of §7's coverage hole is closed too — the RPC bodies
 > now have executing tests (`tests/integration/shiftRpcs.integration.test.ts`),
 > as do the new policies and constraints (`shiftRls`, `shiftOverlap`,
 > `schedulePatternInvariants`).
@@ -130,6 +131,28 @@ where created > now() - interval '7 days' group by status_code;
 **S4 — cross-household double-booking is unguarded, and the warning is a one-time artifact.** The only cross-household check reads the anonymised `v_busy_blocks` view and is deliberately advisory, never blocking. It fires in six controllers on human action. `scheduleMaterialisationService` has **no clash check of any kind**, and a job has no HTTP response a warning could ride on, no recipient, and no persisted warning type. So the nightly job re-materialises both patterns forward every night, minting fresh colliding `confirmed` shifts, and **nobody is ever warned again**.
 
 **The specs are silent on this** — no rule, no warning, no stated non-goal, and the five places it would have to be caught are each scoped to one household. **The code matches the spec exactly; the gap is a product decision.**
+
+> **S4b status (2026-08-17).** **Fixed, half of S4** — the OWNER DECISION kept
+> cross-household double-booking ADVISORY (never a 409; `clashWarning.ts`'s
+> module header is unchanged), but the nightly `scheduleHorizonJob` now
+> carries a `sweepCrossHouseholdClashes` arm: it reads every live,
+> carer-assigned shift across every household in an 84-day window
+> (`ShiftRepository.listLiveForClashScan`), runs the pure sweep-line
+> `findCrossHouseholdClashes` (`domains/schedule/utils/crossHouseholdClashes.ts`)
+> over it, and persists BOTH sides of every overlapping cross-household pair as
+> a `cross_family_clash` `shift_events` row — idempotent the same way
+> `pattern_conflict` is (`ShiftEventRepository.listEventKeysForDate` +
+> `insertMany`), isolated and error-counted like every other arm (J1-a), and
+> swept out after 90 days by S8's retention sweep (`SWEEPABLE_EVENT_TYPES`).
+> The other family is still named only by its shift's opaque `ical_uid`
+> (`v_busy_blocks`'s own discipline). It now surfaces twice: the shift's own
+> day thread (`ShiftDetailScreen`, role-forked copy — the parent hears whose
+> shift overlaps, the nanny hears only that it overlaps another family's), and
+> the nanny's inbox (`meQueryService.listMyShifts`'s `clashes_with_other_household`,
+> computed in memory on every read — never a stored, staleable flag —
+> flowing into `buildInboxItems`'s `cross_family_clash` kind). **S4a (the
+> same-household overlap, refused by `shifts_carer_window_excl`) was already
+> fixed in 104; S4 is now fully closed.**
 
 Also: even *within* one household, the only refusing checks test exact window **equality**, not overlap. 09:00–17:00 and 10:00–12:00 both insert cleanly.
 

@@ -31,6 +31,9 @@ import type {
 import { supabaseService } from '../../../config/supabase';
 import { DatabaseError, ValidationError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
+// S4b's clash-scan row shape lives with the sweep-line that consumes it, not
+// here — this repository only produces rows shaped for it.
+import type { ClashScanShift } from '../../schedule/utils/crossHouseholdClashes';
 // Import the repository file DIRECTLY — never the timesheet domain barrel,
 // whose services import this one back. Same narrow, read-only cross-domain
 // dependency `scheduleMaterialisationService` already takes on
@@ -261,6 +264,43 @@ export class ShiftRepository extends BaseRepository<Shift> {
       );
     }
     return (data ?? []) as ShiftWithChildren[];
+  }
+
+  /**
+   * S4b — every LIVE, carer-assigned shift overlapping `[from, to)`, across
+   * EVERY household, narrowed to exactly the columns
+   * `findCrossHouseholdClashes` needs. This is the one query that is
+   * deliberately NOT household-scoped: the whole point of the sweep is
+   * comparing one carer's shifts across different families, so household
+   * filtering would defeat it. `carer_id is not null` mirrors
+   * `v_busy_blocks`'s own `shifts` union arm (016_calendar_seams.sql); the
+   * `status in (pending, confirmed)` set is the same "live" set that view
+   * uses too. Ordered by `carer_id` so the sweep-line can group without a
+   * second pass.
+   */
+  async listLiveForClashScan(
+    from: string,
+    to: string
+  ): Promise<ClashScanShift[]> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select(
+        'id, household_id, carer_id, starts_at, ends_at, local_date, ical_uid'
+      )
+      .not('carer_id', 'is', null)
+      .in('status', ['pending', 'confirmed'])
+      .lt('starts_at', to)
+      .gt('ends_at', from)
+      .order('carer_id', { ascending: true });
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list live shifts for cross-household clash scan',
+        'DATABASE_ERROR',
+        { details: error.message, from, to }
+      );
+    }
+    return (data ?? []) as ClashScanShift[];
   }
 
   /**

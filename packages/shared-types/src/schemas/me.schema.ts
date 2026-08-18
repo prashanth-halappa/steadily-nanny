@@ -35,9 +35,15 @@ export type ClashWarningKind =
  * One of the caller's own shifts (carer_id === caller), across every household
  * they actively belong to. `membership_role` is the caller's role in THAT
  * household so the client can render without a second memberships round-trip.
+ *
+ * `clashes_with_other_household` (S4b) is computed by `meQueryService` in
+ * memory over this same response, never a stored column — self-healing the
+ * instant a clashing shift moves. Optional with a `false` default so a
+ * response assembled before this field existed still parses.
  */
 export const MeShiftSchema = ShiftSchema.extend({
   membership_role: z.enum(Object.values(HOUSEHOLD_ROLES)),
+  clashes_with_other_household: z.boolean().optional().default(false),
 });
 
 /** List response envelope for GET /me/shifts. */

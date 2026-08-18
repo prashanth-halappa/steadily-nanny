@@ -75,6 +75,11 @@
       "subtitleOpened": "Enviadas el {{date}} · abiertas, sin responder.",
       "subtitleNotOpened": "Enviadas el {{date}} · aún sin abrir.",
       "cta": "Ver lo que enviaste"
+    },
+    "crossFamilyClash": {
+      "title": "Este turno se superpone con un turno de otra familia",
+      "subtitle": "{{date}}, {{time}}",
+      "cta": "Abrir el turno"
     }
   },
   "pendingOfferCard": {
@@ -104,6 +109,7 @@
     "terms_proposal": "Condiciones",
     "terms_proposal_sent": "Condiciones",
     "terms_ack": "Condiciones",
-    "reimbursement_owed": "Reembolso"
+    "reimbursement_owed": "Reembolso",
+    "cross_family_clash": "Turno superpuesto"
   }
 }

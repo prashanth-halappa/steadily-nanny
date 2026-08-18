@@ -53,6 +53,7 @@ import {
   schedulePatternCommandService,
 } from '../domains/schedule/services/schedulePatternCommandService';
 import type { SchedulePattern } from '../domains/schedule/types';
+import { findCrossHouseholdClashes } from '../domains/schedule/utils/crossHouseholdClashes';
 import { ShiftChangeRequestRepository } from '../domains/shift/repositories/shiftChangeRequestRepository';
 import { ShiftEventRepository } from '../domains/shift/repositories/shiftEventRepository';
 import { ShiftRepository } from '../domains/shift/repositories/shiftRepository';
@@ -111,6 +112,7 @@ const EVENT_RETENTION_DAYS = 90;
 const SWEEPABLE_EVENT_TYPES: readonly string[] = [
   'uncovered_care',
   'pattern_conflict',
+  'cross_family_clash',
 ];
 
 /**
@@ -122,6 +124,13 @@ const SWEEPABLE_EVENT_TYPES: readonly string[] = [
  */
 const UNCOVERED_DETECTION_DAYS = 30;
 
+/**
+ * S4b — the cross-household clash scan window, matching the materialisation
+ * horizon (`DEFAULT_MATERIALISATION_HORIZON_DAYS`): there is no point
+ * scanning further out than shifts are ever materialised to.
+ */
+const CLASH_SCAN_WINDOW_DAYS = 84;
+
 export interface ScheduleHorizonJobResult {
   patternsProcessed: number;
   successCount: number;
@@ -131,6 +140,8 @@ export interface ScheduleHorizonJobResult {
   changeRequestsExpiredForStartedShifts: number;
   /** S8: machine-generated `shift_events` rows aged out this run. */
   eventsSwept: number;
+  /** S4b: `cross_family_clash` events newly persisted this run (both sides of every new pair). */
+  crossHouseholdClashesRaised: number;
   message: string;
 }
 
@@ -159,6 +170,18 @@ export type HorizonEventRetentionRepository = Pick<
 
 export type HorizonShiftLookupRepository = Pick<ShiftRepository, 'findByIds'>;
 
+/** S4b: the one narrow read the clash sweep needs (see the module's arm below). */
+export type HorizonClashScanRepository = Pick<
+  ShiftRepository,
+  'listLiveForClashScan'
+>;
+
+/** S4b: the idempotent bulk-append pair, same shape `raiseConflictsOnce` uses. */
+export type HorizonClashEventRepository = Pick<
+  ShiftEventRepository,
+  'listEventKeysForDate' | 'insertMany'
+>;
+
 export type HorizonCommitmentRepository = Pick<
   ChildCommitmentRepository,
   'listHouseholdIdsWithCommitments'
@@ -182,6 +205,8 @@ export interface ScheduleHorizonJobDeps {
   detectUncovered?: HorizonUncoveredDetector;
   notifyUser?: HorizonUserNotifier;
   events?: HorizonEventRetentionRepository;
+  clashScan?: HorizonClashScanRepository;
+  clashEvents?: HorizonClashEventRepository;
 }
 
 export async function runScheduleHorizonJob(
@@ -222,12 +247,15 @@ export async function runScheduleHorizonJob(
 
   const eventsResult = await sweepOldMachineEvents(deps);
 
+  const clashResult = await sweepCrossHouseholdClashes(deps);
+
   const errorCount =
     materialiseErrorCount +
     changeRequestsResult.errorCount +
     startedShiftsResult.errorCount +
     uncoveredCareResult.errorCount +
-    eventsResult.errorCount;
+    eventsResult.errorCount +
+    clashResult.errorCount;
 
   return {
     patternsProcessed: patterns.length,
@@ -236,6 +264,7 @@ export async function runScheduleHorizonJob(
     changeRequestsExpired: changeRequestsResult.expired,
     changeRequestsExpiredForStartedShifts: startedShiftsResult.expired,
     eventsSwept: eventsResult.swept,
+    crossHouseholdClashesRaised: clashResult.raised,
     message: `Rolled the materialisation horizon forward for ${successCount}/${patterns.length} accepted schedule pattern(s)`,
   };
 }
@@ -359,6 +388,80 @@ async function sweepOldMachineEvents(
       error,
     });
     return { swept: 0, errorCount: 1 };
+  }
+}
+
+/**
+ * S4b — persist cross-household clashes nightly, so the OWNER DECISION
+ * (docs/AS-BUILT-SCHEDULE.md §6 S4: advisory, never blocking, but no longer a
+ * one-time HTTP-response artifact) actually lands on the inbox and the shift
+ * itself instead of vanishing the moment the response that surfaced it does.
+ *
+ * Isolated like every other arm — its failure never skips a sibling sweep,
+ * and is counted into `errorCount` the same way (J1-a). Pure decision-making
+ * lives in `findCrossHouseholdClashes`; this function only does I/O: read
+ * every live carer-assigned shift in the window, hand it to the sweep-line,
+ * then append whatever comes back — deduped per (household, local_date) the
+ * same way `scheduleMaterialisationService.raiseConflictsOnce` dedupes
+ * `pattern_conflict`, except across potentially several households at once
+ * (one clashing pair writes into TWO different households' day threads).
+ */
+async function sweepCrossHouseholdClashes(
+  deps: ScheduleHorizonJobDeps
+): Promise<{ raised: number; errorCount: number }> {
+  const shiftRepo = deps.clashScan ?? new ShiftRepository();
+  const eventRepo = deps.clashEvents ?? new ShiftEventRepository();
+  try {
+    const fromIso = new Date().toISOString();
+    const toIso = new Date(
+      Date.now() + CLASH_SCAN_WINDOW_DAYS * 24 * 60 * 60 * 1000
+    ).toISOString();
+    const shifts = await shiftRepo.listLiveForClashScan(fromIso, toIso);
+    const clashEvents = findCrossHouseholdClashes(shifts);
+    if (clashEvents.length === 0) {
+      return { raised: 0, errorCount: 0 };
+    }
+
+    const pairKeys = [
+      ...new Set(
+        clashEvents.map(event => `${event.household_id}::${event.local_date}`)
+      ),
+    ];
+    const keysByPair = new Map<string, Set<string>>();
+    await Promise.all(
+      pairKeys.map(async pairKey => {
+        const [householdId, localDate] = pairKey.split('::') as [
+          string,
+          string,
+        ];
+        keysByPair.set(
+          pairKey,
+          await eventRepo.listEventKeysForDate(
+            householdId,
+            localDate,
+            'cross_family_clash'
+          )
+        );
+      })
+    );
+
+    const rows = clashEvents.flatMap(event => {
+      const pairKey = `${event.household_id}::${event.local_date}`;
+      if (keysByPair.get(pairKey)?.has(event.payload.key)) {
+        return [];
+      }
+      return [event];
+    });
+    if (rows.length === 0) {
+      return { raised: 0, errorCount: 0 };
+    }
+    await eventRepo.insertMany(rows);
+    return { raised: rows.length, errorCount: 0 };
+  } catch (error) {
+    logger.error('Schedule horizon job: cross-household clash sweep failed', {
+      error,
+    });
+    return { raised: 0, errorCount: 1 };
   }
 }
 

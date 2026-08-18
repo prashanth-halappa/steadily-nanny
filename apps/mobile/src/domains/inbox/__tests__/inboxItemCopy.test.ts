@@ -193,6 +193,47 @@ describe('pending_shift copy', () => {
   });
 });
 
+// S4b — advisory, nightly-persisted cross-household clash, nanny-only.
+describe('cross_family_clash copy', () => {
+  const item: InboxItem = {
+    kind: 'cross_family_clash',
+    id: 'shift-clash-1',
+    shiftId: 'shift-clash-1',
+    householdId: 'hh-1',
+    startsAt: '2026-08-26T08:00:00.000Z',
+  };
+
+  it('opens the shift it is about — same shiftDetailHref every shift item uses', () => {
+    expect(hrefForItem(item)).toBe(
+      '/(private)/schedule/shifts/shift-clash-1?householdId=hh-1'
+    );
+  });
+
+  it('has title/subtitle/cta keys', () => {
+    expect(titleForItem(item, t, ZONE)).toBe('items.crossFamilyClash.title');
+    expect(subtitleForItem(item, t, ZONE)).toBe(
+      'items.crossFamilyClash.subtitle'
+    );
+    expect(ctaForItem(item, t)).toBe('items.crossFamilyClash.cta');
+  });
+
+  // Advisory only — nothing about it decays and nothing is owed by a
+  // deadline (§4). Never Rule B's coloured-text exception.
+  it('deadlineForItem is always null', () => {
+    expect(deadlineForItem(item, t, ZONE)).toBeNull();
+  });
+
+  it('has both-language strings and a kinds label', async () => {
+    for (const language of ['en', 'es'] as const) {
+      const copy = await locale(language);
+      expect(copy.items.crossFamilyClash.title.length).toBeGreaterThan(0);
+      expect(copy.items.crossFamilyClash.subtitle).toContain('{{');
+      expect(copy.items.crossFamilyClash.cta.length).toBeGreaterThan(0);
+      expect(copy.kinds.cross_family_clash.length).toBeGreaterThan(0);
+    }
+  });
+});
+
 // A7 — the author's own row. Its whole job is to be honest about a state
 // word: `viewed_at` is stamped AUTOMATICALLY on open, so the row must never
 // say "opened" without "not answered" attached (§1's rule).
