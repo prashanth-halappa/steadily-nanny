@@ -4,6 +4,7 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type { HouseholdInvite } from '../../../../../src/domains/household/types';
+import { OpenTermsProposalExistsError } from '../../../../../src/domains/termsProposal/errors/termsProposalErrors';
 
 function pendingInvite(
   overrides: Partial<HouseholdInvite> = {}
@@ -23,6 +24,7 @@ function pendingInvite(
     opened_at: null,
     label: null,
     pay_offer: null,
+    pay_offer_promotion: null,
     created_at: 't',
     updated_at: 't',
     ...overrides,
@@ -98,6 +100,7 @@ function makeInviteRepo(overrides: Record<string, unknown> = {}) {
       id,
       ...data,
     })),
+    updatePayOfferPromotion: mock(async () => {}),
     ...overrides,
   };
 }
@@ -392,7 +395,14 @@ describe('HouseholdCommandService.leave — parents are told', () => {
       { ensureProfile: mock(async () => {}) } as never,
       { findRunningInHousehold: mock(async () => null) } as never,
       { endForCarer: mock(async () => []) } as never,
-      makePtoRepo() as never
+      makePtoRepo() as never,
+      { existsForHousehold: mock(async () => false) } as never,
+      { seedFederalSet: mock(async () => []) } as never,
+      // F8: `leave` now calls `withdrawOpenForCarer` for a NANNY. Left
+      // defaulted this constructs a REAL TermsProposalRepository and the test
+      // dies on a network call rather than an assertion — same hazard the PTO
+      // repo comment above already documents for this file.
+      { withdrawOpenForCarer: mock(async () => null) } as never
     );
   }
 
@@ -529,5 +539,158 @@ describe('HouseholdCommandService.redeemInvite — the draft carer arm', () => {
       }),
       { excludeUserId: 'u-parent' }
     );
+  });
+});
+
+/**
+ * F3 — the inviting parent is told when her pay offer did NOT become a
+ * proposal, but only on the two outcomes she can act on: `failed` (transient,
+ * try again) and `skipped_stale` (her date drifted, write a new one).
+ * `skipped_no_inviter` has nobody to push, and `skipped_open_round` is not
+ * news — she is already mid-negotiation with the carer.
+ */
+describe('HouseholdCommandService.redeemInvite — pay-offer-not-promoted push (F3)', () => {
+  const offer = {
+    rate_minor: 2800,
+    overtime_multiplier: 1.5,
+    valid_from: '2026-09-01',
+  };
+
+  // Fixed instant so the D-16 horizon boundary is deterministic: noon UTC on
+  // 1 Jul 2026 is the 1st in Europe/London (`makeHouseholdRepo`'s fixture
+  // timezone), and the horizon lands on 1 Jul 2027 exactly — same fixture
+  // `householdCommandService.test.ts` pins its own horizon tests against.
+  const AT_NOON_UTC = () => new Date('2026-07-01T12:00:00.000Z');
+
+  function svcWith(overrides: Record<string, any> = {}) {
+    return new HouseholdCommandService(
+      makeHouseholdRepo() as never,
+      makeMemberRepo() as never,
+      makeInviteRepo({
+        findByCode: mock(async () =>
+          pendingInvite({ role: 'nanny', pay_offer: offer })
+        ),
+        ...overrides.inviteRepo,
+      }) as never,
+      { getMembership: mock() } as never,
+      {
+        ensureProfile: mock(async () => {}),
+        getProfileById: mock(async () => ({ name: 'Nia' })),
+      } as never,
+      { findRunningInHousehold: mock(async () => null) } as never,
+      { endForCarer: mock(async () => []) } as never,
+      makePtoRepo() as never,
+      { existsForHousehold: mock(async () => false) } as never,
+      { seedFederalSet: mock(async () => []) } as never,
+      {
+        create: mock(async (row: Record<string, unknown>) => ({
+          id: 'p-new',
+          ...row,
+        })),
+        ...overrides.proposals,
+      } as never
+    );
+  }
+
+  it('pushes the inviting parent when the promotion fails, naming the carer', async () => {
+    const svc = svcWith({
+      proposals: {
+        create: mock(async () => {
+          throw new Error('boom');
+        }),
+      },
+    });
+
+    await svc.redeemInvite('u2', { code: 'ABC-234' });
+
+    expect(notifyUser).toHaveBeenCalledWith(
+      'u1',
+      expect.objectContaining({
+        body: 'Your pay offer for Nia needs another look',
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.PAY_OFFER_NOT_PROMOTED,
+          householdId: 'h1',
+        }),
+      })
+    );
+  });
+
+  it('pushes the inviting parent when the offer has drifted past the horizon', async () => {
+    const svc = svcWith({
+      inviteRepo: {
+        findByCode: mock(async () =>
+          pendingInvite({
+            role: 'nanny',
+            pay_offer: { ...offer, valid_from: '2027-07-02' },
+          })
+        ),
+      },
+    });
+
+    await svc.redeemInvite('u2', { code: 'ABC-234' }, AT_NOON_UTC);
+
+    expect(notifyUser).toHaveBeenCalledWith(
+      'u1',
+      expect.objectContaining({
+        body: 'Your pay offer for Nia needs another look',
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.PAY_OFFER_NOT_PROMOTED,
+          householdId: 'h1',
+        }),
+      })
+    );
+  });
+
+  it('does NOT push when there is nobody to push to (the inviting parent is gone)', async () => {
+    const svc = svcWith({
+      inviteRepo: {
+        findByCode: mock(async () =>
+          pendingInvite({ role: 'nanny', pay_offer: offer, invited_by: null })
+        ),
+      },
+    });
+
+    await svc.redeemInvite('u2', { code: 'ABC-234' });
+
+    expect(notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('does NOT push when a round is already open — not news, she is already negotiating', async () => {
+    const svc = svcWith({
+      proposals: {
+        create: mock(async () => {
+          throw new OpenTermsProposalExistsError('h1', 'u2');
+        }),
+      },
+    });
+
+    await svc.redeemInvite('u2', { code: 'ABC-234' });
+
+    expect(notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('does NOT push on a successful promotion', async () => {
+    const svc = svcWith();
+
+    await svc.redeemInvite('u2', { code: 'ABC-234' });
+
+    expect(notifyUser).not.toHaveBeenCalled();
+  });
+
+  it('still completes the redeem when the push itself throws', async () => {
+    notifyUser.mockImplementationOnce(() => {
+      throw new Error('expo down');
+    });
+    const svc = svcWith({
+      proposals: {
+        create: mock(async () => {
+          throw new Error('boom');
+        }),
+      },
+    });
+
+    await expect(
+      svc.redeemInvite('u2', { code: 'ABC-234' })
+    ).resolves.toMatchObject({ role: 'nanny' });
   });
 });

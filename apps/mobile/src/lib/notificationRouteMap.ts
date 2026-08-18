@@ -81,7 +81,13 @@ export const shiftsCalendarHref: NotificationRouteResolver = data =>
 // 3-O (§7.2/§13): the review screen IS the proposal — there is no list to
 // fall back to, so a payload without the id resolves to nothing rather than
 // opening the wrong contract.
-const proposalReviewHref: NotificationRouteResolver = data => {
+//
+// Exported so every screen that opens a proposal by id (`MyPayScreen`,
+// `PayArrangementScreen`, `PaySetupScreen`) resolves it through this ONE
+// function instead of each hand-rolling the same template string — a push
+// notification and an in-app "Review" button must land on the byte-identical
+// destination.
+export const proposalReviewHref: NotificationRouteResolver = data => {
   const proposalId = asString(data.proposalId);
   if (!proposalId) return null;
   return `/(private)/pay/proposal/${proposalId}`;
@@ -161,6 +167,14 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   // Static destination — the nanny's own read-only pay screen fetches every
   // household she belongs to itself, so no query params are needed here.
   [PUSH_NOTIFICATION_TYPES.PAY_TERMS_SET]: () => '/(private)/settings/my-pay',
+
+  // F3 — the parent's offer needs another look (a redemption that couldn't
+  // promote it into a proposal). Same static destination as
+  // PAY_TERMS_DISAGREED: the household pay hub, where he can now send it as
+  // a real proposal to the nanny who exists. The payload carries only
+  // `householdId`, no `carerId` — the emitter has no proposal to point at.
+  [PUSH_NOTIFICATION_TYPES.PAY_OFFER_NOT_PROMOTED]: () =>
+    '/(private)/settings/pay',
 
   // 3-U1 (D-16 §7.4/N18, D-45 §8.3.1/N20). Same static-destination shape as
   // PAY_TERMS_SET — both are carer-targeted and her My pay screen fetches

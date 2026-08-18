@@ -253,6 +253,37 @@ describe('TermsProposalRepository.resolve — CAS on status=proposed', () => {
   });
 });
 
+describe('TermsProposalRepository.withdrawOpenForCarer — CAS on status=proposed (F8)', () => {
+  it('withdraws the open round and stamps responded_at', async () => {
+    withRows([row()]);
+    const repo = new TermsProposalRepository();
+    const withdrawn = await repo.withdrawOpenForCarer('h1', 'carer-1');
+    expect(withdrawn?.status).toBe('withdrawn');
+    expect(withdrawn?.responded_at).toBeTruthy();
+    expect(
+      lastCalls.filter(call => call.method === 'eq').map(call => call.args)
+    ).toEqual([
+      ['household_id', 'h1'],
+      ['carer_id', 'carer-1'],
+      ['status', 'proposed'],
+    ]);
+  });
+
+  it('leaves a non-open row untouched — already accepted/declined/etc.', async () => {
+    withRows([row({ status: 'accepted' })]);
+    const repo = new TermsProposalRepository();
+    expect(await repo.withdrawOpenForCarer('h1', 'carer-1')).toBeNull();
+  });
+
+  it('a query error becomes a DatabaseError', async () => {
+    withRows([], { message: 'boom', code: 'XX000' });
+    const repo = new TermsProposalRepository();
+    await expect(
+      repo.withdrawOpenForCarer('h1', 'carer-1')
+    ).rejects.toBeInstanceOf(DatabaseError);
+  });
+});
+
 describe('TermsProposalRepository.stampViewed — one-way', () => {
   it('only writes when viewed_at is still null', async () => {
     withRows([row()]);

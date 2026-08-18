@@ -773,6 +773,139 @@ describe('WeekTotal', () => {
 
       expect(queryByTestId('hours-status-timeline')).toBeNull();
     });
+
+    // P5 — a reopened-and-resubmitted week (status back to `submitted`,
+    // `reopen_reason` non-null) must surface the reason IN the timeline
+    // itself, not only in the separate `hours-earnings-line-reopened-note`
+    // caption below the card.
+    it('leads the timeline with the reopen reason on a resubmitted week', () => {
+      const { getByTestId, getByText } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="submitted"
+          earningsRole="nanny"
+          earningsReopenReason="Thursday hours were wrong"
+        />
+      );
+
+      const timeline = getByTestId('hours-status-timeline');
+      expect(getByTestId('hours-timeline-reopened')).toBeTruthy();
+      expect(getByText('timeline.reopened')).toBeTruthy();
+      // It is the lead step — first child of the timeline.
+      const firstChild = timeline.children[0];
+      const firstChildTestId =
+        typeof firstChild === 'string' ? null : firstChild?.props.testID;
+      expect(firstChildTestId).toBe('hours-timeline-reopened');
+    });
+
+    it('does not lead the timeline with a reopened step when there is no reason', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="submitted"
+          earningsRole="nanny"
+        />
+      );
+
+      expect(queryByTestId('hours-timeline-reopened')).toBeNull();
+    });
+  });
+
+  // P6(a) — `parent_viewed_at` also has to survive into an APPROVED week,
+  // not just disappear along with the submitted-week timeline.
+  describe('approved-week viewed note (P6a)', () => {
+    const approvedEarnings = { ...okEarnings, gross_minor: 35208 };
+
+    it('shows a viewed note alongside the appreciation line when the parent opened it', () => {
+      const { getByTestId, getByText } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="approved"
+          earningsRole="nanny"
+          approvedDateLabel="6 August"
+          householdName="the Smiths"
+          parentViewedDateLabel="4 August"
+          earnings={approvedEarnings}
+        />
+      );
+
+      expect(getByTestId('hours-approved-viewed-note')).toBeTruthy();
+      expect(getByText('timeline.opened')).toBeTruthy();
+    });
+
+    it('omits the viewed note when the week has never been opened', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="approved"
+          earningsRole="nanny"
+          approvedDateLabel="6 August"
+          householdName="the Smiths"
+          parentViewedDateLabel={null}
+          earnings={approvedEarnings}
+        />
+      );
+
+      expect(queryByTestId('hours-approved-viewed-note')).toBeNull();
+    });
+
+    it('never shows the viewed note for the parent viewer', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="approved"
+          earningsRole="parent"
+          approvedDateLabel="6 August"
+          householdName="the Smiths"
+          parentViewedDateLabel="4 August"
+          earnings={approvedEarnings}
+        />
+      );
+
+      expect(queryByTestId('hours-approved-viewed-note')).toBeNull();
+    });
+  });
+
+  // P6(b) — the parent's own read receipt for their own view of the week.
+  describe('parentViewedNote (P6b)', () => {
+    it('renders the note for the parent viewer when supplied', () => {
+      const { getByTestId, getByText } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="submitted"
+          earningsRole="parent"
+          parentViewedNote="You viewed this on 4 August."
+        />
+      );
+
+      expect(getByTestId('hours-parent-viewed-note')).toBeTruthy();
+      expect(getByText('You viewed this on 4 August.')).toBeTruthy();
+    });
+
+    it('never renders the note for the nanny viewer', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="submitted"
+          earningsRole="nanny"
+          parentViewedNote="You viewed this on 4 August."
+        />
+      );
+
+      expect(queryByTestId('hours-parent-viewed-note')).toBeNull();
+    });
+
+    it('renders nothing when there is no note', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="submitted"
+          earningsRole="parent"
+        />
+      );
+
+      expect(queryByTestId('hours-parent-viewed-note')).toBeNull();
+    });
   });
 
   // Daylight P0-3: Approve moves from the FlashList footer, several screens

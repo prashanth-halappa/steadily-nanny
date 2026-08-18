@@ -6,6 +6,9 @@
  *
  * @module domains/household/repositories/householdInviteRepository
  */
+// Straight from the shared package, not the domain barrel: this is the one
+// type this repository needs and pulling in the barrel buys nothing here.
+import type { PayOfferPromotionOutcome } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { supabaseService } from '../../../config/supabase';
 import { DatabaseError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
@@ -229,6 +232,32 @@ export class HouseholdInviteRepository extends BaseRepository<HouseholdInvite> {
         details: error.message,
         code,
       });
+    }
+  }
+
+  /**
+   * Record what `promoteOfferToProposal` (F3, 106) did with this invite's
+   * `pay_offer`. A plain update, not a CAS: the promotion runs exactly once
+   * per redemption and nothing else ever writes this column, so there is no
+   * concurrent writer to race. `promoteOfferToProposal` itself never throws —
+   * this method still can, and the caller wraps it so a failure here costs a
+   * recorded outcome, never the redemption.
+   */
+  async updatePayOfferPromotion(
+    id: string,
+    outcome: PayOfferPromotionOutcome
+  ): Promise<void> {
+    const { error } = await supabaseService
+      .from(this.table)
+      .update({ pay_offer_promotion: outcome })
+      .eq('id', id);
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to record pay-offer promotion outcome',
+        'DATABASE_ERROR',
+        { details: error.message, id, outcome }
+      );
     }
   }
 

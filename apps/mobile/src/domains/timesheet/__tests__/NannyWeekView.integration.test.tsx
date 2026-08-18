@@ -607,6 +607,37 @@ describe('NannyWeekView — earnings arms', () => {
     ).toBeTruthy();
   });
 
+  // P6a: `parent_viewed_at` used to reach only the submitted-week timeline,
+  // which stops rendering the instant the week is approved — approving
+  // erased the evidence the week was ever opened. It now survives as a
+  // one-line note beside the appreciation block.
+  it('approved-frozen arm: shows a viewed note when the parent opened this week', async () => {
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(
+        makeTimesheetWeek({
+          status: 'approved',
+          approved_at: '2026-08-10T09:00:00.000Z',
+          parent_viewed_at: '2026-08-09T09:00:00.000Z',
+        })
+      )
+    );
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([
+        makeTimesheet({
+          status: 'approved',
+          approved_at: '2026-08-10T09:00:00.000Z',
+          parent_viewed_at: '2026-08-09T09:00:00.000Z',
+        }),
+      ])
+    );
+
+    const { getByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-approved-viewed-note')).toBeTruthy()
+    );
+  });
+
   // docs/11-MONEY.md: the money clause is OMITTED, never fabricated, when
   // the week has no server total. An approved week priced by no arrangement
   // still gets the appreciation sentence — and no figure at all.
@@ -1255,6 +1286,35 @@ describe('NannyWeekView — cold-mount reopen reason', () => {
     await waitFor(() =>
       expect(getByTestId('hours-earnings-line-reopened-note')).toBeTruthy()
     );
+  });
+
+  // P5: the SAME resubmitted week also leads the status timeline itself
+  // with the reason — not only the separate caption below the card.
+  it('leads the status timeline with the reopen reason on the same resubmitted week', async () => {
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(
+        makeTimesheetWeek({
+          status: 'submitted',
+          approved_at: null,
+          reopen_reason: 'Thursday hours were wrong',
+        })
+      )
+    );
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([
+        makeTimesheet({
+          status: 'submitted',
+          reopen_reason: 'Thursday hours were wrong',
+        }),
+      ])
+    );
+
+    const { getByTestId } = renderNannyView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-status-timeline')).toBeTruthy()
+    );
+    expect(getByTestId('hours-timeline-reopened')).toBeTruthy();
   });
 
   it('does not show a stale reopen_reason on an approved week', async () => {

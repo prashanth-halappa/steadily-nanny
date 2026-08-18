@@ -160,6 +160,21 @@ beforeAll(async () => {
   );
 
   mock.module(
+    '../../../../../src/domains/termsProposal/repositories/termsProposalRepository',
+    () => ({
+      TermsProposalRepository: class {
+        async withdrawOpenForCarer(householdId: string, carerId: string) {
+          record('proposals.withdrawOpenForCarer', householdId, carerId);
+          if (failures.withdrawProposals) {
+            throw new Error('withdraw exploded');
+          }
+          return { id: 'tp-1', status: 'withdrawn' };
+        }
+      },
+    })
+  );
+
+  mock.module(
     '../../../../../src/domains/schedule/repositories/schedulePatternRepository',
     () => ({
       SchedulePatternRepository: class {
@@ -287,6 +302,44 @@ describe('UserService.deleteUser — pay arrangements', () => {
     expect(names.indexOf('pay.endForCarer')).toBeLessThan(
       names.indexOf('profile.delete')
     );
+  });
+});
+
+describe('UserService.deleteUser — open terms proposals (F8)', () => {
+  it('withdraws the open round in every household this user carers in', async () => {
+    memberships = [
+      member({ household_id: 'h1' }),
+      member({ id: 'm2', household_id: 'h2' }),
+    ];
+    households = [
+      { id: 'h1', timezone: 'Europe/London' },
+      { id: 'h2', timezone: 'Pacific/Auckland' },
+    ];
+
+    await UserService.deleteUser('u1');
+
+    expect(argsFor('proposals.withdrawOpenForCarer')).toEqual([
+      ['h1', 'u1'],
+      ['h2', 'u1'],
+    ]);
+  });
+
+  it('withdraws before the profile delete orphans the carer_id', async () => {
+    await UserService.deleteUser('u1');
+
+    const names = stepNames();
+    expect(names.indexOf('proposals.withdrawOpenForCarer')).toBeLessThan(
+      names.indexOf('profile.delete')
+    );
+  });
+
+  it('finishes the deletion when withdrawing a proposal throws', async () => {
+    failures.withdrawProposals = true;
+
+    await UserService.deleteUser('u1');
+
+    expect(stepNames()).toContain('auth.delete');
+    expect(logger.error).toHaveBeenCalled();
   });
 });
 

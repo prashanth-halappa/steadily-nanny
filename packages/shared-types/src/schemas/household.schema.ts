@@ -431,6 +431,21 @@ export type HouseholdMemberListResponse = z.infer<
 // household_invites
 // =============================================================================
 
+/**
+ * `household_invites.pay_offer_promotion` (106) — every outcome
+ * `promoteOfferToProposal` can record. Matches the migration's CHECK
+ * constraint exactly; keep the two in sync.
+ */
+export const PAY_OFFER_PROMOTION_OUTCOMES = {
+  PROMOTED: 'promoted',
+  SKIPPED_OPEN_ROUND: 'skipped_open_round',
+  SKIPPED_STALE: 'skipped_stale',
+  SKIPPED_NO_INVITER: 'skipped_no_inviter',
+  FAILED: 'failed',
+} as const;
+export type PayOfferPromotionOutcome =
+  (typeof PAY_OFFER_PROMOTION_OUTCOMES)[keyof typeof PAY_OFFER_PROMOTION_OUTCOMES];
+
 /** The persisted entity as returned to clients. */
 export const HouseholdInviteSchema = z.object({
   id: z.uuid(),
@@ -493,6 +508,17 @@ export const HouseholdInviteSchema = z.object({
    * 098 is applied, or by a client that predates it, has no column to send.
    */
   pay_offer: CreatePayArrangementRequestSchema.nullable().default(null),
+  /**
+   * The outcome of the best-effort `pay_offer` → `terms_proposal` promotion
+   * run on redemption (F3, 106). `promoteOfferToProposal` never throws — a
+   * failed or skipped promotion must not strand the join — so this column is
+   * the only record of what happened. `null` covers both "no pay_offer was
+   * attached" and rows written before 106.
+   */
+  pay_offer_promotion: z
+    .enum(Object.values(PAY_OFFER_PROMOTION_OUTCOMES))
+    .nullable()
+    .default(null),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
 });

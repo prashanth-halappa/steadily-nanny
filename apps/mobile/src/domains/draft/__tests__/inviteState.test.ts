@@ -28,6 +28,7 @@ function invite(overrides: Partial<HouseholdInvite> = {}): HouseholdInvite {
     opened_at: null,
     label: 'The Bakers',
     pay_offer: null,
+    pay_offer_promotion: null,
     created_at: '2026-08-10T09:00:00.000Z',
     updated_at: '2026-08-10T09:00:00.000Z',
     ...overrides,

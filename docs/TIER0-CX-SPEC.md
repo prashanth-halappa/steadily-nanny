@@ -68,7 +68,7 @@ never a bare `<Modal>` (GOLDEN-FIXES #1). Confirmations that must block:
   helper match with no status check (review finding 15). **One carer → render her terms inline**, no intermediate list.
   **Two or more → a picker list**, each a `rounded-row bg-card` +
   `elevation.row` row (copy the `SettingsNavRow` shape at `settings.tsx:50-83`)
-  showing name and `£18.50/hr` right-aligned `tabular`, pushing to
+  showing name and `$18.50/hr` right-aligned `tabular`, pushing to
   `/settings/pay/{carerId}`.
 - Role gate: `useIsOnboarded().role` via `isParentEditorRole`, with the
   `manage-household-not-available` empty-state pattern
@@ -83,32 +83,41 @@ never a bare `<Modal>` (GOLDEN-FIXES #1). Confirmations that must block:
 
 - Line 1: `metadataLabel` muted — "In effect since 1 Apr 2026".
 - Line 2: `typography.display`-adjacent is wrong here; use `H1` `tabular` for
-  the rate — **"£18.50"** — with `Body` muted `"/hr"` on the same baseline row
+  the rate — **"$18.50"** — with `Body` muted `"/hr"` on the same baseline row
   (`flex-row items-baseline gap-1`).
-- Then `AmountRow`s, always all six, `gap-3`:
+- Then `AmountRow`s for the term inventory (`screens-pay-terms.md` §3 has the
+  current, much longer list — overtime tiers, guarantee, PTO, cancellations,
+  mileage, holidays, pay schedule, and the in-writing fields; this is no
+  longer a fixed six), `gap-3`, for example:
   - "Overtime" → "After 40h, at 1.5×" | when null → "Not set"
   - "Guaranteed hours" → "40h a week" | "Not set"
   - "Paid time off" → "140h a year" | "Not set"
   - "Cancellations" → "Paid if within 24h of the start" | when null →
     **"No cancellation pay"** (an explicit agreement, not a missing one —
     never "Not set" here)
-  - "Mileage" → "£0.45 a mile" | "Not set"
+  - "Mileage" → "$0.45 a mile" | "Not set"
   - "PTO balance" (Phase 3) → "96h left this year" + `Small` muted "1 Jan – 31 Dec 2026"
 - Footer: `Button` "Change terms" (default variant, full width).
 
-"Not set" is the correct copy for a null term. It is a statement of the
-agreement, not a nag; do not render "£0.00" or "0h".
+"Not set" is the correct copy for a null term on this card. It is a statement
+of the agreement, not a nag; do not render "$0.00" or "0h". (The proposal
+document on the other three surfaces omits an unset row entirely rather than
+printing "Not set" — AMENDED 2026-08-16, `screens-onboarding-terms-proposal.md`
+§6.2 — but this card, `PayTermsGroups.tsx`, is deliberately not part of that
+amendment.)
 
-*(Owner decision 2026-08-04: no future-dated changes in v1, so there is no
-"Scheduled change" card — `valid_from` is always today or earlier and the
-current-terms card is always the whole truth. "Terms are never edited or
-removed — a change is a new record." moves to `Small` muted copy above the
-History heading.)*
+*(`valid_from` may be in the future, up to a 12-month horizon (D-16,
+`screens-pay-terms.md` §6) — this superseded the original 2026-08-04
+no-future-dating ruling. A future row is invisible to pricing until its date
+arrives, and the card above gains a "Scheduled" card while one is pending;
+the current-terms card otherwise stays the whole truth for today. "Terms are
+never edited or removed — a change is a new record." stays as `Small` muted
+copy above the History heading.)*
 
 **2. History** — `H4` "History", then newest-first rows, `rounded-row bg-card
 px-4 py-3` + `elevation.row`, `gap-2`:
 
-- `Body font-medium tabular` — "£18.50/hr"
+- `Body font-medium tabular` — "$18.50/hr"
 - `Small` muted — "From 1 Apr 2026 · set by Priya on 28 Mar"
 - `Small` muted — the `note`, when present.
 
@@ -118,14 +127,15 @@ Fields, `gap-4`, each `Label` + control:
 
 1. **Hourly rate** — `Input`, `keyboardType="decimal-pad"`, currency symbol as a
    fixed leading adornment, normalised on blur ("18.5" → "18.50").
-2. **Takes effect from** — this is the load-bearing control. Two chips
+2. **Takes effect from** — this is the load-bearing control. Chips
    (`rounded-chip`, the selected treatment at `settings.tsx:238-247`):
-   **"Today (4 Aug)"** (default) and **"An earlier date"**. Choosing "An
-   earlier date" reveals the date row, **maximum date today** — future dates
-   are not selectable (owner decision: no scheduled changes in v1; the service
-   rejects them too). Backdating hint, `Small` muted, only when a past date is
+   **"Today (4 Aug)"** (default), **"An earlier date"**, and **"A future
+   date"**. The date field accepts any date, past or future, up to a 12-month
+   future horizon (D-16, `screens-pay-terms.md` §6) — the service enforces the
+   same bound. Backdating hint, `Small` muted, only when a past date is
    chosen and the affected week is already approved: **"Weeks that are already
-   approved keep their approved totals."**
+   approved keep their approved totals."** A future date instead produces the
+   "Scheduled" card described above.
 3. **Overtime** — "Overtime after" (hours, numeric) + "Paid at" (multiplier,
    numeric, suffix "×"). Empty = no overtime; hint `Small` muted: **"Leave blank
    if there's no overtime rate."**
@@ -147,8 +157,8 @@ Fields, `gap-4`, each `Label` + control:
 **Mid-week consequence line.** Whenever the chosen date is not a Monday, render
 directly under the date control, `Small`, `text-warning-strong`, no icon:
 
-> **"This week will be paid at two rates: £18.50 up to Wednesday 3 September,
-> then £19.50 from Thursday 4 September."**
+> **"This week will be paid at two rates: $18.50 up to Wednesday 3 September,
+> then $19.50 from Thursday 4 September."**
 
 Confirm button: **"Set new terms"**. On success dismiss + `showSuccessToast`
 **"New terms saved"**. On failure the sheet stays open with the typed values
@@ -166,7 +176,8 @@ than a "change". Differences from the change sheet:
   agreed. Priya can see her own terms, and Steadily can total each week for
   both of you."**
 - Effective date defaults to **the day she joined the household** when that is
-  in the past (so already-worked weeks price), else today; same no-future rule.
+  in the past (so already-worked weeks price), else today. The field itself
+  accepts a future date too, same as the change sheet (D-16).
 - The cancellation chips default from the household's current window, but the
   form requires an explicit selection before save — this is the one term where
   silence breeds the dispute.
@@ -184,10 +195,12 @@ than a "change". Differences from the change sheet:
 2. Every no-arrangement empty state in this spec (§2 States, §4.4 parent arm)
    routes its CTA here rather than to the change sheet.
 
-**Manage household note (review finding 10):** `ManageHouseholdScreen` still
-edits the household-level cancellation window. Once any arrangement exists it
-is only the fallback, so that control gains `Small` muted copy: **"Applies
-until a nanny's own pay terms are set — those take over from there."**
+**Manage household note (T14, supersedes review finding 10):** the arrangement's
+`cancellation_paid_within_hours` is now the **only** cancellation window —
+there is no household-level fallback. The duplicate household-level column is
+removed from `ManageHouseholdScreen` entirely rather than kept as a fallback
+control; a household with shifts but no arrangement pays nothing on a
+cancellation (`screens-pay-terms.md` §4.1.1).
 
 ### States
 
@@ -550,10 +563,12 @@ for. A is its precondition; everything else deepens it.
 
 ## 10. Open questions — RESOLVED by the product owner, 2026-08-04
 
-The rulings below are binding; the body of this spec has been amended to match
-(no Scheduled card, today-default effective date, cancellation row + chips,
-first-time setup flow). `TIER0-PLAN.md`'s "Owner decisions" section is the
-same list from the implementation side.
+The rulings below were binding at the time of this 2026-08-04 ruling; the body
+of this spec was amended to match (today-default effective date, cancellation
+row + chips, first-time setup flow). **Rulings 4 and 5 have since been
+superseded** — see the notes inline below — by D-16 (future `valid_from`) and
+T14 (cancellation window has one home, no household fallback). `TIER0-PLAN.md`'s
+"Owner decisions" section is the same list from the implementation side.
 
 1. **Gross wording** — "gross or total is fine". "Gross" stays, with the
    payroll caption.
@@ -561,14 +576,18 @@ same list from the implementation side.
    routes through `approvalGateService`.
 3. **PTO year boundary** — calendar year for v1. Entitlement is set by the
    parent during nanny setup (a setup-flow field, §2).
-4. **Scheduled future rate changes** — not required. Cut entirely: no
-   future `valid_from`, no Scheduled card, no nanny-facing scheduled-change
-   line. The change sheet's date control allows today or earlier only.
+4. **Scheduled future rate changes** — cut for v1 at the time of this ruling.
+   **Superseded by D-16**: `valid_from` may now be in the future, up to a
+   12-month horizon, with a Scheduled card and a nanny-facing scheduled-change
+   line (`screens-pay-terms.md` §6). The change sheet's date control accepts
+   a future date, not today-or-earlier only.
 5. **Cancellation policy** — per-nanny, set during setup, with an explicit
    "No cancellation pay" option; a set window means cancellations within N
    hours of the start are paid. Pricing stays at the full effective rate
-   (reduced cancellation rates remain out of v1). The per-nanny policy
-   supersedes the household-level window wherever an arrangement exists.
+   (reduced cancellation rates remain out of v1). **Superseded by T14**: the
+   per-nanny policy is now the arrangement's **only** cancellation window —
+   the household-level window was removed entirely, not kept as a fallback
+   (`screens-pay-terms.md` §4.1.1).
 6. **Pending mileage** — unchallenged; spec's answer stands (miles only until
    approval, no indicative amount).
 

@@ -221,10 +221,10 @@
   "clockInBlocked": {
     "titleFamilySent": "La familia {{familyName}} te envió sus condiciones",
     "titleYouSent": "Tus condiciones están con la familia {{familyName}}",
-    "titleNothingSent": "Todavía nadie ha fijado tu tarifa",
+    "titleNothingSent": "Tu tarifa aún no está fijada en Steadily",
     "bodyFamilySent": "La familia {{familyName}} te envió sus condiciones el {{date}}. Acéptalas y podrás fichar de inmediato.",
     "bodyYouSent": "Enviaste tus condiciones el {{date}}. La familia {{familyName}} aún no ha respondido.",
-    "bodyNothingSent": "Todavía nadie ha fijado tu tarifa. Envía tus condiciones a la familia {{familyName}} y podrás empezar a fichar.",
+    "bodyNothingSent": "Tu tarifa aún no está fijada en Steadily. Envía tus condiciones a la familia {{familyName}} y podrás empezar a fichar.",
     "ctaFamilySent": "Revisar estas condiciones",
     "ctaYouSent": "Ver lo que enviaste",
     "ctaNothingSent": "Enviar mis condiciones",

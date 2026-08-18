@@ -161,10 +161,14 @@ mock.module('@/src/hooks/queries/useTermsProposals', () => ({
   useTermsProposals: () => ({ data: proposalRows }),
 }));
 mock.module('@/src/hooks/mutations/useProposeTerms', () => ({
-  useProposeTerms: () => ({
+  // Scoped to HOUSEHOLD_A: F16 makes "Suggest a change" reachable on EVERY
+  // write-eligible card, so a flat isError here would fail every mounted
+  // sheet at once (they all share one BottomSheetBase testID prefix) rather
+  // than the one household the test is actually exercising.
+  useProposeTerms: (householdId: string) => ({
     mutateAsync: proposeMock,
     isPending: false,
-    isError: proposeIsError,
+    isError: proposeIsError && householdId === HOUSEHOLD_A,
   }),
 }));
 mock.module('@/src/hooks/mutations/useWithdrawTerms', () => ({
@@ -771,6 +775,91 @@ describe('MyPayScreen', () => {
       expect(
         queryByTestId(`my-pay-proposal-withdraw-${HOUSEHOLD_A}`)
       ).toBeNull();
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // F16 — a nanny's blind spot on a live first offer. HOUSEHOLD_B has no
+  // arrangement (`payCurrentMock` resolves null for it) in every fixture
+  // above; these prove the open-round receipt/pill and the "Suggest a
+  // change" write are now reachable from that same no-arrangement card.
+  // ---------------------------------------------------------------------
+  describe('a live first offer with no arrangement yet (F16)', () => {
+    it('a receipt for her own first offer renders even with no arrangement', async () => {
+      proposalRows = [openProposal(NANNY_ID)];
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <MyPayScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-terms-receipt-${HOUSEHOLD_B}`)).toBeTruthy()
+      );
+      expect(queryByTestId(`my-pay-empty-${HOUSEHOLD_B}`)).toBeNull();
+    });
+
+    it('a pill + review link for a first offer THEY sent renders even with no arrangement', async () => {
+      proposalRows = [openProposal('parent-a')];
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <MyPayScreen />
+      );
+
+      await waitFor(() =>
+        expect(
+          getByTestId(`my-pay-proposal-review-${HOUSEHOLD_B}`)
+        ).toBeTruthy()
+      );
+      expect(queryByTestId(`my-pay-empty-${HOUSEHOLD_B}`)).toBeNull();
+    });
+
+    it('no arrangement AND no open round: the bare empty state, with Suggest a change reachable', async () => {
+      const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-empty-${HOUSEHOLD_B}`)).toBeTruthy()
+      );
+      expect(getByTestId(`my-pay-suggest-change-${HOUSEHOLD_B}`)).toBeTruthy();
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // F18 — the scheduled-change card, extracted into `ScheduledChangeCard`
+  // and reused here READ-ONLY: a nanny sees the raise coming but cannot
+  // edit or cancel it.
+  // ---------------------------------------------------------------------
+  describe('the scheduled change card, read-only (F18)', () => {
+    it('a future-dated history row renders the card with no edit/cancel affordances', async () => {
+      const scheduled = {
+        ...arrangementFor(HOUSEHOLD_A),
+        id: 'arr-scheduled',
+        rate_minor: 2000,
+        valid_from: '2099-01-01',
+      };
+      payHistoryMock.mockImplementation(() =>
+        Promise.resolve([scheduled, arrangementFor(HOUSEHOLD_A)])
+      );
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <MyPayScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId('pay-scheduled-change-card')).toBeTruthy()
+      );
+      expect(queryByTestId('pay-scheduled-edit')).toBeNull();
+      expect(queryByTestId('pay-scheduled-cancel')).toBeNull();
+    });
+
+    it('no future-dated row: no scheduled-change card', async () => {
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <MyPayScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-history-toggle-${HOUSEHOLD_A}`)).toBeTruthy()
+      );
+      expect(queryByTestId('pay-scheduled-change-card')).toBeNull();
     });
   });
 });

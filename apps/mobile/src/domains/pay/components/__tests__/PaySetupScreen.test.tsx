@@ -111,8 +111,19 @@ mock.module('expo-router', () => ({
   Tabs: { Screen: 'TabsScreen' },
 }));
 
+// F3(c) — the invite this carer redeemed, and whatever `pay_offer` it
+// carried. Empty by default: most setup flows have no prior offer to
+// prefill from (parent-first onboarding, or a nanny-first draft absorbed
+// with no offer written).
+const listInvitesMock = mock<() => Promise<unknown[]>>(() =>
+  Promise.resolve([])
+);
 mock.module('@/src/api/endpoints/household', () => ({
-  householdApi: { list: listMock, listMembers: listMembersMock },
+  householdApi: {
+    list: listMock,
+    listMembers: listMembersMock,
+    listInvites: listInvitesMock,
+  },
 }));
 mock.module('@/src/api/endpoints/user', () => ({
   userApi: { listMemberships: membershipsListMock },
@@ -195,6 +206,7 @@ beforeEach(() => {
   ]);
   listMock.mockReset();
   listMembersMock.mockReset();
+  listInvitesMock.mockReset();
   membershipsListMock.mockReset();
   payCurrentMock.mockReset();
   proposeMock.mockReset();
@@ -215,6 +227,7 @@ beforeEach(() => {
   listMembersMock.mockImplementation(() =>
     Promise.resolve([nannyMember('2026-07-01T00:00:00.000Z')])
   );
+  listInvitesMock.mockImplementation(() => Promise.resolve([]));
   membershipsListMock.mockImplementation(() =>
     Promise.resolve([parentMembership])
   );
@@ -425,6 +438,107 @@ describe('PaySetupScreen', () => {
         expect(getByTestId('pay-setup-date-input').props.value).toBe(
           '2026-07-01'
         )
+      );
+    });
+  });
+
+  // F3(c) — a parent who typed an offer during invite creation shouldn't
+  // have to retype it from memory once she redeems it.
+  describe('prefilling from the redeemed invite pay_offer (F3(c))', () => {
+    const inviteWithOffer = (overrides: Record<string, unknown> = {}) => ({
+      id: 'invite-1',
+      household_id: HOUSEHOLD_ID,
+      code: 'ABC-123',
+      email: null,
+      role: 'nanny',
+      invited_by: PARENT_USER_ID,
+      expires_at: '2026-09-01T00:00:00.000Z',
+      status: 'accepted',
+      accepted_by: NANNY_ID,
+      accepted_at: '2026-08-01T00:00:00.000Z',
+      link_expires_at: null,
+      opened_at: null,
+      label: null,
+      pay_offer: {
+        rate_minor: 2200,
+        currency: 'USD',
+        overtime_multiplier: 1.5,
+        cancellation_paid_within_hours: 12,
+        valid_from: '2026-07-01',
+      },
+      pay_offer_promotion: 'skipped_stale',
+      created_at: '2026-06-01T00:00:00.000Z',
+      updated_at: '2026-08-01T00:00:00.000Z',
+      ...overrides,
+    });
+
+    it('seeds the rate and cancellation window from the invite offer', async () => {
+      listInvitesMock.mockImplementation(() =>
+        Promise.resolve([inviteWithOffer()])
+      );
+
+      const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-setup-rate-input').props.value).toBe('22.00')
+      );
+      expect(
+        getByTestId('pay-setup-cancellation-hours-input').props.value
+      ).toBe('12');
+    });
+
+    it('an invite with no pay_offer leaves the form blank (unchanged behaviour)', async () => {
+      listInvitesMock.mockImplementation(() =>
+        Promise.resolve([inviteWithOffer({ pay_offer: null })])
+      );
+
+      const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
+      );
+      expect(getByTestId('pay-setup-rate-input').props.value).toBe('');
+    });
+
+    it('an offer on an invite redeemed by someone else is ignored', async () => {
+      listInvitesMock.mockImplementation(() =>
+        Promise.resolve([inviteWithOffer({ accepted_by: 'someone-else' })])
+      );
+
+      const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
+      );
+      expect(getByTestId('pay-setup-rate-input').props.value).toBe('');
+    });
+
+    it('does not override the joined-date effective-date default with the (possibly stale) offer valid_from', async () => {
+      // A different, earlier date than the joined date — proves the SOURCE
+      // stays `member.joined_at`, not `pay_offer.valid_from` verbatim (the
+      // offer may have gone stale by the time it's redeemed, per F3(b)'s
+      // API-side `skipped_stale` guard on the promotion path).
+      listInvitesMock.mockImplementation(() =>
+        Promise.resolve([
+          inviteWithOffer({
+            pay_offer: {
+              rate_minor: 2200,
+              currency: 'USD',
+              overtime_multiplier: 1.5,
+              cancellation_paid_within_hours: 12,
+              valid_from: '2026-01-01',
+            },
+          }),
+        ])
+      );
+
+      const { getByTestId } = renderWithProviders(<PaySetupScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-setup-rate-input').props.value).toBe('22.00')
+      );
+      expect(getByTestId('pay-setup-date-input').props.value).toBe(
+        '2026-07-01'
       );
     });
   });

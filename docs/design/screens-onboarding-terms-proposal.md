@@ -1181,6 +1181,7 @@ figure, every time the figure is shown.**
 | **Countered** | `pending` ochre | Answered with changes; the ball moved | Review header, history rows |
 | **Agreed** | `confirmed` green | Accepted; an arrangement row exists | My pay card, Pay screen, history, week explainer |
 | **Withdrawn** | `cancelled` grey | Pulled before an answer | History only |
+| **Declined** | `cancelled` grey | Refused by the counterparty | History only |
 
 Proposed and Countered share the ochre pill on purpose — no new palette token,
 and the *word* carries the distinction, which is the correct channel for a
@@ -1188,12 +1189,18 @@ distinction of meaning rather than of urgency. Per `daylight-v2.md` §5.2 (never
 colour-only), a Countered row always also names the actor: *"Countered by the
 Ahmeds · 11 Aug"*. Two channels, zero new tokens.
 
+Declined shares Withdrawn's grey pill but never its word — withdrawn is the
+author pulling her own ask, declined is the counterparty refusing it. Tagged
+`B4` throughout the codebase (migration 097, the API, `DeclineTermsDialog`,
+the author-facing push, tests).
+
 Rendered forms, en-US, sentence case, no exclamation marks:
 
 - `Proposed 10 Aug` · `Proposed by Marisol · 10 Aug`
 - `Countered by you · 11 Aug`
 - `Agreed with Marisol on 12 Aug` (parent) / `Agreed with the Ahmeds on 12 Aug` (nanny)
 - `Withdrawn 11 Aug`
+- `Declined by Marisol · 11 Aug`
 
 **Never** "Pending approval", "Awaiting sign-off", "Contract active" — those are
 verdicts about people or HR words about a family.

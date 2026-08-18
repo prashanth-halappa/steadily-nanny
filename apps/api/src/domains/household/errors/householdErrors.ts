@@ -241,6 +241,29 @@ export class PayOfferNotForRoleError extends ValidationError {
 }
 
 /**
+ * 400 — a pay offer arrived on an invite whose household is still a DRAFT
+ * (F7, defence in depth). A draft's only member is the nanny who authored it
+ * (D-36) — there is no parent membership row to have written this offer, so a
+ * request that reaches `createInvite` with one here can only be a client bug
+ * or a direct API call, never a real onboarding flow: no client attaches a
+ * pay offer to a draft invite, and the offer UI is parent-gated while a
+ * draft's creator is always a nanny. Refused rather than silently dropped for
+ * the same reason `PayOfferNotForRoleError` refuses rather than drops — a
+ * quietly evaporated offer is a worse failure than a loud one.
+ */
+export class PayOfferNotForDraftHouseholdError extends ValidationError {
+  constructor(householdId: string) {
+    super(
+      'Pay terms cannot be offered on a draft household',
+      'PAY_OFFER_NOT_FOR_DRAFT_HOUSEHOLD',
+      400,
+      { householdId }
+    );
+    this.name = 'PayOfferNotForDraftHouseholdError';
+  }
+}
+
+/**
  * 409 — one live household per parent (§8/A4). The caller already speaks for a
  * family, and creating or joining a second would silently abandon the first —
  * with a nanny's schedule, hours and pay history inside it.

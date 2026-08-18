@@ -325,8 +325,10 @@ describe('PayArrangementScreen', () => {
       );
       expect(queryByLabelText('setPayTermsAction')).toBeNull();
       fireEvent.press(getByLabelText('reviewProposedTermsAction'));
+      // Aligned to `proposalReviewHref` (F16) — same destination a push
+      // notification for this proposal resolves to.
       expect(routerPush).toHaveBeenCalledWith(
-        `/pay/proposal/${openProposalRow.id}`
+        `/(private)/pay/proposal/${openProposalRow.id}`
       );
       expect(routerPush).not.toHaveBeenCalledWith(
         `/settings/pay/setup/${NANNY_A_ID}`
@@ -774,6 +776,76 @@ describe('PayArrangementScreen', () => {
     });
   });
 
+  // F17/F20 — `useTermsProposals` already returns every round, not just the
+  // open one; today's render only ever maps `history.data` (`pay_arrangements`
+  // rows), never `proposals.data`, so a countered/withdrawn/declined round is
+  // silently omitted from the parent's own history.
+  describe('closed negotiation rounds (F17/F20)', () => {
+    beforeEach(() => {
+      payCurrentMock.mockImplementation(() =>
+        Promise.resolve(arrangementFor(NANNY_A_ID))
+      );
+    });
+
+    it('a withdrawn round renders in the history', async () => {
+      proposalRows = [
+        { ...openProposalRow, id: 'prop-withdrawn', status: 'withdrawn' },
+      ];
+
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-proposal-history-prop-withdrawn')).toBeTruthy()
+      );
+    });
+
+    it('a countered round renders in the history', async () => {
+      proposalRows = [
+        { ...openProposalRow, id: 'prop-countered', status: 'countered' },
+      ];
+
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-proposal-history-prop-countered')).toBeTruthy()
+      );
+    });
+
+    it('a declined round renders in the history', async () => {
+      proposalRows = [
+        { ...openProposalRow, id: 'prop-declined', status: 'declined' },
+      ];
+
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-proposal-history-prop-declined')).toBeTruthy()
+      );
+    });
+
+    it('the currently open round is never listed as history', async () => {
+      proposalRows = [openProposalRow];
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <PayArrangementScreen />
+      );
+
+      await waitFor(() => expect(getByTestId('pay-current-rate')).toBeTruthy());
+      expect(
+        queryByTestId(`pay-proposal-history-${openProposalRow.id}`)
+      ).toBeNull();
+    });
+
+    it('no closed rounds: no recent-rounds list at all', async () => {
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <PayArrangementScreen />
+      );
+
+      await waitFor(() => expect(getByTestId('pay-current-rate')).toBeTruthy());
+      expect(queryByTestId('pay-proposal-history-list')).toBeNull();
+    });
+  });
+
   it('no nanny in the household: shows the "No nanny yet" empty state routing to invite', async () => {
     listMembersMock.mockImplementation(() => Promise.resolve([]));
 
@@ -1070,6 +1142,28 @@ describe('PayArrangementScreen', () => {
         expect(getByTestId('pay-ack-pill-label').props.children).toBe(
           'ack.disagreed'
         )
+      );
+    });
+
+    // F21 — a disagreement outranks a seen for the PILL word (§8.4), but the
+    // history row's "Read {{date}}" line is a different fact and must
+    // survive it. Gating on `ackState.kind === 'seen'` is the bug that hid a
+    // real nanny's read date forever once she disagreed once.
+    it('the history "Read" line survives a later disagreement (F21)', async () => {
+      payHistoryMock.mockImplementation(() =>
+        Promise.resolve([arrangementFor(NANNY_A_ID)])
+      );
+      listAcksMock.mockImplementation(() =>
+        Promise.resolve([
+          ackRow('seen', '2026-08-11T09:00:00.000Z'),
+          ackRow('disagreed', '2026-08-12T09:00:00.000Z'),
+        ])
+      );
+
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId(`pay-history-seen-arr-${NANNY_A_ID}`)).toBeTruthy()
       );
     });
   });

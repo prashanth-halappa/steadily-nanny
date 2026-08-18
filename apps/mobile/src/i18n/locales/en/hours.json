@@ -81,6 +81,7 @@
   "earningsReopenedNote": "Hours changed after approval, so this week is being worked out again.",
   "earningsReopenedWithReasonNanny": "Your family reopened this week: {{reason}}",
   "earningsReopenedWithReasonParent": "You reopened this week: {{reason}}",
+  "parentViewedNote": "You viewed this on {{date}}.",
   "earningsCouldntCompute": "Couldn't work out the total just now.",
   "earningsRetry": "Try again",
   "earningsNoArrangementParent": "No pay rate set — Steadily can't total this week.",
@@ -261,6 +262,7 @@
     }
   },
   "timeline": {
+    "reopened": "Reopened: {{reason}}",
     "logged": "Hours logged",
     "opened": "Opened by {{household}} on {{date}}",
     "notOpened": "Not opened by {{household}} yet",

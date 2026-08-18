@@ -31,6 +31,10 @@ import type { HouseholdMember } from '../../household/types';
 import { PayArrangementRepository } from '../../pay/repositories/payArrangementRepository';
 import { SchedulePatternRepository } from '../../schedule/repositories/schedulePatternRepository';
 import { scheduleMaterialisationService } from '../../schedule/services/scheduleMaterialisationService';
+// The REPOSITORY, not the terms-proposal domain barrel — same leaf-import
+// discipline `householdCommandService` documents at its own top: the barrel
+// pulls in `termsProposalCommandService`, which imports `../../household`.
+import { TermsProposalRepository } from '../../termsProposal/repositories/termsProposalRepository';
 import { TimeEntryRepository } from '../../timesheet/repositories/timeEntryRepository';
 import { localDateOf } from '../../timesheet/utils/weekStart';
 
@@ -329,9 +333,17 @@ export class UserService {
 
     const payArrangements = new PayArrangementRepository();
     const patternRepo = new SchedulePatternRepository();
+    const proposalRepo = new TermsProposalRepository();
 
     for (const membership of memberships) {
       const householdId = membership.household_id;
+
+      // F8 — same reason `removeMember`/`leave` withdraw before end-dating
+      // pay: a departing carer must not be left with an open round she can no
+      // longer act on inside a household she no longer belongs to.
+      await tearDownStep('withdraw_open_terms_proposals', userId, async () => {
+        await proposalRepo.withdrawOpenForCarer(householdId, userId);
+      });
 
       await tearDownStep('end_pay_arrangements', userId, async () => {
         // The date is household-LOCAL, for the same reason `removeMember`'s
