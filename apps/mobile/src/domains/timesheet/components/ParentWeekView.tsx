@@ -1282,13 +1282,15 @@ export function ParentWeekView({
         paidToDateLabel={paidToDateLabel}
       />
 
-      {timesheet && !readOnly ? (
+      {/* docs/11-MONEY.md §4 — unknown ≠ zero; no sheet without a settled
+          balance. */}
+      {timesheet && !readOnly && paidState ? (
         <RecordPaymentSheet
           visible={isRecordPaymentVisible}
           onDismiss={() => setIsRecordPaymentVisible(false)}
           onSubmit={input => void handleRecordPayment(input)}
           isSubmitting={recordPayment.isPending}
-          outstandingMinor={paidState?.balanceMinor ?? 0}
+          outstandingMinor={paidState.balanceMinor}
           currency={
             earningsOk?.currency ?? activeHousehold.household?.currency ?? 'USD'
           }
