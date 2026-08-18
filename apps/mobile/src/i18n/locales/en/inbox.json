@@ -75,6 +75,11 @@
       "subtitleOpened": "Sent {{date}} · opened, not answered.",
       "subtitleNotOpened": "Sent {{date}} · not opened yet.",
       "cta": "See what you sent"
+    },
+    "crossFamilyClash": {
+      "title": "This shift overlaps a shift with another family",
+      "subtitle": "{{date}}, {{time}}",
+      "cta": "Open the shift"
     }
   },
   "pendingOfferCard": {
@@ -104,6 +109,7 @@
     "terms_proposal": "Terms",
     "terms_proposal_sent": "Terms",
     "terms_ack": "Terms",
-    "reimbursement_owed": "Reimbursement"
+    "reimbursement_owed": "Reimbursement",
+    "cross_family_clash": "Overlapping shift"
   }
 }

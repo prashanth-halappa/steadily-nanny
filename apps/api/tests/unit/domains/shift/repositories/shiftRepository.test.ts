@@ -21,6 +21,7 @@ function createMockQueryChain(
     gt: mock(() => chain),
     gte: mock(() => chain),
     not: mock(() => chain),
+    in: mock(() => chain),
     order: mock(() => chain),
     update: mock(() => chain),
     maybeSingle: mock(() => Promise.resolve(finalResponse)),
@@ -393,6 +394,59 @@ describe('ShiftRepository.declinePending — CAS pending → declined', () => {
     await expect(repo.declinePending('s1')).rejects.toBeInstanceOf(
       DatabaseError
     );
+  });
+});
+
+describe('ShiftRepository.listLiveForClashScan', () => {
+  // Feeds S4b's nightly cross-household sweep — every carer-assigned live
+  // shift in the window, narrowed to exactly the columns
+  // `findCrossHouseholdClashes` needs (no household name, no note: the
+  // sweep-line never sees anything `v_busy_blocks` wouldn't show it either).
+  it('asks for carer-assigned pending/confirmed shifts overlapping the window', async () => {
+    const chain = createMockQueryChain({ data: [], error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+
+    await new ShiftRepository().listLiveForClashScan(
+      '2026-08-10T00:00:00.000Z',
+      '2026-11-02T00:00:00.000Z'
+    );
+
+    expect(mockSupabaseService.from).toHaveBeenCalledWith('shifts');
+    expect(chain.not).toHaveBeenCalledWith('carer_id', 'is', null);
+    expect(chain.in).toHaveBeenCalledWith('status', ['pending', 'confirmed']);
+    expect(chain.lt).toHaveBeenCalledWith(
+      'starts_at',
+      '2026-11-02T00:00:00.000Z'
+    );
+    expect(chain.gt).toHaveBeenCalledWith(
+      'ends_at',
+      '2026-08-10T00:00:00.000Z'
+    );
+    expect(chain.order).toHaveBeenCalledWith('carer_id', { ascending: true });
+  });
+
+  it('returns [] when nothing is live in the window', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: null })
+    );
+    expect(
+      await new ShiftRepository().listLiveForClashScan(
+        '2026-08-10T00:00:00.000Z',
+        '2026-11-02T00:00:00.000Z'
+      )
+    ).toEqual([]);
+  });
+
+  it('throws DatabaseError on a query failure', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: { message: 'boom' } })
+    );
+    await expect(
+      new ShiftRepository().listLiveForClashScan(
+        '2026-08-10T00:00:00.000Z',
+        '2026-11-02T00:00:00.000Z'
+      )
+    ).rejects.toBeInstanceOf(DatabaseError);
   });
 });
 

@@ -571,6 +571,124 @@ describe('buildInboxItems — pending_shift kind (§2.2, §2.3a)', () => {
   });
 });
 
+describe('buildInboxItems — cross_family_clash kind (S4b)', () => {
+  const clashedShift = {
+    id: 'shift-clash-1',
+    household_id: 'hh-1',
+    carer_id: ME,
+    status: 'confirmed',
+    local_date: '2026-08-26',
+    starts_at: '2026-08-26T08:00:00.000Z',
+    ends_at: '2026-08-26T13:00:00.000Z',
+    created_at: '2026-08-24T00:00:00.000Z',
+    clashes_with_other_household: true,
+  } as const;
+
+  it('surfaces a nanny-side shift flagged clashes_with_other_household', () => {
+    const items = buildInboxItems({
+      role: SETUP_ROLES.NANNY,
+      currentUserId: ME,
+      todayISO: '2026-08-25',
+      changeRequests: [],
+      patterns: [],
+      timesheets: [],
+      shifts: [clashedShift],
+    });
+    expect(items).toEqual([
+      {
+        kind: 'cross_family_clash',
+        id: 'shift-clash-1',
+        shiftId: 'shift-clash-1',
+        householdId: 'hh-1',
+        startsAt: '2026-08-26T08:00:00.000Z',
+      },
+    ]);
+  });
+
+  it('excludes a shift with no clash flag', () => {
+    expect(
+      buildInboxItems({
+        role: SETUP_ROLES.NANNY,
+        currentUserId: ME,
+        todayISO: '2026-08-25',
+        changeRequests: [],
+        patterns: [],
+        timesheets: [],
+        shifts: [{ ...clashedShift, clashes_with_other_household: false }],
+      })
+    ).toEqual([]);
+  });
+
+  it('excludes a flagged shift when the flag is simply absent (legacy response)', () => {
+    const { clashes_with_other_household: _drop, ...withoutFlag } =
+      clashedShift;
+    expect(
+      buildInboxItems({
+        role: SETUP_ROLES.NANNY,
+        currentUserId: ME,
+        todayISO: '2026-08-25',
+        changeRequests: [],
+        patterns: [],
+        timesheets: [],
+        shifts: [withoutFlag],
+      })
+    ).toEqual([]);
+  });
+
+  it('is nanny-only, mirroring pending_shift (B5)', () => {
+    expect(
+      buildInboxItems({
+        role: SETUP_ROLES.PARENT,
+        currentUserId: ME,
+        todayISO: '2026-08-25',
+        changeRequests: [],
+        patterns: [],
+        timesheets: [],
+        shifts: [clashedShift],
+      })
+    ).toEqual([]);
+  });
+
+  it('excludes a flagged shift assigned to someone else', () => {
+    expect(
+      buildInboxItems({
+        role: SETUP_ROLES.NANNY,
+        currentUserId: ME,
+        todayISO: '2026-08-25',
+        changeRequests: [],
+        patterns: [],
+        timesheets: [],
+        shifts: [{ ...clashedShift, carer_id: OTHER }],
+      })
+    ).toEqual([]);
+  });
+
+  it('ranks after every other kind — advisory, not blocking her own action', () => {
+    const items = buildInboxItems({
+      role: SETUP_ROLES.NANNY,
+      currentUserId: ME,
+      todayISO: '2026-08-25',
+      changeRequests: [],
+      patterns: [],
+      timesheets: [
+        {
+          household_id: 'hh-1',
+          id: 'ts-q',
+          carer_id: ME,
+          week_start: '2026-08-18',
+          status: 'queried',
+          query_note: null,
+        },
+      ],
+      shifts: [clashedShift],
+    });
+    expect(items.map(i => i.kind)).toEqual([
+      'queried_week',
+      'cross_family_clash',
+    ]);
+  });
+});
+
 // §7.1 — a live proposal belongs to the side that must ANSWER it. The person
 // who wrote it has nothing pending; showing it back to them would turn one
 // negotiation into two rows about the same contract.

@@ -109,6 +109,9 @@ const KNOWN_EVENT_TYPES = new Set([
   'shift_updated',
   'pattern_conflict',
   'uncovered_care',
+  // S4b — role-forked copy, see EventRow: the parent hears whose shift
+  // overlaps; the nanny hears only that it overlaps another family's.
+  'cross_family_clash',
 ]);
 
 /**
@@ -920,6 +923,8 @@ export function ShiftDetailScreen() {
                 key={event.id}
                 event={event}
                 timeZone={shift.timezone}
+                isNanny={isNanny}
+                carerName={nameFor(shift.carer_id)}
               />
             ))
           )}
@@ -988,29 +993,45 @@ function ShiftChildrenBlock({
   );
 }
 
+/** S4b — the ONE event type whose label is role-forked, never a household name. */
+const CROSS_FAMILY_CLASH_EVENT_TYPE = 'cross_family_clash';
+
 function EventRow({
   event,
   timeZone,
+  isNanny,
+  carerName,
 }: {
   event: ShiftEvent;
   timeZone: string;
+  /** Which sentence a `cross_family_clash` row uses — see the module doc. */
+  isNanny: boolean;
+  /** The assigned carer's display name, for the parent-side sentence. */
+  carerName: string;
 }) {
   const { t } = useTranslation('schedule');
   const elevation = useElevation();
   const known = KNOWN_EVENT_TYPES.has(event.event_type);
+  const isCrossFamilyClash = event.event_type === CROSS_FAMILY_CLASH_EVENT_TYPE;
+  const label = isCrossFamilyClash
+    ? t(
+        isNanny
+          ? 'detail.eventType.crossFamilyClashNanny'
+          : 'detail.eventType.crossFamilyClashParent',
+        { carer: carerName }
+      )
+    : known
+      ? t(`detail.eventType.${event.event_type}`, {
+          defaultValue: event.event_type,
+        })
+      : t('detail.eventTypeUnknown');
   return (
     <View
       testID={`shift-event-${event.id}`}
       className="rounded-row bg-card p-3"
       style={elevation.row}
     >
-      <Body weight="medium">
-        {known
-          ? t(`detail.eventType.${event.event_type}`, {
-              defaultValue: event.event_type,
-            })
-          : t('detail.eventTypeUnknown')}
-      </Body>
+      <Body weight="medium">{label}</Body>
       <Small className="text-muted-foreground" tabular>
         {formatInstantDisplay(event.created_at, timeZone)}
       </Small>

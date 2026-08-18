@@ -203,7 +203,9 @@
     "eventType": {
       "shift_updated": "Turno actualizado",
       "pattern_conflict": "Conflicto de horario",
-      "uncovered_care": "Nadie reservado"
+      "uncovered_care": "Nadie reservado",
+      "crossFamilyClashParent": "Este turno se superpone con otro compromiso de {{carer}}",
+      "crossFamilyClashNanny": "Este turno se superpone con un turno de otra familia"
     },
     "cancelShift": "Pedir cancelación",
     "accept": "Aceptar",

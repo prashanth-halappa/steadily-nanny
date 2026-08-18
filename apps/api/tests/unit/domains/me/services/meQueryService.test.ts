@@ -154,6 +154,139 @@ describe('MeQueryService.listMyShifts', () => {
   });
 });
 
+describe('MeQueryService.listMyShifts — S4b: clashes_with_other_household', () => {
+  // Self-healing over the shifts she already holds: no persisted flag is
+  // read here, `findCrossHouseholdClashes` runs in memory over exactly the
+  // rows this call already fetched, so a shift that moves is correct on the
+  // very next read — never a stale true after she is re-scheduled off it.
+  function makeClashingShiftRepo(): any {
+    return {
+      findByHouseholdAndRange: mock(async (householdId: string) => {
+        if (householdId === 'hh-a') {
+          return [
+            makeShift({
+              id: 's-a',
+              household_id: 'hh-a',
+              carer_id: 'nanny-1',
+              starts_at: '2026-08-10T09:00:00.000Z',
+              ends_at: '2026-08-10T14:00:00.000Z',
+              ical_uid: 'uid-a',
+            }),
+          ];
+        }
+        if (householdId === 'hh-b') {
+          return [
+            makeShift({
+              id: 's-b',
+              household_id: 'hh-b',
+              carer_id: 'nanny-1',
+              starts_at: '2026-08-10T13:00:00.000Z',
+              ends_at: '2026-08-10T18:00:00.000Z',
+              ical_uid: 'uid-b',
+            }),
+          ];
+        }
+        return [];
+      }),
+    };
+  }
+
+  function makeTwoHouseholdMemberRepo(): any {
+    return {
+      listActiveByUser: mock(async () => [
+        { id: 'm1', household_id: 'hh-a', user_id: 'nanny-1', role: 'nanny' },
+        { id: 'm2', household_id: 'hh-b', user_id: 'nanny-1', role: 'nanny' },
+      ]),
+    };
+  }
+
+  it('flags true on both sides of an overlapping cross-household pair', async () => {
+    const svc = new MeQueryService(
+      makeTwoHouseholdMemberRepo(),
+      makeClashingShiftRepo()
+    );
+    const rows = await svc.listMyShifts('nanny-1', from, to);
+
+    expect(rows.find(r => r.id === 's-a')?.clashes_with_other_household).toBe(
+      true
+    );
+    expect(rows.find(r => r.id === 's-b')?.clashes_with_other_household).toBe(
+      true
+    );
+  });
+
+  it('flags false when nothing overlaps', async () => {
+    const shiftRepo: any = {
+      findByHouseholdAndRange: mock(async (householdId: string) => {
+        if (householdId === 'hh-a') {
+          return [
+            makeShift({
+              id: 's-a',
+              household_id: 'hh-a',
+              carer_id: 'nanny-1',
+              starts_at: '2026-08-10T09:00:00.000Z',
+              ends_at: '2026-08-10T13:00:00.000Z',
+            }),
+          ];
+        }
+        if (householdId === 'hh-b') {
+          return [
+            makeShift({
+              id: 's-b',
+              household_id: 'hh-b',
+              carer_id: 'nanny-1',
+              starts_at: '2026-08-10T13:00:00.000Z',
+              ends_at: '2026-08-10T18:00:00.000Z',
+            }),
+          ];
+        }
+        return [];
+      }),
+    };
+    const svc = new MeQueryService(makeTwoHouseholdMemberRepo(), shiftRepo);
+    const rows = await svc.listMyShifts('nanny-1', from, to);
+
+    expect(rows.every(r => r.clashes_with_other_household === false)).toBe(
+      true
+    );
+  });
+
+  it('does not flag an overlap within the SAME household', async () => {
+    const shiftRepo: any = {
+      findByHouseholdAndRange: mock(async (householdId: string) => {
+        if (householdId !== 'hh-a') return [];
+        return [
+          makeShift({
+            id: 's-a1',
+            household_id: 'hh-a',
+            carer_id: 'nanny-1',
+            starts_at: '2026-08-10T09:00:00.000Z',
+            ends_at: '2026-08-10T14:00:00.000Z',
+          }),
+          makeShift({
+            id: 's-a2',
+            household_id: 'hh-a',
+            carer_id: 'nanny-1',
+            starts_at: '2026-08-10T13:00:00.000Z',
+            ends_at: '2026-08-10T17:00:00.000Z',
+          }),
+        ];
+      }),
+    };
+    const memberRepo: any = {
+      listActiveByUser: mock(async () => [
+        { id: 'm1', household_id: 'hh-a', user_id: 'nanny-1', role: 'nanny' },
+      ]),
+    };
+    const svc = new MeQueryService(memberRepo, shiftRepo);
+    const rows = await svc.listMyShifts('nanny-1', from, to);
+
+    expect(rows.every(r => r.clashes_with_other_household === false)).toBe(
+      true
+    );
+  });
+});
+
 function makeChangeRequestRepo(overrides: Record<string, unknown> = {}): any {
   return {
     listPendingByShiftIds: mock(async () => []),

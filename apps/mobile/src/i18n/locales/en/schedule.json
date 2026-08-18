@@ -203,7 +203,9 @@
     "eventType": {
       "shift_updated": "Shift updated",
       "pattern_conflict": "Schedule conflict",
-      "uncovered_care": "No one booked"
+      "uncovered_care": "No one booked",
+      "crossFamilyClashParent": "This shift overlaps another commitment of {{carer}}'s",
+      "crossFamilyClashNanny": "This shift overlaps a shift with another family"
     },
     "cancelShift": "Request cancel",
     "accept": "Accept",

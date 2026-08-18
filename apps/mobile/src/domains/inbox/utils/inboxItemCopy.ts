@@ -54,6 +54,13 @@ export function hrefForItem(item: InboxItem): Href {
         shiftId: item.id,
         householdId: item.householdId,
       }) ?? '/(private)/(tabs)/schedule') as Href;
+    // S4b — the shift's own detail screen carries the day-thread event this
+    // item is a summary of.
+    case 'cross_family_clash':
+      return (shiftDetailHref({
+        shiftId: item.shiftId,
+        householdId: item.householdId,
+      }) ?? '/(private)/(tabs)/schedule') as Href;
     // §7.2 — the review screen IS the proposal, in view mode.
     case 'terms_proposal':
     // A7 — the same screen, in view mode: it is where a sent proposal lives
@@ -142,6 +149,11 @@ export function titleForItem(
       return t('items.reimbursementOwed.title', {
         amount: formatMoney(item.amountMinor, item.currency),
       });
+    // S4b — the same sentence `ShiftDetailScreen`'s nanny-side thread line
+    // uses for this event (docs/design/screens-schedule.md): advisory, never
+    // a verdict about who is at fault.
+    case 'cross_family_clash':
+      return t('items.crossFamilyClash.title');
   }
 }
 
@@ -219,6 +231,16 @@ export function subtitleForItem(
       return t('items.reimbursementOwed.subtitle', {
         week: formatDisplayDate(item.weekStart),
       });
+    // S4b — the item carries only `startsAt` (the sweep never fetches the
+    // full shift a second time for an FYI row), so the subtitle names the
+    // date and start time and stops.
+    case 'cross_family_clash':
+      return t('items.crossFamilyClash.subtitle', {
+        date: formatDisplayDate(
+          localDateInZone(timeZone, new Date(item.startsAt))
+        ),
+        time: formatClockTime(item.startsAt, timeZone),
+      });
   }
 }
 
@@ -245,6 +267,8 @@ export function ctaForItem(item: InboxItem, t: InboxItemT): string {
       return t('items.termsAck.cta');
     case 'reimbursement_owed':
       return t('items.reimbursementOwed.cta');
+    case 'cross_family_clash':
+      return t('items.crossFamilyClash.cta');
   }
 }
 
