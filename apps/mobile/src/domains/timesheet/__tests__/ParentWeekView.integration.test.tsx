@@ -2502,6 +2502,47 @@ describe('ParentWeekView — parent viewed receipt', () => {
     expect(markViewedMock).not.toHaveBeenCalled();
   });
 
+  // P6b: the parent never saw any acknowledgment that THEY opened the
+  // week — `parent_viewed_at` only ever fed the nanny's timeline. A small
+  // "You viewed this on {{date}}" line now reads it back for the parent.
+  it('shows a "you viewed this" note for the parent when parent_viewed_at is set', async () => {
+    const id = 'ts-viewed-note';
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([
+        makeTimesheet({ id, parent_viewed_at: '2026-08-16T12:00:00.000Z' }),
+      ])
+    );
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(
+        makeTimesheetWeek({
+          id,
+          parent_viewed_at: '2026-08-16T12:00:00.000Z',
+        })
+      )
+    );
+
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-parent-viewed-note')).toBeTruthy()
+    );
+  });
+
+  it('omits the "you viewed this" note when parent_viewed_at is not set', async () => {
+    const id = 'ts-not-viewed-note';
+    listTimesheetsMock.mockImplementation(() =>
+      Promise.resolve([makeTimesheet({ id, parent_viewed_at: null })])
+    );
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(makeTimesheetWeek({ id, parent_viewed_at: null }))
+    );
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
+    expect(queryByTestId('hours-parent-viewed-note')).toBeNull();
+  });
+
   it('fires again for the second carer when the carer switcher changes', async () => {
     const CARER_B_ID = 'carer-bea';
     const amaraId = 'ts-viewed-amara';

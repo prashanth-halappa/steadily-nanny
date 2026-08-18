@@ -89,6 +89,7 @@ function invite(overrides: Partial<HouseholdInvite> = {}): HouseholdInvite {
     opened_at: null,
     label: null,
     pay_offer: null,
+    pay_offer_promotion: null,
     created_at: 't',
     updated_at: 't',
     ...overrides,
@@ -183,6 +184,11 @@ const stubTimeEntries: any = { findRunningInHousehold: mock(async () => null) };
 const stubPayArrangements: any = { endForCarer: mock(async () => []) };
 const stubPtoLedger: any = { listForCarerYear: mock(async () => []) };
 const stubTimesheets: any = { existsForHousehold: mock(async () => false) };
+// F8: `leave`/`removeMember` now call `proposals.withdrawOpenForCarer`. Left
+// defaulted this constructs a REAL TermsProposalRepository and the test dies
+// on a network call rather than an assertion — same hazard every other stub*
+// above already guards against for its own repository.
+const stubProposals: any = { withdrawOpenForCarer: mock(async () => null) };
 
 /** The whole ctor, so a positional argument is never miscounted below. */
 function makeService(parts: {
@@ -201,7 +207,8 @@ function makeService(parts: {
     stubPayArrangements,
     stubPtoLedger,
     stubTimesheets,
-    stubHolidays
+    stubHolidays,
+    stubProposals
   );
 }
 

@@ -14,6 +14,7 @@ import {
   MemberHasRunningEntryError,
   MemberNotFoundError,
   NotAHouseholdParentError,
+  PayOfferNotForDraftHouseholdError,
   PayOfferNotForRoleError,
   WeekStartLockedError,
 } from '../../../../../src/domains/household/errors/householdErrors';
@@ -83,6 +84,7 @@ function pendingInvite(
     opened_at: null,
     label: null,
     pay_offer: null,
+    pay_offer_promotion: null,
     created_at: 't',
     updated_at: 't',
     ...overrides,
@@ -211,6 +213,7 @@ function makeInviteRepo(overrides: Record<string, unknown> = {}): any {
       id,
       ...data,
     })),
+    updatePayOfferPromotion: mock(async () => {}),
     ...overrides,
   };
 }
@@ -274,6 +277,20 @@ const stubPtoLedger: any = { listForCarerYear: mock(async () => []) };
  * timeout rather than an assertion — which is exactly why it needs a name.
  */
 const stubHolidays: any = { seedFederalSet: mock(async () => []) };
+
+/**
+ * Same hazard again, for F8's new write: `removeMember`/`leave` now call
+ * `proposals.withdrawOpenForCarer`, so a test that reaches it and leaves this
+ * defaulted constructs a REAL TermsProposalRepository and waits on a supabase
+ * call. `create` is stubbed to blow up loudly — nothing outside the P8 promote
+ * block should ever reach it.
+ */
+const stubProposals: any = {
+  create: mock(async () => {
+    throw new Error('stubProposals.create should not be reached here');
+  }),
+  withdrawOpenForCarer: mock(async () => null),
+};
 
 function makeQueries(
   role: HouseholdMember['role'] = 'owner',
@@ -1467,7 +1484,11 @@ describe('HouseholdCommandService.removeMember', () => {
       makeQueries('parent'),
       stubUsers,
       makeTimeEntries(),
-      makePayArrangements()
+      makePayArrangements(),
+      stubPtoLedger,
+      undefined,
+      undefined,
+      stubProposals
     );
 
     const removed = await svc.removeMember('u1', 'h1', 'm-target');
@@ -1487,7 +1508,11 @@ describe('HouseholdCommandService.removeMember', () => {
       makeQueries('nanny'),
       stubUsers,
       makeTimeEntries(),
-      makePayArrangements()
+      makePayArrangements(),
+      stubPtoLedger,
+      undefined,
+      undefined,
+      stubProposals
     );
 
     await expect(
@@ -1509,7 +1534,11 @@ describe('HouseholdCommandService.removeMember', () => {
       makeQueries('parent'),
       stubUsers,
       makeTimeEntries(),
-      makePayArrangements()
+      makePayArrangements(),
+      stubPtoLedger,
+      undefined,
+      undefined,
+      stubProposals
     );
 
     await expect(
@@ -1529,7 +1558,11 @@ describe('HouseholdCommandService.removeMember', () => {
       makeQueries('parent'),
       stubUsers,
       makeTimeEntries(),
-      makePayArrangements()
+      makePayArrangements(),
+      stubPtoLedger,
+      undefined,
+      undefined,
+      stubProposals
     );
 
     await expect(
@@ -1558,7 +1591,11 @@ describe('HouseholdCommandService.removeMember', () => {
       makeQueries('parent'),
       stubUsers,
       timeEntries,
-      makePayArrangements()
+      makePayArrangements(),
+      stubPtoLedger,
+      undefined,
+      undefined,
+      stubProposals
     );
 
     await expect(
@@ -1583,7 +1620,11 @@ describe('HouseholdCommandService.removeMember', () => {
       makeQueries('parent'),
       stubUsers,
       timeEntries,
-      makePayArrangements()
+      makePayArrangements(),
+      stubPtoLedger,
+      undefined,
+      undefined,
+      stubProposals
     );
 
     const removed = await svc.removeMember('u1', 'h1', 'm-target');
@@ -1607,7 +1648,11 @@ describe('HouseholdCommandService.removeMember', () => {
       makeQueries('parent'),
       stubUsers,
       timeEntries,
-      makePayArrangements()
+      makePayArrangements(),
+      stubPtoLedger,
+      undefined,
+      undefined,
+      stubProposals
     );
 
     await svc.removeMember('u1', 'h1', 'm-target');
@@ -1630,7 +1675,11 @@ describe('HouseholdCommandService.removeMember', () => {
       makeQueries('parent'),
       stubUsers,
       timeEntries,
-      makePayArrangements()
+      makePayArrangements(),
+      stubPtoLedger,
+      undefined,
+      undefined,
+      stubProposals
     );
 
     await expect(
@@ -1648,7 +1697,11 @@ describe('HouseholdCommandService.removeMember', () => {
       makeQueries('parent'),
       stubUsers,
       makeTimeEntries(),
-      makePayArrangements()
+      makePayArrangements(),
+      stubPtoLedger,
+      undefined,
+      undefined,
+      stubProposals
     );
 
     await expect(svc.removeMember('u1', 'h1', 'm-gone')).rejects.toBeInstanceOf(
@@ -1668,7 +1721,11 @@ describe('HouseholdCommandService.removeMember', () => {
       makeQueries('parent'),
       stubUsers,
       makeTimeEntries(),
-      makePayArrangements()
+      makePayArrangements(),
+      stubPtoLedger,
+      undefined,
+      undefined,
+      stubProposals
     );
 
     await expect(
@@ -1781,7 +1838,8 @@ describe('HouseholdCommandService.removeMember — pay arrangement (065)', () =>
   function svcWith(
     householdRepo: any,
     payArrangements: any,
-    memberRepo = makeMemberRepo({ findById: mock(async () => targetMember()) })
+    memberRepo = makeMemberRepo({ findById: mock(async () => targetMember()) }),
+    proposals: any = stubProposals
   ) {
     return new HouseholdCommandService(
       householdRepo,
@@ -1790,7 +1848,11 @@ describe('HouseholdCommandService.removeMember — pay arrangement (065)', () =>
       makeQueries('parent'),
       stubUsers,
       makeTimeEntries(),
-      payArrangements
+      payArrangements,
+      stubPtoLedger,
+      undefined,
+      undefined,
+      proposals
     );
   }
 
@@ -1890,6 +1952,93 @@ describe('HouseholdCommandService.removeMember — pay arrangement (065)', () =>
     ).rejects.toBeInstanceOf(CannotRemoveOwnerError);
     expect(payArrangements.endForCarer).not.toHaveBeenCalled();
   });
+
+  // F8 — a removed carer must not be left with an open round she can no
+  // longer act on inside a household she no longer belongs to.
+  it("withdraws the target carer's open terms proposal (F8)", async () => {
+    const proposals = {
+      ...stubProposals,
+      withdrawOpenForCarer: mock(async () => ({
+        id: 'tp-1',
+        status: 'withdrawn',
+      })),
+    };
+    const svc = svcWith(
+      makeHouseholdRepo(),
+      makePayArrangements(),
+      makeMemberRepo({ findById: mock(async () => targetMember()) }),
+      proposals
+    );
+
+    await svc.removeMember('u1', 'h1', 'm-target', AT_NOON_UTC);
+
+    expect(proposals.withdrawOpenForCarer).toHaveBeenCalledWith(
+      'h1',
+      'u-nanny'
+    );
+  });
+
+  it('withdraws BEFORE flipping the membership, same ordering discipline as endForCarer', async () => {
+    const order: string[] = [];
+    const proposals = {
+      ...stubProposals,
+      withdrawOpenForCarer: mock(async () => {
+        order.push('withdraw-proposal');
+        return null;
+      }),
+    };
+    const payArrangements = makePayArrangements({
+      endForCarer: mock(async () => {
+        order.push('end-arrangement');
+        return [];
+      }),
+    });
+    const memberRepo = makeMemberRepo({
+      findById: mock(async () => targetMember()),
+      removeMembership: mock(async (id: string) => {
+        order.push('remove-membership');
+        return { ...targetMember(), id, status: 'removed' };
+      }),
+    });
+    const svc = svcWith(
+      makeHouseholdRepo(),
+      payArrangements,
+      memberRepo,
+      proposals
+    );
+
+    await svc.removeMember('u1', 'h1', 'm-target', AT_NOON_UTC);
+
+    expect(order.indexOf('withdraw-proposal')).toBeLessThan(
+      order.indexOf('remove-membership')
+    );
+  });
+
+  // Same discipline as `endForCarer`'s own failure a few tests up: a throw
+  // here refuses the WHOLE removal with nothing changed, rather than flipping
+  // membership over a carer who still has an open round nobody withdrew.
+  it('a withdraw failure refuses the whole removal, same discipline as endForCarer', async () => {
+    const proposals = {
+      ...stubProposals,
+      withdrawOpenForCarer: mock(async () => {
+        throw new DatabaseError('boom', 'DATABASE_ERROR');
+      }),
+    };
+    const memberRepo = makeMemberRepo({
+      findById: mock(async () => targetMember()),
+    });
+    const svc = svcWith(
+      makeHouseholdRepo(),
+      makePayArrangements(),
+      memberRepo,
+      proposals
+    );
+
+    await expect(
+      svc.removeMember('u1', 'h1', 'm-target', AT_NOON_UTC)
+    ).rejects.toThrow('boom');
+    expect(memberRepo.removeMembership).not.toHaveBeenCalled();
+  });
 });
 
 /**
@@ -1907,6 +2056,7 @@ describe('HouseholdCommandService.leave', () => {
     queries?: any;
     timeEntries?: any;
     payArrangements?: any;
+    proposals?: any;
   }) {
     return new HouseholdCommandService(
       overrides.householdRepo ?? makeHouseholdRepo(),
@@ -1916,7 +2066,10 @@ describe('HouseholdCommandService.leave', () => {
       stubUsers,
       overrides.timeEntries ?? makeTimeEntries(),
       overrides.payArrangements ?? makePayArrangements(),
-      stubPtoLedger
+      stubPtoLedger,
+      undefined,
+      undefined,
+      overrides.proposals ?? stubProposals
     );
   }
 
@@ -2097,6 +2250,86 @@ describe('HouseholdCommandService.leave', () => {
     await expect(svc.leave('u1', 'h1', AT_NOON_UTC)).rejects.toThrow('boom');
     expect(memberRepo.removeMembership).not.toHaveBeenCalled();
   });
+
+  // F8 — a proposal only ever names a carer, so this is gated NANNY-only, the
+  // same conditional `endForCarer` already carries a few tests up.
+  it("withdraws the leaving NANNY's open terms proposal (F8)", async () => {
+    const proposals = {
+      ...stubProposals,
+      withdrawOpenForCarer: mock(async () => ({
+        id: 'tp-1',
+        status: 'withdrawn',
+      })),
+    };
+    const svc = svcWith({ proposals });
+
+    await svc.leave('u1', 'h1', AT_NOON_UTC);
+
+    expect(proposals.withdrawOpenForCarer).toHaveBeenCalledWith('h1', 'u1');
+  });
+
+  it('does NOT withdraw for a non-owner PARENT leaving — no carer_id to scope to', async () => {
+    const proposals = {
+      ...stubProposals,
+      withdrawOpenForCarer: mock(async () => null),
+    };
+    const svc = svcWith({ role: 'parent', proposals });
+
+    await svc.leave('u1', 'h1', AT_NOON_UTC);
+
+    expect(proposals.withdrawOpenForCarer).not.toHaveBeenCalled();
+  });
+
+  it('does NOT withdraw for a HELPER leaving', async () => {
+    const proposals = {
+      ...stubProposals,
+      withdrawOpenForCarer: mock(async () => null),
+    };
+    const svc = svcWith({ role: 'helper', proposals });
+
+    await svc.leave('u1', 'h1', AT_NOON_UTC);
+
+    expect(proposals.withdrawOpenForCarer).not.toHaveBeenCalled();
+  });
+
+  it('withdraws BEFORE flipping the membership, same ordering discipline as endForCarer', async () => {
+    const order: string[] = [];
+    const proposals = {
+      ...stubProposals,
+      withdrawOpenForCarer: mock(async () => {
+        order.push('withdraw-proposal');
+        return null;
+      }),
+    };
+    const memberRepo = makeMemberRepo({
+      removeMembership: mock(async (id: string) => {
+        order.push('remove-membership');
+        return { ...membershipFor('nanny'), id, status: 'removed' };
+      }),
+    });
+    const svc = svcWith({ memberRepo, proposals });
+
+    await svc.leave('u1', 'h1', AT_NOON_UTC);
+
+    expect(order.indexOf('withdraw-proposal')).toBeLessThan(
+      order.indexOf('remove-membership')
+    );
+  });
+
+  // Same discipline as `endForCarer`'s own failure two tests up.
+  it('a withdraw failure refuses the whole leave, same discipline as endForCarer', async () => {
+    const memberRepo = makeMemberRepo();
+    const proposals = {
+      ...stubProposals,
+      withdrawOpenForCarer: mock(async () => {
+        throw new DatabaseError('boom', 'DATABASE_ERROR');
+      }),
+    };
+    const svc = svcWith({ memberRepo, proposals });
+
+    await expect(svc.leave('u1', 'h1', AT_NOON_UTC)).rejects.toThrow('boom');
+    expect(memberRepo.removeMembership).not.toHaveBeenCalled();
+  });
 });
 
 /**
@@ -2226,6 +2459,34 @@ describe('HouseholdCommandService.createInvite — the pay offer (P8)', () => {
         pay_offer: offer,
       })
     ).rejects.toBeInstanceOf(NotAHouseholdParentError);
+  });
+
+  // F7 — defence in depth. Unreachable from either client today (no client
+  // attaches an offer to a draft invite, and the offer UI is parent-gated
+  // while a draft's only member is always the nanny who authored it), but a
+  // direct API call must still be refused rather than silently write a rate
+  // nobody in the household can have offered.
+  it('refuses an offer on a draft household (F7)', async () => {
+    const inviteRepo = makeInviteRepo({ findByCode: mock(async () => null) });
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo({
+        findById: mock(async () => ({ ...household, state: 'draft' })),
+      }),
+      makeMemberRepo(),
+      inviteRepo,
+      makeQueries('owner'),
+      stubUsers
+    );
+
+    await expect(
+      svc.createInvite(
+        'u1',
+        'h1',
+        { role: 'nanny', pay_offer: offer },
+        AT_NOON_UTC
+      )
+    ).rejects.toBeInstanceOf(PayOfferNotForDraftHouseholdError);
+    expect(inviteRepo.create).not.toHaveBeenCalled();
   });
 });
 
@@ -2476,5 +2737,233 @@ describe('HouseholdCommandService.redeemInvite — promoting the pay offer (P8)'
     expect(memberRepo.createMembership).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'active' })
     );
+  });
+
+  // F5 — bring this resolver in line with `payArrangementCommandService` and
+  // `termsProposalCommandService.resolveCarerDisplayName`: the household's own
+  // `display_name_override` (what THIS family calls her) wins over the
+  // profile name.
+  it('honours display_name_override over the profile name (F5)', async () => {
+    const proposals = makeProposals();
+    const memberRepo = makeMemberRepo({
+      createMembership: mock(async (data: Record<string, unknown>) => ({
+        id: 'm-new',
+        joined_at: 't',
+        created_at: 't',
+        updated_at: 't',
+        display_name_override: 'Nini',
+        colour: null,
+        ...data,
+      })),
+    });
+
+    await makeSvc({
+      inviteRepo: offerInvite(),
+      memberRepo,
+      proposals,
+      users: makeUsers('Nia'),
+    }).redeemInvite('u-nanny', { code: 'ABC-234' }, AT_NOON_UTC);
+
+    expect(proposals.create.mock.calls[0][0].carer_display_name).toBe('Nini');
+  });
+
+  it('whitespace-only display_name_override counts as absent, falls through to the profile', async () => {
+    const proposals = makeProposals();
+    const memberRepo = makeMemberRepo({
+      createMembership: mock(async (data: Record<string, unknown>) => ({
+        id: 'm-new',
+        joined_at: 't',
+        created_at: 't',
+        updated_at: 't',
+        display_name_override: '   ',
+        colour: null,
+        ...data,
+      })),
+    });
+
+    await makeSvc({
+      inviteRepo: offerInvite(),
+      memberRepo,
+      proposals,
+      users: makeUsers('Nia'),
+    }).redeemInvite('u-nanny', { code: 'ABC-234' }, AT_NOON_UTC);
+
+    expect(proposals.create.mock.calls[0][0].carer_display_name).toBe('Nia');
+  });
+});
+
+/**
+ * F3 — every exit path of `promoteOfferToProposal` records its outcome on
+ * `household_invites.pay_offer_promotion`, since the method itself never
+ * throws and the column is the only record of what happened.
+ */
+describe('HouseholdCommandService.redeemInvite — recording the pay-offer promotion outcome (F3)', () => {
+  const offer = {
+    rate_minor: 2800,
+    overtime_multiplier: 1.5,
+    valid_from: '2026-09-01',
+  };
+
+  function makeProposals(overrides: Record<string, unknown> = {}): any {
+    return {
+      create: mock(async (row: Record<string, unknown>) => ({
+        id: 'p-new',
+        ...row,
+      })),
+      ...overrides,
+    };
+  }
+
+  function makeSvc({
+    inviteRepo,
+    memberRepo = makeMemberRepo(),
+    proposals = makeProposals(),
+  }: Record<string, any>) {
+    return new HouseholdCommandService(
+      makeHouseholdRepo(),
+      memberRepo,
+      inviteRepo,
+      makeQueries(),
+      makeUsers2(),
+      makeTimeEntries(),
+      makePayArrangements(),
+      stubPtoLedger,
+      { existsForHousehold: mock(async () => false) } as any,
+      stubHolidays,
+      proposals
+    );
+  }
+
+  function makeUsers2(): any {
+    return {
+      ensureProfile: mock(async () => {}),
+      getProfileById: mock(async () => ({ name: 'Nia' })),
+    };
+  }
+
+  function offerInvite(
+    overrides: Partial<HouseholdInvite> = {},
+    repoOverrides: Record<string, unknown> = {}
+  ): any {
+    return makeInviteRepo({
+      findByCode: mock(async () =>
+        pendingInvite({ role: 'nanny', pay_offer: offer, ...overrides })
+      ),
+      ...repoOverrides,
+    });
+  }
+
+  it('records "promoted" on a successful promotion', async () => {
+    const inviteRepo = offerInvite();
+    await makeSvc({ inviteRepo }).redeemInvite(
+      'u-nanny',
+      { code: 'ABC-234' },
+      AT_NOON_UTC
+    );
+
+    expect(inviteRepo.updatePayOfferPromotion).toHaveBeenCalledWith(
+      'i1',
+      'promoted'
+    );
+  });
+
+  it('records "skipped_no_inviter" and never writes when there is no offer to begin with', async () => {
+    const noOfferInviteRepo = makeInviteRepo();
+    await makeSvc({ inviteRepo: noOfferInviteRepo }).redeemInvite(
+      'u-nanny',
+      { code: 'ABC-234' },
+      AT_NOON_UTC
+    );
+
+    // No offer attached at all — nothing was being promoted, so the outcome
+    // column is left alone rather than stamped with a verdict about nothing.
+    expect(noOfferInviteRepo.updatePayOfferPromotion).not.toHaveBeenCalled();
+  });
+
+  it('records "skipped_no_inviter" when the inviting parent is gone', async () => {
+    const inviteRepo = offerInvite({ invited_by: null });
+    await makeSvc({ inviteRepo }).redeemInvite(
+      'u-nanny',
+      { code: 'ABC-234' },
+      AT_NOON_UTC
+    );
+
+    expect(inviteRepo.updatePayOfferPromotion).toHaveBeenCalledWith(
+      'i1',
+      'skipped_no_inviter'
+    );
+  });
+
+  it('records "skipped_stale" when valid_from has drifted past the horizon', async () => {
+    const inviteRepo = offerInvite({
+      pay_offer: { ...offer, valid_from: '2027-07-02' },
+    });
+    await makeSvc({ inviteRepo }).redeemInvite(
+      'u-nanny',
+      { code: 'ABC-234' },
+      AT_NOON_UTC
+    );
+
+    expect(inviteRepo.updatePayOfferPromotion).toHaveBeenCalledWith(
+      'i1',
+      'skipped_stale'
+    );
+  });
+
+  it('records "skipped_open_round" when a round is already open', async () => {
+    const inviteRepo = offerInvite();
+    const proposals = makeProposals({
+      create: mock(async () => {
+        throw new OpenTermsProposalExistsError('h1', 'u-nanny');
+      }),
+    });
+    await makeSvc({ inviteRepo, proposals }).redeemInvite(
+      'u-nanny',
+      { code: 'ABC-234' },
+      AT_NOON_UTC
+    );
+
+    expect(inviteRepo.updatePayOfferPromotion).toHaveBeenCalledWith(
+      'i1',
+      'skipped_open_round'
+    );
+  });
+
+  it('records "failed" on a generic insert failure', async () => {
+    const inviteRepo = offerInvite();
+    const proposals = makeProposals({
+      create: mock(async () => {
+        throw new DatabaseError('boom', 'DATABASE_ERROR');
+      }),
+    });
+    await makeSvc({ inviteRepo, proposals }).redeemInvite(
+      'u-nanny',
+      { code: 'ABC-234' },
+      AT_NOON_UTC
+    );
+
+    expect(inviteRepo.updatePayOfferPromotion).toHaveBeenCalledWith(
+      'i1',
+      'failed'
+    );
+  });
+
+  it('a failure recording the outcome never escapes — the redeem still resolves', async () => {
+    const inviteRepo = offerInvite(
+      {},
+      {
+        updatePayOfferPromotion: mock(async () => {
+          throw new DatabaseError('boom', 'DATABASE_ERROR');
+        }),
+      }
+    );
+
+    await expect(
+      makeSvc({ inviteRepo }).redeemInvite(
+        'u-nanny',
+        { code: 'ABC-234' },
+        AT_NOON_UTC
+      )
+    ).resolves.toMatchObject({ role: 'nanny' });
   });
 });

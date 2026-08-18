@@ -67,6 +67,7 @@ const PUSH_TYPE_GROUP: Record<PushNotificationType, NotificationGroup> = {
   parent_covering: 'schedule',
   payment_corrected: 'hoursAndPay',
   payment_recorded: 'hoursAndPay',
+  pay_offer_not_promoted: 'hoursAndPay',
   pay_terms_backdated: 'hoursAndPay',
   pay_terms_disagreed: 'hoursAndPay',
   pay_terms_scheduled_change_cancelled: 'hoursAndPay',

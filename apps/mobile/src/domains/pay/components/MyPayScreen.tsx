@@ -42,7 +42,7 @@
 
 import type { Household } from '@steadily-nanny/shared-types/schemas/household.schema';
 import type { PayArrangement } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
-import { useRouter } from 'expo-router';
+import { type Href, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
@@ -78,6 +78,7 @@ import { usePtoBalance } from '@/src/hooks/queries/usePtoBalance';
 import { useTermsProposals } from '@/src/hooks/queries/useTermsProposals';
 import { localDateInZone } from '@/src/lib/localDate';
 import { formatMoney } from '@/src/lib/money';
+import { proposalReviewHref } from '@/src/lib/notificationRouteMap';
 import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
 import { hasSeenAck, resolveAckState, seenAckAt } from '../utils/ackState';
@@ -90,6 +91,7 @@ import { resolveTermsAgreement } from '../utils/termsAgreement';
 import { buildTermsDiff, summarizeTermsDiff } from '../utils/termsDiff';
 import { BackRow } from './BackRow';
 import { PayChangeSheet } from './PayChangeSheet';
+import { ScheduledChangeCard } from './ScheduledChangeCard';
 import { TermsDocumentRows } from './TermsDocumentRows';
 import { TermsSentReceipt } from './TermsSentReceipt';
 
@@ -198,7 +200,8 @@ function MyPayHouseholdCard({
 
   // This household's own local year — each card is per-family, so the
   // year the balance covers is THAT family's calendar, not the device's.
-  const currentYear = Number(localDateInZone(household.timezone).slice(0, 4));
+  const todayISO = localDateInZone(household.timezone);
+  const currentYear = Number(todayISO.slice(0, 4));
   const hasEntitlement = current.data?.pto_entitlement_minutes_per_year != null;
   const balance = usePtoBalance(
     household.id,
@@ -207,6 +210,11 @@ function MyPayHouseholdCard({
   );
 
   const arrangement = current.data;
+  // F18 — the same `valid_from > today` derivation `PayArrangementScreen`
+  // uses for its own `scheduled` card, read-only here (no `canManage`).
+  const scheduled: PayArrangement | undefined = (history.data ?? [])
+    .filter(row => row.valid_from > todayISO)
+    .at(-1);
   const ackState = resolveAckState(acks.data);
   const _previous = arrangement
     ? previousVersion(history.data, arrangement.id)
@@ -246,6 +254,14 @@ function MyPayHouseholdCard({
   // counter, and the card names which side is waiting rather than showing her
   // a Withdraw button for a round she did not write (§7.5).
   const openProposalIsHers = openProposal?.proposed_by === carerId;
+  // The ONE resolver for "open her proposal by id" — shared with the push
+  // notification that lands on the same screen (`notificationRouteMap.ts`),
+  // so a tap and a push can never disagree about the destination.
+  const goToOpenProposal = () => {
+    if (!openProposal) return;
+    const href = proposalReviewHref({ proposalId: openProposal.id });
+    if (href) router.push(href as Href);
+  };
   const carerName = arrangement?.carer_display_name;
   // D-41: 'seen' NEVER renders as agreement. See this module's header.
   // It also never reads "Not read yet" once a 'seen' row exists — a
@@ -327,105 +343,14 @@ function MyPayHouseholdCard({
           <View testID={`my-pay-error-${household.id}`}>
             <ErrorState variant="network" onRetry={() => current.refetch()} />
           </View>
-        ) : !arrangement ? (
-          <View testID={`my-pay-empty-${household.id}`}>
-            <EmptyState
-              variant="inline"
-              image={illustrations.emptyHours}
-              title={t('myPay.emptyTitle')}
-              description={t('myPay.emptyDescription')}
-            />
-          </View>
         ) : (
           <>
-            {sideDataUnknown ? null : termsStateLabel ? (
-              <Small
-                testID={`my-pay-terms-state-${household.id}`}
-                className="text-muted-foreground"
-              >
-                {termsStateLabel}
-              </Small>
-            ) : null}
-            <View className="flex-row items-baseline gap-1">
-              <H1 tabular>
-                {formatMoney(arrangement.rate_minor, arrangement.currency)}
-              </H1>
-              <Body className="text-muted-foreground">/hr</Body>
-            </View>
-            <TermsDocumentRows
-              arrangement={arrangement}
-              balance={balance.data}
-              testIDPrefix={`my-pay-term-${household.id}`}
-            />
-            <Small className="text-muted-foreground">
-              {t('inEffectSince', {
-                date: formatDisplayDateWithYear(arrangement.valid_from),
-              })}
-            </Small>
-            {sideDataUnknown ? (
-              // False alarm: no ack pill, no "not agreed in Steadily", no
-              // dissent button — a failed proposals/history/acks/balance
-              // read must never compute a fact about the agreement.
-              <InlineRetry
-                testID={`my-pay-side-data-retry-${household.id}`}
-                message={t('sideDataUnknown')}
-                onRetry={retrySideData}
-              />
-            ) : (
-              <>
-                <Small
-                  testID={`my-pay-ack-state-${household.id}`}
-                  className="text-muted-foreground"
-                >
-                  {ackStateWord}
-                </Small>
-                {/* Its own line, never a replacement for the one above: both
-                    are true at once, and hiding either is the contradiction
-                    a nanny read as the app losing her tap. */}
-                {disagreedDate ? (
-                  <Small
-                    testID={`my-pay-ack-disagreed-${household.id}`}
-                    className="text-muted-foreground"
-                  >
-                    {t('ack.needsUpdatingLine', { date: disagreedDate })}
-                  </Small>
-                ) : null}
-                {dissentTerms.isSuccess ? (
-                  <Small
-                    testID={`my-pay-dissent-recorded-${household.id}`}
-                    className="text-muted-strong"
-                  >
-                    {t('dissent.recordedNow')}
-                  </Small>
-                ) : null}
-                {/* Survives ONLY on a grandfathered row. On terms she agreed
-                    it would contradict the line at the top of this card, and
-                    "I haven't agreed to these" would be false on its face. */}
-                {agreement?.kind === 'notAgreedInSteadily' ? (
-                  <Button
-                    testID={`my-pay-ack-disagree-${household.id}`}
-                    variant="ghost"
-                    className="self-start px-0"
-                    onPress={() => setDissentOpen(true)}
-                  >
-                    <Text>{t('ack.needsUpdatingButton')}</Text>
-                  </Button>
-                ) : null}
-                {ackError ? (
-                  <InlineError
-                    testID={`my-pay-ack-error-${household.id}`}
-                    message={t('ack.recordFailed')}
-                  />
-                ) : null}
-              </>
-            )}
-            <Button
-              testID={`my-pay-history-toggle-${household.id}`}
-              variant="ghost"
-              onPress={() => setHistoryOpen(open => !open)}
-            >
-              <Text>{t('myPay.historyButton')}</Text>
-            </Button>
+            {/* F16 — hoisted above the arrangement ternary (the same B2
+                pattern `PayArrangementScreen` already uses): an open
+                negotiation, or the "Suggest a change" write, must be visible
+                even when there are no terms yet — not stranded inside the
+                arrangement-only branch where a nanny with a live first offer
+                could never see it. */}
             {openProposal && openProposalIsHers ? (
               // 1.2: the receipt, not a pill. It says what she sent, that
               // they have to agree before her clock opens, and whether they
@@ -449,9 +374,7 @@ function MyPayHouseholdCard({
                 <Button
                   testID={`my-pay-proposal-review-${household.id}`}
                   variant="ghost"
-                  onPress={() =>
-                    router.push(`/pay/proposal/${openProposal.id}`)
-                  }
+                  onPress={goToOpenProposal}
                 >
                   <Text>{t('proposal.reviewButton')}</Text>
                 </Button>
@@ -465,90 +388,232 @@ function MyPayHouseholdCard({
                 <Text>{t('proposal.suggestChangeButton')}</Text>
               </Button>
             ) : null}
-            {historyOpen ? (
-              <View className="gap-2" testID={`my-pay-history-${household.id}`}>
-                {/* Withdrawn and countered rounds stay here — nothing in this
-                    domain is deleted (§9.1). */}
-                {(proposals.data ?? [])
-                  .filter(row => row.status !== 'proposed')
-                  .map(row => (
-                    <View
-                      key={row.id}
-                      testID={`my-pay-proposal-history-${row.id}`}
-                      className="flex-row items-center gap-2"
+
+            {!arrangement ? (
+              // An open round already rendered its own receipt/pill above —
+              // the bare empty state is only for "nothing to see at all".
+              openProposal ? null : (
+                <View testID={`my-pay-empty-${household.id}`}>
+                  <EmptyState
+                    variant="inline"
+                    image={illustrations.emptyHours}
+                    title={t('myPay.emptyTitle')}
+                    description={t('myPay.emptyDescription')}
+                  />
+                </View>
+              )
+            ) : (
+              <>
+                {sideDataUnknown ? null : termsStateLabel ? (
+                  <Small
+                    testID={`my-pay-terms-state-${household.id}`}
+                    className="text-muted-foreground"
+                  >
+                    {termsStateLabel}
+                  </Small>
+                ) : null}
+                <View className="flex-row items-baseline gap-1">
+                  <H1 tabular>
+                    {formatMoney(arrangement.rate_minor, arrangement.currency)}
+                  </H1>
+                  <Body className="text-muted-foreground">/hr</Body>
+                </View>
+                <TermsDocumentRows
+                  arrangement={arrangement}
+                  balance={balance.data}
+                  testIDPrefix={`my-pay-term-${household.id}`}
+                />
+                <Small className="text-muted-foreground">
+                  {t('inEffectSince', {
+                    date: formatDisplayDateWithYear(arrangement.valid_from),
+                  })}
+                </Small>
+                {/* F18 — read-only: no `onEdit`/`onCancel`, `canManage={false}`.
+                    A nanny sees the raise coming; only the parent who owns the
+                    arrangement can edit or call it off. */}
+                {scheduled ? (
+                  <ScheduledChangeCard
+                    arrangement={scheduled}
+                    currentArrangement={arrangement}
+                    canManage={false}
+                  />
+                ) : null}
+                {sideDataUnknown ? (
+                  // False alarm: no ack pill, no "not agreed in Steadily", no
+                  // dissent button — a failed proposals/history/acks/balance
+                  // read must never compute a fact about the agreement.
+                  <InlineRetry
+                    testID={`my-pay-side-data-retry-${household.id}`}
+                    message={t('sideDataUnknown')}
+                    onRetry={retrySideData}
+                  />
+                ) : (
+                  <>
+                    <Small
+                      testID={`my-pay-ack-state-${household.id}`}
+                      className="text-muted-foreground"
                     >
-                      <StatusPill
-                        testID={`my-pay-proposal-history-pill-${row.id}`}
-                        variant={
-                          proposalStateWord(
-                            row,
-                            {
-                              counterpartyName: householdName,
-                              timezone: household.timezone,
-                            },
-                            t
-                          ).variant
-                        }
-                        label={proposalHistoryLabel(
-                          row,
-                          {
-                            authorName:
-                              row.proposed_by === carerId
-                                ? t('proposal.you')
-                                : householdName,
-                            timezone: household.timezone,
-                          },
-                          t
-                        )}
-                      />
-                    </View>
-                  ))}
-                {(history.data ?? []).map((row, index) => {
-                  // §8.5: what CHANGED, not just the rate. The oldest row has
-                  // no predecessor and says so rather than diffing nothing.
-                  const older = (history.data ?? [])[index + 1] ?? null;
-                  return (
-                    <View
-                      key={row.id}
-                      testID={`my-pay-history-row-${row.id}`}
-                      className="gap-1 rounded-row bg-card px-4 py-3"
-                      style={elevation.row}
-                    >
-                      <Body weight="medium">
-                        {t('historyFrom', {
-                          date: formatDisplayDateWithYear(row.valid_from),
-                        })}
-                      </Body>
+                      {ackStateWord}
+                    </Small>
+                    {/* Its own line, never a replacement for the one above:
+                        both are true at once, and hiding either is the
+                        contradiction a nanny read as the app losing her tap. */}
+                    {disagreedDate ? (
                       <Small
-                        testID={`my-pay-history-diff-${row.id}`}
+                        testID={`my-pay-ack-disagreed-${household.id}`}
                         className="text-muted-foreground"
                       >
-                        {older
-                          ? summarizeTermsDiff(buildTermsDiff(older, row, t))
-                          : t('history.firstTermsSet')}
+                        {t('ack.needsUpdatingLine', { date: disagreedDate })}
                       </Small>
-                      {row.id === arrangement.id && seenDate ? (
-                        <Small
-                          testID={`my-pay-history-seen-${row.id}`}
-                          className="text-muted-foreground"
+                    ) : null}
+                    {dissentTerms.isSuccess ? (
+                      <Small
+                        testID={`my-pay-dissent-recorded-${household.id}`}
+                        className="text-muted-strong"
+                      >
+                        {t('dissent.recordedNow')}
+                      </Small>
+                    ) : null}
+                    {/* Survives ONLY on a grandfathered row. On terms she
+                        agreed it would contradict the line at the top of this
+                        card, and "I haven't agreed to these" would be false
+                        on its face. */}
+                    {agreement?.kind === 'notAgreedInSteadily' ? (
+                      <Button
+                        testID={`my-pay-ack-disagree-${household.id}`}
+                        variant="ghost"
+                        className="self-start px-0"
+                        onPress={() => setDissentOpen(true)}
+                      >
+                        <Text>{t('ack.needsUpdatingButton')}</Text>
+                      </Button>
+                    ) : null}
+                    {ackError ? (
+                      <InlineError
+                        testID={`my-pay-ack-error-${household.id}`}
+                        message={t('ack.recordFailed')}
+                      />
+                    ) : null}
+                  </>
+                )}
+                <Button
+                  testID={`my-pay-history-toggle-${household.id}`}
+                  variant="ghost"
+                  onPress={() => setHistoryOpen(open => !open)}
+                >
+                  <Text>{t('myPay.historyButton')}</Text>
+                </Button>
+                {historyOpen ? (
+                  <View
+                    className="gap-2"
+                    testID={`my-pay-history-${household.id}`}
+                  >
+                    {/* Withdrawn and countered rounds stay here — nothing in
+                        this domain is deleted (§9.1). */}
+                    {(proposals.data ?? [])
+                      .filter(row => row.status !== 'proposed')
+                      .map(row => (
+                        <View
+                          key={row.id}
+                          testID={`my-pay-proposal-history-${row.id}`}
+                          className="flex-row items-center gap-2"
                         >
-                          {t('ack.historySeen', { date: seenDate })}
-                        </Small>
-                      ) : null}
-                      {row.note ? (
-                        <Small className="text-muted-foreground">
-                          {row.note}
-                        </Small>
-                      ) : null}
-                    </View>
-                  );
-                })}
-              </View>
-            ) : null}
-            {/* 3-U1's form, pre-filled from the CURRENT arrangement. A nanny
-                who joined a parent-first household in 2024 and wants a raise
-                in 2026 uses identical machinery to a nanny-first onboarding —
-                which is the point of there being one form. */}
+                          <StatusPill
+                            testID={`my-pay-proposal-history-pill-${row.id}`}
+                            variant={
+                              proposalStateWord(
+                                row,
+                                {
+                                  counterpartyName: householdName,
+                                  timezone: household.timezone,
+                                },
+                                t
+                              ).variant
+                            }
+                            label={proposalHistoryLabel(
+                              row,
+                              {
+                                authorName:
+                                  row.proposed_by === carerId
+                                    ? t('proposal.you')
+                                    : householdName,
+                                timezone: household.timezone,
+                              },
+                              t
+                            )}
+                          />
+                        </View>
+                      ))}
+                    {(history.data ?? []).map((row, index) => {
+                      // §8.5: what CHANGED, not just the rate. The oldest row
+                      // has no predecessor and says so rather than diffing
+                      // nothing.
+                      const older = (history.data ?? [])[index + 1] ?? null;
+                      return (
+                        <View
+                          key={row.id}
+                          testID={`my-pay-history-row-${row.id}`}
+                          className="gap-1 rounded-row bg-card px-4 py-3"
+                          style={elevation.row}
+                        >
+                          <Body weight="medium">
+                            {t('historyFrom', {
+                              date: formatDisplayDateWithYear(row.valid_from),
+                            })}
+                          </Body>
+                          <Small
+                            testID={`my-pay-history-diff-${row.id}`}
+                            className="text-muted-foreground"
+                          >
+                            {older
+                              ? summarizeTermsDiff(
+                                  buildTermsDiff(older, row, t)
+                                )
+                              : t('history.firstTermsSet')}
+                          </Small>
+                          {row.id === arrangement.id && seenDate ? (
+                            <Small
+                              testID={`my-pay-history-seen-${row.id}`}
+                              className="text-muted-foreground"
+                            >
+                              {t('ack.historySeen', { date: seenDate })}
+                            </Small>
+                          ) : null}
+                          {row.note ? (
+                            <Small className="text-muted-foreground">
+                              {row.note}
+                            </Small>
+                          ) : null}
+                        </View>
+                      );
+                    })}
+                  </View>
+                ) : null}
+                <DissentSheet
+                  householdId={household.id}
+                  visible={dissentOpen}
+                  onDismiss={() => setDissentOpen(false)}
+                  isSubmitting={dissentTerms.isPending}
+                  isError={dissentTerms.isError}
+                  onSubmit={note => {
+                    dissentTerms
+                      .mutateAsync({ arrangementId: arrangement.id, note })
+                      .then(() => setDissentOpen(false))
+                      // Failure renders inline INSIDE the sheet (GOLDEN #40);
+                      // the sheet keeps her typed note rather than losing it.
+                      .catch(() => undefined);
+                  }}
+                />
+              </>
+            )}
+            {/* 3-U1's form, pre-filled from the CURRENT arrangement (or blank
+                when there is none yet — F16 makes "Suggest a change" reachable
+                with no arrangement too, so this sheet must be reachable
+                unconditionally, not nested inside the arrangement-only
+                branch). A nanny who joined a parent-first household in 2024
+                and wants a raise in 2026 uses identical machinery to a
+                nanny-first onboarding — which is the point of there being one
+                form. */}
             <PayChangeSheet
               mode="propose"
               counterpartyName={householdName}
@@ -564,28 +629,13 @@ function MyPayHouseholdCard({
               submitError={
                 proposeTerms.isError ? t('proposal.sendFailed') : null
               }
-              currentArrangement={arrangement}
+              currentArrangement={arrangement ?? undefined}
               householdCancellationDefaultHours={
                 household.cancellation_paid_within_hours ?? 0
               }
               householdTimezone={household.timezone}
               householdWeekStartsOn={household.week_starts_on ?? 1}
               todayISO={localDateInZone(household.timezone)}
-            />
-            <DissentSheet
-              householdId={household.id}
-              visible={dissentOpen}
-              onDismiss={() => setDissentOpen(false)}
-              isSubmitting={dissentTerms.isPending}
-              isError={dissentTerms.isError}
-              onSubmit={note => {
-                dissentTerms
-                  .mutateAsync({ arrangementId: arrangement.id, note })
-                  .then(() => setDissentOpen(false))
-                  // Failure renders inline INSIDE the sheet (GOLDEN #40); the
-                  // sheet keeps her typed note rather than losing it.
-                  .catch(() => undefined);
-              }}
             />
           </>
         )}

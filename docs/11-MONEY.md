@@ -134,20 +134,21 @@ they were worked; the exclusion is per-date inside `effectiveOn`, exactly as
 the engine's in-memory resolver does it.
 
 **Why no unique constraint on `(household_id, carer_id, valid_from)`:**
-combined with append-only and no-future-dating, uniqueness would make a
-same-day typo **permanently uncorrectable** — you could neither update the
-wrong row nor insert a same-day fix. A plain (non-unique) index on
-`(household_id, carer_id, valid_from desc)` serves `effectiveOn` instead.
-This was drafted, then dropped in review — do not re-add it.
+combined with append-only, uniqueness would make a same-day typo
+**permanently uncorrectable** — you could neither update the wrong row nor
+insert a same-day fix. A plain (non-unique) index on `(household_id,
+carer_id, valid_from desc)` serves `effectiveOn` instead. This was drafted,
+then dropped in review — do not re-add it.
 
-**`valid_from` is household-local today or earlier, never future (owner
-ruling, 2026-08-04).** The service rejects any `valid_from` after the
-household's **local** today, computed with the same timezone conversion
-`weekStart.ts` already uses — server-UTC "today" would wrongly reject a
-legitimate morning "today" for a household east of UTC. Backdating is
-allowed: an open week recomputes under the new rate, an approved week stays
-frozen (§3). There is no "Scheduled change" UI state and no future-dated
-arrangement path — cut entirely, not deferred.
+**`valid_from` may be in the future (D-16), up to a 12-month horizon.**
+Backdating is also allowed: an open week recomputes under the new rate, an
+approved week stays frozen (§3). Both bounds are computed in the household's
+**local** today, the same timezone conversion `weekStart.ts` already uses —
+server-UTC "today" would wrongly reject a legitimate morning "today" for a
+household east of UTC. A future row is invisible to `effectiveOn` until its
+date arrives; the terms document surfaces it as a "Scheduled" card above the
+current terms (`screens-pay-terms.md` §6). This supersedes the earlier
+2026-08-04 no-future-dating ruling.
 
 ---
 
@@ -604,6 +605,10 @@ same row coming back is what makes this a money question:**
 Reactivation reuses the membership row; payroll terms do not. A carer who
 returns must have fresh terms written before any week totals again — that is
 the intended product behaviour, not a gap waiting on an owner decision.
+
+**Termination — decision 2026-08-17:** removal is the only thing that ends an
+arrangement; `notice_period_days`/`probation_days` are recorded, not
+enforced; a notice model is a follow-up.
 
 ## 11. The settlement ledger: payments are facts, never a second source of truth
 

@@ -59,6 +59,7 @@ const invite: HouseholdInvite = {
   opened_at: null,
   label: null,
   pay_offer: null,
+  pay_offer_promotion: null,
   created_at: 't',
   updated_at: 't',
 };

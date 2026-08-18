@@ -604,6 +604,16 @@ export function ParentWeekView({
           localDateInZone(timeZone, new Date(timesheet.approved_at))
         )
       : null;
+  // P6b: `parent_viewed_at` used to feed only the NANNY's status timeline —
+  // the parent who actually opened the week never saw any acknowledgment
+  // of their own read. Same zone-aware date shape as `approvedDateLabel`.
+  const parentViewedNote = timesheet?.parent_viewed_at
+    ? t('parentViewedNote', {
+        date: formatEarningsLongDate(
+          localDateInZone(timeZone, new Date(timesheet.parent_viewed_at))
+        ),
+      })
+    : null;
   // The dialog confirms the figure that will actually be FROZEN, so the
   // staged adjustment is folded in here rather than mentioned beside an
   // un-adjusted total. `adjustmentLabel` is absolute — the body copy's verb
@@ -1005,6 +1015,7 @@ export function ParentWeekView({
               earningsReopened={reopened}
               earningsReopenReason={timesheet?.reopen_reason ?? null}
               approvedDateLabel={approvedDateLabel}
+              parentViewedNote={parentViewedNote}
               // Walkthrough fix 1 — the reopen affordance lives in the
               // summary card, next to the status pill/gross, not below the
               // day rows. `readOnly` (a helper) never gets a handler, so a

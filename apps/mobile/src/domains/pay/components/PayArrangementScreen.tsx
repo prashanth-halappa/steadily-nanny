@@ -24,7 +24,7 @@ import type {
   CreatePayArrangementRequest,
   PayArrangement,
 } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
@@ -46,7 +46,6 @@ import {
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { EmptyState } from '@/src/components/ui/empty-state';
-import { InlineError } from '@/src/components/ui/inline-error';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
@@ -71,21 +70,22 @@ import {
 } from '@/src/hooks/queries/useTermsProposals';
 import { localDateInZone } from '@/src/lib/localDate';
 import { formatMoney, formatRate } from '@/src/lib/money';
+import { proposalReviewHref } from '@/src/lib/notificationRouteMap';
 import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
-import { resolveAckState } from '../utils/ackState';
+import { resolveAckState, seenAckAt } from '../utils/ackState';
 import { formatDisplayDateWithYear } from '../utils/payArrangementForm';
-import { proposalStateWord } from '../utils/proposalTerms';
+import {
+  proposalHistoryLabel,
+  proposalStateWord,
+} from '../utils/proposalTerms';
 import { resolveTermsAgreement } from '../utils/termsAgreement';
 import { buildTermsDiff, summarizeTermsDiff } from '../utils/termsDiff';
 import { BackRow } from './BackRow';
 import { PayChangeSheet } from './PayChangeSheet';
+import { ScheduledChangeCard } from './ScheduledChangeCard';
 import { TermsDocumentRows } from './TermsDocumentRows';
 import { TermsSentReceipt } from './TermsSentReceipt';
-
-/** §6's card names the headline terms only — the full diff is one tap away
- * in the history once the change lands. */
-const SCHEDULED_SUMMARY_TERMS = 2;
 
 function normalizeParam(
   value: string | string[] | undefined
@@ -282,6 +282,18 @@ function CarerPayDetail({
             label: t('ack.seen', { date: ackDate }),
           } as const)
         : ({ variant: 'pending', label: t('ack.notSeenYet') } as const);
+  // F21 (`ackState.ts`'s own header): seeing something and disagreeing with
+  // it are different facts, and the history row must show BOTH independently
+  // — gating it on `ackState.kind === 'seen'` is the bug that stranded a real
+  // nanny, since a later disagreement outranks 'seen' for the WORD but must
+  // never erase the date she read it. `seenAckAt` is the ungated read;
+  // `MyPayScreen` already uses it for the same reason.
+  const seenAt = seenAckAt(acks.data);
+  const seenDate = seenAt
+    ? formatDisplayDateWithYear(
+        localDateInZone(householdTimezone, new Date(seenAt))
+      )
+    : null;
 
   // 1.3: ONE state line, in ONE slot, for both roles (T16). Either these
   // terms were agreed — and the word comes with the date and the name, from
@@ -345,6 +357,15 @@ function CarerPayDetail({
       .catch(() => undefined);
   };
 
+  /** The ONE resolver for "open her proposal by id" — shared with the push
+   * notification that lands on the same screen (`notificationRouteMap.ts`),
+   * so a tap and a push can never disagree about the destination. */
+  const goToOpenProposal = () => {
+    if (!openProposal) return;
+    const href = proposalReviewHref({ proposalId: openProposal.id });
+    if (href) router.push(href as Href);
+  };
+
   return (
     <View className="mt-4 gap-4" testID={`pay-detail-${carerId}`}>
       {showCarerName ? <H4 testID="pay-carer-name">{carerName}</H4> : null}
@@ -400,7 +421,7 @@ function CarerPayDetail({
             testID="pay-open-proposal-review"
             variant="ghost"
             className="self-start"
-            onPress={() => router.push(`/pay/proposal/${openProposal.id}`)}
+            onPress={goToOpenProposal}
           >
             <Text>{t('proposal.reviewButton')}</Text>
           </Button>
@@ -415,8 +436,8 @@ function CarerPayDetail({
             description={t('noArrangementDescription')}
             action={() =>
               openProposal
-                ? router.push(`/pay/proposal/${openProposal.id}`)
-                : router.push(`/settings/pay/setup/${carerId}`)
+                ? goToOpenProposal()
+                : router.push(`/settings/pay/setup/${carerId}` as Href)
             }
             actionLabel={
               openProposal
@@ -428,46 +449,18 @@ function CarerPayDetail({
       ) : (
         <>
           {scheduled ? (
-            <Card testID="pay-scheduled-change-card" tone="attention">
-              <CardContent className="gap-3">
-                <H4>
-                  {t('scheduledChange.title', {
-                    date: formatDisplayDateWithYear(scheduled.valid_from),
-                  })}
-                </H4>
-                <Small
-                  testID="pay-scheduled-diff"
-                  className="text-muted-foreground"
-                >
-                  {summarizeTermsDiff(
-                    buildTermsDiff(arrangement, scheduled, t),
-                    SCHEDULED_SUMMARY_TERMS
-                  )}
-                </Small>
-                <View className="flex-row gap-2">
-                  <Button
-                    testID="pay-scheduled-edit"
-                    variant="ghost"
-                    onPress={() => setSheetOpen(true)}
-                  >
-                    <Text>{t('scheduledChange.editButton')}</Text>
-                  </Button>
-                  <Button
-                    testID="pay-scheduled-cancel"
-                    variant="ghost"
-                    onPress={() => setCancelConfirmOpen(true)}
-                  >
-                    <Text>{t('scheduledChange.cancelButton')}</Text>
-                  </Button>
-                </View>
-                {cancelScheduled.isError ? (
-                  <InlineError
-                    testID="pay-scheduled-cancel-error"
-                    message={t('scheduledChange.cancelFailed')}
-                  />
-                ) : null}
-              </CardContent>
-            </Card>
+            <ScheduledChangeCard
+              arrangement={scheduled}
+              currentArrangement={arrangement}
+              canManage
+              onEdit={() => setSheetOpen(true)}
+              onCancel={() => setCancelConfirmOpen(true)}
+              cancelError={
+                cancelScheduled.isError
+                  ? t('scheduledChange.cancelFailed')
+                  : null
+              }
+            />
           ) : null}
 
           <Card testID="pay-current-terms-card">
@@ -515,6 +508,52 @@ function CarerPayDetail({
           <Small className="text-muted-foreground">{t('appendOnlyNote')}</Small>
 
           <H4>{t('historyHeading')}</H4>
+
+          {/* F17/F20 — closed negotiation rounds. `proposals` already carries
+              every status for this (household, carer) pair (`useTermsProposals`'s
+              own doc: "every round … newest first"), so this is the SAME data
+              `MyPayScreen` renders as its own history list, filtered and
+              authored the same way, just read from the parent's side: "you"
+              is whoever `me` is, not whoever the carer is. */}
+          {(proposals.data ?? []).some(row => row.status !== 'proposed') ? (
+            <View className="gap-2" testID="pay-proposal-history-list">
+              {(proposals.data ?? [])
+                .filter(row => row.status !== 'proposed')
+                .map(row => (
+                  <View
+                    key={row.id}
+                    testID={`pay-proposal-history-${row.id}`}
+                    className="flex-row items-center gap-2"
+                  >
+                    <StatusPill
+                      testID={`pay-proposal-history-pill-${row.id}`}
+                      variant={
+                        proposalStateWord(
+                          row,
+                          {
+                            counterpartyName: carerName,
+                            timezone: householdTimezone,
+                          },
+                          t
+                        ).variant
+                      }
+                      label={proposalHistoryLabel(
+                        row,
+                        {
+                          authorName:
+                            row.proposed_by === me
+                              ? t('proposal.you')
+                              : carerName,
+                          timezone: householdTimezone,
+                        },
+                        t
+                      )}
+                    />
+                  </View>
+                ))}
+            </View>
+          ) : null}
+
           <View className="gap-2" testID="pay-history-list">
             {history.data?.map((row, index) => {
               const setByMember = row.created_by
@@ -548,12 +587,12 @@ function CarerPayDetail({
                       ? summarizeTermsDiff(buildTermsDiff(older, row, t))
                       : t('history.firstTermsSet')}
                   </Small>
-                  {row.id === arrangement.id && ackState.kind === 'seen' ? (
+                  {row.id === arrangement.id && seenDate ? (
                     <Small
                       testID={`pay-history-seen-${row.id}`}
                       className="text-muted-foreground"
                     >
-                      {t('ack.historySeen', { date: ackDate })}
+                      {t('ack.historySeen', { date: seenDate })}
                     </Small>
                   ) : null}
                   <Small className="text-muted-foreground">

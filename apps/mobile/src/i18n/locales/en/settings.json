@@ -134,6 +134,7 @@
       "pay_terms_backdated": "Pay terms changed for a past week",
       "pay_terms_scheduled_change_cancelled": "Scheduled pay change cancelled",
       "pay_terms_disagreed": "Pay terms disagreement recorded",
+      "pay_offer_not_promoted": "Pay offer needs attention",
       "pto_usage_reversed": "Time-off usage reversed",
       "timesheet_approved": "Timesheet approved",
       "timesheet_awaiting_approval": "Timesheet awaiting approval",

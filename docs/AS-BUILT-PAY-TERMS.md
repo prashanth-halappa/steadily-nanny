@@ -10,6 +10,16 @@
 
 ---
 
+## Status: partially fixed 2026-08-17
+
+WP-F1, in-flight alongside this doc's edits, fixes: F16, F17, F20, F18, F3, F8, F21, F5, F7, F1 (doc note only — sized, no backfill), F12 (docs), F14 (docs).
+
+Already fixed on `main` before this PR: F23, F19. Fixed separately (WP-B3, gates): F15.
+
+Decision recorded, not a code fix: F13. Not in scope for this pass (unlisted above): F6, F2, F4, F9–F11, F22, and anything else this doc mentions that isn't named here.
+
+---
+
 ## 1. Method, and what it does not cover
 
 Four independent read-only passes — database/migrations, API services, mobile UI, design docs — each blind to the others, then cross-checked. Load-bearing claims were re-verified by hand rather than taken on trust.
@@ -159,6 +169,8 @@ She can reach the offer via Today's `ClockInBlockedCard` and the inbox — but *
 ### Unsized
 
 - **F1 — pre-P1 arrangement rows.** Rows written through the deleted POST have no proposal behind them, and for those "an arrangement exists ⇒ both agreed" is false. Nothing backfilled or flagged them. **One read-only query sizes it:** `pay_arrangements` rows whose `id` appears in no `terms_proposals.accepted_arrangement_id`, minus the `cancelScheduled` reverts.
+
+  **Sized, 2026-08-17.** Prod carries exactly **one** `pay_arrangements` row, and it is the F1 orphan — no `terms_proposals` row points at it. The client already labels rows like this "grandfathered" in the surfaces that show them. Decision: keep the existing grandfathered handling as-is; no backfill.
 
 ### Closed / latent
 

@@ -221,10 +221,10 @@
   "clockInBlocked": {
     "titleFamilySent": "{{familyName}} sent you terms",
     "titleYouSent": "Your terms are with {{familyName}}",
-    "titleNothingSent": "Nobody's set your rate yet",
+    "titleNothingSent": "Your rate isn't set in Steadily yet",
     "bodyFamilySent": "{{familyName}} sent you terms on {{date}}. Agree to them and you can clock in straight away.",
     "bodyYouSent": "You sent your terms on {{date}}. {{familyName}} hasn't answered yet.",
-    "bodyNothingSent": "Nobody's set your rate yet. Send {{familyName}} your terms and you can start clocking in.",
+    "bodyNothingSent": "Your rate isn't set in Steadily yet. Send {{familyName}} your terms and you can start clocking in.",
     "ctaFamilySent": "Review these terms",
     "ctaYouSent": "See what you sent",
     "ctaNothingSent": "Send my terms",

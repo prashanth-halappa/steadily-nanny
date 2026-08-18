@@ -165,6 +165,11 @@ new-arrangement-field checklist for every row marked *new column*.
 | In writing | Driving | `terms.driving` (text) | — |
 | In writing | Live-in conditions | `terms.live_in` (text) | — |
 
+**Termination — decision 2026-08-17:** removal is the only thing that ends an
+arrangement; `notice_period_days`/`probation_days` above are recorded, not
+enforced — priced by "—" is deliberate, not a gap. A notice model is a
+follow-up.
+
 **Why the seventh-day rule is not a boolean** (David, D2). California's seventh
 consecutive day is two tiers, not one: the first 8 hours of that day are paid at
 1.5× and everything beyond 8 hours at 2×. A `boolean` can only say "on", which
@@ -935,6 +940,13 @@ So the vocabulary forks, precisely:
 | **Seen** by {name} on {date} | The carer acknowledged this version | D-31 ack |
 | **Not seen yet** | No ack row for the current version | D-31 ack |
 | **Agreed** {date} | A proposal one party made and the other accepted | **3-O only** (D-35) |
+| **Declined** by {name}, {date} | A proposal one party made and the other refused | **3-O only** (D-35, tagged `B4`) |
+
+Declined reuses the `cancelled` grey pill Withdrawn already has, but never its
+word — withdrawn is the author's own exit, declined is the counterparty's
+refusal. It is a different fact from the `declined`-variant dissent pill in
+§8.4: that one names a disagreement with terms already in force, this one
+names a proposal that never became terms at all.
 
 Money keeps Estimated / Approved / Recorded, untouched (P15).
 

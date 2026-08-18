@@ -233,6 +233,14 @@ export const PUSH_NOTIFICATION_TYPES = {
   // until the morning, and the exemption list is a closed child-safety set.
   SCHEDULE_NOT_SET: 'schedule_not_set',
 
+  // F3 (AS-BUILT-PAY-TERMS.md §7): a parent's invite-attached pay_offer
+  // failed to become a terms_proposal on redemption (`promoteOfferToProposal`
+  // is best-effort and never throws — the join must stand regardless). Sent
+  // only for the two outcomes the parent can actually act on by re-sending
+  // terms: 'failed' and 'skipped_stale'. Parent-targeted: he is the one who
+  // typed the offer and is the only one who can retype it.
+  PAY_OFFER_NOT_PROMOTED: 'pay_offer_not_promoted',
+
   // J1-b (S2 audit closeout): `jobHealthJob`'s own alert, fired when a
   // registered cron job's latest success is stale/missing or something
   // failed/partial in the last 24h. NOT a household-scoped fact — it goes
@@ -301,6 +309,7 @@ export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
   [PUSH_NOTIFICATION_TYPES.PAY_TERMS_DISAGREED]: 'parent',
   [PUSH_NOTIFICATION_TYPES.PAY_TERMS_SCHEDULED_CHANGE_CANCELLED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.PAY_TERMS_SET]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.PAY_OFFER_NOT_PROMOTED]: 'parent',
   [PUSH_NOTIFICATION_TYPES.PTO_MARKED_PAID]: 'carer',
   [PUSH_NOTIFICATION_TYPES.PTO_USAGE_REVERSED]: 'parent',
   [PUSH_NOTIFICATION_TYPES.REIMBURSEMENT_SETTLED]: 'carer',

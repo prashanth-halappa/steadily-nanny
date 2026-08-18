@@ -56,6 +56,7 @@ import { onboardingAsQuery, queryState } from '@/src/hooks/queries/queryState';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
+import { useInvitePayOffer } from '@/src/hooks/queries/useInvitePayOffer';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import {
   findOpenTermsProposal,
@@ -66,7 +67,9 @@ import { localDateInZone } from '@/src/lib/localDate';
 import {
   blankPayTermsFormState,
   buildCreatePayArrangementRequest,
+  offerRequestToArrangementStub,
   type PayTermsFormState,
+  seedPayTermsFormState,
 } from '../utils/payArrangementForm';
 import { TermsSentReceipt } from './TermsSentReceipt';
 
@@ -107,6 +110,10 @@ export function PaySetupScreen() {
   const openProposal = findOpenTermsProposal(proposals.data);
   const proposeTerms = useProposeTerms(householdId ?? '', carerId ?? '');
   const withdrawTerms = useWithdrawTerms(openProposal?.id ?? '');
+  // F3(c) — the offer this carer's invite carried, if any, so the seed
+  // effect below can prefill from what the parent already typed instead of
+  // asking him to retype it.
+  const invitePayOffer = useInvitePayOffer(householdId, carerId ?? null);
 
   const member = (members.data ?? []).find(m => m.user_id === carerId);
   const carerName = resolveCarerName(member, tSettings('role.nanny'));
@@ -134,7 +141,8 @@ export function PaySetupScreen() {
       hasSeededRef.current ||
       !member ||
       !household ||
-      currentArrangement.isPending
+      currentArrangement.isPending ||
+      invitePayOffer.isPending
     ) {
       return;
     }
@@ -144,16 +152,44 @@ export function PaySetupScreen() {
     // A current arrangement already existing means "today" is the honest
     // default (review finding 9).
     const joinedDateISO = localDateInZone(timezone, new Date(member.joined_at));
+    const effectiveDateISO =
+      !currentArrangement.data && joinedDateISO < todayISO
+        ? joinedDateISO
+        : todayISO;
+    // F3(c) — a parent's own invite offer, when there is one and nothing has
+    // been agreed yet, prefills EVERY field `seedPayTermsFormState` knows
+    // how to read (rate, currency, the 078 tiers, cancellation window, note)
+    // via the same stub `PayChangeSheet` already uses for a prior offer
+    // (`offerRequestToArrangementStub`) — one seeding function, not a second
+    // hand-rolled field mapping. The offer's own `valid_from` is deliberately
+    // NOT read here: it may have gone stale by the time she redeems (the
+    // API's own `skipped_stale` promotion-outcome guard exists for exactly
+    // this), and this screen's job is prefilling the FORM, not resurrecting
+    // a possibly-outdated effective date.
+    if (!currentArrangement.data && invitePayOffer.data) {
+      const seeded = seedPayTermsFormState(
+        offerRequestToArrangementStub(
+          invitePayOffer.data,
+          household.currency ?? getDeviceCurrency()
+        ),
+        householdCancellationDefaultHours,
+        todayISO
+      );
+      setForm(current => ({
+        ...current,
+        ...seeded,
+        effectiveDateISO,
+        todayISO,
+      }));
+      return;
+    }
     setForm(current => ({
       ...current,
       // Household currency over the device prefill, once the household has
       // loaded — currency belongs to the household's employment arrangements,
       // not to whichever phone happened to create this one.
       currency: household.currency ?? getDeviceCurrency(),
-      effectiveDateISO:
-        !currentArrangement.data && joinedDateISO < todayISO
-          ? joinedDateISO
-          : current.effectiveDateISO,
+      effectiveDateISO,
       todayISO,
       cancellationHoursText:
         householdCancellationDefaultHours > 0
@@ -168,6 +204,8 @@ export function PaySetupScreen() {
     householdCancellationDefaultHours,
     currentArrangement.isPending,
     currentArrangement.data,
+    invitePayOffer.isPending,
+    invitePayOffer.data,
   ]);
 
   // Setup is first-time only. An existing arrangement means we were reached
@@ -236,7 +274,8 @@ export function PaySetupScreen() {
     !carerId ||
     members.isPending ||
     currentArrangement.isPending ||
-    proposals.isPending
+    proposals.isPending ||
+    invitePayOffer.isPending
   ) {
     return (
       <View testID="pay-setup-screen" className="flex-1 bg-background">

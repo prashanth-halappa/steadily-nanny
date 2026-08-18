@@ -340,6 +340,37 @@ know `ShiftOverlapsError`, so a refused write surfaces as a 500 instead of a
 rather than recording a `pattern_conflict` and continuing. Prefer dropping the
 constraint to rolling the server back.
 
+### Migration 106 — invite pay-offer promotion outcome — NOT YET APPLIED
+
+`106_invite_pay_offer_promotion.sql` adds a nullable `pay_offer_promotion` text
+column to `household_invites`, CHECKed against
+`promoted | skipped_open_round | skipped_stale | skipped_no_inviter | failed`.
+It records the outcome of the best-effort offer-to-proposal promotion that
+already runs on invite redemption (`householdCommandService.
+promoteOfferToProposal`, §5 of `AS-BUILT-PAY-TERMS.md`) — no behavior change,
+the promotion still swallows every failure and lets the join stand. This is
+observability catching up to a write path that already existed.
+
+Alongside it, a new push notification type, `PAY_OFFER_NOT_PROMOTED`, fires to
+the inviting parent when the outcome is `failed` or `skipped_stale`.
+
+**Deploy order is not load-bearing.** The column is nullable with no default
+dependency and no other column reads it; the old server simply never writes it
+and never sends the new push. Either order is safe; migration-first is still
+the house default (§5's opening rule).
+
+**Rollback is trivial:**
+
+```sql
+alter table public.household_invites drop column if exists pay_offer_promotion;
+```
+
+Nullable, no backfill, nothing else in the schema references it — dropping it
+loses only the promotion-outcome record, not the promotion itself. The push
+type is additive to `shared-types` (a new enum member, not a shape change), so
+removing `PAY_OFFER_NOT_PROMOTED` from the client is equally low-risk: an old
+client that has never heard of it already ignores unknown push types.
+
 ---
 
 ## §6 Behavior changes with NO switch

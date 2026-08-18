@@ -214,6 +214,16 @@ describe('NOTIFICATION_ROUTE_MAP resolvers', () => {
     ).toBe('/(private)/settings/my-pay');
   });
 
+  // F3 — a parent's pay offer that couldn't be promoted into a proposal on
+  // redemption. Same household pay hub as PAY_TERMS_DISAGREED.
+  it('routes pay_offer_not_promoted to the household pay hub', () => {
+    expect(
+      resolve(PUSH_NOTIFICATION_TYPES.PAY_OFFER_NOT_PROMOTED, {
+        householdId: 'hh-1',
+      })
+    ).toBe('/(private)/settings/pay');
+  });
+
   // 3-N (A2, N7): the pending-cover-ask reminder is the same fact-shape as
   // shift_reminder — lands on the same shift detail screen.
   it('routes cover_ask_reminder to shift detail, same as shift_reminder', () => {

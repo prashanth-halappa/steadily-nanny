@@ -20,6 +20,7 @@ import {
   HOUSEHOLD_STATES,
   type Household,
   type HouseholdInvite,
+  HouseholdInviteListResponseSchema,
   HouseholdInviteSchema,
   HouseholdListResponseSchema,
   type HouseholdMember,
@@ -241,6 +242,22 @@ export const householdApi = {
       .safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
     return parsed.data.invite;
+  },
+
+  /**
+   * Every invite this household has minted, GET /:id/invites — used by
+   * `useInvitePayOffer` (F3(c)) to find the invite a redeemed carer's
+   * `pay_offer` rode in on. Same URL as `createInvite`, GET instead of POST.
+   */
+  listInvites: async (householdId: string): Promise<HouseholdInvite[]> => {
+    const response = await apiClient.get(
+      householdEndpoints.createInvite(householdId)
+    );
+    const parsed = HouseholdInviteListResponseSchema.safeParse(
+      response.data.data
+    );
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.household_invites;
   },
 
   /**

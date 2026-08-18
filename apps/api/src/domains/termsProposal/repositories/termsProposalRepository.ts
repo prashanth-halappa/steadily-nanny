@@ -190,6 +190,46 @@ export class TermsProposalRepository extends BaseRepository<TermsProposalRow> {
   }
 
   /**
+   * F8 — withdraw the one open round for a (household, carer) pair, on
+   * removal, on leaving, or on account deletion. Same CAS shape as `resolve`:
+   * `status = 'proposed'` is both the filter and the concurrency control, so
+   * a round already answered (accepted/declined/withdrawn/countered) is left
+   * alone rather than overwritten, and two calls racing for the same row only
+   * ever let one through. `responded_at` is stamped for the same reason
+   * `resolve` always stamps it together with `status` — 092's
+   * `terms_proposals_responded_at_present` check refuses a non-`proposed` row
+   * with no date.
+   *
+   * Returns null when there was nothing open to withdraw, which every caller
+   * reads as a no-op rather than an error.
+   */
+  async withdrawOpenForCarer(
+    householdId: string,
+    carerId: string
+  ): Promise<TermsProposalRow | null> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update({
+        status: TERMS_PROPOSAL_STATUSES.WITHDRAWN,
+        responded_at: new Date().toISOString(),
+      })
+      .eq('household_id', householdId)
+      .eq('carer_id', carerId)
+      .eq('status', TERMS_PROPOSAL_STATUSES.PROPOSED)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to withdraw open terms proposal',
+        'DATABASE_ERROR',
+        { details: error.message, householdId, carerId }
+      );
+    }
+    return data as TermsProposalRow | null;
+  }
+
+  /**
    * §5.3's "Viewed" receipt. `.is('viewed_at', null)` makes this one-way in
    * the database rather than in a service branch: the FIRST open wins and
    * every later one matches nothing, so the timestamp answers "did this reach

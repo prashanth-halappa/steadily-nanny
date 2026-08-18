@@ -7,9 +7,13 @@
  *
  * @module domains/household/services/householdCommandService
  */
-import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 // Straight from the shared package, not via the terms-proposal domain: that
 // package is a leaf and imports nothing of ours, so there is no cycle to dodge.
+import {
+  PAY_OFFER_PROMOTION_OUTCOMES,
+  type PayOfferPromotionOutcome,
+} from '@steadily-nanny/shared-types/schemas/household.schema';
+import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import { TERMS_PROPOSAL_DIRECTIONS } from '@steadily-nanny/shared-types/schemas/termsProposal.schema';
 import { ConflictError } from '../../../errors';
 import { logger } from '../../../middlewares/logger';
@@ -50,6 +54,7 @@ import {
   MemberNotFoundError,
   NotAHouseholdParentError,
   ParentAlreadyHasHouseholdError,
+  PayOfferNotForDraftHouseholdError,
   PayOfferNotForRoleError,
   WeekStartLockedError,
 } from '../errors/householdErrors';
@@ -193,11 +198,12 @@ export class HouseholdCommandService {
       HouseholdHolidayRepository,
       'upsertMany' | 'listForHousehold' | 'seedFederalSet'
     > = new HouseholdHolidayRepository(),
-    // P8's promotion target. The REPOSITORY, never the terms-proposal domain
-    // barrel — see the import note at the top of this file.
+    // P8's promotion target, and F8's withdrawal on removal/leave. The
+    // REPOSITORY, never the terms-proposal domain barrel — see the import
+    // note at the top of this file.
     private readonly proposals: Pick<
       TermsProposalRepository,
-      'create'
+      'create' | 'withdrawOpenForCarer'
     > = new TermsProposalRepository()
   ) {}
 
@@ -545,6 +551,14 @@ export class HouseholdCommandService {
    * are still on the keyboard. A date already past the horizon here would be
    * dropped at redemption — the code would work, and the terms would not
    * arrive.
+   *
+   * DRAFT HOUSEHOLD (F7, defence in depth). A draft's only member is the
+   * nanny who authored it (D-36) — no parent membership exists to have
+   * written this offer, so this is unreachable from either client today
+   * (no client attaches an offer to a draft invite, and the offer UI is
+   * parent-gated). Refused anyway, for the same reason the role check above
+   * refuses rather than drops: a client bug should surface at the keyboard,
+   * not silently evaporate.
    */
   private async assertOfferable(
     householdId: string,
@@ -556,6 +570,9 @@ export class HouseholdCommandService {
       throw new PayOfferNotForRoleError(role);
     }
     const household = await this.householdRepo.findById(householdId);
+    if (household?.state === HOUSEHOLD_STATES.DRAFT) {
+      throw new PayOfferNotForDraftHouseholdError(householdId);
+    }
     if (
       !isWithinFutureHorizon(
         offer.valid_from,
@@ -691,7 +708,12 @@ export class HouseholdCommandService {
       }
     }
 
-    await this.promoteOfferToProposal(invite, userId, now);
+    await this.promoteOfferToProposal(
+      invite,
+      userId,
+      now,
+      membership.display_name_override ?? null
+    );
 
     // A6, the other direction: she authored a draft to write her own terms,
     // then a family invited her the ordinary way instead and her code was
@@ -820,30 +842,53 @@ export class HouseholdCommandService {
    *   than trusting the bare code (GOLDEN-FIXES #31). They are already
    *   negotiating; a second round is not this path's to open.
    *
-   * NO PUSH, DELIBERATELY. She is by construction inside the app at this
-   * instant — she just typed the code — and the proposal is on her Today
-   * screen before the notification could land. The `INVITE_REDEEMED` push to
-   * the PARENTS is untouched below and still fires; only the redundant one to
-   * her is omitted.
+   * ONE PUSH, ON TWO OUTCOMES ONLY (F3). She is by construction inside the app
+   * at this instant — she just typed the code — so nothing is owed to HER; the
+   * `INVITE_REDEEMED` push to the parents is untouched below and still fires.
+   * But `failed` and `skipped_stale` are outcomes the INVITING PARENT can act
+   * on (retry, or write a new offer), so he is told — never on
+   * `skipped_no_inviter` (nobody left to tell) or `skipped_open_round` (not
+   * news; he is already mid-negotiation with her).
+   *
+   * EVERY OUTCOME IS RECORDED (F3, 106) on `household_invites.pay_offer_promotion`
+   * — the only record of what happened, since this method never throws. Both
+   * the outcome write and the push are wrapped so a failure in either costs a
+   * log line, never the redemption.
    */
   private async promoteOfferToProposal(
     invite: HouseholdInvite,
     carerId: string,
-    now: () => Date
+    now: () => Date,
+    carerDisplayNameOverride: string | null
   ): Promise<void> {
     const offer = invite.pay_offer;
     if (invite.role !== HOUSEHOLD_ROLES.NANNY || !offer) {
       return;
     }
 
+    let proposedBy: string | null = null;
+    // F5: resolved once, up front, so the SAME name lands in the proposal on
+    // success and in the parent's push on failure/staleness — falls back to
+    // the shared 'Carer' literal if resolution itself somehow throws, same
+    // never-throws posture as everything else in this method.
+    let carerDisplayName = UNNAMED_CARER_DISPLAY_NAME;
     try {
-      const proposedBy = invite.invited_by;
+      proposedBy = invite.invited_by;
       if (!proposedBy) {
         logger.info('Pay offer not promoted — the inviting parent is gone', {
           inviteId: invite.id,
         });
+        await this.recordPromotionOutcome(
+          invite.id,
+          PAY_OFFER_PROMOTION_OUTCOMES.SKIPPED_NO_INVITER
+        );
         return;
       }
+
+      carerDisplayName = await this.resolveCarerDisplayName(
+        carerId,
+        carerDisplayNameOverride
+      );
 
       const household = await this.householdRepo.findById(invite.household_id);
       if (
@@ -857,10 +902,14 @@ export class HouseholdCommandService {
           inviteId: invite.id,
           validFrom: offer.valid_from,
         });
+        await this.recordPromotionOutcome(
+          invite.id,
+          PAY_OFFER_PROMOTION_OUTCOMES.SKIPPED_STALE
+        );
+        this.notifyPayOfferNotPromoted(invite, proposedBy, carerDisplayName);
         return;
       }
 
-      const profile = await this.users.getProfileById(carerId);
       await this.proposals.create({
         household_id: invite.household_id,
         carer_id: carerId,
@@ -877,12 +926,15 @@ export class HouseholdCommandService {
         supersedes_id: null,
         from_invite_id: invite.id,
         // 033 discipline: snapshot at insert so the negotiation stays legible
-        // after her profile is gone. Same 'Carer' literal the pay domain and
-        // `termsProposalCommandService` fall back to.
-        carer_display_name: profile?.name ?? UNNAMED_CARER_DISPLAY_NAME,
+        // after her profile is gone.
+        carer_display_name: carerDisplayName,
         // `status` is deliberately absent: 092 defaults it to 'proposed', and
         // `termsProposalCommandService.propose` omits it for the same reason.
       });
+      await this.recordPromotionOutcome(
+        invite.id,
+        PAY_OFFER_PROMOTION_OUTCOMES.PROMOTED
+      );
     } catch (error) {
       if (error instanceof OpenTermsProposalExistsError) {
         logger.info('Pay offer not promoted — a round is already open', {
@@ -890,6 +942,10 @@ export class HouseholdCommandService {
           householdId: invite.household_id,
           carerId,
         });
+        await this.recordPromotionOutcome(
+          invite.id,
+          PAY_OFFER_PROMOTION_OUTCOMES.SKIPPED_OPEN_ROUND
+        );
         return;
       }
       logger.error('Pay offer promotion failed — the join stands', {
@@ -898,6 +954,76 @@ export class HouseholdCommandService {
         carerId,
         error: error instanceof Error ? error.message : String(error),
       });
+      await this.recordPromotionOutcome(
+        invite.id,
+        PAY_OFFER_PROMOTION_OUTCOMES.FAILED
+      );
+      if (proposedBy) {
+        this.notifyPayOfferNotPromoted(invite, proposedBy, carerDisplayName);
+      }
+    }
+  }
+
+  /**
+   * F5 — same resolution order the other two carer-display-name resolvers use
+   * (`payArrangementCommandService.resolveCarerDisplayName`,
+   * `termsProposalCommandService.resolveCarerDisplayName`): the household's
+   * OWN `display_name_override` (what this family calls her) wins over the
+   * profile name, and a whitespace-only override counts as absent.
+   */
+  private async resolveCarerDisplayName(
+    carerId: string,
+    displayNameOverride: string | null
+  ): Promise<string> {
+    const override = displayNameOverride?.trim();
+    if (override) {
+      return override;
+    }
+    const profile = await this.users.getProfileById(carerId);
+    return profile?.name ?? UNNAMED_CARER_DISPLAY_NAME;
+  }
+
+  /**
+   * F3 — write `promoteOfferToProposal`'s verdict to the only place it is ever
+   * recorded. Wrapped so a database failure here costs a log line, never the
+   * redemption already committed above it.
+   */
+  private async recordPromotionOutcome(
+    inviteId: string,
+    outcome: PayOfferPromotionOutcome
+  ): Promise<void> {
+    try {
+      await this.inviteRepo.updatePayOfferPromotion(inviteId, outcome);
+    } catch (error) {
+      logger.error('Failed to record pay-offer promotion outcome', {
+        inviteId,
+        outcome,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * F3 — tell the inviting parent his offer needs another look. Fire-and-
+   * forget, same discipline as every other push in this service: a delivery
+   * failure must never fail the write that triggered it.
+   */
+  private notifyPayOfferNotPromoted(
+    invite: HouseholdInvite,
+    inviterId: string,
+    carerDisplayName: string
+  ): void {
+    try {
+      notifyUser(inviterId, {
+        title: 'Your pay offer needs another look',
+        body: `Your pay offer for ${carerDisplayName} needs another look`,
+        data: {
+          type: PUSH_NOTIFICATION_TYPES.PAY_OFFER_NOT_PROMOTED,
+          householdId: invite.household_id,
+        },
+      });
+    } catch {
+      // notifyUser is fire-and-forget; swallow any unexpected throw.
     }
   }
 
@@ -1223,6 +1349,13 @@ export class HouseholdCommandService {
       throw new MemberHasRunningEntryError(memberId);
     }
 
+    // F8 — withdraw any open terms proposal she cannot answer from a
+    // household she is about to be removed from. Same ordering discipline as
+    // `endForCarer` immediately below, and for the same reason: a throw here
+    // refuses the whole removal with nothing changed, rather than flipping
+    // membership over a carer who still has an open round nobody withdrew.
+    await this.proposals.withdrawOpenForCarer(householdId, target.user_id);
+
     // End the pay arrangement BEFORE the membership flip. Either order can
     // fail halfway; only this one cannot strand. Membership-first leaves a
     // removed member with live terms — the exact bug — if this write throws.
@@ -1302,6 +1435,13 @@ export class HouseholdCommandService {
     }
 
     if (membership.role === HOUSEHOLD_ROLES.NANNY) {
+      // F8, same NANNY-only gate as `endForCarer` just below: a terms
+      // proposal only ever names a carer (`terms_proposals.carer_id`), so a
+      // co-parent or helper leaving has no open round to withdraw. Same
+      // ordering discipline too — a throw here refuses the whole leave with
+      // nothing changed.
+      await this.proposals.withdrawOpenForCarer(householdId, callerId);
+
       const householdRow = await this.householdRepo.findById(householdId);
       if (!householdRow) {
         throw new MemberNotFoundError(membership.id);

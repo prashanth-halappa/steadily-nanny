@@ -122,11 +122,20 @@ interface WeekTotalProps {
   approvedDateLabel?: string | null;
   /**
    * Nanny-only: already-formatted date a parent first opened this week, or
-   * null when they have not. Drives the submitted-week status timeline.
+   * null when they have not. Drives the submitted-week status timeline
+   * (P6a: also drives a one-line viewed note beside the approved-week
+   * appreciation block, since the timeline itself stops rendering once the
+   * week leaves `submitted`).
    */
   parentViewedDateLabel?: string | null;
   /** Nanny-only: the household's name, for the approved appreciation line. */
   householdName?: string | null;
+  /** Parent-only: already-formatted "You viewed this on {{date}}" read
+   * receipt for the parent's OWN view of the week (P6b) — distinct from
+   * `parentViewedDateLabel`, which is the nanny's evidence that the parent
+   * viewed it. Caller owns the wording and the null-when-not-yet-viewed
+   * gate; omit to render nothing. */
+  parentViewedNote?: string | null;
   /** Full-width `size="lg"` `variant="default"` action (Approve). */
   primaryAction?: WeekTotalAction | null;
   /** `variant="ghost"` action beneath the primary (Query). */
@@ -219,6 +228,7 @@ export function WeekTotal({
   approvedDateLabel = null,
   parentViewedDateLabel = null,
   householdName = null,
+  parentViewedNote = null,
   primaryAction = null,
   secondaryAction = null,
   tertiaryAction = null,
@@ -249,6 +259,14 @@ export function WeekTotal({
     timesheetStatus === 'approved' &&
     !!householdName &&
     !!approvedDateLabel;
+  // P6a: the timeline (and with it `parentViewedDateLabel`'s only render
+  // site) stops the instant the week leaves `submitted`. Approving a week
+  // must not erase the evidence it was opened — reuse the same fact,
+  // `timeline.opened`, as a one-line note beside the appreciation block
+  // rather than growing a second 3-step timeline for a status where
+  // "logged"/"waiting" no longer mean anything.
+  const showApprovedViewedNote = showAppreciation && !!parentViewedDateLabel;
+  const showParentViewedNote = isParentViewer && !!parentViewedNote;
 
   // Nothing to say about the agreement, nothing to do about it — an empty
   // tinted rectangle would be worse than no card at all.
@@ -259,6 +277,7 @@ export function WeekTotal({
     !showReopenedNote &&
     !showPayBoundary &&
     !hoursChangedAfterPaymentNote &&
+    !showParentViewedNote &&
     !primaryAction &&
     !secondaryAction &&
     !tertiaryAction &&
@@ -274,6 +293,7 @@ export function WeekTotal({
           <WeekStatusTimeline
             parentViewedDateLabel={parentViewedDateLabel}
             householdName={householdName}
+            reopenReason={earningsReopenReason}
           />
         ) : null}
         {showPillRow || showHeadline ? (
@@ -318,6 +338,17 @@ export function WeekTotal({
                 {formatMoney(earningsOk.gross_minor, earningsOk.currency)}
               </Figure28>
             ) : null}
+            {showApprovedViewedNote ? (
+              <Small
+                testID="hours-approved-viewed-note"
+                className="text-muted-foreground"
+              >
+                {t('timeline.opened', {
+                  household: householdName,
+                  date: parentViewedDateLabel,
+                })}
+              </Small>
+            ) : null}
           </View>
         ) : null}
         {/* Status-gated, earnings-independent. Prefer the wire reason;
@@ -344,6 +375,17 @@ export function WeekTotal({
             className="text-muted-foreground"
           >
             {hoursChangedAfterPaymentNote}
+          </Small>
+        ) : null}
+        {/* P6b: the parent's own read receipt for their own view of the
+            week — distinct from `showApprovedViewedNote` above, which is
+            the NANNY's evidence that the parent opened it. */}
+        {showParentViewedNote ? (
+          <Small
+            testID="hours-parent-viewed-note"
+            className="text-muted-foreground"
+          >
+            {parentViewedNote}
           </Small>
         ) : null}
         {timesheetStatus === 'approved' && !onReopenPress ? (
@@ -427,19 +469,32 @@ export function WeekTotal({
   );
 }
 
-/** Three-step receipt for a submitted week the nanny is looking at. */
+/** Three-step receipt for a submitted week the nanny is looking at, plus a
+ * lead step (P5) when the week carries a `reopen_reason` — a reopened week
+ * the nanny has since resubmitted lands right back in this timeline, and
+ * the reason has to be readable IN it, not only in the separate
+ * `hours-earnings-line-reopened-note` caption below the card. */
 function WeekStatusTimeline({
   parentViewedDateLabel,
   householdName,
+  reopenReason,
 }: {
   parentViewedDateLabel?: string | null;
   householdName?: string | null;
+  reopenReason?: string | null;
 }) {
   const { t } = useTranslation('hours');
   const colors = useThemeColors();
   const opened = parentViewedDateLabel != null && parentViewedDateLabel !== '';
   return (
     <View testID="hours-status-timeline" className="gap-2">
+      {reopenReason ? (
+        <TimelineStep
+          testID="hours-timeline-reopened"
+          color={colors.warning}
+          label={t('timeline.reopened', { reason: reopenReason })}
+        />
+      ) : null}
       <TimelineStep
         testID="hours-timeline-logged"
         color={colors.success}
