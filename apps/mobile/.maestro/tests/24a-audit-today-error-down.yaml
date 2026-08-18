@@ -1,0 +1,24 @@
+# [audit-2026-08-17] Target C (C1) — with the API stopped, the nanny's Today
+# tab shows an ErrorState with retry (`today-tab-error`), never a feed
+# silently missing the clock-in card. Run AFTER the driving agent has killed
+# the local API dev server (same down-window as 23b — Supabase auth itself
+# stays up, so login still works).
+appId: com.jetto.steadily.nanny
+tags:
+  - audit-2026-08-17
+---
+- runFlow: ../flows/login-nanny.yaml
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'today-tab-error'
+    timeout: 15000
+- assertVisible:
+    id: 'today-tab-error'
+- assertVisible:
+    text: 'Try again'
+- assertNotVisible:
+    id: 'today-clock-card'
+- takeScreenshot: 24a-today-tab-error-api-down

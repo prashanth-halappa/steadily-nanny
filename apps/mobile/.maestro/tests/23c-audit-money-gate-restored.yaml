@@ -1,0 +1,28 @@
+# [audit-2026-08-17] Target B, API-restored half. Run AFTER 23b, and after
+# the driving agent has restarted the local API dev server. Continues the
+# SAME app session left on the Hours screen showing hours-paid-state-retry.
+appId: com.jetto.steadily.nanny
+tags:
+  - audit-2026-08-17
+---
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'hours-screen'
+    timeout: 10000
+    optional: true
+- swipe:
+    direction: DOWN
+    duration: 400
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'hours-paid-state'
+    timeout: 20000
+- assertVisible:
+    id: 'hours-paid-state'
+- assertVisible:
+    id: 'hours-paid-state-badge'
+- takeScreenshot: 23c-api-back-paid-state-restored

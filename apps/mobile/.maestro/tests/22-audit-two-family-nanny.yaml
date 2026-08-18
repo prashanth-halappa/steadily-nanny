@@ -1,0 +1,87 @@
+# [audit-2026-08-17] Target A — the nanny works for two families at once, and
+# nothing about ONE family's context (active household, Today card, inbox
+# item, terms proposal, Hours deep link, pending schedule) may bleed the
+# wrong family's name/data into the other's screen.
+#
+# Fixtures (this run, direct SQL against the local stack — see the Maestro
+# validation report for the exact statements):
+#   - A running (clocked-in, no clock-out) time_entry for the nanny in
+#     LEAKCANARY the Cole household (household B) while household A
+#     ("Our household") stays her ACTIVE household.
+#   - A `pending` schedule_pattern + one day row in household B (Mon/Wed
+#     08:00-13:00), carer = nanny — PendingScheduleCard fixture (A5).
+#   - A `proposed` terms_proposal in household B, direction='parent' (the
+#     OTHER family proposing to the nanny) — inbox + ProposalReviewScreen
+#     fixture (A3).
+#
+# ${LEAKCANARY_HOUSEHOLD_ID} / ${PHASE4_HOUSEHOLD_ID} from apps/mobile/.env.maestro
+# (household A / household B respectively for this run).
+appId: com.jetto.steadily.nanny
+tags:
+  - audit-2026-08-17
+---
+- runFlow: ../flows/login-nanny.yaml
+
+# === A1: ClockInCard names family B while clocked in there, A active ======
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'today-clock-card'
+    timeout: 15000
+- assertVisible:
+    id: 'today-clock-card'
+- assertVisible:
+    text: 'LEAKCANARY'
+- takeScreenshot: 22-a1-clockin-card-names-family-b
+
+# === A2: inbox items from both families, each in its own zone =============
+- openLink: steadilynanny:///inbox
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'inbox-screen'
+- assertVisible:
+    id: 'inbox-item-terms_proposal-d37754a6-960c-491e-9b77-494f1a80ba26'
+- assertVisible:
+    id: 'inbox-item-pending_pattern-d8eeac9d-146b-4130-8486-6ae4ba131523'
+- takeScreenshot: 22-a2-inbox-both-families
+
+# === A3: family B's proposal, opened via inbox, names family B ============
+- tapOn:
+    id: 'inbox-item-terms_proposal-d37754a6-960c-491e-9b77-494f1a80ba26'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'proposal-review-screen'
+- assertVisible:
+    text: 'LEAKCANARY the Cole household'
+- takeScreenshot: 22-a3-proposal-review-names-family-b
+- tapOn:
+    id: 'proposal-back'
+- waitForAnimationToEnd
+
+# === A4: Hours deep link with householdId=B switches to B's week ==========
+- openLink: steadilynanny:///(private)/(tabs)/hours?householdId=${LEAKCANARY_HOUSEHOLD_ID}&weekStart=2026-08-17
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-screen'
+- assertVisible:
+    id: 'hours-active-week-2026-08-17'
+- takeScreenshot: 22-a4-hours-deeplink-family-b
+
+# === A5: PendingScheduleCard shows B's pending week while A is active =====
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      id: 'today-pending-schedule-card'
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: 'today-pending-schedule-card'
+- takeScreenshot: 22-a5-pending-schedule-other-family

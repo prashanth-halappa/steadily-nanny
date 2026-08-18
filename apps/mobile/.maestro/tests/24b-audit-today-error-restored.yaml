@@ -1,0 +1,27 @@
+# [audit-2026-08-17] Target C, restored half. Run AFTER the driving agent
+# has restarted the local API dev server, continuing from 24a (nanny still on
+# Today's error state).
+appId: com.jetto.steadily.nanny
+tags:
+  - audit-2026-08-17
+---
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'today-tab-error'
+    timeout: 10000
+    optional: true
+- tapOn:
+    text: 'Try again'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'today-clock-card'
+    timeout: 15000
+- assertVisible:
+    id: 'today-clock-card'
+- assertNotVisible:
+    id: 'today-tab-error'
+- takeScreenshot: 24b-today-restored-after-retry

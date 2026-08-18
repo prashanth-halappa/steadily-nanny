@@ -1,0 +1,88 @@
+# [audit-2026-08-17] Target D (P1) — on an approved week with a payment
+# recorded, the reopen dialog is REFUSED server-side ("You've paid ... Adjust
+# it in the next payment."), and the week stays approved.
+#
+# Run BEFORE 23b/23c (the API-down/API-back halves of target B) — this flow's
+# own actions (approve, record a payment) are what makes the week "settled"
+# for those to read. Fixture: a `pay_arrangements` row for household A / the
+# nanny, inserted directly (rate 1500 minor USD, valid_from 2026-01-01) so
+# the seed week (already `submitted`) has a priced gross to approve.
+appId: com.jetto.steadily.nanny
+tags:
+  - audit-2026-08-17
+---
+- runFlow: ../flows/login.yaml
+- openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${PHASE4_SEED_WEEK_START}
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-screen'
+- assertVisible:
+    id: 'hours-active-week-${PHASE4_SEED_WEEK_START}'
+
+- tapOn:
+    id: 'hours-approve-button'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-approve-dialog'
+- tapOn:
+    id: 'hours-approve-dialog-confirm'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-approve-button'
+    enabled: false
+- takeScreenshot: 23a-week-approved
+
+- scrollUntilVisible:
+    element:
+      id: 'hours-mark-paid-button'
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: 'hours-mark-paid-button'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-record-payment-sheet'
+- tapOn:
+    id: 'hours-record-payment-amount-input'
+- eraseText
+- inputText: '40.00'
+- tapOn:
+    id: 'hours-record-payment-date-chip-today'
+- tapOn:
+    id: 'hours-record-payment-method-input'
+- inputText: 'Bank transfer'
+- tapOn:
+    id: 'hours-record-payment-submit'
+- waitForAnimationToEnd
+- assertNotVisible:
+    id: 'hours-record-payment-sheet'
+- takeScreenshot: 23a-payment-recorded
+
+- scrollUntilVisible:
+    element:
+      id: 'hours-reopen-button'
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: 'hours-reopen-button'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-reopen-dialog'
+- tapOn:
+    id: 'hours-reopen-dialog-reason'
+- inputText: 'Testing the reopen refusal (audit-2026-08-17)'
+- tapOn:
+    id: 'hours-reopen-dialog-confirm'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-reopen-dialog-refusal'
+- assertVisible:
+    text: 'Adjust it in the next payment'
+- takeScreenshot: 23a-reopen-refused
+- tapOn:
+    id: 'hours-reopen-dialog-cancel'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-approve-button'
+    enabled: false
+- takeScreenshot: 23a-still-approved

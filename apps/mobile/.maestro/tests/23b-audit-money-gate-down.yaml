@@ -1,0 +1,30 @@
+# [audit-2026-08-17] Target B, API-down half. Run AFTER 23a (which approves +
+# pays the seed week) and AFTER the API dev server has been killed by the
+# driving agent — this flow does not and cannot control the OS-level process,
+# only what the app does while it's down. Continues the SAME app session
+# (no login.yaml / no network-dependent reset — the API is down).
+appId: com.jetto.steadily.nanny
+tags:
+  - audit-2026-08-17
+---
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'hours-screen'
+    timeout: 10000
+    optional: true
+- swipe:
+    direction: DOWN
+    duration: 400
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'hours-paid-state-retry'
+    timeout: 15000
+- assertVisible:
+    id: 'hours-paid-state-retry'
+- assertNotVisible:
+    id: 'hours-mark-paid-button'
+- takeScreenshot: 23b-api-down-inline-retry
