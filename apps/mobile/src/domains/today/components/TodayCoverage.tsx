@@ -3,6 +3,9 @@
  *
  * One parent coverage surface — need-centric headline, shift-centric plan lines
  * below. T4 on the bare ground except gap (`attention`) and live (`live`) cards.
+ * The SplitTrack day bar sits with those plan lines in the booked state only;
+ * the gap state keeps the sentences, not the strip (an all-amber bar below the
+ * attention card reads as an orphan and amplifies alarm).
  *
  * This card has ONE look — no quiet second rung, no per-card emphasis prop,
  * and deliberately no `usePinnedTone()`: its own state machine already
@@ -299,9 +302,10 @@ export function TodayCoverage({
     );
   }
 
-  // Today at a glance, above the sentences that spell it out. Hues are the
-  // caller's job (`SplitTrack` picks none) and come through `useThemeColors`
-  // because a `className` cannot reach a per-segment `flex` style.
+  // Today at a glance, above the sentences that spell it out — booked only.
+  // Hues are the caller's job (`SplitTrack` picks none) and come through
+  // `useThemeColors` because a `className` cannot reach a per-segment `flex`
+  // style.
   const dayBarSegments = state.dayBar.map((segment, index) => ({
     value: segment.minutes,
     colour:
@@ -315,7 +319,9 @@ export function TodayCoverage({
 
   const planLines = (
     <View className="gap-2">
-      <SplitTrack testID="today-coverage-day-bar" segments={dayBarSegments} />
+      {state.status === 'booked' ? (
+        <SplitTrack testID="today-coverage-day-bar" segments={dayBarSegments} />
+      ) : null}
       {state.plan.map(line => (
         <PlanLineView key={line.key} line={line} timeZone={timeZone} />
       ))}
