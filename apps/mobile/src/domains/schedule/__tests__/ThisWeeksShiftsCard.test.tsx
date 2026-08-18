@@ -2,7 +2,7 @@
  * @module domains/schedule/__tests__/ThisWeeksShiftsCard.test
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { render } from '@testing-library/react-native';
+import { render, within } from '@testing-library/react-native';
 import { useAuthStore } from '@/src/store/auth';
 
 /** The typography factory always puts the token's base style first in the
@@ -178,9 +178,11 @@ describe('ThisWeeksShiftsCard', () => {
 
     // Her FULL name, once, merged into the "Next up · {{name}}" eyebrow —
     // repeating it per row is noise in a one-carer home.
-    expect(getByTestId('today-next-up-carer').props.children).toBe(
-      'todayCard.nextUpTitleWithCarer(Amara Okafor)'
-    );
+    expect(
+      within(getByTestId('today-next-up-carer')).getByText(
+        'todayCard.nextUpTitleWithCarer(Amara Okafor)'
+      )
+    ).toBeTruthy();
     expect(queryByTestId('today-next-up-carer-shift-a')).toBeNull();
   });
 
@@ -228,15 +230,15 @@ describe('ThisWeeksShiftsCard', () => {
     expect(line).not.toContain('weekday.');
   });
 
-  // Wave 2-F: re-tiered T3 -> T4 ("history, resolved state, context" — the
-  // ladder's own bare-ground/MetadataLabel tier). Title drops from H4
-  // (18/27) to a MetadataLabel eyebrow (13/18) on the bare ground.
-  it('renders the "Next up" title as a MetadataLabel eyebrow, not H4', () => {
+  // Section adoption: the "Next up" title is now a Section header (DayGroup,
+  // 17/24/700) rather than a MetadataLabel eyebrow (13/18) — the group
+  // heading is no longer smaller than the rows it labels.
+  it('renders the "Next up" title as a Section header', () => {
     const { getByText } = render(<ThisWeeksShiftsCard />);
 
     const style = baseStyle(getByText('todayCard.nextUpTitle').props.style);
-    expect(style.fontSize).toBe(13);
-    expect(style.lineHeight).toBe(18);
+    expect(style.fontSize).toBe(17);
+    expect(style.lineHeight).toBe(24);
   });
 
   it('has no card surface around the rows — bare ground, no shadow', () => {
@@ -272,9 +274,11 @@ describe('ThisWeeksShiftsCard', () => {
 
     const { getByTestId } = render(<ThisWeeksShiftsCard />);
 
-    expect(getByTestId('today-next-up-carer').props.children).toBe(
-      'todayCard.nextUpTitleWithCarer(Amara Okafor)'
-    );
+    expect(
+      within(getByTestId('today-next-up-carer')).getByText(
+        'todayCard.nextUpTitleWithCarer(Amara Okafor)'
+      )
+    ).toBeTruthy();
   });
 
   it('shows a StatusPill on a row whose status is not confirmed', () => {

@@ -195,15 +195,15 @@ describe('ApproveWeekDialog', () => {
       variant: 'plain',
       overrides: {},
       key: 'approveDialog.body',
-      present: { range: '3 – 9 August', gross: '£236.12' },
-      absent: ['adjustment'] as const,
+      present: { range: '3 – 9 August' },
+      absent: ['gross', 'adjustment'] as const,
     },
     {
       variant: 'nothingUnusual',
       overrides: { nothingUnusual: true },
       key: 'approveDialog.bodyNothingUnusual',
-      present: { range: '3 – 9 August', gross: '£236.12' },
-      absent: ['adjustment'] as const,
+      present: { range: '3 – 9 August' },
+      absent: ['gross', 'adjustment'] as const,
     },
     {
       variant: 'noArrangement',
@@ -235,10 +235,9 @@ describe('ApproveWeekDialog', () => {
       key: 'approveDialog.bodyAdjustmentAdded',
       present: {
         range: '3 – 9 August',
-        gross: '£251.12',
         adjustment: '£15.00',
       },
-      absent: [] as const,
+      absent: ['gross'] as const,
     },
     {
       variant: 'adjustmentDeducted',
@@ -250,12 +249,11 @@ describe('ApproveWeekDialog', () => {
       key: 'approveDialog.bodyAdjustmentDeducted',
       present: {
         range: '3 – 9 August',
-        gross: '£216.12',
         adjustment: '£20.00',
       },
-      absent: [] as const,
+      absent: ['gross'] as const,
     },
-  ])('$variant body uses $key with range plus gross/adjustment where they belong', ({
+  ])('$variant body uses $key with range plus adjustment where it belongs — never gross, which is hoisted into its own Figure28', ({
     overrides,
     key,
     present,
@@ -269,6 +267,33 @@ describe('ApproveWeekDialog', () => {
     for (const field of absent) {
       expect(call?.options?.[field]).toBeUndefined();
     }
+  });
+
+  // The gross figure is the number the parent is permanently committing to
+  // (docs from `ApproveWeekDialog`'s own module comment) — it gets its own
+  // Figure28 tabular line, hoisted out of the body sentence, under the
+  // title.
+  it('renders the gross as its own Figure28 tabular line, using the grossFigure key', () => {
+    const { getByTestId } = renderDialog();
+
+    const figure = getByTestId('hours-approve-dialog-gross');
+    expect(figure.props.children).toBe('approveDialog.grossFigure');
+    // Figure28 is always tabular by construction (factory.tsx) — no prop
+    // needed on the call site to get tabular-nums here.
+
+    const call = tCall('approveDialog.grossFigure');
+    expect(call?.options).toEqual(
+      expect.objectContaining({ gross: '£236.12' })
+    );
+  });
+
+  it('omits the gross Figure28 line when there is no computable gross', () => {
+    const { queryByTestId } = renderDialog({
+      grossLabel: null,
+      earningsStatus: 'no_arrangement',
+    });
+
+    expect(queryByTestId('hours-approve-dialog-gross')).toBeNull();
   });
 
   it('uses the nested cancel and confirm keys', () => {
@@ -611,19 +636,23 @@ describe('ApproveWeekDialog — a staged adjustment', () => {
     );
   });
 
-  it('echoes the ADJUSTED gross and an UNSIGNED adjustment figure', () => {
+  it('echoes the ADJUSTED gross in the Figure28 line, and an UNSIGNED adjustment figure in the body', () => {
     renderWithAdjustment();
 
-    const call = capturedTCalls.find(
+    const grossCall = capturedTCalls.find(
+      c => c.key === 'approveDialog.grossFigure'
+    );
+    expect(grossCall?.options?.gross).toBe('£216.12');
+
+    const bodyCall = capturedTCalls.find(
       c => c.key === 'approveDialog.bodyAdjustmentDeducted'
     );
-    expect(call?.options?.gross).toBe('£216.12');
     // The verb carries the sign — a minus here would say it twice.
-    expect(call?.options?.adjustment).toBe('£20.00');
-    expect(String(call?.options?.adjustment)).not.toContain('-');
+    expect(bodyCall?.options?.adjustment).toBe('£20.00');
+    expect(String(bodyCall?.options?.adjustment)).not.toContain('-');
   });
 
-  it('keeps the plain body when nothing is staged, and passes no adjustment', () => {
+  it('keeps the plain body when nothing is staged, and passes no adjustment — gross still echoes in its own Figure28', () => {
     const { getByTestId } = renderWithAdjustment({
       grossLabel: '£236.12',
       adjustmentLabel: null,
@@ -633,9 +662,14 @@ describe('ApproveWeekDialog — a staged adjustment', () => {
     expect(getByTestId('hours-approve-dialog-body').props.children).toBe(
       'approveDialog.body'
     );
-    const call = capturedTCalls.find(c => c.key === 'approveDialog.body');
-    expect(call?.options?.gross).toBe('£236.12');
-    expect(call?.options?.adjustment).toBeUndefined();
+    const bodyCall = capturedTCalls.find(c => c.key === 'approveDialog.body');
+    expect(bodyCall?.options?.gross).toBeUndefined();
+    expect(bodyCall?.options?.adjustment).toBeUndefined();
+
+    const grossCall = capturedTCalls.find(
+      c => c.key === 'approveDialog.grossFigure'
+    );
+    expect(grossCall?.options?.gross).toBe('£236.12');
   });
 
   it('never mentions an adjustment on a week with no computable gross', () => {

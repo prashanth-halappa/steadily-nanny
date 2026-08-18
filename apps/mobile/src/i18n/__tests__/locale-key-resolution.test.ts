@@ -201,7 +201,7 @@ const TEMPLATE_KEY_DECLARATIONS: readonly TemplateKeyDeclaration[] = [
     keyPattern: 'settings:role.$1',
   },
   {
-    // Settings language segmented control (daylight-v2 §2.3) — endonym per
+    // Settings language segmented control (docs/design/01-LAWS.md) — endonym per
     // supported language.
     pattern: /^settings:languageNames\.\$\{[^}]+\}$/,
     values: SUPPORTED_LANGUAGES,

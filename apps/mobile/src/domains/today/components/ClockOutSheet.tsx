@@ -538,11 +538,7 @@ export function ClockOutSheet({
                 breakMinutes,
               })}
             </Small>
-            <Body
-              testID="clockout-summary-total"
-              className="font-semibold"
-              tabular
-            >
+            <Body testID="clockout-summary-total" weight="semibold" tabular>
               {formatDuration(workedMinutes)}
             </Body>
           </View>

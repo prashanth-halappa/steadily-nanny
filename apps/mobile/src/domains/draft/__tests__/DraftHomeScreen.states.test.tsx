@@ -6,7 +6,7 @@
  * The hero band needs no network, so it renders immediately and the skeleton
  * sits below it — a screen that blanks entirely while a query resolves tells
  * the user nothing. Each skeleton matches the RUNG it becomes
- * (`daylight-v2.md` §6.9); a white card standing in for a tinted L1 makes the
+ * (`docs/design/00-FOUNDATIONS.md`); a white card standing in for a tinted L1 makes the
  * loaded state visibly jump.
  *
  * Offline, Share is disabled. Never mint a code optimistically — a code that

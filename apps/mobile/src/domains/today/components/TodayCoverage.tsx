@@ -36,7 +36,7 @@ import { IconChip } from '@/src/components/ui/icon-chip';
 import { InlineError } from '@/src/components/ui/inline-error';
 import { LiveDot } from '@/src/components/ui/live-dot';
 import { StatusPill } from '@/src/components/ui/status-pill';
-import { Body, H3, Small } from '@/src/components/ui/typography';
+import { Body, Caption, H3, Small } from '@/src/components/ui/typography';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { localDateToWeekday } from '@/src/domains/schedule/utils/shiftGrouping';
@@ -56,6 +56,7 @@ import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
 import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { utcIsoToWallClockHHMM, wallClockToUtcIso } from '@/src/lib/wallClock';
+import { spacing } from '~/lib/design-tokens/spacing';
 import {
   gapEscalationHours,
   type PlanLine,
@@ -111,18 +112,18 @@ function PlanLineView({
 
   if (line.kind === 'parentCover' && line.startsAt && line.endsAt) {
     return (
-      <Body testID={testId} className="text-sm text-muted-foreground">
+      <Caption testID={testId} className="text-muted-foreground">
         {t('coverage.plan.youCovering', {
           start: formatClockTime(line.startsAt, timeZone),
           end: formatClockTime(line.endsAt, timeZone),
         })}
-      </Body>
+      </Caption>
     );
   }
 
   if (line.kind === 'finished') {
     return (
-      <Body testID={testId} className="text-sm text-muted-foreground">
+      <Caption testID={testId} className="text-muted-foreground">
         {line.leftAt && line.durationLabel
           ? t('coverage.plan.left', {
               name: line.name,
@@ -130,28 +131,28 @@ function PlanLineView({
               duration: line.durationLabel,
             })
           : line.detail}
-      </Body>
+      </Caption>
     );
   }
 
   if (line.kind === 'arriving' && line.arrivingMinutes != null) {
     return (
-      <Body testID={testId} className="text-sm text-muted-foreground">
+      <Caption testID={testId} className="text-muted-foreground">
         {t('coverage.plan.arrivingIn', { count: line.arrivingMinutes })}
-      </Body>
+      </Caption>
     );
   }
 
   if (line.kind === 'booked' && line.startsAt && line.endsAt) {
     return (
       <View testID={testId} className="flex-row flex-wrap items-center gap-2">
-        <Body className="text-sm">
+        <Caption>
           {t('coverage.plan.booked', {
             name: line.name,
             start: formatClockTime(line.startsAt, timeZone),
             end: formatClockTime(line.endsAt, timeZone),
           })}
-        </Body>
+        </Caption>
         {line.confirmation ? (
           <StatusPill
             variant={
@@ -169,9 +170,9 @@ function PlanLineView({
   }
 
   return (
-    <Body testID={testId} className="text-sm text-muted-foreground">
+    <Caption testID={testId} className="text-muted-foreground">
       {line.detail}
-    </Body>
+    </Caption>
   );
 }
 
@@ -244,9 +245,9 @@ export function TodayCoverage({
         >
           <Card testID="today-coverage" className="gap-1 p-5.5">
             <Body weight="medium">{t('cover.setup.title')}</Body>
-            <Body className="text-sm text-muted-foreground">
+            <Caption className="text-muted-foreground">
               {t('cover.setup.body')}
-            </Body>
+            </Caption>
           </Card>
         </Pressable>
         {footer}
@@ -260,9 +261,9 @@ export function TodayCoverage({
       <View className="gap-3">
         <View testID="today-coverage" className="gap-1">
           <Body weight="medium">{t('cover.noNeed.title')}</Body>
-          <Body className="text-sm text-muted-foreground">
+          <Caption className="text-muted-foreground">
             {t('cover.noNeed.body', { weekday })}
-          </Body>
+          </Caption>
         </View>
         {footer}
       </View>
@@ -275,13 +276,13 @@ export function TodayCoverage({
         <PlanLineView key={line.key} line={line} timeZone={timeZone} />
       ))}
       {runningLateLines.map(line => (
-        <Body
+        <Caption
           key={`running-late-${line.shiftId}`}
           testID={`today-coverage-running-late-${line.shiftId}`}
-          className="text-sm text-muted-foreground"
+          className="text-muted-foreground"
         >
           {t('coverage.plan.runningLate', { name: line.name })}
-        </Body>
+        </Caption>
       ))}
     </View>
   );
@@ -422,7 +423,7 @@ export function TodayCoverage({
       });
   };
 
-  // Rule M (daylight-v2 §2.3): on the ochre `surfaceAttention` ground
+  // Rule M (docs/design/01-LAWS.md): on the ochre `surfaceAttention` ground
   // `mutedForeground` measures 4.28:1 and fails AA at these sizes.
   const detailMutedClass = 'text-muted-strong';
 
@@ -561,6 +562,10 @@ export function TodayCoverage({
               <Pressable
                 testID="today-coverage-hours-wrong"
                 accessibilityRole="button"
+                style={{
+                  minHeight: spacing.minTouchTarget,
+                  justifyContent: 'center',
+                }}
                 hitSlop={8}
                 onPress={() => router.push('/settings/children' as Href)}
               >
@@ -578,6 +583,10 @@ export function TodayCoverage({
                     disabled: withdrawAskRestriction.disabled,
                   }}
                   accessibilityHint={withdrawAskRestriction.reason ?? undefined}
+                  style={{
+                    minHeight: spacing.minTouchTarget,
+                    justifyContent: 'center',
+                  }}
                   hitSlop={8}
                   disabled={withdrawAskRestriction.disabled}
                   onPress={() => {

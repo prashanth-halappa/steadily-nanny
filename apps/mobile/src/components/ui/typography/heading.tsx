@@ -18,7 +18,7 @@ export const H2 = createTypographyComponent(typography.h2, 'H2', {
   role: 'heading',
   ariaLevel: '2',
   defaultClassName:
-    'web:scroll-m-20 border-b border-border pb-2 text-foreground first:mt-0 web:select-text',
+    'web:scroll-m-20 text-foreground first:mt-0 web:select-text',
 });
 
 export const H3 = createTypographyComponent(typography.h3, 'H3', {

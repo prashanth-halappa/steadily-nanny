@@ -167,7 +167,7 @@ describe('SettingsScreen — preferred_locale (D26)', () => {
     // Coarse visible-re-render check: the whole rendered tree (JSON-safe
     // serialization, not the live fiber) still shows the filled segmented-
     // control pill class, now attached to ES rather than EN — the UI redrew.
-    // (daylight-v2 §2.3: segmented control, selected segment is a filled
+    // (docs/design/01-LAWS.md: segmented control, selected segment is a filled
     // `bg-primary` pill — not the old bordered chip's `border-primary`.)
     await waitFor(() => {
       const tree = serializeTree(toJSON());

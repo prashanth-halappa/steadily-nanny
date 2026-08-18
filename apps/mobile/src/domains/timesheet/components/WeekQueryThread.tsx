@@ -29,7 +29,7 @@
  * - **Timestamps are the record.** Every message carries date + time in the
  *   HOUSEHOLD zone (Marisol's "schedule-change timestamps as evidence", on
  *   money).
- * - **Never a badge, never an unread dot** (daylight-v2 §6.6).
+ * - **Never a badge, never an unread dot** (docs/design/01-LAWS.md).
  * - A refusal is stated INLINE under the composer. This card can sit under
  *   an open BottomSheetBase, where a toast is not visible on iOS at all
  *   (GOLDEN-FIXES #40).

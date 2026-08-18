@@ -8,7 +8,7 @@
  * full-screen `LoadingIndicator` that blanked the whole tab, title included,
  * on every week change.
  *
- * A skeleton must match the rung it will become (daylight-v2.md §6.9): these
+ * A skeleton must match the rung it will become (docs/design/00-FOUNDATIONS.md): these
  * are L3 white rows with `elevation.row`, the same shape `TimeEntryDayRow`
  * paints a frame later.
  */

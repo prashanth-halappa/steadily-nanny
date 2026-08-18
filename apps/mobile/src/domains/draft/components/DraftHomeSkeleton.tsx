@@ -2,7 +2,7 @@
  * @module domains/draft/components/DraftHomeSkeleton
  *
  * §12's loading row. A skeleton must match the RUNG it becomes
- * (`daylight-v2.md` §6.9): the L1 stand-in is a tall TINTED block, the two L3
+ * (`docs/design/00-FOUNDATIONS.md`): the L1 stand-in is a tall TINTED block, the two L3
  * stand-ins are white cards, and the L4 stand-ins are bare rows. A white card
  * standing in for a tinted attention card makes the loaded state visibly
  * jump, which is the one thing a skeleton exists to prevent.

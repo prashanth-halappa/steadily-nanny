@@ -1,6 +1,6 @@
 # Hours — screen spec (Daylight v2)
 
-Reads with [`daylight-v2.md`](./daylight-v2.md).
+Reads with [`01-LAWS.md`](./01-LAWS.md) and [`00-FOUNDATIONS.md`](./00-FOUNDATIONS.md).
 
 Owners: `apps/mobile/src/domains/timesheet/components/HoursScreen.tsx`,
 `HoursHeroBand.tsx`, `WeekTotal.tsx`, `WeekMoneyCard.tsx`, `NannyWeekView.tsx`,
@@ -113,7 +113,7 @@ the question the tab exists for; it does not need a container. At
 screen about how many hours were worked, it should be.
 
 **The bars and the track are data, not decoration.**
-[`art-direction.md`](./art-direction.md) still forbids a hero *image* on Hours:
+[`03-ART-DIRECTION.md`](./03-ART-DIRECTION.md) still forbids a hero *image* on Hours:
 an illustration beside a number someone is paid on costs credibility. A bar
 per day of *her own hours*, and a worked-vs-scheduled track, are the same
 record as the figure — they turn the total into a week she can see at a
@@ -289,7 +289,7 @@ missing buttons reads as a bug on a screen about money.
   This is a record, not a performance review.
 - Amounts always carry their currency symbol and always come from `formatMoney`.
 
-**Voice:** `docs/design/screens-today.md` section 7 governs all copy in this screen, including the milestone-tier tables.
+**Voice:** [`02-VOICE.md`](./02-VOICE.md) governs all copy in this screen, including the milestone-tier tables.
 
 ---
 

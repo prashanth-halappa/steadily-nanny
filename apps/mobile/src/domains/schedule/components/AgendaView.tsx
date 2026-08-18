@@ -16,7 +16,7 @@ import { type Href, useRouter } from 'expo-router';
 import { AlertCircle, Plane } from 'lucide-react-native';
 import { type ReactElement, type RefObject, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { Button } from '@/src/components/ui/button';
@@ -93,6 +93,12 @@ export type AgendaItem =
       localDate: string;
       window: UncoveredWindowDisplay;
       highlighted: boolean;
+      /** Earliest-in-time uncovered row in the visible week — the one that
+       * keeps the loud (surfaceAttention + cardProminent) treatment. Every
+       * other uncovered row is the same fact restated, so it drops to a
+       * quiet white card instead (docs/design/01-LAWS.md Rule E — L1
+       * attaches to the group, not to every item in it). */
+      isPrimary: boolean;
     }
   | { type: 'shift'; key: string; shift: Shift };
 
@@ -100,6 +106,7 @@ function UncoveredRow({
   localDate,
   window,
   highlighted,
+  isPrimary,
   householdId,
   displayTimeZone,
   childName,
@@ -114,6 +121,7 @@ function UncoveredRow({
   localDate: string;
   window: UncoveredWindowDisplay;
   highlighted: boolean;
+  isPrimary: boolean;
   householdId: string;
   displayTimeZone?: string | null;
   childName: string;
@@ -205,9 +213,16 @@ function UncoveredRow({
       testID={`schedule-uncovered-${key}`}
       className="mx-5.5 mb-2 gap-3 rounded-row p-4"
       style={[
-        elevation.cardProminent,
+        isPrimary ? elevation.cardProminent : elevation.row,
         {
-          backgroundColor: colors.surfaceAttention,
+          // The quiet tier is a WHITE card, not a paler amber: `pill.warning`
+          // (#F1E5D5) and `surfaceAttention` (#F4EADC) differ by ~0.02 of a
+          // contrast ratio, so a "quieter" amber row was indistinguishable
+          // from the loud one on device — five gaps still read as five
+          // alarms. White ground + the amber icon chip and pill carrying the
+          // state is the same information in a rung the eye can actually
+          // separate (and the pill is invisible on an amber ground).
+          backgroundColor: isPrimary ? colors.surfaceAttention : colors.card,
           borderWidth: highlighted ? 2 : 0,
           borderColor: highlighted ? colors.warningStrong : undefined,
         },
@@ -216,12 +231,12 @@ function UncoveredRow({
       <View className="gap-1">
         <View className="flex-row items-center gap-2">
           <IconChip tone="brand" icon={AlertCircle} />
-          <H4 className="flex-1">{childName}</H4>
-          <StatusPill variant="pending" label={t('cover.rowPill')} />
+          <H4 className="flex-1">
+            {childName} · {timeLabel}
+          </H4>
+          <StatusPill variant="uncovered" label={t('cover.rowPill')} />
         </View>
-        <Small className="text-muted-strong">
-          {timeLabel} · {causeLabel}
-        </Small>
+        <Small className="text-muted-strong">{causeLabel}</Small>
       </View>
       {showActions ? (
         <View className="gap-2">
@@ -257,16 +272,17 @@ function UncoveredRow({
           >
             {t('cover.iveGotIt')}
           </Button>
-          <Pressable
+          {/* A ghost Button, not a bare Pressable wrapping coloured Body
+              text — see SchedulePatternBanner.tsx:222-234. Also fixes a
+              sub-44pt touch target. */}
+          <Button
             testID={`schedule-uncovered-hours-${key}`}
-            accessibilityRole="button"
-            hitSlop={8}
+            variant="ghost"
+            size="sm"
             onPress={() => router.push('/settings/children' as Href)}
           >
-            <Small className="text-primary" weight="medium">
-              {t('cover.hoursWrong')}
-            </Small>
-          </Pressable>
+            {t('cover.hoursWrong')}
+          </Button>
         </View>
       ) : null}
     </View>
@@ -382,6 +398,10 @@ export function AgendaView({
     });
 
     const result: AgendaItem[] = [];
+    // Days are visited chronologically and each day's rows are sorted by
+    // `at`, so the first uncovered row this flips past IS the earliest
+    // uncovered window in the whole visible week — see `isPrimary` above.
+    let primaryUncoveredAssigned = false;
     for (const localDate of [...dates].sort()) {
       const dayShifts = (byDate.get(localDate) ?? []).sort((a, b) =>
         a.starts_at.localeCompare(b.starts_at)
@@ -453,12 +473,15 @@ export function AgendaView({
         if (row.kind === 'shift') {
           result.push({ type: 'shift', key: row.shift.id, shift: row.shift });
         } else {
+          const isPrimary = !primaryUncoveredAssigned;
+          primaryUncoveredAssigned = true;
           result.push({
             type: 'uncovered',
             key: `uncovered-${uncoveredKey(row.window)}`,
             localDate,
             window: row.window,
             highlighted: row.highlighted,
+            isPrimary,
           });
         }
       }
@@ -559,6 +582,7 @@ export function AgendaView({
                 localDate={item.localDate}
                 window={item.window}
                 highlighted={item.highlighted}
+                isPrimary={item.isPrimary}
                 householdId={householdId}
                 displayTimeZone={displayTimeZone}
                 childName={child?.name ?? ''}

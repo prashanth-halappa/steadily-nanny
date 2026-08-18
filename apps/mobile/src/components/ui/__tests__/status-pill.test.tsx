@@ -122,4 +122,19 @@ describe('StatusPill', () => {
       'bg-secondary'
     );
   });
+
+  it('uses the warning treatment for uncovered — distinct from pending, never destructive', () => {
+    const { getByTestId } = render(
+      <StatusPill
+        variant="uncovered"
+        label="Uncovered"
+        testID="pill-uncovered"
+      />
+    );
+    const container = getByTestId('pill-uncovered');
+    const label = getByTestId('pill-uncovered-label');
+    expect(container.props.className).toContain('bg-pill-warning');
+    expect(label.props.className).toContain('text-warning-ink');
+    expect(label.props.className).not.toContain('destructive');
+  });
 });

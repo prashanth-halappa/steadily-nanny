@@ -41,17 +41,11 @@ import { IconChip, type IconChipTone } from '@/src/components/ui/icon-chip';
 import { Input } from '@/src/components/ui/input';
 import { PersonAvatar } from '@/src/components/ui/person-avatar';
 import { ScreenWash } from '@/src/components/ui/screen-wash';
+import { Section } from '@/src/components/ui/section';
 import { SkeletonShimmer } from '@/src/components/ui/skeleton-shimmer';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
-import {
-  Body,
-  H1,
-  H3,
-  H4,
-  MetadataLabel,
-  Small,
-} from '@/src/components/ui/typography';
+import { Body, H1, H3, H4, Small } from '@/src/components/ui/typography';
 import { appIdentity } from '@/src/config/appIdentity';
 import { HouseholdSwitcher } from '@/src/domains/household';
 import { useInboxItems } from '@/src/domains/inbox';
@@ -73,7 +67,7 @@ const TERMS_URL = `https://${appIdentity.associatedDomain}/terms`;
 const HELP_URL = `mailto:help@${appIdentity.associatedDomain}`;
 
 // Row height: 52, not the 44 touch minimum — a 14-row screen at the bare
-// minimum reads as cramped (daylight-v2.md §2.1).
+// minimum reads as cramped (docs/design/01-LAWS.md).
 const ROW_MIN_HEIGHT = 52;
 
 function SettingsNavRow({
@@ -229,6 +223,10 @@ export default function SettingsScreen() {
   const showIdentitySkeleton = profile.isPending;
   const showIdentity = accountEmail || onboarding.role;
   const member = (members.data ?? []).find(m => m.user_id === user?.id);
+  const showHouseholdSection =
+    onboarding.role === SETUP_ROLES.PARENT ||
+    onboarding.role === SETUP_ROLES.NANNY ||
+    onboarding.role === SETUP_ROLES.HELPER;
 
   return (
     <View className="flex-1 bg-background">
@@ -243,7 +241,7 @@ export default function SettingsScreen() {
         }}
       >
         {/* Hero band — no card, on the wash. The identity block used to sit
-            mid-list in muted grey (daylight-v2.md §1) — the one genuinely
+            mid-list in muted grey (docs/design/01-LAWS.md) — the one genuinely
             brand-level thing on the screen was the only block not in plum.
             This move inverts that back the right way round. */}
         <H1>{t('settings:title')}</H1>
@@ -285,17 +283,16 @@ export default function SettingsScreen() {
           </View>
         ) : null}
 
-        <View className="mt-8 gap-6">
+        <View className="mt-8">
           {/* Household goes first for anyone who has one — it is the only
               group a person visits more than once a month
-              (daylight-v2.md §2.2). */}
-          {onboarding.role === SETUP_ROLES.PARENT ||
-          onboarding.role === SETUP_ROLES.NANNY ||
-          onboarding.role === SETUP_ROLES.HELPER ? (
-            <View className="gap-3" testID="settings-household-section">
-              <MetadataLabel className="text-muted-foreground">
-                {t('settings:household')}
-              </MetadataLabel>
+              (docs/design/01-LAWS.md). */}
+          {showHouseholdSection ? (
+            <Section
+              title={t('settings:household')}
+              first
+              testID="settings-household-section"
+            >
               {/* Renders nothing for one household (every parent, most
                   nannies) — see HouseholdSwitcher's header comment. Its own
                   pill styling doesn't fit the row geometry below, so it sits
@@ -449,16 +446,17 @@ export default function SettingsScreen() {
                   }
                 />
               </Card>
-            </View>
+            </Section>
           ) : null}
 
           {/* Account before Language — the finding called out Language
               outranking Account. Time + OS notifications live here;
               identity moved to the hero band above. */}
-          <View className="gap-3" testID="settings-account-section">
-            <MetadataLabel className="text-muted-foreground">
-              {t('settings:account')}
-            </MetadataLabel>
+          <Section
+            title={t('settings:account')}
+            first={!showHouseholdSection}
+            testID="settings-account-section"
+          >
             <Card tone="default" className="overflow-hidden p-0">
               <SettingsNavRow
                 testID="settings-name-row"
@@ -492,12 +490,12 @@ export default function SettingsScreen() {
                 onPress={() => router.push('/settings/notifications' as Href)}
               />
             </Card>
-          </View>
+          </Section>
 
-          <View className="gap-3" testID="settings-language-section">
-            <MetadataLabel className="text-muted-foreground">
-              {t('settings:language')}
-            </MetadataLabel>
+          <Section
+            title={t('settings:language')}
+            testID="settings-language-section"
+          >
             <View
               className="flex-row rounded-chip p-1"
               style={{ backgroundColor: colors.chip.plum }}
@@ -534,12 +532,9 @@ export default function SettingsScreen() {
                 );
               })}
             </View>
-          </View>
+          </Section>
 
-          <View className="gap-3" testID="settings-legal-section">
-            <MetadataLabel className="text-muted-foreground">
-              {t('settings:legal')}
-            </MetadataLabel>
+          <Section title={t('settings:legal')} testID="settings-legal-section">
             <Card tone="default" className="overflow-hidden p-0">
               <SettingsExternalRow
                 testID="settings-privacy"
@@ -563,7 +558,7 @@ export default function SettingsScreen() {
                 onPress={() => void openExternalUrl(HELP_URL)}
               />
             </Card>
-          </View>
+          </Section>
         </View>
 
         <Button

@@ -45,6 +45,8 @@ export function computeUncoveredToday(args: {
   commitments: readonly ChildCommitment[];
   shifts: readonly Shift[];
   closures: readonly HouseholdClosure[];
+  /** Clock read at render — windows that have already ended are dropped. */
+  nowMs?: number;
 }): Exclude<UncoveredTodayState, { status: 'loading' | 'error' }> {
   if (args.commitments.length === 0) {
     return { status: 'setup' };
@@ -69,6 +71,11 @@ export function computeUncoveredToday(args: {
       weekday: localDateToWeekday(args.localDate),
     };
   }
+  // A window nobody can still cover is history, not attention: at 8pm the
+  // card was still asking "Ask Andrea to start at 9:00 AM" for a 9-3 gap that
+  // closed five hours ago. Every consumer of this hook (the gap card, Today's
+  // attention arbitration) inherits the filter from here.
+  const nowMs = args.nowMs ?? Date.now();
   const windows = withCauses(
     computeUncovered({
       localDate: args.localDate,
@@ -78,7 +85,7 @@ export function computeUncoveredToday(args: {
       closures: dayClosures,
     }),
     args.shifts
-  );
+  ).filter(window => Date.parse(window.endsAt) > nowMs);
   if (windows.length === 0) {
     return { status: 'covered', localDate: args.localDate };
   }

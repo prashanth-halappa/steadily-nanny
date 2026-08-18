@@ -1,7 +1,7 @@
 /**
  * @module domains/draft/components/ChipToggle
  *
- * A two-option filled-pill picker (`daylight-v2.md` §6.3). Local to this
+ * A two-option filled-pill picker (`docs/design/00-FOUNDATIONS.md`). Local to this
  * domain on purpose: the share sheet is the only surface that needs one, and
  * a general n-option toggle with variants and sizes would be a component
  * built for a second caller that does not exist. Promote it to

@@ -1,6 +1,6 @@
 # App assets
 
-Branded artwork for Steadily Nanny (Daylight palette). See [`docs/design/art-direction.md`](../../docs/design/art-direction.md).
+Branded artwork for Steadily Nanny (Daylight palette). See [`docs/design/03-ART-DIRECTION.md`](../../docs/design/03-ART-DIRECTION.md).
 
 | File | Purpose | Recommended size |
 |------|---------|------------------|

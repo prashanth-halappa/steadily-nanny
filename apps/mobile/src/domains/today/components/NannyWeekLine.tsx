@@ -23,6 +23,7 @@ import { queryState } from '@/src/hooks/queries/queryState';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useWeekTimesheet } from '@/src/hooks/queries/useWeekTimesheet';
 import { useAuthStore } from '@/src/store/auth';
+import { spacing } from '~/lib/design-tokens/spacing';
 
 interface NannyWeekLineProps {
   householdId: string;
@@ -107,6 +108,11 @@ export function NannyWeekLine({
           <Pressable
             testID="today-week-line-card-press"
             accessibilityRole="button"
+            style={{
+              minHeight: spacing.minTouchTarget,
+              justifyContent: 'center',
+            }}
+            hitSlop={8}
             onPress={goToHours}
           >
             <Small className="text-foreground">{lineText}</Small>
@@ -121,6 +127,8 @@ export function NannyWeekLine({
       <Pressable
         testID="today-week-line"
         accessibilityRole="button"
+        style={{ minHeight: spacing.minTouchTarget, justifyContent: 'center' }}
+        hitSlop={8}
         onPress={goToHours}
       >
         <Small className="text-primary">{lineText}</Small>

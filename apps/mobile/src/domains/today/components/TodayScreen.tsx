@@ -56,9 +56,10 @@ import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
+import { ScreenHeader } from '@/src/components/ui/screen-header';
 import { ScreenWash } from '@/src/components/ui/screen-wash';
 import { SkeletonShimmer } from '@/src/components/ui/skeleton-shimmer';
-import { Body, H1, Small } from '@/src/components/ui/typography';
+import { Body, Small } from '@/src/components/ui/typography';
 import {
   DraftHomeScreen,
   JoinedHouseholdCard,
@@ -130,12 +131,6 @@ const FEED_STYLE = {
   paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
 } as const;
 
-const HEADER_STYLE = {
-  paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
-  paddingTop: SCREEN_CONTENT_STYLE.padding,
-  paddingBottom: 8,
-} as const;
-
 const FEED_SKELETON_ROWS = [0, 1, 2];
 
 /**
@@ -144,7 +139,7 @@ const FEED_SKELETON_ROWS = [0, 1, 2];
  * this, the feed rendered live off `data ?? []` the instant `household`
  * existed, so it looked blank for exactly as long as wave two took. Same
  * idea as `HoursWeekSkeleton`; the rung it stands in for is the white L3
- * cards most of this feed is made of (`daylight-v2.md` §6.9), same shape as
+ * cards most of this feed is made of (`docs/design/00-FOUNDATIONS.md`), same shape as
  * `DraftHomeSkeleton`'s L3 rows.
  */
 function TodayFeedSkeleton() {
@@ -491,7 +486,7 @@ export function TodayScreen() {
     <View className="flex-1 bg-background">
       {/* Always mounted now, brand plum by default and apricot only while
           someone is on the clock. The screen used to be flat warm grey for
-          the other sixteen hours of the day (daylight-v2 §4.3). */}
+          the other sixteen hours of the day (docs/design/01-LAWS.md). */}
       <ScreenWash testID="today-live-wash" kind={isLive ? 'live' : 'brand'} />
 
       {/* P5/S10 — cross-family, unscoped by design: renders above every
@@ -505,20 +500,25 @@ export function TodayScreen() {
         contentContainerStyle={{ paddingBottom: tabBarScrollPadding }}
         refreshControl={refreshControl}
       >
-        {/* Hero band — no card, no ground of its own: it IS the top of the
-          wash, and the wash is what separates it from the cards below. It
-          scrolls with the feed. */}
-        <View style={HEADER_STYLE}>
-          <View className="flex-row items-start justify-between gap-3">
-            <View className="flex-1">
-              <H1 testID="today-header">{t('screenTitle')}</H1>
-              {/* Folded into the H1 block: the date always shows (a screen
-                called Today with no date on it is odd), and the household
-                name joins it on the same line — but only when there's
-                nothing to switch between. Mirrors HouseholdSwitcher's own
-                bail-out; rendering both would print the household twice.
-                `text-muted-strong`, not `text-muted-foreground`: this line
-                sits on the wash, where mutedForeground is 4.28:1 (Rule M). */}
+        {/* Hero band — ScreenHeader's own band padding IS the top of the
+          wash; no card, no ground of its own. It scrolls with the feed.
+          `contextLine` is string-only, which can't carry the date row's
+          Pressable + its two testIDs (`today-family-link`, `today-date`),
+          so that row and the lead line stay together as ONE `anchor` node
+          rather than splitting across `contextLine`/`anchor` — still just
+          the single anchor slot Rule H allows. */}
+        <ScreenHeader
+          testID="today-header"
+          title={t('screenTitle')}
+          anchor={
+            <>
+              {/* The date always shows (a screen called Today with no date
+                on it is odd), and the household name joins it on the same
+                line — but only when there's nothing to switch between.
+                Mirrors HouseholdSwitcher's own bail-out; rendering both
+                would print the household twice. `text-muted-strong`, not
+                `text-muted-foreground`: this line sits on the wash, where
+                mutedForeground is 4.28:1 (Rule M). */}
               {household ? (
                 <Pressable
                   testID="today-family-link"
@@ -555,8 +555,10 @@ export function TodayScreen() {
                   />
                 </View>
               ) : null}
-            </View>
-            {/* Transparent PNG on purpose — the wash gradient passes under it. */}
+            </>
+          }
+          art={
+            // Transparent PNG on purpose — the wash gradient passes under it.
             <Image
               testID={`today-hero-art-${heroMood}`}
               accessibilityRole="image"
@@ -566,8 +568,8 @@ export function TodayScreen() {
               style={{ width: 104, height: 104 }}
               resizeMode="contain"
             />
-          </View>
-        </View>
+          }
+        />
 
         {/* THE slot. One item, first thing in the feed. */}
         <PinnedSlot>{activeHousehold.isLoading ? null : pinned}</PinnedSlot>

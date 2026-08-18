@@ -42,7 +42,8 @@ export function AmountRow({
         <Body className="shrink text-foreground">{label}</Body>
         <Body
           testID={testID ? `${testID}-value` : undefined}
-          className="flex-1 text-right font-medium text-foreground"
+          className="flex-1 text-right text-foreground"
+          weight="medium"
           tabular
         >
           {displayValue}

@@ -45,6 +45,7 @@ import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useTimeOff } from '@/src/hooks/queries/useTimeOff';
 import { showSuccessToast } from '@/src/lib/toast';
+import { spacing } from '~/lib/design-tokens/spacing';
 import { usePaidFamilyCounts } from '../hooks/usePaidFamilyCounts';
 import { SickTimeOffButton } from './SickTimeOffButton';
 import { TimeOffRequestForm } from './TimeOffRequestForm';
@@ -224,6 +225,11 @@ export function TimeOffScreen() {
                     key={filter}
                     testID={`time-off-filter-${filter}`}
                     accessibilityRole="button"
+                    style={{
+                      minHeight: spacing.minTouchTarget,
+                      justifyContent: 'center',
+                    }}
+                    hitSlop={8}
                     onPress={() => setStatusFilter(filter)}
                   >
                     <Small

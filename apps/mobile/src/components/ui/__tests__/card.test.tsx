@@ -157,6 +157,20 @@ describe('Card tone (Wave 0 / P0-1)', () => {
     expect(shadowColours(entries)).toContain(APRICOT_RGB);
   });
 
+  it('tone="critical" tints with opaque surfaceCritical but keeps the plain card elevation', () => {
+    // critical means "an agreement was declined" (a chosen state) — never a
+    // network/loading failure. Same elevation shape as positive: opaque tint,
+    // plain `card` elevation, no apricot.
+    const { getByTestId } = render(<Card testID="card" tone="critical" />);
+    const entries = getByTestId('card').props.style as ViewStyle[];
+    const bg = entries.find(
+      (s): s is ViewStyle => Boolean(s) && 'backgroundColor' in (s as object)
+    );
+    expect(bg?.backgroundColor).toBe(palette.light.surfaceCritical.hex);
+    expect(shadowColours(entries)).toContain(INK_RGB);
+    expect(shadowColours(entries)).not.toContain(APRICOT_RGB);
+  });
+
   it('tone wins when both tone and the deprecated live prop are passed', () => {
     const { getByTestId } = render(<Card testID="card" tone="positive" live />);
     const entries = getByTestId('card').props.style as ViewStyle[];

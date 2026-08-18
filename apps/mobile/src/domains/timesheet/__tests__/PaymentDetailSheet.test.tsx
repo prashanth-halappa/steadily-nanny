@@ -213,7 +213,7 @@ describe('PaymentDetailSheet — the week link', () => {
   // The defect this exists to fix: `text-primary` (#5B3E5D) against
   // `text-foreground` (#2A1F2B) is two dark plums, so colour alone made the
   // row read as static text and nobody found the route. The chevron is the
-  // second channel (colour + iconography) daylight-v2 requires.
+  // second channel (colour + iconography) docs/design/01-LAWS.md requires.
   it('carries a trailing chevron on the pressable for-week row', () => {
     const { getByTestId } = renderSheet();
 

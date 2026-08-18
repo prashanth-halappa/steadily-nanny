@@ -23,12 +23,15 @@
  * `success` on `surfacePositive` is 4.26:1. The GROUND carries the meaning;
  * the words stay `foreground` on it.
  *
- * The two viewers get different status affordances, not just different copy:
- * the parent — the reason they opened the screen — gets an `H3` headline
- * (it was a 13px `MetadataLabel`, which made the sentence telling a parent
- * they owe an approval the smallest text in the card). The nanny gets the
- * StatusPill she never had (P0-5), labelled from her own side of the
- * conversation via `timesheetPillLabel`'s role fork.
+ * Both viewers get the SAME `H3` headline slot (it was a 13px
+ * `MetadataLabel`, which made the sentence telling a parent they owe an
+ * approval the smallest text in the card — and the nanny's fork of that fix
+ * left her stuck on a 12px `StatusPill`, the smallest text on HER money
+ * screen, for a sentence with the same financial weight: "the family asked a
+ * question" means her money is on hold). Pills still annotate rows
+ * elsewhere; the anchor card gets a headline for both parties, labelled from
+ * each side's own view of the conversation via `timesheetPillLabel`'s role
+ * fork.
  *
  * `timesheetPillLabel` is also imported by `domains/today`'s week line —
  * keep it exported from here, with this signature.
@@ -41,7 +44,7 @@
  *
  * Card vertical order (`CardContent`, one `gap-3`):
  * 1. Title row: nanny submitted-week three-step timeline, else `IconChip` +
- *    parent `H3` headline / nanny `StatusPill` (queried / not-submitted).
+ *    `H3` status headline (same slot for both viewers).
  * 2. Nanny-only "Approved by {household} on {date}." + gross `Figure28`.
  * 3. Reopened-reason caption (non-approved, wire/ephemeral reason).
  * 4. Approved-week slot — the reopen button when `onReopenPress` is
@@ -70,7 +73,6 @@ import { useThemeColors } from '@/lib/design-tokens/useThemeColors';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent, type CardTone } from '@/src/components/ui/card';
 import { IconChip } from '@/src/components/ui/icon-chip';
-import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
 import {
   Body,
@@ -96,10 +98,10 @@ interface WeekTotalAction {
 
 interface WeekTotalProps {
   testID?: string;
-  /** Timesheet approval state — drives the card's tone and the parent
-   * headline / nanny StatusPill. */
+  /** Timesheet approval state — drives the card's tone and the status
+   * headline. */
   timesheetStatus?: TimesheetStatus | null;
-  /** Explicit override for the StatusPill row's visibility. */
+  /** Explicit override for the status headline row's visibility. */
   showStatusPill?: boolean;
   /** When true, show the "hours only — pay outside" boundary line. */
   showPayBoundary?: boolean;
@@ -166,20 +168,6 @@ function weekTotalTone(
   return 'default';
 }
 
-// The pill itself only ever renders for the nanny viewer (the parent gets
-// the headline instead — see `showPillRow` below), so this has exactly one
-// call site and takes no `role` — a parent-branch fork here would be dead
-// code (unlike `timesheetPillLabel`, whose parent branch IS reachable, via
-// `parentHeadlineLabel` reusing it for the headline's own words).
-function timesheetPillVariant(
-  status: TimesheetStatus | null | undefined
-): 'pending' | 'confirmed' | 'declined' | 'cancelled' {
-  if (status === 'approved') return 'confirmed';
-  if (status === 'queried') return 'declined';
-  if (status === 'submitted') return 'pending';
-  return 'cancelled';
-}
-
 /** Forked by viewer (P0-5): the nanny reads her own week from her side of
  * the conversation ("With the family", not "Ready for your approval" — that
  * sentence is about someone else's action, not hers). */
@@ -199,19 +187,21 @@ export function timesheetPillLabel(
   return t('statusNotSubmitted');
 }
 
-/** Parent-only headline text — same sentences as the old pill, plus the
- * approved arm's date. */
-function parentHeadlineLabel(
+/** Headline text for both viewers — same sentences as the old pill, plus
+ * the parent's approved arm gets the date (the nanny's approved state is
+ * covered by the appreciation block below, so her headline stays plain). */
+function statusHeadlineLabel(
   status: TimesheetStatus | null | undefined,
+  role: EarningsRole,
   approvedDateLabel: string | null | undefined,
   t: (key: string, options?: Record<string, unknown>) => string
 ): string {
-  if (status === 'approved') {
+  if (status === 'approved' && role === 'parent') {
     return approvedDateLabel
       ? t('approvedOnDate', { date: approvedDateLabel })
       : t('statusApproved');
   }
-  return timesheetPillLabel(status, 'parent', t);
+  return timesheetPillLabel(status, role, t);
 }
 
 export function WeekTotal({
@@ -241,14 +231,12 @@ export function WeekTotal({
   // 'parent' is a key. Choose the key from a boolean instead.
   const isParentViewer = earningsRole === 'parent';
   const hasStatus = timesheetStatus !== undefined;
-  // The pill is a nanny-side affordance — the parent gets the headline
-  // instead (pills annotate rows; the anchor card gets a headline). A
-  // submitted week replaces the pill with the three-step status timeline:
-  // "With the family" did not say whether anyone had opened the hours.
+  // Pills annotate rows elsewhere; the anchor card gets a headline, for
+  // both viewers. A submitted week replaces the nanny's headline with the
+  // three-step status timeline: "With the family" did not say whether
+  // anyone had opened the hours.
   const showTimeline = !isParentViewer && timesheetStatus === 'submitted';
-  const showPillRow =
-    (showStatusPill ?? hasStatus) && !isParentViewer && !showTimeline;
-  const showHeadline = isParentViewer && hasStatus;
+  const showHeadline = (showStatusPill ?? hasStatus) && !showTimeline;
   const showReopenedNote =
     timesheetStatus !== 'approved' &&
     (!!earningsReopenReason || earningsReopened);
@@ -272,7 +260,6 @@ export function WeekTotal({
   // tinted rectangle would be worse than no card at all.
   if (
     !showTimeline &&
-    !showPillRow &&
     !showHeadline &&
     !showReopenedNote &&
     !showPayBoundary &&
@@ -296,7 +283,7 @@ export function WeekTotal({
             reopenReason={earningsReopenReason}
           />
         ) : null}
-        {showPillRow || showHeadline ? (
+        {showHeadline ? (
           <View className="flex-row items-center gap-3">
             {/* v2 §5.2: an L1 card moves ground, type AND iconography — the
                 brand chip is the third channel. `hours` (sage) otherwise. */}
@@ -305,20 +292,14 @@ export function WeekTotal({
               tone={tone === 'attention' ? 'brand' : 'hours'}
               icon={timesheetStatus === 'approved' ? CircleCheck : Clock}
             />
-            {showHeadline ? (
-              <H3 testID="hours-status-headline" className="flex-1">
-                {parentHeadlineLabel(timesheetStatus, approvedDateLabel, t)}
-              </H3>
-            ) : null}
-            {showPillRow ? (
-              <View className="flex-shrink-0">
-                <StatusPill
-                  testID="hours-timesheet-status"
-                  variant={timesheetPillVariant(timesheetStatus)}
-                  label={timesheetPillLabel(timesheetStatus, earningsRole, t)}
-                />
-              </View>
-            ) : null}
+            <H3 testID="hours-status-headline" className="flex-1">
+              {statusHeadlineLabel(
+                timesheetStatus,
+                earningsRole,
+                approvedDateLabel,
+                t
+              )}
+            </H3>
           </View>
         ) : null}
         {/* Appreciation moment (P0-5): appreciation starts with not being

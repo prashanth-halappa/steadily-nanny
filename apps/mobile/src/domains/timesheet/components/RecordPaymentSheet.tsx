@@ -13,10 +13,13 @@
  * network failure) leaves every typed figure intact instead of making the
  * parent retype an amount they already got right.
  *
- * AMOUNT PREFILLS TO THE OUTSTANDING BALANCE. The overwhelmingly common
- * action is "I have now paid the rest", and making that one tap is the
- * difference between a ledger people keep and a ledger people abandon. It is
- * an ordinary editable field, so a partial payment costs one edit.
+ * AMOUNT PREFILLS TO THE OUTSTANDING BALANCE, which is also echoed above the
+ * input as its own `AmountRow` — asserting "I paid £X" needs a visible
+ * balance to check the typed amount against, not just a silent prefill. The
+ * overwhelmingly common action is "I have now paid the rest", and making
+ * that one tap is the difference between a ledger people keep and a ledger
+ * people abandon. It is an ordinary editable field, so a partial payment
+ * costs one edit.
  *
  * Every amount goes through `parseMajorToMinor` (docs/11-MONEY.md §1) —
  * never `parseFloat(x) * 100`. It REFUSES rather than guesses: ".45" is not
@@ -209,6 +212,12 @@ export function RecordPaymentSheet({
             />
           </View>
         ) : null}
+
+        <AmountRow
+          testID={`${testID}-outstanding`}
+          label={t('recordPaymentSheet.outstandingLabel')}
+          value={formatMoney(outstandingMinor, currency)}
+        />
 
         <View className="gap-2">
           <Label>{t('recordPaymentSheet.amountLabel')}</Label>

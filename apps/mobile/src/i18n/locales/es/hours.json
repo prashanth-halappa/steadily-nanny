@@ -120,12 +120,13 @@
   "earningsFooterNote": "Basado en las horas registradas en Steadily. Los impuestos y las deducciones los gestiona tu nómina.",
   "approveDialog": {
     "title": "{{name}} trabajó {{hours}}",
-    "body": "{{gross}} brutos de {{range}}. Al aprobar se fijan ambas cifras — si las horas cambian después, la semana se reabre y el total se vuelve a calcular.",
-    "bodyNothingUnusual": "{{gross}} brutos de {{range}}. Nada fuera de lo común esta semana.",
+    "grossFigure": "{{gross}} brutos",
+    "body": "De {{range}}. Al aprobar se fijan ambas cifras — si las horas cambian después, la semana se reabre y el total se vuelve a calcular.",
+    "bodyNothingUnusual": "De {{range}}. Nada fuera de lo común esta semana.",
     "bodyNoArrangement": "De {{range}}. No hay una tarifa establecida, así que Steadily no puede totalizar el sueldo de esta semana.",
     "bodyCurrencyChange": "De {{range}}. La moneda de pago cambió durante esta semana, así que Steadily no puede totalizar el sueldo. Aun así puedes aprobar las horas.",
-    "bodyAdjustmentAdded": "{{gross}} brutos de {{range}}, tras añadir {{adjustment}}. Al aprobar se fijan ambas cifras — si las horas cambian después, la semana se reabre y el total se vuelve a calcular.",
-    "bodyAdjustmentDeducted": "{{gross}} brutos de {{range}}, tras descontar {{adjustment}}. Al aprobar se fijan ambas cifras — si las horas cambian después, la semana se reabre y el total se vuelve a calcular.",
+    "bodyAdjustmentAdded": "De {{range}}, tras añadir {{adjustment}}. Al aprobar se fijan ambas cifras — si las horas cambian después, la semana se reabre y el total se vuelve a calcular.",
+    "bodyAdjustmentDeducted": "De {{range}}, tras descontar {{adjustment}}. Al aprobar se fijan ambas cifras — si las horas cambian después, la semana se reabre y el total se vuelve a calcular.",
     "cancel": "Todavía no",
     "confirm": "Aprobar la semana"
   },

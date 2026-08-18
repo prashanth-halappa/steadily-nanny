@@ -1,6 +1,10 @@
 # Steadily Nanny — Art Direction
 
-Companion to [`daylight-v2.md`](./daylight-v2.md). Visual reference:
+Dated 2026-08-17. Companion to [`00-FOUNDATIONS.md`](./00-FOUNDATIONS.md) (the
+token source of truth — the closed palette below is a curated subset of it,
+spelled out here only where illustration prompts need the literal hex) and
+[`01-LAWS.md`](./01-LAWS.md) (register 3's apricot-for-live-only rule, which
+illustration must not undermine). Visual reference:
 [`docs/screenshots/ux-reference/`](../screenshots/ux-reference/).
 
 Assets are generated via Higgsfield and land in
@@ -14,12 +18,10 @@ store icon.
 
 - **Concept:** Rounded home + clock hand — domestic coordination without literal
   faces or text.
-- **Palette:** Plum `#5B3E5D` (primary shape), apricot `#E8823C` (accent
-  dot/hand), ground `#F5F1F2` (icon background).
+- **Palette:** `primary` (primary shape), `highlight` (accent dot/hand),
+  `background` (icon background) — see `00-FOUNDATIONS.md` §3.1 for values.
 - **Constraints:** Legible at 29×29pt; no typography; no photorealism; square
   safe zone for the Android adaptive icon (key detail in the centre 66%).
-
-Unchanged in v2.
 
 ---
 
@@ -34,12 +36,16 @@ Carried over from v1 and still binding:
   no skin-tone specificity, no text inside the art.**
 - Transparent background for everything in-app.
 
-### v2 additions
+### Palette lock
 
-- **Palette is closed.** Only these values may appear:
-  `#5B3E5D` plum · `#7C5A7F` plum light · `#6A4C77` lavender · `#4C7A6A` sage ·
-  `#A85E6E` rose · `#F0E9ED` muted · `#EDE5EA` secondary · `#E8823C` apricot.
-  No other hue. If a prompt returns a colour outside this list, regenerate.
+- **Palette is closed.** Only eight values may appear, all drawn from
+  `00-FOUNDATIONS.md` §3.1 — `primary`, `primaryLight`, `categoryAccent1`
+  (lavender), `categoryAccent2` (sage), `categoryAccent3` (rose), `muted`,
+  `secondary`, and `highlight` (apricot, register-3 only — see below).
+  Spelled out for prompt use:
+  `#5B3E5D` · `#7C5A7F` · `#6A4C77` · `#4C7A6A` · `#A85E6E` · `#F0E9ED` ·
+  `#EDE5EA` · `#E8823C`. No other hue. If a prompt returns a colour outside
+  this list, regenerate.
 - **Apricot obeys register 3.** In the UI, apricot means "a person is on the
   clock right now." Illustration must not undermine that: apricot appears
   **only** in `today-here` and `welcome-hero`, and only on the element that
@@ -51,8 +57,8 @@ Carried over from v1 and still binding:
 - **Optical weight ≤ 35% ink coverage.** These sit on a warm ground under a
   plum wash; a dense illustration reads as a hole in the page.
 - **Illustrations sit on a `chipPlum` `#EBE8EC` circle** in every `EmptyState`
-  (v2 §6.8), at 1.6× the art's width. Compose art to sit comfortably inside a
-  circle, not to bleed to the frame edge.
+  (`00-FOUNDATIONS.md` §8.7), at 1.6× the art's width. Compose art to sit
+  comfortably inside a circle, not to bleed to the frame edge.
 
 ---
 

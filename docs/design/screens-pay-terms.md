@@ -1,6 +1,6 @@
 # Pay & terms — screen spec (Daylight v2)
 
-Reads with [`daylight-v2.md`](./daylight-v2.md). Sibling specs:
+Reads with [`01-LAWS.md`](./01-LAWS.md) and [`00-FOUNDATIONS.md`](./00-FOUNDATIONS.md). Sibling specs:
 [`screens-hours.md`](./screens-hours.md), [`screens-settings.md`](./screens-settings.md).
 
 Owners: `apps/mobile/src/domains/pay/components/PayArrangementScreen.tsx`,
@@ -323,8 +323,10 @@ Rules:
   not.** Reviewing an existing arrangement therefore reads top-to-bottom as a
   document; setting up a new one reads as a short required form with optional
   additions. One rule, both behaviors, no mode flag.
-- Rows sit inside **one** card. Eight separately-lifted rows read as eight
-  decisions (`screens-settings.md` §2.1 made this same call and it holds here).
+- Rows sit inside **one** card, per the dense-list rung (`01-LAWS.md` §5.D —
+  this spec and `screens-settings.md` §2.1 independently derived the same
+  rule; it's now the system rule, not a local convention). Eight
+  separately-lifted rows read as eight decisions.
 - The chip is `tone="hours"` (sage) for everything on this screen. This is a
   money surface; register 4 is wayfinding, and mixing families across a single
   contract's groups would imply a distinction that does not exist.
@@ -633,7 +635,7 @@ card**:
 
 This is the screen's one L1 while it exists, and the terms card below stays L3 —
 the current terms are still the settled fact, and the scheduled change is the
-one thing that has not happened yet. Per §5.2 of daylight-v2 the promotion moves
+one thing that has not happened yet. Per the multi-channel rule (`01-LAWS.md` §2) the promotion moves
 ground, elevation, title size, and gains actions: four channels.
 
 State words for the scheduled row:
@@ -1594,7 +1596,7 @@ the household rather than silently omitting the buttons.
   if a state statute uses it (this build says "paid time off"), "workweek" as
   one word when naming the FLSA concept.
 
-**Voice:** `docs/design/screens-today.md` section 7 governs all copy in this screen, including the milestone-tier tables.
+**Voice:** [`02-VOICE.md`](./02-VOICE.md) governs all copy in this screen, including the milestone-tier tables.
 
 ---
 

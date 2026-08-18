@@ -5,12 +5,14 @@
  * semibold label text. `short-notice` and `outside-hours` are WARNINGS, not
  * errors — schedule conflicts warn and never block, so those two variants use
  * the dedicated `shortNotice` hue (separate from `destructive`), never the
- * error treatment.
+ * error treatment. `uncovered` (nobody is booked for a child's hours) shares
+ * the `warning` hue too, but deliberately NOT `pending` — that's the "waiting
+ * on a reply" state, and an uncovered window is unattended, not in progress.
  *
  * The pill SHRINKS and its label truncates to one line. RN defaults
  * `flexShrink: 0`, so without this a long label (a translated availability
  * status, say) pushes the pill past its card and off the screen edge rather
- * than ellipsising — `DAYLIGHT-UX-AUDIT.md` #29, which was overflow, not
+ * than ellipsising — the Daylight UX audit (closed; see git history) #29, which was overflow, not
  * truncation. `self-start` still keeps a short pill hugging its content.
  */
 
@@ -31,6 +33,7 @@ const statusPillVariants = cva(
         cancelled: 'bg-secondary',
         'short-notice': 'bg-pill-short-notice',
         'outside-hours': 'bg-pill-short-notice',
+        uncovered: 'bg-pill-warning',
       },
     },
     defaultVariants: { variant: 'pending' },
@@ -46,6 +49,7 @@ const statusPillTextVariants = cva('font-semibold text-xs', {
       cancelled: 'text-muted-strong',
       'short-notice': 'text-short-notice-ink',
       'outside-hours': 'text-short-notice-ink',
+      uncovered: 'text-warning-ink',
     },
   },
   defaultVariants: { variant: 'pending' },

@@ -175,7 +175,7 @@ export function SchedulePatternBanner({
   // Only `accepted` is settled — L4, no card surface at all, a bare
   // MetadataLabel line on the ground. Everything else, no pattern included,
   // still needs a human: L1, an attention-toned Card with an H3 title and a
-  // full-width filled action (daylight-v2 §5.1).
+  // full-width filled action (docs/design/01-LAWS.md).
   if (pattern?.status !== 'accepted') {
     return (
       <Card

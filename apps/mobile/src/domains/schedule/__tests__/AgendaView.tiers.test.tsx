@@ -6,7 +6,7 @@
  * be rendered for real here, unlike the sibling `AgendaView.test.ts` (source
  * inspection only).
  *
- * Covers P0-4 / daylight-v2 §3: cancelled/declined rows drop to T4/L4
+ * Covers P0-4 / docs/design/01-LAWS.md: cancelled/declined rows drop to T4/L4
  * (bg-muted, no elevation, strikethrough); pending/draft rows stay L3
  * (bg-card + elevation.row) distinguished ONLY by their pending pill — the
  * 3px accent bar was retired, the pill carries the message alone now;

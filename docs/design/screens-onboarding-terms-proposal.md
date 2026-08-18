@@ -1,7 +1,7 @@
 # Onboarding & terms proposals — screen spec (Daylight v2)
 
-Reads with [`daylight-v2.md`](./daylight-v2.md) (rungs L1–L4, registers 1–4),
-[`screens-today.md`](./screens-today.md) (copy tone), and
+Reads with [`01-LAWS.md`](./01-LAWS.md) (rungs L1–L4, registers 1–4),
+[`02-VOICE.md`](./02-VOICE.md) (copy tone), and
 [`screens-pay-terms.md`](./screens-pay-terms.md) (the D-3 progressive-groups
 terms form this spec **reuses rather than reinvents**).
 
@@ -15,56 +15,36 @@ Owners:
 
 ---
 
-## 1. What is on the screen today, and where D-33 breaks it
+## 1. Why this shape (the pre-3-O defects D-33 … D-39 fix)
 
-Six anchors, all verified against `main`:
+*(Historical framing. 3-O has since shipped on `main` — the two-card role
+screen, the `/onboarding/start` fork, draft households, the `draftAuthor`
+capability, terms proposals, and the `/t/:code` share link all exist in code
+today, matching the shipped shape the rest of this doc describes. What
+follows is why, condensed — not a current-state line-number audit; read the
+shipped files for exact citations.)*
 
-1. **The role fork asks two questions and pretends it asked one.**
-   `RoleScreen.tsx:71–91` renders three `RoleOptionCard`s: "I'm a parent",
-   "I'm a nanny", "I have an invite code". The third is not a role — it is a
-   *path* — and the screen knows it: `RoleCardSelection` at `:31` widens the
-   union just to give it a highlight state, and `:50–51` persists
-   `SETUP_ROLES.NANNY` for it as pure wiring convenience. A co-parent joining
-   an existing family is therefore a "nanny" to the local wizard until
-   `CodeEntryScreen.tsx:167–172` corrects it from the redeemed membership.
-   D-33 needs role × path = 2 × 2; today the app has role × 1.5.
+1. **The role fork asked two questions and pretended it asked one.** A third
+   "I have an invite code" option was a *path*, not a role, so a co-parent
+   joining an existing family was filed as a "nanny" by the local wizard until
+   redemption corrected it. D-33 needs role × path = 2 × 2; the app had
+   role × 1.5.
+2. **Creation was welded to `parent`, joining to `nanny`.** No sequence let a
+   nanny create anything, or a parent type a code as a first-class act.
+3. **A household was created as a side effect of the children step**, with no
+   "name your family" step to reuse for a nanny-authored draft.
+4. **Only owner/parent could create a household, invite, or write basics.** A
+   nanny could not create a household, name it, add children, or mint a code.
+5. **The share moment was a bare code in a text message** — beautiful in the
+   app, and the thing that actually reached the family was the string
+   `R4K-92T`. This is David's stall and the reason D-37 exists.
+6. **The invite preview was deliberately thin and hid on failure** — the same
+   `InviteNotFoundError` for missing, revoked and expired codes, an
+   existence-hiding convention this spec keeps. A nanny-authored invite has no
+   household name worth showing and no children to list, so it needed its own
+   preview shape rather than a widened one.
 
-2. **Creation is welded to `parent`, joining is welded to `nanny`.**
-   `stepsForRole` (`setup/types/index.ts:64–91`): parent gets
-   `ROLE → CHILDREN → INVITE → …`, nanny gets `ROLE → CODE → AVAILABILITY → …`.
-   There is no sequence in which a nanny creates anything, and none in which a
-   parent types a code as a first-class act.
-
-3. **A household is created as a side effect of the children step.**
-   `ChildrenScreen.tsx:69–111` auto-fires `createHousehold` on first entry;
-   the household-name input at `:190–200` renders *only while that call is in
-   flight* (`isLoadingHousehold`, `:153`), and the default is the literal
-   `'Our household'` (`:38`). There is no "name your family" step to reuse for
-   a nanny-authored draft.
-
-4. **Only owner/parent can create a household, invite, or write basics.**
-   `householdCommandService.create` (`:110–135`) inserts an **owner**
-   membership for the creator; `createInvite` (`:150–172`) and `update`
-   (`:137–148`) both call `assertWriteRole` against
-   `WRITE_ROLES = {owner, parent}` (`:61`). A nanny cannot today create a
-   household, name it, add children, or mint a code.
-
-5. **The share moment is a bare code in a text message.**
-   `InviteScreen.tsx:66–69` — `Share.share({ message: t('invite.shareMessage',
-   { code }) })`. `InviteCodeCard.tsx:52–59` renders it as `Display` 32/40/800
-   plum with `letterSpacing: 3.2`. Beautiful in the app, and the thing that
-   actually reaches the family is the string `R4K-92T`. This is David's stall
-   and the entire reason D-37 exists.
-
-6. **The invite preview is deliberately thin, and hides on failure.**
-   `householdQueryService.previewInvite` (`:138–159`) returns exactly
-   `{ household_name, children_first_names, role }` and throws the *same*
-   `InviteNotFoundError` for missing, revoked and expired codes — an
-   existence-hiding convention this spec must not weaken. A nanny-authored
-   invite has no household name worth showing and no children to list; it
-   needs a different preview, not a widened one.
-
-Two supporting facts that shape the build:
+Two supporting facts, still true on `main`, that shape the build:
 
 - **Universal links already resolve.** `app.config.js:62–64` claims
   `applinks:nanny.getsteadily.app`; the Android intent filter (`:111–122`) is
@@ -494,13 +474,13 @@ a new link later."
 The L1 slot is the share card **until at least one invite exists**. After that
 the L1 becomes the terms card at L3 and no card claims L1 — a draft with a code
 out in the world has nothing urgent in it, and manufacturing urgency here would
-be exactly the reassurance copy `screens-today.md` §7 forbids. One L1 per
+be exactly the reassurance copy `02-VOICE.md` forbids. One L1 per
 screen, sometimes zero.
 
 ### 5.3 Invite-row state words
 
 Each row in "Sent to" is one `household_invites` row, labelled at the share
-moment. Three states, filled pills per `daylight-v2.md` §6.3, sentence case:
+moment. Three states, filled pills per `00-FOUNDATIONS.md` §8.2, sentence case:
 
 | Pill | Meaning | Source |
 |---|---|---|
@@ -1185,7 +1165,7 @@ figure, every time the figure is shown.**
 
 Proposed and Countered share the ochre pill on purpose — no new palette token,
 and the *word* carries the distinction, which is the correct channel for a
-distinction of meaning rather than of urgency. Per `daylight-v2.md` §5.2 (never
+distinction of meaning rather than of urgency. Per `01-LAWS.md` §2 (never
 colour-only), a Countered row always also names the actor: *"Countered by the
 Ahmeds · 11 Aug"*. Two channels, zero new tokens.
 
@@ -1250,7 +1230,7 @@ the `AnalyticsEventName` union covers them and a typo fails typecheck.
 
 | State | Treatment |
 |---|---|
-| **Loading — draft home** | Hero band renders immediately (it needs no network). Below: one L1-shaped tinted skeleton, two L3-shaped white card skeletons, two L4 rows. A skeleton must match the rung it becomes (`daylight-v2.md` §6.9). |
+| **Loading — draft home** | Hero band renders immediately (it needs no network). Below: one L1-shaped tinted skeleton, two L3-shaped white card skeletons, two L4 rows. A skeleton must match the rung it becomes (`00-FOUNDATIONS.md` §8.8). |
 | **Loading — review screen** | Back row + `H1` render from the push/route params; the card is one L3 skeleton. Never a centred spinner on a screen someone opened from a notification about money. |
 | **Empty — draft, no invites yet** | Not an empty state. The L1 share card *is* the content, and "Sent to" simply does not render. Do not add an illustration to a screen that already has one in the hero band. |
 | **Empty — parent, no proposals** | The Pay screen is unchanged; proposals surface only when one exists. Nothing announces their absence. |
@@ -1353,7 +1333,7 @@ to it.
 ## 15. Illustration
 
 Two new slots, both 104×104 (hero band) or 160×160 (wizard hero), transparent
-PNG, per [`art-direction.md`](./art-direction.md):
+PNG, per [`03-ART-DIRECTION.md`](./03-ART-DIRECTION.md):
 
 | Slot | Where | Subject |
 |---|---|---|

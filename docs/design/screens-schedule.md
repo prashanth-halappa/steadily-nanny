@@ -1,6 +1,6 @@
 # Schedule — screen spec (Daylight v2)
 
-Reads with [`daylight-v2.md`](./daylight-v2.md).
+Reads with [`01-LAWS.md`](./01-LAWS.md) and [`00-FOUNDATIONS.md`](./00-FOUNDATIONS.md).
 
 Owners: `apps/mobile/src/app/(private)/(tabs)/schedule.tsx` (role fork),
 `src/domains/schedule/components/ScheduleShiftsScreen.tsx`,
@@ -280,7 +280,7 @@ yet".
 - Statuses are sentence case single words: Confirmed, Pending, Declined,
   Cancelled, Short notice.
 
-**Voice:** `docs/design/screens-today.md` section 7 governs all copy in this screen, including the milestone-tier tables.
+**Voice:** [`02-VOICE.md`](./02-VOICE.md) governs all copy in this screen, including the milestone-tier tables.
 
 ---
 

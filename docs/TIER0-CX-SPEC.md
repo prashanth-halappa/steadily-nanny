@@ -7,9 +7,9 @@ implementation agents alongside the plan.
 **Binding inputs:** `TIER0-PLAN.md` §"Design decisions locked" (integer minor
 units, append-only effective-dated arrangements, compute-live/freeze-at-approval,
 no-arrangement-never-zero, PTO as a household-side ledger, reimbursements are
-not wages), `AGENCY-ROADMAP.md` §1–2, `docs/07-MOBILE-UI-SYSTEM.md`,
+not wages), `AGENCY-ROADMAP.md` §1–2, `docs/design/00-FOUNDATIONS.md`,
 `apps/mobile/lib/design-tokens/*`, and the judgements already settled in
-`docs/DAYLIGHT-UX-AUDIT.md`.
+`docs/design/01-LAWS.md`.
 
 ---
 

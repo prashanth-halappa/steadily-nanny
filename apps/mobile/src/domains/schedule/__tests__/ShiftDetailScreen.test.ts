@@ -229,4 +229,36 @@ describe('ShiftDetailScreen source', () => {
   it('sends null (not undefined) when the parent clears the note field', () => {
     expect(source).toContain("note.trim() === '' ? null : note.trim()");
   });
+
+  // Money/trust hierarchy pass: the shift time used to render as `<Body
+  // tabular>`, indistinguishable from `shift.note` on the next line — this
+  // exactly matches the fact ClockInCard.tsx:727-733 already treats as its
+  // headline. And the constant word "Shift" (`detail.title`) used to be the
+  // largest thing on screen at H1 — demoted so the time, which carries the
+  // actual information, outranks it.
+  it('promotes the readonly shift time to an H3 headline, and demotes the constant title below it', () => {
+    const readonlyIdx = source.indexOf('testID="shift-detail-readonly"');
+    // `utcIsoToWallClockHHMM(shift.starts_at` also appears earlier, as a
+    // `useState` initializer for the counter-offer form — search AFTER the
+    // readonly block starts, for the actual render of the shift time.
+    const timeIdx = source.indexOf(
+      'utcIsoToWallClockHHMM(shift.starts_at',
+      readonlyIdx
+    );
+    expect(readonlyIdx).toBeGreaterThan(-1);
+    expect(timeIdx).toBeGreaterThan(readonlyIdx);
+    // The time is inside an H3, tabular — not the old plain `<Body tabular>`
+    // that made it read the same as the note directly beneath it.
+    const timeBlockStart = source.lastIndexOf('<H3', timeIdx);
+    expect(timeBlockStart).toBeGreaterThan(readonlyIdx);
+    const timeBlock = source.slice(timeBlockStart, timeIdx);
+    expect(timeBlock).toContain('tabular');
+
+    // The title H1 rendering the constant "Shift" word is gone — it is now
+    // H4, sized below the H3 time.
+    expect(source).not.toMatch(
+      /<H1 testID="shift-detail-title">\s*\{t\('detail\.title'\)\}/
+    );
+    expect(source).toContain('testID="shift-detail-title"');
+  });
 });

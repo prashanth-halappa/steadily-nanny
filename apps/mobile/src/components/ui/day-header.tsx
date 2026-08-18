@@ -57,7 +57,9 @@ export function DayHeader({
         ) : null}
       </View>
       {total !== null ? (
-        <Figure testID={`schedule-day-total-${localDate}`}>{total}</Figure>
+        <Figure weight="bold" testID={`schedule-day-total-${localDate}`}>
+          {total}
+        </Figure>
       ) : null}
     </View>
   );

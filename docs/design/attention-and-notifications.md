@@ -1,19 +1,30 @@
 # Attention & notifications — spec (Daylight v2)
 
 Phase 2 output of `TRUST-AND-TERMS-PLAYBOOK.md` §7. Reads with
-[`daylight-v2.md`](./daylight-v2.md) (rungs L1–L4, registers 1–4),
+[`01-LAWS.md`](./01-LAWS.md) (rungs L1–L4, registers 1–4),
 [`screens-today.md`](./screens-today.md) and [`screens-hours.md`](./screens-hours.md).
 
 This document governs **who gets told what, when, and where the app puts the
 thing that is waiting on them.** It is implemented by slice 3-N (matrix) and 3-D
 (cards), and Phase 6 §0.8 checks it still matches what shipped.
 
-**Shipped registry count (verified in code, 2026-08-12):** `PUSH_NOTIFICATION_TYPES`
-has **55** keys, `PUSH_TYPE_AUDIENCE` 55 rows, `NOTIFICATION_ROUTE_MAP` 55
-entries, and `PUSH_TYPE_GROUP` (`NotificationPrefsScreen.tsx:48–106`) 55 rows.
-The playbook's older "36-type" / "37-type" figures are stale. §1.2 + §1.3
-together enumerate all **55** shipped types. **`pay_terms_took_effect` (draft
-N12) is not in the registry** — deferred punch-list item; see §1.6.
+**Shipped registry count (re-verified in code, 2026-08-18):**
+`PUSH_NOTIFICATION_TYPES` now has **61** keys. The matrix in §1.2 + §1.3
+enumerates 55 of them; the count was accurate on 2026-08-12 and has drifted
+since. The playbook's older "36-type" / "37-type" figures are stale too.
+
+**Six registered types are NOT yet in the matrix below** —
+`SCHEDULE_PATTERN_WITHDRAWN`, `TERMS_PROPOSAL_DECLINED`,
+`TERMS_OFFER_ACCEPTED`, `SCHEDULE_NOT_SET`, `PAY_OFFER_NOT_PROMOTED`,
+`OPS_JOB_HEALTH`. They ship in
+`packages/shared-types/src/schemas/notification.schema.ts` but have no
+audience/route/copy row here. Adding those rows is an authoring pass, not a
+count fix; until it happens, treat the schema as the source of truth for
+*which* types exist and this matrix as the source of truth for *how the ones
+it covers behave*.
+
+**`pay_terms_took_effect` (draft N12) is not in the registry** — deferred
+punch-list item; see §1.6.
 
 ---
 
@@ -658,7 +669,7 @@ Rules for this card:
   is `queried` (both sides), and on a `submitted` week for the nanny (§3.1). On
   an `approved` week the thread renders read-only with no input: history, not a
   chat. If the parent reopens the week, the composer comes back with it.
-- **Never a badge, never an unread dot.** `daylight-v2.md` §6.6 refuses a second
+- **Never a badge, never an unread dot.** `00-FOUNDATIONS.md` §8.5 refuses a second
   unread affordance and this is not the place to introduce one.
 - **The disputed day stays editable while the week is `queried` (D16).** This is
   the mechanism by which a query actually resolves: the parent asks about
@@ -859,7 +870,7 @@ payments, never merged into them.**
 
 ```
 H4     "Reimbursements"
-Figure "$24.60"                  28/34/700 tabular
+Figure "$24.60"                  (Figure token, `00-FOUNDATIONS.md` §4)
 Small  "Approved · not reimbursed yet"        ← state words, always
 Button variant="ghost"  "Mark reimbursed"     ← parent only, like onMarkPaidPress
 ```
@@ -1235,43 +1246,3 @@ muting expense chatter also mutes the Friday approval reminder), and the
 deletes a field from Manage Household).
 
 Everything else in this document resolves from §5 of the playbook.
-
----
-
-## Persona review
-
-Marisol and David reviewed the draft in role. Every point is folded or
-rebutted below; where a point extends a §5 decision it is folded as a flagged
-owner-decision recommendation and carries its §9 number.
-
-### David — parent, San Jose
-
-| # | Point | Disposition | What changed / why not |
-|---|---|---|---|
-| D13 | **WALK-AWAY.** Cover-ask expiry has no lead time: a 9 PM Thursday ask for a 7 AM Friday shift expires at shift start, past the reminder window, and the expiry push arrives on a sweep as nobody shows up | **Fold** | §5 rebuilt. `expires_at` is a stored column computed at ask time as `min(created_at + 48h, starts_at − 4h)` with a 1h floor (§5.2); the expiry push is **scheduled for that instant**, never sweep-latency-bound, with the nightly sweep demoted to a backstop; N8 becomes quiet-hours exempt inside 12h (§9.3); and §5.4 adds T−12h **self-escalation** on the parent's gap card, driven by the clock and independent of whether the carer ever answered |
-| D16 | §3 must state that the nanny can still edit the disputed day while `queried`, and that "About this week" renders nothing on a clean week | **Fold** | Both added to §3's rules. Editing: `queried` is explicitly **not** a read-only state (only `approved` is), with the `NannyWeekView.tsx:360` anchor and the in-card line "You can still fix a day above" — a thread that lets her argue but not correct is P1 with extra steps. Empty: the card renders **nothing** when the thread is empty, same invisible-when-idle discipline as `NeedsAttentionCard.tsx:64` |
-| D17 | Push-name collision with the onboarding spec; confirm widened `invite_redeemed` covers absorption | **Fold** | §1.3 now states this matrix is canonical and names `terms_proposed` / `terms_countered` / `terms_accepted` / `nanny_invite_redeemed` as **superseded**. Absorption confirmed with a three-row permutation table and the resolver's fork rule (`data.proposalId` first, else the role's default destination) |
-| D18 | Delete `terms_acknowledged` — it contradicts §1.6 | **Fold** | Deleted. Rows renumbered (old N13–N17 → N12–N16); §1.6 gains an explicit row recording the deletion and why, so it is not re-added. Total stays 53 because N17 arrived from M14 |
-| D21 | Two cancellation windows can disagree on one shift; stop punting | **Fold** | New §6.1. **The arrangement's `cancellation_paid_within_hours` is the only cancellation window in the product** — the dialog *and* the `is_short_notice` pill both read it, `households.cancellation_paid_within_hours` (already deprecation-flagged, T14) is removed from Manage Household, and `null` stays an explicit "no" on both readings with no household fallback |
-| D22 | 53 types in 3 preference groups: muting `hoursAndPay` kills the Friday approval reminder | **Fold as recommendation** | New §1.5b proposes a five-group split (`schedule` / `hours` / `money` / `terms` / `household`) — one `PUSH_TYPE_GROUP` edit, two i18n keys, no new mechanism. Marked a recommendation, not a decision, since the settings screen is outside this spec's remit; with a stated minimum if refused |
-| D14 D15 D19 D20 | Endorsed: correction UX, note in push body, decline-next-step, reimbursement no-merge | **Endorsed** | Both requested don't-tidy-this guards written as required module comments: one in `weekExportCsv.ts` (never net a correction with its original) and one on the settlement service + `ReimbursementsCard` (settlements are not payments; do not merge the tables) |
-| — | Money examples rendered in £ | **Fold** | Swept to `$` throughout |
-
-### Marisol — nanny, Austin
-
-| # | Point | Disposition | What changed / why not |
-|---|---|---|---|
-| M12 | **WALK-AWAY.** She can only *answer* a dispute, never open one — the composer exists only while `queried`, and "Correct this payment" is parent-side | **Fold, flagged** (§9.4) | New §3.1: one action, **"This doesn't look right"**, on a submitted or approved week and on a payment row. Writes the same append-only `timesheet_note_added` event, notifies the parent, **changes no status, blocks nothing, adds no state.** She still cannot edit a payment — corrections stay the payer's act — but she can put on the record that one looks wrong |
-| M13 | No carer-side signal for a long-unapproved week anywhere in the matrix | **Fold** | New inbox kind `stale_submitted_week` (§2.3c), carer-side, at 14 days. **Inbox only, no push** — a buzz about her employer's inaction is a nudge she cannot act on. 14 days rather than 3 so the parent's own nag loop (D-27) gets a fair run before she is told her pay is late. No countdown, no "overdue", no colour |
-| M14 | Accept no-push in-week, but push when an **approved** week paid below the guarantee | **Fold, flagged** (§9.5) | New type N17 `week_below_guarantee`, emitted at approval and **replacing** `timesheet_approved` for that week (A6). She is right that the reasoning changes at the freeze: the figure is final, she cannot self-resolve it, and its existence means the top-up did not fire. A8 still binds — hours in the body, gross out |
-| M15 | The parent's cause line leads with her name | **Fold** | §2.4a rewritten: every cause line leads with the **window** and names the carer only in the second clause, with a rule stating that the clauses must never be inverted or compressed. "Tuesday 8:00 AM – 1:00 PM is still uncovered. You asked Priya Monday." |
-| M16 | "not acknowledged yet" → "Seen / Not seen yet" | **Fold** | §2.4c adopts the pay-terms vocabulary. Also the more honest word: the tap records that she read the terms, not that she agreed to them, and the screen is view-only by design |
-| M17 | Write the declined-cancellation branch — this is where a late cancel becomes a no-show on her record | **Fold** | New §6.2. **A declined cancellation means the shift stands**, said in those words to both sides in the `change_request_declined` body. The load-bearing line: **`shift_no_show` is suppressed for any shift with a declined cancel request in the last 7 days** — otherwise the record reads as if she failed to appear for a shift the family had tried to cancel. Pending-at-start closes as `expired` and the shift stands; silence never cancels a shift, for the same reason silence never approves one |
-| M21 | The expiry deadline must render on shift detail too, same words | **Fold** | §5.3: byte-identical string from one i18n key, rendered under the shift window in the same treatment as the existing short-notice hint, red inside 12h on both surfaces. A deadline that lives only on the card she tapped away from is a deadline she cannot check |
-| M18 M19 M20 | Endorsed: the thread kills the `isParentViewer` wall, the correction row, money in the cancel dialog | **Endorsed** | Unchanged. §3 still requires the `WeekTotal.tsx:266–270` guard be **removed**, not left as a second parent-only rendering |
-
-**Nothing was rebutted.** Both walk-aways were real defects in the draft: D13
-was a timing model that could deliver "nobody is coming" after the shift had
-started, and M12 was a dispute channel that only opened inward. Two points
-(D22, D21) were places the draft deferred a decision it was in a position to
-make; both are now made.

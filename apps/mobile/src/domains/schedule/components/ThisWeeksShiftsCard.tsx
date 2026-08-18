@@ -6,7 +6,7 @@
  * home is told once, under the title, and the rows stay a clean date column.
  *
  * T4 (Wave 2-F): history/context on the bare ground, not its own lifted
- * card — the `MetadataLabel` eyebrow + `rounded-row bg-card` rows carry the
+ * card — a `Section` eyebrow + `rounded-row bg-card` rows carry the
  * surface instead. A row whose status isn't `confirmed` gets a `StatusPill`
  * (previously no row showed status at all, so a pending shift and a
  * confirmed one were pixel-identical).
@@ -20,12 +20,13 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { InlineRetry } from '@/src/components/custom/InlineRetry';
+import { Section } from '@/src/components/ui/section';
 import { SkeletonShimmer } from '@/src/components/ui/skeleton-shimmer';
 import {
   StatusPill,
   type StatusPillProps,
 } from '@/src/components/ui/status-pill';
-import { Figure, MetadataLabel, Small } from '@/src/components/ui/typography';
+import { Figure, Small } from '@/src/components/ui/typography';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { resolveActivePattern } from '@/src/domains/schedule/utils/patternPrecedence';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
@@ -193,69 +194,78 @@ export function ThisWeeksShiftsCard() {
   }
 
   return (
-    <View testID="today-shifts-card" className="gap-2">
-      <MetadataLabel
+    <View testID="today-shifts-card">
+      <Section
+        title={
+          soleCarerName
+            ? t('todayCard.nextUpTitleWithCarer', { name: soleCarerName })
+            : t('todayCard.nextUpTitle')
+        }
+        // No `first`: "Next up" is a sub-section of "This week", so it takes
+        // the full 32px above to read as its own group rather than as a
+        // second heading 12px under the one before it.
         testID={soleCarerName ? 'today-next-up-carer' : undefined}
-        className="text-muted-foreground"
       >
-        {soleCarerName
-          ? t('todayCard.nextUpTitleWithCarer', { name: soleCarerName })
-          : t('todayCard.nextUpTitle')}
-      </MetadataLabel>
-      {nextShifts.length === 0 ? (
-        <Small className="text-muted-foreground">{emptyLine}</Small>
-      ) : (
-        nextShifts.map(shift => {
-          const carerName =
-            carers.length > 1 ? firstNameOf(nameFor(shift.carer_id)) : '';
-          return (
-            <Pressable
-              key={shift.id}
-              testID={`today-next-up-${shift.id}`}
-              accessibilityRole="button"
-              className="flex-row items-center justify-between gap-3 rounded-row bg-card px-3 py-1.5"
-              style={[elevation.row, { minHeight: spacing.minTouchTarget }]}
-              hitSlop={8}
-              onPress={() =>
-                router.push(`/(private)/schedule/shifts/${shift.id}` as Href)
-              }
-            >
-              <Figure
-                testID={`today-next-up-line-${shift.id}`}
-                className="text-foreground"
+        {nextShifts.length === 0 ? (
+          <Small className="text-muted-foreground">{emptyLine}</Small>
+        ) : (
+          nextShifts.map(shift => {
+            const carerName =
+              carers.length > 1 ? firstNameOf(nameFor(shift.carer_id)) : '';
+            return (
+              <Pressable
+                key={shift.id}
+                testID={`today-next-up-${shift.id}`}
+                accessibilityRole="button"
+                className="flex-row items-center justify-between gap-3 rounded-row bg-card px-3 py-1.5"
+                style={[elevation.row, { minHeight: spacing.minTouchTarget }]}
+                hitSlop={8}
+                onPress={() =>
+                  router.push(`/(private)/schedule/shifts/${shift.id}` as Href)
+                }
               >
-                {formatShiftLine(shift, timeZone, t)}
-              </Figure>
-              <View className="flex-row items-center gap-2">
-                {shift.status !== 'confirmed' ? (
-                  <StatusPill
-                    testID={`today-next-up-status-${shift.id}`}
-                    variant={STATUS_TO_VARIANT[shift.status]}
-                    label={t(STATUS_TO_LABEL_KEY[shift.status])}
-                  />
-                ) : null}
-                {carerName ? (
-                  <Small
-                    testID={`today-next-up-carer-${shift.id}`}
-                    className="max-w-[38%] flex-shrink-0 text-muted-foreground"
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
-                  >
-                    {carerName}
-                  </Small>
-                ) : null}
-              </View>
-            </Pressable>
-          );
-        })
-      )}
-      <Pressable
-        testID="today-shifts-cta"
-        accessibilityRole="button"
-        onPress={() => router.push(ctaHref as Href)}
-      >
-        <Small className="text-primary">{t('todayCard.viewCalendar')}</Small>
-      </Pressable>
+                <Figure
+                  testID={`today-next-up-line-${shift.id}`}
+                  className="text-foreground"
+                >
+                  {formatShiftLine(shift, timeZone, t)}
+                </Figure>
+                <View className="flex-row items-center gap-2">
+                  {shift.status !== 'confirmed' ? (
+                    <StatusPill
+                      testID={`today-next-up-status-${shift.id}`}
+                      variant={STATUS_TO_VARIANT[shift.status]}
+                      label={t(STATUS_TO_LABEL_KEY[shift.status])}
+                    />
+                  ) : null}
+                  {carerName ? (
+                    <Small
+                      testID={`today-next-up-carer-${shift.id}`}
+                      className="max-w-[38%] flex-shrink-0 text-muted-foreground"
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {carerName}
+                    </Small>
+                  ) : null}
+                </View>
+              </Pressable>
+            );
+          })
+        )}
+        <Pressable
+          testID="today-shifts-cta"
+          accessibilityRole="button"
+          style={{
+            minHeight: spacing.minTouchTarget,
+            justifyContent: 'center',
+          }}
+          hitSlop={8}
+          onPress={() => router.push(ctaHref as Href)}
+        >
+          <Small className="text-primary">{t('todayCard.viewCalendar')}</Small>
+        </Pressable>
+      </Section>
     </View>
   );
 }

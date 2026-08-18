@@ -114,7 +114,7 @@ describe('SettingsScreen', () => {
     expect(screenSource).toContain("router.push('/inbox'");
   });
 
-  it('groups navigable rows into one elevated Card per section, not per-row elevation (daylight-v2 §2.1)', () => {
+  it('groups navigable rows into one elevated Card per section, not per-row elevation (docs/design/01-LAWS.md)', () => {
     expect(screenSource).toContain('<Card tone="default"');
     expect(screenSource).toContain('<IconChip');
     expect(screenSource).not.toContain('elevation.row');

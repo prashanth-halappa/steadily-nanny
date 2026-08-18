@@ -53,8 +53,8 @@ Ground truth for tokens, in this order:
 
 1. `apps/mobile/lib/design-tokens/` — `colors.ts`, `palette.ts`, `typography.ts`,
    `spacing.ts`, `elevation.ts`. These are the real values. Read them.
-2. `docs/07-MOBILE-UI-SYSTEM.md` — the UI system playbook.
-3. `docs/DAYLIGHT-VISUAL-QA.md` — the "what correct looks like" checklist.
+2. `docs/design/00-FOUNDATIONS.md` — the UI system playbook.
+3. `docs/design/01-LAWS.md` — the hierarchy rungs and separation laws.
 4. `GOLDEN-FIXES.md` — hard-won constraints (see below).
 
 ## Non-negotiable platform constraints

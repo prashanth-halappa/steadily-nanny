@@ -84,31 +84,39 @@ interface WeekRibbonViewProps {
   listHeader?: ReactNode;
 }
 
-function cellStatusColour(
-  shift: Shift | undefined,
+interface CellVisual {
+  backgroundColor: string;
+  opacity: number;
+  /** Full-height (16) reads as "is"; half-height (8) reads as "was, isn't" /
+   * "should be, isn't" — spatially distinct from a live booking, not just a
+   * duller colour. */
+  height: 16 | 8;
+}
+
+function cellVisual(
+  shift: Shift,
   colors: ReturnType<typeof useThemeColors>
-): string {
-  if (!shift) {
-    return colors.category.accent2;
-  }
+): CellVisual {
+  // primaryLight, not borderStrong — a gap the parent covered herself is not
+  // the same fact as a cancelled shift, so it can't share cancelled's grey.
   if (shift.kind === SHIFT_KINDS.PARENT_COVER) {
-    return colors.borderStrong;
+    return { backgroundColor: colors.primaryLight, opacity: 1, height: 16 };
   }
   switch (shift.status) {
     case 'confirmed':
     case 'completed':
-      return colors.success;
+      return { backgroundColor: colors.primary, opacity: 1, height: 16 };
     case 'pending':
     case 'draft':
-      return colors.warning;
-    case 'declined':
-    case 'cancelled':
-      // borderStrong, not gray200 — gray200 is the same hex as
-      // themeColors.border, which paints empty cells, so a cancelled
-      // (or parent-cover) block was invisible against the empty grid.
-      return colors.borderStrong;
+      return { backgroundColor: colors.primary, opacity: 0.45, height: 16 };
     default:
-      return colors.category.accent2;
+      // declined | cancelled. borderStrong, not gray200 — gray200 is the
+      // same hex as themeColors.border, which paints empty cells, so a
+      // cancelled block was invisible against the empty grid. Every
+      // ShiftStatus is one of the 6 cases above; this default only exists
+      // so TS sees an exhaustive return, it is not reachable by a distinct
+      // "unknown status" value.
+      return { backgroundColor: colors.borderStrong, opacity: 1, height: 8 };
   }
 }
 
@@ -206,6 +214,9 @@ export function WeekRibbonView({
   const showUncoveredLegend =
     uncoveredByDay !== undefined &&
     Object.values(uncoveredByDay).some(windows => windows.length > 0);
+  const showParentCoverLegend = shifts.some(
+    s => s.kind === SHIFT_KINDS.PARENT_COVER
+  );
 
   return (
     <ScrollView
@@ -218,6 +229,76 @@ export function WeekRibbonView({
       }}
     >
       {listHeader}
+      {/* Above the grid, not below — on a full 15-row week the legend never
+          scrolled into view sitting after every hour row. */}
+      <View
+        testID="week-ribbon-legend"
+        className="flex-row flex-wrap items-center gap-4 pb-4"
+      >
+        <View className="flex-row items-center gap-2">
+          <View
+            className="h-3 w-3 rounded-full"
+            style={{ backgroundColor: themeColors.primary }}
+          />
+          <MetadataLabel className="text-muted-foreground">
+            {t('shifts.statusConfirmed')}
+          </MetadataLabel>
+        </View>
+        <View className="flex-row items-center gap-2">
+          <View
+            className="h-3 w-3 rounded-full"
+            style={{ backgroundColor: themeColors.primary, opacity: 0.45 }}
+          />
+          <MetadataLabel className="text-muted-foreground">
+            {t('shifts.statusPending')}
+          </MetadataLabel>
+        </View>
+        <View className="flex-row items-center gap-2">
+          <View
+            className="h-3 w-3 rounded-full"
+            style={{ backgroundColor: themeColors.borderStrong }}
+          />
+          <MetadataLabel className="text-muted-foreground">
+            {t('shifts.statusCancelled')}
+          </MetadataLabel>
+        </View>
+        {showParentCoverLegend ? (
+          <View
+            testID="week-ribbon-legend-parent-cover"
+            className="flex-row items-center gap-2"
+          >
+            <View
+              className="h-3 w-3 rounded-full"
+              style={{ backgroundColor: themeColors.primaryLight }}
+            />
+            <MetadataLabel className="text-muted-foreground">
+              {t('cover.parentCoveringRow')}
+            </MetadataLabel>
+          </View>
+        ) : null}
+        {showUncoveredLegend ? (
+          <View
+            testID="week-ribbon-legend-uncovered"
+            className="flex-row items-center gap-2"
+          >
+            <View
+              className="h-3 w-3 rounded-full"
+              style={{ backgroundColor: themeColors.warning }}
+            />
+            <MetadataLabel className="text-muted-foreground">
+              {t('cover.rowPill')}
+            </MetadataLabel>
+          </View>
+        ) : null}
+        {showMultiCarerLegend ? (
+          <MetadataLabel
+            testID="week-ribbon-legend-multi-carer"
+            className="text-muted-foreground"
+          >
+            {t('shifts.legendMultiCarer')}
+          </MetadataLabel>
+        ) : null}
+      </View>
       <View className="flex-row pb-2">
         <View className="w-12 items-end pr-2">
           <MetadataLabel className="text-muted-foreground">
@@ -254,12 +335,15 @@ export function WeekRibbonView({
             const shift = densestShift(shifts, dow, hour, displayTimeZone);
             const isUncovered = uncoveredCells.has(`${dow}-${hour}`);
             const filled = shift !== undefined;
-            const colour = cellStatusColour(shift, themeColors);
+            const visual = shift ? cellVisual(shift, themeColors) : undefined;
             const isParentCover = shift?.kind === SHIFT_KINDS.PARENT_COVER;
             // Empty cells are a thin centred rule, not a full-height muted
             // capsule — the row's own `items-center` centres it — so an
             // occupied block is the only real shape on screen. An uncovered
-            // cell wins over any shift and stays a non-navigating View.
+            // cell wins over any shift and stays a non-navigating View. It
+            // is FILLED with warning, never an outline — an outline on a
+            // grid whose empty cells are also unfilled reads as "nothing
+            // here", the opposite of "something is required and missing".
             const cell = (
               <View
                 testID={`week-ribbon-cell-${dow}-${hour}`}
@@ -275,17 +359,24 @@ export function WeekRibbonView({
                 style={
                   isUncovered
                     ? {
-                        height: 16,
-                        backgroundColor: 'transparent',
-                        borderWidth: 1.5,
-                        borderColor: themeColors.destructive,
-                      }
-                    : {
-                        height: filled ? 16 : 2,
-                        backgroundColor: filled ? colour : themeColors.border,
+                        height: 8,
+                        backgroundColor: themeColors.warning,
                         opacity: 1,
                         borderWidth: 0,
                       }
+                    : visual
+                      ? {
+                          height: visual.height,
+                          backgroundColor: visual.backgroundColor,
+                          opacity: visual.opacity,
+                          borderWidth: 0,
+                        }
+                      : {
+                          height: 2,
+                          backgroundColor: themeColors.border,
+                          opacity: 1,
+                          borderWidth: 0,
+                        }
                 }
               />
             );
@@ -312,64 +403,6 @@ export function WeekRibbonView({
           })}
         </View>
       ))}
-      <View
-        testID="week-ribbon-legend"
-        className="flex-row flex-wrap items-center gap-4 pt-4"
-      >
-        <View className="flex-row items-center gap-2">
-          <View
-            className="h-3 w-3 rounded-full"
-            style={{ backgroundColor: themeColors.success }}
-          />
-          <MetadataLabel className="text-muted-foreground">
-            {t('shifts.statusConfirmed')}
-          </MetadataLabel>
-        </View>
-        <View className="flex-row items-center gap-2">
-          <View
-            className="h-3 w-3 rounded-full"
-            style={{ backgroundColor: themeColors.warning }}
-          />
-          <MetadataLabel className="text-muted-foreground">
-            {t('shifts.statusPending')}
-          </MetadataLabel>
-        </View>
-        <View className="flex-row items-center gap-2">
-          <View
-            className="h-3 w-3 rounded-full"
-            style={{ backgroundColor: themeColors.borderStrong }}
-          />
-          <MetadataLabel className="text-muted-foreground">
-            {t('shifts.statusCancelled')}
-          </MetadataLabel>
-        </View>
-        {showUncoveredLegend ? (
-          <View
-            testID="week-ribbon-legend-uncovered"
-            className="flex-row items-center gap-2"
-          >
-            <View
-              className="h-3 w-3 rounded-full"
-              style={{
-                backgroundColor: 'transparent',
-                borderWidth: 1.5,
-                borderColor: themeColors.destructive,
-              }}
-            />
-            <MetadataLabel className="text-muted-foreground">
-              {t('cover.rowPill')}
-            </MetadataLabel>
-          </View>
-        ) : null}
-        {showMultiCarerLegend ? (
-          <MetadataLabel
-            testID="week-ribbon-legend-multi-carer"
-            className="text-muted-foreground"
-          >
-            {t('shifts.legendMultiCarer')}
-          </MetadataLabel>
-        ) : null}
-      </View>
     </ScrollView>
   );
 }

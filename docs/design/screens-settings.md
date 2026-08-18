@@ -1,6 +1,6 @@
 # Settings — screen spec (Daylight v2)
 
-Reads with [`daylight-v2.md`](./daylight-v2.md).
+Reads with [`01-LAWS.md`](./01-LAWS.md) and [`00-FOUNDATIONS.md`](./00-FOUNDATIONS.md).
 
 Owner: `apps/mobile/src/app/(private)/(tabs)/settings.tsx` and the pushed
 screens under `src/app/(private)/settings/`.
@@ -184,7 +184,7 @@ same identity hero, the same grouping, the same chips.
   consequence strings do this and are good.
 - App version is a fact, not a brand moment. `Small mutedForeground`, no logo.
 
-**Voice:** `docs/design/screens-today.md` section 7 governs all copy in this screen, including the milestone-tier tables.
+**Voice:** [`02-VOICE.md`](./02-VOICE.md) governs all copy in this screen, including the milestone-tier tables.
 
 ---
 

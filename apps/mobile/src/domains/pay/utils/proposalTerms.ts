@@ -21,7 +21,7 @@
  * **State words never render alone.** §10: the word appears with a date,
  * beside the figure, every time the figure is shown — and a Countered row
  * always also names the actor, because Proposed and Countered share the ochre
- * pill on purpose and `daylight-v2.md` §5.2 forbids colour as the only
+ * pill on purpose and `docs/design/01-LAWS.md` forbids colour as the only
  * channel for a distinction.
  */
 import type { PayArrangement } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';

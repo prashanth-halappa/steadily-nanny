@@ -53,7 +53,7 @@ import { SkeletonShimmer } from '@/src/components/ui/skeleton-shimmer';
 import {
   Caption,
   DayGroup,
-  Figure,
+  Figure28,
   H1,
   MetadataLabel,
   Small,
@@ -136,7 +136,7 @@ function isEnteredLate(paidAt: string, createdAtISO: string): boolean {
   return (recorded - paid) / MS_PER_DAY > 1;
 }
 
-/** A skeleton must match the rung it becomes (daylight-v2.md §6.9): one
+/** A skeleton must match the rung it becomes (docs/design/00-FOUNDATIONS.md): one
  * group header, then three bare L4 rows. */
 function PaymentsSkeleton() {
   return (
@@ -190,16 +190,18 @@ function MonthHeader({
         >
           {recordedLabel}
         </MetadataLabel>
-        {/* Two currencies in a month means two figures. Never a sum. */}
+        {/* Two currencies in a month means two figures. Never a sum. This
+            is money with its own consequence (a month's total), so it
+            outranks a single payment row's `Figure` (16/400) — `Figure28`
+            is always tabular, so no `weight`/`tabular` prop is needed. */}
         <View className="items-end">
           {subtotals.map(subtotal => (
-            <Figure
+            <Figure28
               key={subtotal.currency}
               testID={`payments-month-${monthKey}-total-${subtotal.currency}`}
-              weight="medium"
             >
               {formatMoney(subtotal.totalMinor, subtotal.currency)}
-            </Figure>
+            </Figure28>
           ))}
         </View>
       </View>

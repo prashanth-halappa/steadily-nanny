@@ -39,7 +39,7 @@ The contract between apps lives in `shared-types`: the API validates requests wi
 | 04 | [API-ARCHITECTURE](./04-API-ARCHITECTURE.md) | Bootstrap + middleware order, routes→controllers→services→repositories, BaseRepository, auth, errors, Zod, env, logging |
 | 05 | [API-LLM-JOBS](./05-API-LLM-JOBS.md) | LLM model registry, `generateObject` + Zod structured output, prompts, graceful degradation, `/api/jobs/*` |
 | 06 | [MOBILE-ARCHITECTURE](./06-MOBILE-ARCHITECTURE.md) | `src/` layout, expo-router groups + auth gating, axios client + single-flight 401 refresh, TanStack Query + Zustand/MMKV, i18n, deep links, push, observability |
-| 07 | [MOBILE-UI-SYSTEM](./07-MOBILE-UI-SYSTEM.md) | NativeWind 4 + CSS-variable theme, design tokens, `@rn-primitives` + CVA components, **the Reanimated `className` gotcha** |
+| 07 | [design/00-FOUNDATIONS](./design/00-FOUNDATIONS.md) | NativeWind 4 + CSS-variable theme, design tokens, `@rn-primitives` + CVA components, **the Reanimated `className` gotcha** — formerly `07-MOBILE-UI-SYSTEM.md`, now part of the [`design/`](./design/README.md) doc set, alongside [`01-LAWS.md`](./design/01-LAWS.md) (the hierarchy rung model) and [`02-VOICE.md`](./design/02-VOICE.md) (copy tone) |
 | 08 | [CONVENTIONS](./08-CONVENTIONS.md) | TypeScript non-negotiables, naming, file organization, which Biome rule enforces what |
 | 09 | [TESTING](./09-TESTING.md) | `bun:test`, one-file-per-process + why, coverage baselines, API `mock.module` pattern, DB integration tier (`bun run test:db`), mobile Pattern A/B, Maestro E2E |
 | 10 | [NEW-APP-CHECKLIST](./10-NEW-APP-CHECKLIST.md) | Step-by-step build order from empty folder to first end-to-end feature |

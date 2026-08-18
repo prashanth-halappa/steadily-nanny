@@ -18,15 +18,13 @@ describe('schedule lead pluralisation', () => {
     const nannyOne = i18n.t('lead.nanny', {
       ns: 'schedule',
       count: 1,
-      hours: '9h',
     });
     const nannyOther = i18n.t('lead.nanny', {
       ns: 'schedule',
       count: 3,
-      hours: '9h',
     });
-    expect(nannyOne).toBe('1 shift this week, 9h in all.');
-    expect(nannyOther).toBe('3 shifts this week, 9h in all.');
+    expect(nannyOne).toBe('1 shift this week.');
+    expect(nannyOther).toBe('3 shifts this week.');
     expect(nannyOne).not.toBe(nannyOther);
 
     const parentOne = i18n.t('lead.parent', {
@@ -50,15 +48,13 @@ describe('schedule lead pluralisation', () => {
     const nannyOne = i18n.t('lead.nanny', {
       ns: 'schedule',
       count: 1,
-      hours: '9h',
     });
     const nannyOther = i18n.t('lead.nanny', {
       ns: 'schedule',
       count: 3,
-      hours: '9h',
     });
-    expect(nannyOne).toBe('1 turno esta semana, 9h en total.');
-    expect(nannyOther).toBe('3 turnos esta semana, 9h en total.');
+    expect(nannyOne).toBe('1 turno esta semana.');
+    expect(nannyOther).toBe('3 turnos esta semana.');
     expect(nannyOne).not.toBe(nannyOther);
 
     const parentOne = i18n.t('lead.parent', {

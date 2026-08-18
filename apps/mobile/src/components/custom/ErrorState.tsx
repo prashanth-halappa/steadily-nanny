@@ -3,6 +3,10 @@
  *
  * Pass `onRetry` to surface a retry button (wire it to a query refetch for an
  * effective auto-recovery loop). `variant` picks a sensible icon + default copy.
+ *
+ * Bare ground, no `Card` — an error is not a decision someone made, so it
+ * never gets a decision's surface (never `tone="critical"`: that means "she
+ * declined your terms", not "the network failed" — see `card.tsx`).
  */
 
 import type { LucideIcon } from 'lucide-react-native';
@@ -15,8 +19,8 @@ import {
 } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
-import { Icon } from '@/lib/icons/iconWithClassName';
 import { Button } from '@/src/components/ui/button';
+import { IconChip } from '@/src/components/ui/icon-chip';
 import { Text } from '@/src/components/ui/text';
 import { Body, H3 } from '@/src/components/ui/typography';
 
@@ -60,10 +64,10 @@ export function ErrorState({
       testID="error-state"
       className="flex-1 items-center justify-center bg-background px-6"
     >
-      <Icon
+      <IconChip
+        testID="error-state-icon"
+        tone="brand"
         icon={VARIANT_ICONS[variant]}
-        size={40}
-        className="text-muted-foreground"
       />
       <H3 className="mt-4 text-center">
         {title ?? t(`states.${variant}.title`)}
@@ -72,7 +76,12 @@ export function ErrorState({
         {message ?? t(`states.${variant}.message`)}
       </Body>
       {onRetry ? (
-        <Button className="mt-6" onPress={onRetry}>
+        <Button
+          testID="error-state-retry"
+          variant="outline"
+          className="mt-6"
+          onPress={onRetry}
+        >
           <Text>{t('tryAgain')}</Text>
         </Button>
       ) : null}

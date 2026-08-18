@@ -118,6 +118,15 @@ describe('Heading Typography Components', () => {
       const { getByTestId } = render(<H2 testID="h2-test">Heading 2</H2>);
       expect(getByTestId('h2-test')).toBeTruthy();
     });
+
+    // Daylight separates by light, not by rule. H2 shipped with a `border-b`
+    // inherited from the previous (Ledger) direction, which is why nothing
+    // used it and screens jumped 32 -> 20 -> 16 with no section rung.
+    it('carries no hairline rule', () => {
+      const { getByTestId } = render(<H2 testID="h2-rule">Heading 2</H2>);
+      const className = getByTestId('h2-rule').props.className ?? '';
+      expect(className).not.toContain('border');
+    });
   });
 
   describe('H3', () => {

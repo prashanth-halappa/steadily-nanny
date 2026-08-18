@@ -2,7 +2,7 @@
  * @module IconChip
  *
  * Daylight v2 category icon chip — opaque tinted ground + stroked Lucide icon.
- * See docs/design/daylight-v2.md §6.1.
+ * See docs/design/00-FOUNDATIONS.md.
  */
 
 import type { LucideIcon } from 'lucide-react-native';

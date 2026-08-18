@@ -291,7 +291,7 @@ describe('ScheduleShiftsScreen', () => {
     expect(getByTestId('calendar-view-switcher')).toBeTruthy();
     expect(getByTestId('schedule-shifts-list')).toBeTruthy();
     expect(getByTestId('schedule-shift-shift-mon')).toBeTruthy();
-    // daylight-v2 §3: a confirmed row is a settled fact — no StatusPill.
+    // docs/design/01-LAWS.md: a confirmed row is a settled fact — no StatusPill.
     expect(queryByTestId('schedule-shift-status-shift-mon')).toBeNull();
     expect(getByTestId('schedule-shift-shift-tue')).toBeTruthy();
     expect(getByTestId('schedule-shift-status-shift-tue')).toBeTruthy();
@@ -609,8 +609,8 @@ describe('ScheduleShiftsScreen', () => {
     );
   });
 
-  describe('S12: role-forked H1/subtitle (same screen, two voices)', () => {
-    it('shows the nanny voice — "This week" / shifts-with-family — for role nanny', () => {
+  describe('S12: role-forked H1 (same screen, two voices)', () => {
+    it('shows the nanny voice — "This week" — for role nanny', () => {
       mockUseIsOnboarded.mockImplementation(() => ({
         role: 'nanny',
         status: 'onboarded',
@@ -625,12 +625,10 @@ describe('ScheduleShiftsScreen', () => {
       const { getByText, queryByText } = render(<ScheduleShiftsScreen />);
 
       expect(getByText('shifts.nannyHeading')).toBeTruthy();
-      expect(getByText('shifts.nannySubtitle')).toBeTruthy();
       expect(queryByText('shifts.parentHeading')).toBeNull();
-      expect(queryByText('shifts.parentSubtitle')).toBeNull();
     });
 
-    it('shows the parent voice — "Schedule" / weekly-pattern — for role parent', () => {
+    it('shows the parent voice — "Schedule" — for role parent', () => {
       mockUseIsOnboarded.mockImplementation(() => ({
         role: 'parent',
         status: 'onboarded',
@@ -645,9 +643,7 @@ describe('ScheduleShiftsScreen', () => {
       const { getByText, queryByText } = render(<ScheduleShiftsScreen />);
 
       expect(getByText('shifts.parentHeading')).toBeTruthy();
-      expect(getByText('shifts.parentSubtitle')).toBeTruthy();
       expect(queryByText('shifts.nannyHeading')).toBeNull();
-      expect(queryByText('shifts.nannySubtitle')).toBeNull();
     });
 
     it('renders the lead line for the nanny and the parent', () => {
@@ -819,7 +815,6 @@ describe('ScheduleShiftsScreen', () => {
       const { getByText, queryByText } = render(<ScheduleShiftsScreen />);
 
       expect(getByText('shifts.parentHeading')).toBeTruthy();
-      expect(getByText('shifts.parentSubtitle')).toBeTruthy();
       expect(queryByText('shifts.nannyHeading')).toBeNull();
     });
   });
@@ -1147,12 +1142,14 @@ describe('P0 0.3: empty/unavailable states use the inline EmptyState variant', (
   });
 });
 
-// The pattern banner and this line say the same fact — nothing is
-// scheduled, therefore care hours are uncovered — one line apart, in two
-// colours. Once the banner became unconditional (SchedulePatternBanner), the
-// summary is a second telling in every state where the banner already
-// carries it.
-describe('the week-summary line does not repeat what the banner just said', () => {
+// The pattern banner ("you haven't set the weekly hours") and this line
+// ("N windows this week have nobody booked") state different facts — the
+// banner is about the household's SETUP, the summary is about which hours
+// THIS week are gapped. Removing a nanny's care hours mid-week can still
+// leave gaps even with an accepted pattern, and a household with no pattern
+// at all is exactly the state with the MOST gaps to report — so the summary
+// shows in every pattern state, never suppressed by the banner.
+describe('the week-summary line reports gaps regardless of pattern state', () => {
   function renderWithPattern(pattern: unknown) {
     mockUseIsOnboarded.mockImplementation(() => ({
       role: 'parent',
@@ -1176,24 +1173,17 @@ describe('the week-summary line does not repeat what the banner just said', () =
     ['no pattern at all', null],
     ['withdrawn', { status: 'withdrawn' }],
     ['ended', { status: 'ended' }],
-  ])('suppresses the summary line when the pattern is %s', (_label, pattern) => {
-    const { queryByTestId, getAllByTestId } = renderWithPattern(pattern);
-
-    expect(queryByTestId('schedule-cover-week-summary')).toBeNull();
-    // The per-day uncovered rows in the agenda are untouched — the day-level
-    // detail is not the double-telling, the week-level headline is.
-    expect(getAllByTestId(/^schedule-uncovered-/).length).toBeGreaterThan(0);
-  });
-
-  it.each([
     ['accepted', { status: 'accepted' }],
     ['pending', { status: 'pending' }],
     ['draft', { status: 'draft' }],
     ['declined', { status: 'declined' }],
   ])('keeps the summary line when the pattern is %s', (_label, pattern) => {
-    const { getByTestId } = renderWithPattern(pattern);
+    const { getByTestId, getAllByTestId } = renderWithPattern(pattern);
 
     expect(getByTestId('schedule-cover-week-summary')).toBeTruthy();
+    // The per-day uncovered rows in the agenda stay too — the week-level
+    // headline and the day-level detail are two different things.
+    expect(getAllByTestId(/^schedule-uncovered-/).length).toBeGreaterThan(0);
   });
 });
 

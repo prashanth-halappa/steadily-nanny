@@ -27,7 +27,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
-import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { SCREEN_CONTENT_STYLE, spacing } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { InlineRetry } from '@/src/components/custom/InlineRetry';
@@ -234,7 +234,7 @@ export function ScheduleShiftsScreen({
   const showUnavailable = routeUnavailable;
 
   const shifts = shiftsQuery.data ?? [];
-  // The week-total anchor (daylight-v2 §2, "the highest-value addition on
+  // The week-total anchor (docs/design/01-LAWS.md, "the highest-value addition on
   // this screen") — same excludes-cancelled/declined rule AgendaView's
   // per-day totals use, summed over the fetched week instead of one day.
   const weekTotalMinutes = useMemo(
@@ -401,14 +401,12 @@ export function ScheduleShiftsScreen({
   const heading = isNannyVoice
     ? t('shifts.nannyHeading')
     : t('shifts.parentHeading');
-  const subtitle = isNannyVoice
-    ? t('shifts.nannySubtitle', { familyName })
-    : t('shifts.parentSubtitle');
+  // Rule H: the hero band carries at most H1 + one context line + one
+  // anchor. `lead` IS that one context line — it names the carer and counts
+  // the shifts, which is more than the generic `shifts.*Subtitle` ever said,
+  // so the subtitle was dropped rather than stacked alongside it.
   const lead = isNannyVoice
-    ? t('lead.nanny', {
-        count: coveringShifts.length,
-        hours: formatDuration(weekTotalMinutes),
-      })
+    ? t('lead.nanny', { count: coveringShifts.length })
     : perCarerLead !== null
       ? perCarerLead
       : nannyFirstName
@@ -446,16 +444,6 @@ export function ScheduleShiftsScreen({
           // twice, one of them conditionally.
         };
 
-  // The banner and the week-summary line state the same fact — nothing is
-  // scheduled, therefore care hours are uncovered — one line apart, in two
-  // colours. Where the banner already carries it, the summary is a second
-  // telling. Per-day uncovered rows in the agenda are a different thing
-  // (which day, which hours) and stay.
-  const bannerAlreadySaysIt =
-    pattern === null ||
-    pattern.status === 'withdrawn' ||
-    pattern.status === 'ended';
-
   const showCrossFamily =
     calendarView === CALENDAR_VIEWS.CROSS_FAMILY &&
     // TIER0-CX-SPEC §5.2: household names are nanny-only. The switcher
@@ -489,13 +477,11 @@ export function ScheduleShiftsScreen({
       ) : null}
       <View className="gap-1">
         <H1>{heading}</H1>
-        <Small className="text-muted-strong">{subtitle}</Small>
         <Small testID="schedule-lead" className="text-muted-strong">
           {lead}
         </Small>
-        <Small tabular className="text-muted-strong">
-          {weekRangeLabel}
-        </Small>
+        {/* The week range is not repeated here — `WeekNavHeader` below
+            already owns and renders that exact string. */}
         <Figure28 testID="schedule-week-total">
           {t('shifts.weekTotal', {
             duration: formatDuration(weekTotalMinutes),
@@ -534,10 +520,18 @@ export function ScheduleShiftsScreen({
           }}
         />
       ) : null}
-      {canViewCover && uncoveredWeek.totalCount > 0 && !bannerAlreadySaysIt ? (
+      {/* Rule H: the only actionable fact on the screen, so it gets a real
+          affordance — a bordered chip, not a bare warning-coloured caption —
+          and it is never suppressed by the pattern banner above. The banner
+          says "you haven't set the weekly hours"; this says "N windows this
+          week have nobody booked" — different facts, and the no-pattern
+          state is exactly the one with the MOST gaps to report. */}
+      {canViewCover && uncoveredWeek.totalCount > 0 ? (
         <Pressable
           testID="schedule-cover-week-summary"
           accessibilityRole="button"
+          className="self-start flex-row items-center rounded-row bg-pill-warning px-4 py-2.5"
+          style={{ minHeight: spacing.minTouchTarget }}
           onPress={() => {
             if (firstUncoveredKey) {
               setScrollToUncoveredKey(firstUncoveredKey);
@@ -547,43 +541,49 @@ export function ScheduleShiftsScreen({
             }
           }}
         >
-          <Small className="text-warning-strong" weight="medium">
+          <Small className="text-warning-ink" weight="medium">
             {t('cover.weekSummaryTitle', { count: uncoveredWeek.totalCount })}
           </Small>
         </Pressable>
       ) : null}
-      <WeekNavHeader
-        label={weekRangeLabel}
-        onPreviousWeek={handlePreviousWeek}
-        onNextWeek={handleNextWeek}
-        previousAccessibilityLabel={t('shifts.previousWeek')}
-        nextAccessibilityLabel={t('shifts.nextWeek')}
-        isPreviousDisabled={weekOffset <= -MAX_WEEKS_BACK}
-        isNextDisabled={weekOffset >= MAX_WEEKS_FORWARD}
-        previousTestID="schedule-week-prev"
-        nextTestID="schedule-week-next"
-        labelTestID="schedule-week-label"
-      />
-      <CalendarViewSwitcher value={calendarView} onChange={setCalendarView} />
-      {canAddExtra ? (
-        // Was a `Small semibold text-primary` pressable beside the H1 — the
-        // highest-status slot on the screen, holding the lesser of the two
-        // acts a parent takes here (the greater one is the usual week, which
-        // the banner above owns). `docs/design/screens-schedule.md` §2 puts
-        // this in the FOOTER — it sits at the end of the shared header
-        // instead because a real list footer needs a `listFooter` prop on
-        // AgendaView / WeekRibbonView / CrossFamilyRhythmView, and the three
-        // of them own their own scrollers. Move it when that prop exists.
-        <Button
-          testID="schedule-shifts-add-extra"
-          variant="secondary"
-          onPress={() =>
-            router.push('/(private)/schedule/shifts/extra' as Href)
-          }
-        >
-          {t('shifts.addExtra')}
-        </Button>
-      ) : null}
+      {/* A 16px gap (double the 8px used above) separates the hero band from
+          week navigation + view switching — the header visibly ends before
+          this section begins (Rule H). */}
+      <View style={{ gap: 8, marginTop: 8 }}>
+        <WeekNavHeader
+          label={weekRangeLabel}
+          onPreviousWeek={handlePreviousWeek}
+          onNextWeek={handleNextWeek}
+          previousAccessibilityLabel={t('shifts.previousWeek')}
+          nextAccessibilityLabel={t('shifts.nextWeek')}
+          isPreviousDisabled={weekOffset <= -MAX_WEEKS_BACK}
+          isNextDisabled={weekOffset >= MAX_WEEKS_FORWARD}
+          previousTestID="schedule-week-prev"
+          nextTestID="schedule-week-next"
+          labelTestID="schedule-week-label"
+        />
+        <CalendarViewSwitcher value={calendarView} onChange={setCalendarView} />
+        {canAddExtra ? (
+          // Was a `Small semibold text-primary` pressable beside the H1 —
+          // the highest-status slot on the screen, holding the lesser of the
+          // two acts a parent takes here (the greater one is the usual week,
+          // which the banner above owns). `docs/design/screens-schedule.md`
+          // §2 puts this in the FOOTER — it sits at the end of the shared
+          // header instead because a real list footer needs a `listFooter`
+          // prop on AgendaView / WeekRibbonView / CrossFamilyRhythmView, and
+          // the three of them own their own scrollers. Move it when that
+          // prop exists.
+          <Button
+            testID="schedule-shifts-add-extra"
+            variant="secondary"
+            onPress={() =>
+              router.push('/(private)/schedule/shifts/extra' as Href)
+            }
+          >
+            {t('shifts.addExtra')}
+          </Button>
+        ) : null}
+      </View>
     </View>
   );
   // Agenda's FlashList has no horizontal padding of its own; the two

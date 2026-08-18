@@ -16,9 +16,11 @@
  * refused server-side, so the affordance would only ever fail.
  */
 import { type Href, useRouter } from 'expo-router';
+import { ChevronRight } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
-import { Pressable, View } from 'react-native';
-import { MetadataLabel } from '@/src/components/ui/typography';
+import { View } from 'react-native';
+import { Icon } from '@/lib/icons/iconWithClassName';
+import { Section } from '@/src/components/ui/section';
 import { ThisWeeksShiftsCard } from '@/src/domains/schedule';
 import { SETUP_ROLES, type SetupRole } from '@/src/domains/setup/types';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
@@ -73,42 +75,47 @@ export function ThisWeekCard({
   ) as Href;
 
   return (
-    <View testID="today-this-week-card" className="gap-3">
-      <Pressable
-        testID="today-this-week-eyebrow"
-        accessibilityRole="button"
-        hitSlop={8}
-        onPress={() => router.push(href)}
+    <View testID="today-this-week-card">
+      <Section
+        title={t('thisWeek.title')}
+        right={
+          <Icon
+            icon={ChevronRight}
+            size={18}
+            className="text-muted-foreground"
+          />
+        }
+        // No `first`: the clock-in card sits above this on Today, so the
+        // section takes its full 32px of clearance. `first` is only for a
+        // section that genuinely opens a screen.
+        onHeaderPress={() => router.push(href)}
+        testID="today-this-week-eyebrow-label"
       >
-        <MetadataLabel testID="today-this-week-eyebrow-label">
-          {t('thisWeek.title')}
-        </MetadataLabel>
-      </Pressable>
+        {activeNanny ? (
+          <NannyWeekLine
+            householdId={householdId}
+            timeZone={timeZone}
+            weekStartsOn={weekStartsOn}
+          />
+        ) : null}
 
-      {activeNanny ? (
-        <NannyWeekLine
-          householdId={householdId}
-          timeZone={timeZone}
-          weekStartsOn={weekStartsOn}
-        />
-      ) : null}
+        {activeNanny ? (
+          <AddMissedHoursCard
+            householdId={householdId}
+            timeZone={timeZone}
+            weekStartsOn={weekStartsOn}
+            // The card itself only renders when there is a missed day to
+            // recover, so this never puts a headline above nothing.
+            firstRunHeadline={justAgreedTerms}
+            // Same query, handed down rather than re-issued: backdated terms
+            // are the ONLY way the card can know about days worked under the
+            // clock-in block when no pattern (and so no shift) exists.
+            arrangementValidFrom={arrangement.data?.valid_from ?? null}
+          />
+        ) : null}
 
-      {activeNanny ? (
-        <AddMissedHoursCard
-          householdId={householdId}
-          timeZone={timeZone}
-          weekStartsOn={weekStartsOn}
-          // The card itself only renders when there is a missed day to
-          // recover, so this never puts a headline above nothing.
-          firstRunHeadline={justAgreedTerms}
-          // Same query, handed down rather than re-issued: backdated terms
-          // are the ONLY way the card can know about days worked under the
-          // clock-in block when no pattern (and so no shift) exists.
-          arrangementValidFrom={arrangement.data?.valid_from ?? null}
-        />
-      ) : null}
-
-      <ThisWeeksShiftsCard />
+        <ThisWeeksShiftsCard />
+      </Section>
     </View>
   );
 }

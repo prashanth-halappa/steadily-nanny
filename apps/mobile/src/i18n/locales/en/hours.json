@@ -120,12 +120,13 @@
   "earningsFooterNote": "Based on the hours recorded in Steadily. Tax and deductions are handled by your payroll.",
   "approveDialog": {
     "title": "{{name}} worked {{hours}}",
-    "body": "{{gross}} gross for {{range}}. Approving locks both figures — if hours change later, the week reopens and the total is worked out again.",
-    "bodyNothingUnusual": "{{gross}} gross for {{range}}. Nothing unusual this week.",
+    "grossFigure": "{{gross}} gross",
+    "body": "For {{range}}. Approving locks both figures — if hours change later, the week reopens and the total is worked out again.",
+    "bodyNothingUnusual": "For {{range}}. Nothing unusual this week.",
     "bodyNoArrangement": "For {{range}}. No pay rate is set, so Steadily can't total the pay for this week.",
     "bodyCurrencyChange": "For {{range}}. The pay currency changed during this week, so Steadily can't total the pay. You can still approve the hours.",
-    "bodyAdjustmentAdded": "{{gross}} gross for {{range}}, after adding {{adjustment}}. Approving locks both figures — if hours change later, the week reopens and the total is worked out again.",
-    "bodyAdjustmentDeducted": "{{gross}} gross for {{range}}, after taking off {{adjustment}}. Approving locks both figures — if hours change later, the week reopens and the total is worked out again.",
+    "bodyAdjustmentAdded": "For {{range}}, after adding {{adjustment}}. Approving locks both figures — if hours change later, the week reopens and the total is worked out again.",
+    "bodyAdjustmentDeducted": "For {{range}}, after taking off {{adjustment}}. Approving locks both figures — if hours change later, the week reopens and the total is worked out again.",
     "cancel": "Not yet",
     "confirm": "Approve the week"
   },

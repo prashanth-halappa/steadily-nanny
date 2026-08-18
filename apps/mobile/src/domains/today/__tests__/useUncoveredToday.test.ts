@@ -114,4 +114,28 @@ describe('computeUncoveredToday', () => {
       })
     ).toEqual({ status: 'covered', localDate: MONDAY });
   });
+
+  it('drops windows that have already ended (the 8pm "9:00 AM to 3:00 PM" card)', () => {
+    const args = {
+      localDate: MONDAY,
+      timezone: TZ,
+      commitments: [makeCommitment({ end_time: '15:00:00' })],
+      shifts: [],
+      closures: [],
+    };
+    // Midday: the gap is still live.
+    expect(
+      computeUncoveredToday({
+        ...args,
+        nowMs: Date.parse('2026-03-23T12:00:00.000Z'),
+      }).status
+    ).toBe('uncovered');
+    // 8pm, five hours after it closed: nothing left to act on.
+    expect(
+      computeUncoveredToday({
+        ...args,
+        nowMs: Date.parse('2026-03-23T20:00:00.000Z'),
+      }).status
+    ).toBe('covered');
+  });
 });

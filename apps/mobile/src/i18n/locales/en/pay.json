@@ -217,6 +217,7 @@
   "recordPaymentSheet": {
     "title": "Record a payment",
     "subtitle": "{{name}} · {{range}}",
+    "outstandingLabel": "Outstanding balance",
     "amountLabel": "Amount paid",
     "amountError": "Enter an amount, like 250 or 250.00.",
     "dateLabel": "Paid on",

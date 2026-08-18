@@ -1,6 +1,6 @@
 /**
  * In-app illustration assets — soft flat vector art (Daylight palette).
- * Generated via Higgsfield; see docs/design/art-direction.md.
+ * Generated via Higgsfield; see docs/design/03-ART-DIRECTION.md.
  */
 export const illustrations = {
   todayQuiet: require('./today-quiet.png'),

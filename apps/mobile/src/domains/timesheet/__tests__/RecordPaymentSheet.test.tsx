@@ -88,6 +88,28 @@ describe('RecordPaymentSheet — prefill', () => {
   });
 });
 
+// The parent used to assert "I paid Andrea £X" with no visible balance to
+// check the typed amount against. `outstandingMinor` was already read here
+// (as the prefill) but never displayed — this pins that it is now, above
+// the input, as an AmountRow.
+describe('RecordPaymentSheet — outstanding balance is echoed, not just prefilled', () => {
+  it('renders the outstanding balance as an AmountRow above the amount input', () => {
+    const { getByTestId } = renderSheet({ outstandingMinor: 11612 });
+
+    expect(
+      getByTestId('hours-record-payment-outstanding-value').props.children
+    ).toBe('£116.12');
+  });
+
+  it('renders a known-zero outstanding balance rather than omitting the row', () => {
+    const { getByTestId } = renderSheet({ outstandingMinor: 0 });
+
+    expect(
+      getByTestId('hours-record-payment-outstanding-value').props.children
+    ).toBe('£0.00');
+  });
+});
+
 describe('RecordPaymentSheet — submit payload', () => {
   it('submits the prefilled balance as minor units, dated today, with no method note', () => {
     const { getByTestId } = renderSheet();

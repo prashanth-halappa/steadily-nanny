@@ -391,8 +391,8 @@
     "loadFailed": "We couldn't load this family's care hours, so this week's cover is unknown."
   },
   "lead": {
-    "nanny_one": "{{count}} shift this week, {{hours}} in all.",
-    "nanny_other": "{{count}} shifts this week, {{hours}} in all.",
+    "nanny_one": "{{count}} shift this week.",
+    "nanny_other": "{{count}} shifts this week.",
     "parent_one": "{{name}} is with the children {{count}} day this week.",
     "parent_other": "{{name}} is with the children {{count}} days this week.",
     "parentNoCarer_one": "The children are covered {{count}} day this week.",

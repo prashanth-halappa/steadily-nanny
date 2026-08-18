@@ -94,6 +94,7 @@ import { useIsOnline } from '@/src/lib/network';
 import { showSuccessToast } from '@/src/lib/toast';
 import { wallClockToUtcIso } from '@/src/lib/wallClock';
 import { useAuthStore } from '@/src/store/auth';
+import { spacing } from '~/lib/design-tokens/spacing';
 import type { TimeEntry } from '../types';
 import { formatDuration, formatOvertimeDelta } from '../utils/duration';
 import { formatEarningsLongDate } from '../utils/earningsFormat';
@@ -707,6 +708,11 @@ export function NannyWeekView({
                 accessibilityRole="button"
                 onPress={() => setFlagSheet({ prefix: '' })}
                 className="mb-4 self-start py-2"
+                style={{
+                  minHeight: spacing.minTouchTarget,
+                  justifyContent: 'center',
+                }}
+                hitSlop={8}
               >
                 <Body className="text-primary">{t('thread.flagLink')}</Body>
               </Pressable>

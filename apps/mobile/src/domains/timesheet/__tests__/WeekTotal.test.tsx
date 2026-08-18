@@ -134,7 +134,7 @@ describe('WeekTotal', () => {
     });
   });
 
-  it('renders the timesheet status pill and the pay-boundary line', () => {
+  it('renders the timesheet status headline and the pay-boundary line', () => {
     const { getByTestId } = render(
       <WeekTotal
         testID="hours-week-total"
@@ -143,7 +143,7 @@ describe('WeekTotal', () => {
       />
     );
 
-    expect(getByTestId('hours-timesheet-status')).toBeTruthy();
+    expect(getByTestId('hours-status-headline')).toBeTruthy();
     expect(getByTestId('hours-pay-boundary')).toBeTruthy();
   });
 
@@ -441,8 +441,11 @@ describe('WeekTotal', () => {
   // Daylight v2: "Ready for your approval" — the reason the parent opened
   // the screen — is an H3 headline in the title row, not a 12px pill and no
   // longer a 13px MetadataLabel. The IconChip is the third prominence
-  // channel (ground, type, iconography) beside it.
-  describe('parent headline replaces the StatusPill', () => {
+  // channel (ground, type, iconography) beside it. Both viewers share the
+  // same headline slot now — the pill was the nanny's only, and it was the
+  // smallest text on her money screen for a sentence with financial
+  // consequences ("The family asked a question" == her money is on hold).
+  describe('status headline replaces the StatusPill for both viewers', () => {
     it('renders an H3 headline instead of a StatusPill, for the parent viewer', () => {
       const { getByTestId, queryByTestId, getByText } = render(
         <WeekTotal
@@ -476,8 +479,8 @@ describe('WeekTotal', () => {
       expect(getByTestId('hours-status-chip')).toBeTruthy();
     });
 
-    it('renders the status IconChip beside the nanny pill too', () => {
-      const { getByTestId } = render(
+    it('renders an H3 headline instead of a StatusPill, for the nanny viewer too', () => {
+      const { getByTestId, queryByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
           timesheetStatus="queried"
@@ -485,7 +488,14 @@ describe('WeekTotal', () => {
         />
       );
 
+      const headline = getByTestId('hours-status-headline');
+      expect(headline).toBeTruthy();
+      expect(headline.props.role).toBe('heading');
+      expect(headline.props['aria-level']).toBe('3');
+      expect(flatStyle(headline).fontSize).toBe(20);
+      expect(flatStyle(headline).fontWeight).toBe('700');
       expect(getByTestId('hours-status-chip')).toBeTruthy();
+      expect(queryByTestId('hours-timesheet-status')).toBeNull();
     });
 
     it('renders no title row at all — chip included — when there is no status', () => {
@@ -540,14 +550,16 @@ describe('WeekTotal', () => {
   });
 
   // Daylight P0-5: the person whose pay it is could not see whether her week
-  // was open, submitted, queried or approved. Same StatusPill the parent
-  // used to see, forked to carer-side wording.
-  describe('nanny StatusPill — carer-side wording (P0-5)', () => {
+  // was open, submitted, queried or approved. She now gets the same H3
+  // headline slot the parent has (not the 12px StatusPill — the sentence
+  // meaning "this nanny's money is on hold" earns headline weight, not a
+  // capsule), labelled with her own carer-side wording.
+  describe('nanny status headline — carer-side wording (P0-5)', () => {
     it.each([
       ['open', 'stillOpen'],
       ['queried', 'theFamilyAsked'],
       ['approved', 'approved'],
-    ] as const)('labels the pill for nanny status %s', (status, _label) => {
+    ] as const)('labels the headline for nanny status %s', (status, _label) => {
       const { getByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
@@ -556,13 +568,13 @@ describe('WeekTotal', () => {
         />
       );
 
-      expect(getByTestId('hours-timesheet-status')).toBeTruthy();
+      const headline = getByTestId('hours-status-headline');
+      expect(headline).toBeTruthy();
+      expect(flatStyle(headline).fontSize).toBe(20);
+      expect(flatStyle(headline).fontWeight).toBe('700');
     });
 
-    // Regression pairing (with the parent test above): the pill and the
-    // headline are each other's replacement for their respective viewer,
-    // never both at once for either.
-    it('never shows the parent headline alongside the nanny pill', () => {
+    it('never renders the old StatusPill testID for the nanny viewer', () => {
       const { getByTestId, queryByTestId } = render(
         <WeekTotal
           testID="hours-week-total"
@@ -571,8 +583,8 @@ describe('WeekTotal', () => {
         />
       );
 
-      expect(getByTestId('hours-timesheet-status')).toBeTruthy();
-      expect(queryByTestId('hours-status-headline')).toBeNull();
+      expect(getByTestId('hours-status-headline')).toBeTruthy();
+      expect(queryByTestId('hours-timesheet-status')).toBeNull();
     });
 
     it('reads "Still open" for a nanny whose week has not been submitted yet', () => {
@@ -621,7 +633,7 @@ describe('WeekTotal', () => {
       expect(amount.props.children).toBe('£352.08');
       expect(flatStyle(amount).fontSize).toBe(28);
       expect(flatStyle(amount).fontWeight).toBe('700');
-      // Rule B (docs/07-MOBILE-UI-SYSTEM.md): on the tinted `positive`
+      // Rule B (docs/design/01-LAWS.md): on the tinted `positive`
       // ground, the primary sentence is `foreground`, not muted — this
       // line IS the tier's message (the P0-5 appreciation moment), not a
       // supporting caption.
@@ -738,7 +750,7 @@ describe('WeekTotal', () => {
       expect(notOpened.getByText('timeline.notOpened')).toBeTruthy();
     });
 
-    it('keeps the existing pill for a queried week and the appreciation block for an approved week', () => {
+    it('keeps the existing headline for a queried week and the appreciation block for an approved week', () => {
       const queried = render(
         <WeekTotal
           testID="hours-week-total"
@@ -746,7 +758,7 @@ describe('WeekTotal', () => {
           earningsRole="nanny"
         />
       );
-      expect(queried.getByTestId('hours-timesheet-status')).toBeTruthy();
+      expect(queried.getByTestId('hours-status-headline')).toBeTruthy();
       expect(queried.queryByTestId('hours-status-timeline')).toBeNull();
 
       const approved = render(

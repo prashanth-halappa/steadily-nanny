@@ -8,7 +8,7 @@
  * viewer sees, and gives them a heading that routes somewhere.
  */
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, within } from '@testing-library/react-native';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 
 const HOUSEHOLD_ID = 'household-week-1';
@@ -103,19 +103,25 @@ describe('ThisWeekCard', () => {
 
   it('routes the eyebrow to Hours for a nanny and Schedule for a parent', () => {
     const nanny = renderCard('nanny');
-    fireEvent.press(nanny.getByTestId('today-this-week-eyebrow'));
+    fireEvent.press(
+      nanny.getByTestId('today-this-week-eyebrow-label-header-press')
+    );
     expect(mockPush).toHaveBeenLastCalledWith('/(private)/(tabs)/hours');
 
     const parent = renderCard('parent');
-    fireEvent.press(parent.getByTestId('today-this-week-eyebrow'));
+    fireEvent.press(
+      parent.getByTestId('today-this-week-eyebrow-label-header-press')
+    );
     expect(mockPush).toHaveBeenLastCalledWith('/(private)/(tabs)/schedule');
   });
 
   it('localizes the eyebrow through the today namespace', () => {
     const { getByTestId } = renderCard('parent');
     expect(
-      String(getByTestId('today-this-week-eyebrow-label').props.children)
-    ).toBe('thisWeek.title');
+      within(getByTestId('today-this-week-eyebrow-label')).getByText(
+        'thisWeek.title'
+      )
+    ).toBeTruthy();
   });
 });
 

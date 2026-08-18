@@ -32,8 +32,10 @@ const COMMITMENT_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const NANNY_ID = '33333333-3333-4333-8333-333333333333';
 const ZONE = 'Europe/London';
 const LOCAL_DATE = '2026-08-10';
-/** 13:00 London — inside the confirmed 11:22–19:22 shift. */
-const PINNED_NOW = new Date('2026-08-10T12:00:00.000Z');
+/** 10:00 London — INSIDE the 09:00–11:22 gap, before the 11:22 shift starts.
+ * Must stay inside the gap: `computeUncoveredToday` drops windows that have
+ * already ended, so a `now` past 11:22 leaves this fixture with no gap at all. */
+const PINNED_NOW = new Date('2026-08-10T09:00:00.000Z');
 
 const REASSURANCE_PATTERNS = [
   /everything you asked for is booked/i,
@@ -323,7 +325,7 @@ describe('TodayCoverage — 10 Aug 2026 gap + plan', () => {
   // Daylight v2's single largest fix: this sentence was `Body weight="medium"`
   // (16/24/500) — SMALLER than the handoff card's H4 title below it, on a
   // ground 4% off white. "A title is never smaller than the title of a less
-  // important card" (daylight-v2 §3.2), so it is an H3. There is no demoted
+  // important card" (docs/design/01-LAWS.md), so it is an H3. There is no demoted
   // rung any more: a parent's `uncoveredCare` can only ever lose Today's slot
   // to nanny-only rungs, so when this card renders a gap it renders promoted.
   // Sizes, not class names, because the typography factory emits size inline.

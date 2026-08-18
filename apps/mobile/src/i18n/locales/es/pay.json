@@ -217,6 +217,7 @@
   "recordPaymentSheet": {
     "title": "Registrar un pago",
     "subtitle": "{{name}} · {{range}}",
+    "outstandingLabel": "Saldo pendiente",
     "amountLabel": "Importe pagado",
     "amountError": "Escribe un importe, como 250 o 250,00.",
     "dateLabel": "Pagado el",

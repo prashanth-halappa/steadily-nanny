@@ -36,6 +36,15 @@ import { fireEvent, waitFor } from '@testing-library/react-native';
 import type React from 'react';
 import { renderWithProviders } from '@/src/test-utils';
 
+// Same technique as WeekTotal.test.tsx: assert the rendered size/weight off
+// the flattened style array rather than a snapshot.
+function flatStyle(node: { props: { style?: unknown } }) {
+  const style = node.props.style;
+  return Array.isArray(style)
+    ? Object.assign({}, ...style.flat(Number.POSITIVE_INFINITY).filter(Boolean))
+    : (style ?? {});
+}
+
 const HOUSEHOLD_ID = '22222222-2222-4222-8222-222222222222';
 const CARER_ID = '33333333-3333-4333-8333-333333333333';
 const PARENT_ID = '11111111-1111-4111-8111-111111111111';
@@ -301,10 +310,16 @@ describe('PaymentsScreen — month groups', () => {
     expect(getByTestId('payments-month-2026-08-label').props.children).toBe(
       'payments.recordedLabel'
     );
-    expect(getByTestId('payments-month-2026-08-total-GBP').props.children).toBe(
-      '£1,248.00'
-    );
+    const total = getByTestId('payments-month-2026-08-total-GBP');
+    expect(total.props.children).toBe('£1,248.00');
     expect(queryByTestId('payments-month-2026-08-total-EUR')).toBeNull();
+    // The subtotal used to render at the same size as one payment row
+    // (Figure, 16/400) beside a 17/600 month header — the money read
+    // smaller and lighter than its own header. It is now Figure28,
+    // 28/700, tabular.
+    expect(flatStyle(total).fontSize).toBe(28);
+    expect(flatStyle(total).fontWeight).toBe('700');
+    expect(flatStyle(total).fontVariant).toContain('tabular-nums');
   });
 
   it('renders August 2026 as a humane month label, never the raw key', async () => {

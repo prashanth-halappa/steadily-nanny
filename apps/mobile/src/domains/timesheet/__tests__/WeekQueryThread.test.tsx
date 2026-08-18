@@ -259,7 +259,7 @@ describe('WeekQueryThread', () => {
     );
   });
 
-  // daylight-v2 §6.6 refuses a second unread affordance and this is not the
+  // docs/design/01-LAWS.md refuses a second unread affordance and this is not the
   // place to introduce one.
   it('never renders a badge or an unread dot', () => {
     const { queryByTestId } = renderThread();

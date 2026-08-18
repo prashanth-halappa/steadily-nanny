@@ -57,7 +57,62 @@ describe('WeekRibbonView axis', () => {
   });
 });
 
+/** DFS pre-order collection of `testID`s from a rendered tree — sibling
+ * order in the array matches the order the JSX wrote them in. */
+function collectTestIds(node: unknown, out: string[]): void {
+  if (node === null || typeof node !== 'object') return;
+  if (Array.isArray(node)) {
+    for (const child of node) collectTestIds(child, out);
+    return;
+  }
+  const { props, children } = node as {
+    props?: Record<string, unknown>;
+    children?: unknown[];
+  };
+  const testID = props?.testID;
+  if (typeof testID === 'string') out.push(testID);
+  if (children) collectTestIds(children, out);
+}
+
 describe('WeekRibbonView legend', () => {
+  it('REGRESSION: renders the legend before the first hour row, so it survives on a full grid', () => {
+    const { toJSON } = render(
+      <WeekRibbonView shifts={[makeShift()]} weekDates={[]} />
+    );
+
+    const testIds: string[] = [];
+    collectTestIds(toJSON(), testIds);
+    const legendIndex = testIds.indexOf('week-ribbon-legend');
+    const firstCellIndex = testIds.findIndex(id =>
+      id.startsWith('week-ribbon-cell-')
+    );
+
+    expect(legendIndex).toBeGreaterThanOrEqual(0);
+    expect(firstCellIndex).toBeGreaterThanOrEqual(0);
+    expect(legendIndex).toBeLessThan(firstCellIndex);
+  });
+
+  it('adds a parent-cover legend item, reusing the shared cover.parentCoveringRow label, only when a parent_cover shift is present this week', () => {
+    const { getByText, queryByText } = render(
+      <WeekRibbonView
+        shifts={[makeShift({ kind: 'parent_cover' })]}
+        weekDates={[]}
+      />
+    );
+
+    expect(getByText('cover.parentCoveringRow')).toBeTruthy();
+    // Not the uncovered vocabulary — parent_cover is a distinct fact.
+    expect(queryByText('cover.rowPill')).toBeNull();
+  });
+
+  it('omits the parent-cover legend item when no parent_cover shift is present', () => {
+    const { queryByText } = render(
+      <WeekRibbonView shifts={[makeShift()]} weekDates={[]} />
+    );
+
+    expect(queryByText('cover.parentCoveringRow')).toBeNull();
+  });
+
   it('always renders the 3 status legend items, with no multi-carer item for 0/1 carers', () => {
     const { getByTestId, queryByTestId, getByText } = render(
       <WeekRibbonView shifts={[makeShift()]} weekDates={[]} />

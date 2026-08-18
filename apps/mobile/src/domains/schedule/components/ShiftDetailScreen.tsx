@@ -58,7 +58,7 @@ import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
 import { isEndAfterStart } from '@/src/components/ui/time-range-picker.utils';
-import { Body, H1, H2, Small } from '@/src/components/ui/typography';
+import { Body, H1, H2, H3, H4, Small } from '@/src/components/ui/typography';
 import {
   shiftChangeRequestKindLabelKey,
   shiftChangeRequestStatusLabelKey,
@@ -444,7 +444,10 @@ export function ShiftDetailScreen() {
         keyboardShouldPersistTaps="handled"
         refreshControl={refreshControl}
       >
-        <H1 testID="shift-detail-title">{t('detail.title')}</H1>
+        {/* Money/trust hierarchy pass: "Shift" is a constant, carries no
+            information, and used to be the largest thing on screen at H1.
+            Demoted below the H3 time so the fact outranks the label. */}
+        <H4 testID="shift-detail-title">{t('detail.title')}</H4>
         <Body
           testID="shift-detail-subtitle"
           className="mt-2 text-muted-foreground"
@@ -627,10 +630,14 @@ export function ShiftDetailScreen() {
           </View>
         ) : (
           <View className="mt-6 gap-2" testID="shift-detail-readonly">
-            <Body tabular>
+            {/* The shift window is the headline fact, not body text — it was
+                indistinguishable from `shift.note` on the next line.
+                Matches ClockInCard.tsx:727-733's treatment of the same
+                fact. */}
+            <H3 tabular>
               {utcIsoToWallClockHHMM(shift.starts_at, shift.timezone)} –{' '}
               {utcIsoToWallClockHHMM(shift.ends_at, shift.timezone)}
-            </Body>
+            </H3>
             {shift.note ? <Body>{shift.note}</Body> : null}
             {/* §5.3 — "the same defect class as S4": an expired or withdrawn
               ask must not offer Accept/Decline/Counter, which would exist

@@ -154,12 +154,46 @@ describe('WeekRibbonView source', () => {
     expect(viewSource).toContain('themeColors.border');
   });
 
-  it('renders a status legend after the grid, with a 4th item gated on 2+ distinct carers', () => {
+  it('renders a status legend, with a 4th item gated on 2+ distinct carers', () => {
     expect(viewSource).toContain('testID="week-ribbon-legend"');
     expect(viewSource).toContain("t('shifts.statusConfirmed')");
     expect(viewSource).toContain("t('shifts.statusPending')");
     expect(viewSource).toContain("t('shifts.statusCancelled')");
     expect(viewSource).toContain('showMultiCarerLegend');
     expect(viewSource).toContain("t('shifts.legendMultiCarer')");
+  });
+
+  it('REGRESSION: the legend is written before the hour grid rows, so it survives on a full week', () => {
+    const legendIndex = viewSource.indexOf('testID="week-ribbon-legend"');
+    const firstRowIndex = viewSource.indexOf('visibleHours.map(hour =>');
+    expect(legendIndex).toBeGreaterThan(-1);
+    expect(firstRowIndex).toBeGreaterThan(-1);
+    expect(legendIndex).toBeLessThan(firstRowIndex);
+  });
+
+  it('REGRESSION: parent_cover never resolves to the same colour as declined/cancelled', () => {
+    // The old encoding painted parent_cover with `colors.borderStrong` — the
+    // exact grey used for declined/cancelled, telling a parent the gap she
+    // personally covered was cancelled.
+    expect(viewSource).toContain('colors.primaryLight');
+    expect(viewSource).not.toContain(
+      'if (shift.kind === SHIFT_KINDS.PARENT_COVER) {\n    return colors.borderStrong;'
+    );
+  });
+
+  it('REGRESSION: no arm falls back to category.accent2 — dead code, hue found nowhere else in the grid', () => {
+    expect(viewSource).not.toContain('category.accent2');
+  });
+
+  it('REGRESSION: uncovered is a filled warning capsule, never a destructive-red outline', () => {
+    // Red duplicates the outline treatment against the Agenda/Today's amber
+    // for the same fact, and an outline on a grid whose empty cells are also
+    // unfilled reads as "nothing here" instead of "missing".
+    expect(viewSource).not.toContain('themeColors.destructive');
+    expect(viewSource).toContain('themeColors.warning');
+  });
+
+  it('REGRESSION: uncovered and declined/cancelled are drawn half-height, spatially distinct from a live booking', () => {
+    expect(viewSource).toContain('height: 8');
   });
 });

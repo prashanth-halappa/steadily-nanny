@@ -391,8 +391,8 @@
     "loadFailed": "No pudimos cargar las horas de cuidado de esta familia, así que la cobertura de esta semana es desconocida."
   },
   "lead": {
-    "nanny_one": "{{count}} turno esta semana, {{hours}} en total.",
-    "nanny_other": "{{count}} turnos esta semana, {{hours}} en total.",
+    "nanny_one": "{{count}} turno esta semana.",
+    "nanny_other": "{{count}} turnos esta semana.",
     "parent_one": "{{name}} está con los niños {{count}} día esta semana.",
     "parent_other": "{{name}} está con los niños {{count}} días esta semana.",
     "parentNoCarer_one": "Los niños están cubiertos {{count}} día esta semana.",

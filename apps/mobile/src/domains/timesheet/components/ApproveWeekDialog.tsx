@@ -8,11 +8,15 @@
  * `ManageHouseholdScreen.tsx` "controlled, no Trigger" pattern: this
  * component owns no state of its own, `open`/`onOpenChange` are the caller's.
  *
- * The gross figure is echoed as TEXT inside the body sentence, tabular but
- * NOT a hero number — this is a confirmation, not a receipt (spec's own
- * distinction). The body variant follows `earningsStatus`: `ok` shows the
- * gross clause; `currency_change` explains the mid-week currency switch;
- * everything else (`no_arrangement`, missing earnings) drops the gross.
+ * The gross figure is the number the parent is permanently committing to —
+ * it gets its own `Figure28 tabular` line under the title, not a clause
+ * buried inline in the description sentence (it used to read "£462.50 gross
+ * for 4–10 Aug." at description size, unbolded, non-tabular, while the title
+ * stated only the hours). The description keeps the "approving locks both
+ * figures" clause and the week range. The body variant follows
+ * `earningsStatus`: `ok` shows the figure; `currency_change` explains the
+ * mid-week currency switch; everything else (`no_arrangement`, missing
+ * earnings) drops the gross entirely.
  *
  * D-5 / §11.1.1's fast path: the plain `ok`, no-adjustment body swaps in
  * "Nothing unusual this week" when the server's `nothing_unusual` judgement
@@ -32,7 +36,7 @@ import {
   AlertDialogTitle,
 } from '@/src/components/ui/alert-dialog';
 import { Text } from '@/src/components/ui/text';
-import { Small } from '@/src/components/ui/typography';
+import { Figure28, Small } from '@/src/components/ui/typography';
 
 interface ApproveWeekDialogProps {
   open: boolean;
@@ -109,11 +113,15 @@ export function ApproveWeekDialog({
           <AlertDialogTitle testID="hours-approve-dialog-title">
             {t('approveDialog.title', { name: carerName, hours: hoursLabel })}
           </AlertDialogTitle>
+          {showsGross && grossLabel ? (
+            <Figure28 testID="hours-approve-dialog-gross">
+              {t('approveDialog.grossFigure', { gross: grossLabel })}
+            </Figure28>
+          ) : null}
           <AlertDialogDescription testID="hours-approve-dialog-body">
             {t(bodyKey, {
               hours: hoursLabel,
               range: weekRangeLabel,
-              ...(showsGross ? { gross: grossLabel } : {}),
               ...(showsGross && hasAdjustment
                 ? { adjustment: adjustmentLabel }
                 : {}),

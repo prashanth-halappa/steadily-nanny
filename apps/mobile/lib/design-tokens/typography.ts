@@ -34,8 +34,8 @@ export const typography = {
   h1: {
     size: 32,
     lineHeight: 40,
-    weight: '600' as const,
-    letterSpacing: -0.58,
+    weight: '700' as const,
+    letterSpacing: -0.4,
   },
   h2: {
     size: 24,
@@ -71,7 +71,7 @@ export const typography = {
   dayGroup: {
     size: 17,
     lineHeight: 24,
-    weight: '600' as const,
+    weight: '700' as const,
     letterSpacing: -0.2,
   },
 
@@ -191,12 +191,12 @@ export const typography = {
 export const typographyClasses = {
   displayLarge: 'text-[56px] leading-[64px] font-extrabold',
   display: 'text-[32px] leading-[40px] font-extrabold',
-  h1: 'text-[32px] leading-[40px] font-semibold',
+  h1: 'text-[32px] leading-[40px] font-bold',
   h2: 'text-2xl leading-8 font-semibold',
   h3: 'text-xl leading-7 font-bold',
   h4: 'text-lg leading-[27px] font-semibold',
   timer: 'text-[44px] leading-[48px] font-medium',
-  dayGroup: 'text-[17px] leading-6 font-semibold',
+  dayGroup: 'text-[17px] leading-6 font-bold',
   figure: 'text-[28px] leading-[34px] font-bold',
   body: 'text-base leading-6',
   bodyLarge: 'text-lg leading-7',

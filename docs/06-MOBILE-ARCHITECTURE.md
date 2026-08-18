@@ -1,6 +1,6 @@
 # 06 — Mobile Architecture
 
-Purpose: the reusable Expo / React Native app skeleton — folder layout, expo-router provider tree + auth gating, the axios client with single-flight token refresh, TanStack Query + Zustand/MMKV state, i18n, deep linking, push, observability, and the AI-SDK polyfills. Pair this with `07-MOBILE-UI-SYSTEM.md` for the styling layer.
+Purpose: the reusable Expo / React Native app skeleton — folder layout, expo-router provider tree + auth gating, the axios client with single-flight token refresh, TanStack Query + Zustand/MMKV state, i18n, deep linking, push, observability, and the AI-SDK polyfills. Pair this with `design/00-FOUNDATIONS.md` for the styling layer.
 
 Real excerpts below are labeled "Example: `path`". When you build a new app, swap product/domain names but keep the shapes.
 

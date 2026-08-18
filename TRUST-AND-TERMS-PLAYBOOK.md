@@ -794,9 +794,9 @@ defaults marked ★):
 **Paste into a fresh session:**
 
 > Read TRUST-AND-TERMS-PLAYBOOK.md §0–§5 + §2b/§2c (repo root), then
-> docs/design/daylight-v2.md, docs/design/screens-settings.md,
+> docs/design/01-LAWS.md, docs/design/screens-settings.md,
 > docs/design/screens-today.md, docs/design/screens-hours.md,
-> docs/07-MOBILE-UI-SYSTEM.md, and the current implementations:
+> docs/design/00-FOUNDATIONS.md, and the current implementations:
 > apps/mobile/src/domains/pay/ (PaySetupScreen, PayChangeSheet, termRows,
 > MyPayScreen), domains/timesheet/ (ParentWeekView, NannyWeekView, WeekTotal),
 > domains/today/. You are running Phase 2: design. Use the in-repo
