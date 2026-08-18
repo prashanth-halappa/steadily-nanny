@@ -171,7 +171,8 @@
       "terms_proposal_declined": "Terms declined",
       "terms_offer_accepted": "Terms agreed",
       "ops_job_health": "Job health alerts",
-      "schedule_pattern_withdrawn": "Usual week withdrawn"
+      "schedule_pattern_withdrawn": "Usual week withdrawn",
+      "terms_proposal_reminder": "Terms reminder"
     }
   }
 }

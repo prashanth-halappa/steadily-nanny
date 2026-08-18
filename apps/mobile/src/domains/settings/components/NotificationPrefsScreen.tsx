@@ -99,6 +99,9 @@ const PUSH_TYPE_GROUP: Record<PushNotificationType, NotificationGroup> = {
   // acceptance twin are the same contract conversation as the four above.
   terms_proposal_declined: 'hoursAndPay',
   terms_offer_accepted: 'hoursAndPay',
+  // WP-G — the author's nudge. Same conversation, same toggle: a reader who
+  // has muted contract talk has muted being chased about it too.
+  terms_proposal_reminder: 'hoursAndPay',
   timesheet_approved: 'hoursAndPay',
   timesheet_awaiting_approval: 'hoursAndPay',
   timesheet_note_added: 'hoursAndPay',

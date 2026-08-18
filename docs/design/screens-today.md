@@ -59,7 +59,9 @@ every visit now (`ScreenWash kind="brand"`, apricot only while live).
 │  └────────────────────────────────────────────────
 │
 │  gap 16
-│  L1 slot        — attention owner, or nothing
+│  PinnedSlot     — attention owner; on an ordinary day the clock (nanny) or
+│                   TodayCoverage at default tone (parent / helper). Empty
+│                   only for a role with neither: a past-member nanny.
 │  L2 slot        — live / clock card
 │  feed           — child chips (parent), then moment cards (nanny-joined /
 │                   joined-household, first clock-in, first week-approved)
@@ -100,13 +102,31 @@ and a full-width plum button; the two L3 cards are white; the L4 block has no
 card at all. **Four visibly different weights instead of one.** Card order is
 unchanged — `TodayScreen.cardOrder.test.tsx` still passes.
 
-### 3.1 `TodayCoverage` — five states, gap at L1
+### 3.1 `TodayCoverage` — six states, gap at L1
 
 `apps/mobile/src/domains/today/components/TodayCoverage.tsx` + `useTodayCoverage`.
-`loading` renders nothing (screen skeleton carries the slot); `setup` is an L3
-card; `noNeedToday` and `booked` are bare-ground plan lines; `gap` is the L1
-owner. Live is not a separate card component — it is a `PlanLineView` row that
-renders `Card tone="live"` inside the coverage stack (`TodayCoverage.tsx:61–73`).
+`loading` renders nothing (screen skeleton carries the slot); `error` is an
+`InlineRetry` line (see below); `setup` is an L3 card; `noNeedToday` and
+`booked` are bare-ground plan lines; `gap` is the L1 owner. Live is not a
+separate card component — it is a `PlanLineView` row that renders
+`Card tone="live"` inside the coverage stack (`TodayCoverage.tsx:61–73`).
+
+**`error` — the read that failed.** This surface owns the parent's pinned slot
+on an ordinary day, so a silent `null` there is indistinguishable from a quiet
+day and reads as reassurance nobody computed
+(`docs/CROSS-CUTTING-DEFECT-PATTERNS.md` §B). It renders `InlineRetry`
+(`today-coverage-retry`) with `errors:network` and a retry that refetches only
+the sources that actually failed — no card, no ground, no attention tone, and
+the `footer` still folds in beneath it. `useTodayCoverage` puts error ahead of
+loading: a query retrying over a failed attempt is both `isPending` and
+`isError`, and checking loading first hides the retry button for good.
+
+**The day bar.** A `SplitTrack` (`today-coverage-day-bar`) at the top of the
+plan-lines block in both `booked` and `gap`: today, left to right, as who has
+it — `primary` for a nanny, `primaryLight` for parent cover, `warning` for a
+gap. Built by `buildDayBar` off the SAME `COVERING_SHIFT_STATUSES` filter as
+everything else on this surface, so a pending ask never paints over the gap
+that produced it. The plan lines say it in words; the bar says it in a glance.
 
 Gap card (`TodayCoverage.tsx:277–402`):
 
@@ -200,6 +220,15 @@ the relationship get a moment, not a push-and-silence), `InviteWaitingCard`
 `HandoffChipsCard` folded in as its footer, morning). L1 candidates: uncovered
 care (`TodayCoverage` gap), a blocking sent offer, terms awaiting an answer,
 inbox. The joined moment is a feed card, never a slot occupant.
+
+On an ordinary day — nothing on the ladder — his slot is not empty: it holds
+`TodayCoverage` at default tone (`slotOccupant: 'coverage'`), footer and all,
+and the feed mount is skipped. Hers is the clock, his is today's cover; the
+one thing he opened the app for should not sit below the week card. The
+handoff fold travels with the surface wherever it is mounted, so the chips are
+never both folded in and standing alone. The one exception is the `gap` rung,
+which stays footerless in the slot (`coverageGap`) with the chips as their own
+feed row — a card that loud gets the slot to itself.
 
 **Nanny** — hero band, **no child chips** (the chip row is parent-gated at
 `:543`, correct), `JoinedHouseholdCard` (her arrival), first clock-in moment

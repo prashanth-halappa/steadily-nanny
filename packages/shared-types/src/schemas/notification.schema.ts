@@ -224,6 +224,12 @@ export const PUSH_NOTIFICATION_TYPES = {
   // hears nothing. This is the parent-audience twin, emitted instead of
   // TERMS_PROPOSAL_ACCEPTED when the ACCEPTER is the carer.
   TERMS_OFFER_ACCEPTED: 'terms_offer_accepted',
+  // WP-G: the author NUDGES her own unanswered round — one tap, never
+  // automatic, and at most once every 48h (the gate is
+  // `termsProposalCommandService.remind`, not a job). One type covers both
+  // directions (audience 'both' below) because either side can be the one
+  // waiting, and like the decline it carries no figure to leak either way.
+  TERMS_PROPOSAL_REMINDER: 'terms_proposal_reminder',
 
   // Terms are agreed and a `pay_arrangements` row exists, but no schedule has
   // ever been started for that carer — `termsProposalCommandService.accept()`
@@ -355,6 +361,9 @@ export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
   // when the ACCEPTER is the carer so the family (who authored the offer)
   // hears it instead of the type going nowhere.
   [PUSH_NOTIFICATION_TYPES.TERMS_OFFER_ACCEPTED]: 'parent',
+  // WP-G — the author is whichever side wrote the round, so the side being
+  // nudged is whichever side did not. 'both', same shape as the decline.
+  [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_REMINDER]: 'both',
   // Only the family can answer "when do you need her" — `reminderJob` sends
   // it through `listParentUserIds`, so 'parent' by the header's rule.
   [PUSH_NOTIFICATION_TYPES.SCHEDULE_NOT_SET]: 'parent',

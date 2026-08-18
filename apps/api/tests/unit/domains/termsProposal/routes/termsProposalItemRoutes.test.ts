@@ -34,6 +34,7 @@ const CARER_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const PROPOSAL_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const MOUNT_PATH = '/terms-proposals';
 const FIXTURE_VIEWED_AT = new Date().toISOString();
+const FIXTURE_REMINDED_AT = new Date().toISOString();
 
 const VALID_TERMS = {
   rate_minor: 2800,
@@ -67,6 +68,7 @@ let acceptMock: ReturnType<typeof mock>;
 let withdrawMock: ReturnType<typeof mock>;
 let declineMock: ReturnType<typeof mock>;
 let markViewedMock: ReturnType<typeof mock>;
+let remindMock: ReturnType<typeof mock>;
 
 beforeAll(async () => {
   getByIdMock = mock(async () => proposalRow());
@@ -76,6 +78,7 @@ beforeAll(async () => {
   markViewedMock = mock(async () =>
     proposalRow({ viewed_at: FIXTURE_VIEWED_AT })
   );
+  remindMock = mock(async () => ({ reminded_at: FIXTURE_REMINDED_AT }));
 
   mock.module('../../../../../src/middlewares/auth', () => ({
     requireAuth: (
@@ -111,6 +114,7 @@ beforeAll(async () => {
         withdraw: (...args: unknown[]) => withdrawMock(...args),
         decline: (...args: unknown[]) => declineMock(...args),
         markViewed: (...args: unknown[]) => markViewedMock(...args),
+        remind: (...args: unknown[]) => remindMock(...args),
       },
     })
   );
@@ -150,6 +154,7 @@ beforeEach(() => {
   withdrawMock.mockClear();
   declineMock.mockClear();
   markViewedMock.mockClear();
+  remindMock.mockClear();
 });
 
 const item = () => `${baseUrl}/terms-proposals/${PROPOSAL_ID}`;
@@ -230,6 +235,27 @@ describe('termsProposalItemRoutes — withdraw and viewed', () => {
     expect(res.status).toBe(200);
     expect((await res.json()).data.terms_proposal.status).toBe('declined');
     expect(declineMock.mock.calls[0]).toEqual(['parent-1', PROPOSAL_ID]);
+  });
+
+  // WP-G — the nudge. It answers with the instant and NOT with the row,
+  // because nothing about the proposal changed: a reminder is a message, not
+  // a lifecycle event, and returning the row would invite a client to think
+  // otherwise.
+  it('POST /:proposalId/remind answers with the instant, not the row', async () => {
+    const res = await fetch(`${item()}/remind`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.reminded_at).toBe(FIXTURE_REMINDED_AT);
+    expect(body.data.terms_proposal).toBeUndefined();
+    expect(remindMock.mock.calls[0]).toEqual(['parent-1', PROPOSAL_ID]);
+  });
+
+  it('a non-uuid id is refused at the wire before remind is reached', async () => {
+    const res = await fetch(`${baseUrl}/terms-proposals/nope/remind`, {
+      method: 'POST',
+    });
+    expect(res.status).toBe(400);
+    expect(remindMock).not.toHaveBeenCalled();
   });
 
   it('there is no PATCH and no DELETE — the table is append-only', async () => {

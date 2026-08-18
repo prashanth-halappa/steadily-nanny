@@ -99,7 +99,10 @@
     "scheduledToday": "{{carer}} tiene {{hours}} horas programadas hoy que aún no se pueden registrar.",
     "ctaSee": "Ver lo que enviaste",
     "ctaChange": "Cambiar lo que enviaste",
-    "withdraw": "Retirar"
+    "withdraw": "Retirar",
+    "remind": "Enviar un recordatorio",
+    "reminded": "Recordatorio enviado el {{date}}",
+    "remindTooSoon": "Puedes enviar un recordatorio cada dos días."
   },
   "lead_one": "{{count}} cosa te espera.",
   "lead_other": "{{count}} cosas te esperan.",

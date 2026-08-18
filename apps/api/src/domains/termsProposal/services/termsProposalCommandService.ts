@@ -39,6 +39,7 @@ import {
   HouseholdMemberRepository,
   HouseholdRepository,
 } from '../../household';
+import { ReminderLogRepository } from '../../notification/repositories/reminderLogRepository';
 import {
   notifyHouseholdParents,
   notifyUser,
@@ -51,6 +52,7 @@ import { UserService } from '../../user';
 import {
   TermsProposalNotActionableError,
   TermsProposalNotFoundError,
+  TermsProposalReminderTooSoonError,
   TermsProposalValidationError,
 } from '../errors/termsProposalErrors';
 import { TermsProposalRepository } from '../repositories/termsProposalRepository';
@@ -132,6 +134,37 @@ function addMonthsISO(dateISO: string, months: number): string {
  */
 const UNNAMED_CARER_DISPLAY_NAME = 'Carer';
 
+/**
+ * The three methods `remind` needs from `ReminderLogRepository` — the
+ * `push_reminder_log` ledger (047/060), reused rather than given a table of
+ * its own. It already IS "which user was told what, and when", which is the
+ * entire persistence a rate limit needs.
+ */
+export interface ReminderLedger {
+  findLastSentAt: (userId: string, keyPrefix: string) => Promise<string | null>;
+  claim: (userId: string, reminderKey: string) => Promise<boolean>;
+  confirm: (userId: string, reminderKey: string) => Promise<void>;
+}
+
+/**
+ * WP-G's window, on BOTH clocks: how old a round must be before it can be
+ * chased, and how long a chase then silences the button for.
+ *
+ * Two days rather than one because the thing on the other end is a family
+ * reading a contract, not a queue. One day makes the button a way to send two
+ * notifications about the same message; a week makes the affordance useless
+ * on the timeline a hiring decision actually runs on.
+ */
+const REMINDER_INTERVAL_MS = 48 * 60 * 60 * 1000;
+
+/**
+ * The ledger key for one proposal's reminders. The instant is APPENDED by
+ * `remind`, so every nudge is its own write-once row (047's own rule for the
+ * table) and the newest one answers "when was the last?".
+ */
+const reminderKeyPrefix = (proposalId: string) =>
+  `terms_proposal_remind:${proposalId}:`;
+
 export class TermsProposalCommandService {
   constructor(
     private readonly proposalRepo: TermsProposalRepository = new TermsProposalRepository(),
@@ -149,7 +182,8 @@ export class TermsProposalCommandService {
       notifyHouseholdParents,
     },
     private readonly arrangements: ArrangementCreator = payArrangementCommandService,
-    private readonly candidates: CandidateActivator | null = new HouseholdMemberRepository()
+    private readonly candidates: CandidateActivator | null = new HouseholdMemberRepository(),
+    private readonly reminderLog: ReminderLedger = new ReminderLogRepository()
   ) {}
 
   /**
@@ -427,6 +461,76 @@ export class TermsProposalCommandService {
       (await this.proposalRepo.stampViewed(proposalId, now().toISOString())) ??
       proposal
     );
+  }
+
+  /**
+   * WP-G — the author nudges her own open round, once, by tapping a button.
+   *
+   * WHAT THIS IS NOT. It is not a job: nothing here runs on a schedule, and
+   * no round is ever chased on the app's initiative. The alternative this
+   * replaces is a text message at 11pm, and the reason a person has to press
+   * it is that only a person knows whether chasing is the right move today.
+   *
+   * BOTH CLOCKS ARE 48 HOURS, and both are checked BEFORE anything is
+   * written or sent, so a refusal costs a read and nothing else. The first
+   * (`created_at`) stops a nudge on the same evening the terms went out — at
+   * that point it is a second notification about a message nobody has had an
+   * ordinary chance to read. The second (the ledger) stops the button from
+   * being a tap-to-repeat.
+   *
+   * THE GATE IS `withdraw`'s, not `decline`'s: chasing is the AUTHOR's move.
+   * The counterparty's move is to answer, and giving them a nudge button
+   * would mean "remind me to remind you", which is nobody's fact.
+   *
+   * NOTHING ON THE ROW MOVES. A reminder is a message about a proposal, never
+   * part of it — §7.2's chain is a record of what was OFFERED, and an
+   * `updated_at` that ticked because somebody was impatient would make the
+   * history read as though the terms had changed.
+   */
+  async remind(
+    callerId: string,
+    proposalId: string,
+    now: () => Date = () => new Date()
+  ): Promise<{ reminded_at: string }> {
+    const { proposal } = await this.loadAnswerableForCaller(
+      callerId,
+      proposalId
+    );
+    if (proposal.proposed_by !== callerId) {
+      // Same opaque 404 as `withdraw`'s — a caller learns nothing about who
+      // authored what.
+      throw new TermsProposalNotFoundError({
+        proposalId,
+        reason: 'not_the_author',
+      });
+    }
+
+    const nowMs = now().getTime();
+    if (nowMs - Date.parse(proposal.created_at) < REMINDER_INTERVAL_MS) {
+      throw new TermsProposalReminderTooSoonError(
+        proposalId,
+        'proposal_too_fresh'
+      );
+    }
+
+    const prefix = reminderKeyPrefix(proposalId);
+    const lastSentAt = await this.reminderLog.findLastSentAt(callerId, prefix);
+    if (lastSentAt && nowMs - Date.parse(lastSentAt) < REMINDER_INTERVAL_MS) {
+      throw new TermsProposalReminderTooSoonError(
+        proposalId,
+        'reminded_recently'
+      );
+    }
+
+    const remindedAt = now().toISOString();
+    await this.reminderLog.claim(callerId, `${prefix}${remindedAt}`);
+    // CONFIRM, not just claim: 060's sweep deletes unconfirmed reservations
+    // after two hours, and an unconfirmed nudge would quietly reopen the
+    // button that evening. Best-effort inside the repository, like the job's.
+    await this.reminderLog.confirm(callerId, `${prefix}${remindedAt}`);
+
+    this.notifyOfReminder(proposal);
+    return { reminded_at: remindedAt };
   }
 
   /**
@@ -747,6 +851,41 @@ export class TermsProposalCommandService {
         body: 'Open Steadily to see the record.',
         data: this.deepLink(
           PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_DECLINED,
+          proposal
+        ),
+      });
+    } catch {
+      // Both helpers are sync fire-and-forget; swallow any unexpected throw.
+    }
+  }
+
+  /**
+   * WP-G — to the side that has not answered. `direction` names the AUTHOR
+   * (and `remind` has already refused everyone else), so the recipient is
+   * always the other side: the mirror of `notifyOfNewRound`'s branching,
+   * because this is the same fact arriving at the same end a second time.
+   *
+   * NO FIGURE (A8), and the copy deliberately does not say "still". The push
+   * is a person's nudge, not the app grading a family on how long they took.
+   */
+  private notifyOfReminder(proposal: TermsProposalRow): void {
+    try {
+      if (proposal.direction === TERMS_PROPOSAL_DIRECTIONS.CARER) {
+        this.push.notifyHouseholdParents(proposal.household_id, {
+          title: `${proposal.carer_display_name} sent a reminder`,
+          body: 'Open Steadily to review the terms.',
+          data: this.deepLink(
+            PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_REMINDER,
+            proposal
+          ),
+        });
+        return;
+      }
+      this.push.notifyUser(proposal.carer_id, {
+        title: 'A reminder about the terms you were sent',
+        body: 'Open My pay to review them.',
+        data: this.deepLink(
+          PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_REMINDER,
           proposal
         ),
       });
