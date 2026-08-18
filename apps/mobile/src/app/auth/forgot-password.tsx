@@ -45,9 +45,10 @@ export default function ForgotPassword() {
           style={{
             flex: 1,
             paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingTop: SCREEN_CONTENT_STYLE.padding,
             paddingBottom: SCREEN_CONTENT_STYLE.padding,
           }}
-          className="justify-start gap-3 pt-16"
+          className="justify-start gap-3"
         >
           <H1>{t('forgotPasswordTitle')}</H1>
           <Body className="text-muted-foreground">

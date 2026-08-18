@@ -48,9 +48,10 @@ export default function Login() {
           style={{
             flex: 1,
             paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingTop: SCREEN_CONTENT_STYLE.padding,
             paddingBottom: SCREEN_CONTENT_STYLE.padding,
           }}
-          className="justify-start gap-3 pt-16"
+          className="justify-start gap-3"
         >
           <H1>{t('signIn')}</H1>
           <Input

@@ -76,10 +76,6 @@ export function SetupScreenShell({
       edges={['left', 'right']}
       testID={testID}
     >
-      {/* Clears the Expo dev-client's quick-access gear (top-right) so it
-          never overlaps the H1. Dev-only — production must not ship the band. */}
-      {__DEV__ ? <View style={{ height: 48 }} /> : null}
-
       {onBack ? (
         <View style={{ paddingHorizontal: SCREEN_GUTTER }} className="pb-1">
           <BackButton
