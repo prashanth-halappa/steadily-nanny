@@ -53,7 +53,7 @@ every visit now (`ScreenWash kind="brand"`, apricot only while live).
 │  ┌ HERO BAND ───────────────────────────── height 148, no card, on the wash
 │  │  H1 "Today"                                    32/40/600  foreground
 │  │  Small  "Monday 10 Aug · The Ahmeds"           14/21/400  mutedStrong
-│  │                                    ┌──────────┐
+│  │                                    ┌──────────┐ ⚙︎
 │  │  [child chips row]                 │ spot art │  104×104, right-aligned,
 │  │                                    └──────────┘  state-driven (§6)
 │  └────────────────────────────────────────────────
@@ -75,6 +75,13 @@ every visit now (`ScreenWash kind="brand"`, apricot only while live).
 The hero band is not a card. It has no ground of its own, no shadow, no radius —
 it is the top of the wash, and the wash is what separates it from the cards
 below. That is the Daylight rule applied to a header for the first time.
+
+**The gear at the band's trailing edge** is `SettingsHeaderButton`
+(`testID="header-settings"`), passed as `ScreenHeader`'s `trailingAction`.
+Since WP-C, Settings is a pushed screen rather than a tab, and this is the
+only way into it from Today — so it is navigation chrome, outside Rule H's
+three band elements (`01-LAWS.md` §C), and it must survive any rework of this
+band.
 
 **Date line — as built.** `TodayScreen.tsx:127–135` renders weekday (from the
 `schedule` locale bundle) + `formatDisplayDate` + optional household name when

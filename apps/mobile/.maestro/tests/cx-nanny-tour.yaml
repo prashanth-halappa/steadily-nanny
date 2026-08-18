@@ -106,12 +106,22 @@ tags:
       - takeScreenshot: cx-nanny-earnings-breakdown
 
 # --- Inbox ---------------------------------------------------------------
+# The deep link still resolves (group segments are optional), and it is the
+# reliable way in from a pushed screen.
 - openLink: steadilynanny:///(private)/inbox
 - waitForAnimationToEnd
 - runFlow: cx-dismiss-open-alert.yaml
 - assertVisible:
     id: 'inbox-screen'
 - takeScreenshot: cx-nanny-inbox
+# WP-C: the inbox is the fourth tab now — shoot it the way a person reaches
+# it, from the tab bar, so the bar itself is in frame.
+- tapOn:
+    id: 'tab-inbox'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'inbox-screen'
+- takeScreenshot: cx-nanny-inbox-tab
 
 # --- Pay / terms (her own arrangement, not the household's) ----------------
 - openLink: steadilynanny:///(private)/settings/my-pay

@@ -36,6 +36,7 @@ import { Button } from '@/src/components/ui/button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { ScreenWash } from '@/src/components/ui/screen-wash';
+import { SettingsHeaderButton } from '@/src/components/ui/settings-header-button';
 import { Figure28, H1, Small } from '@/src/components/ui/typography';
 import { WeekNavHeader } from '@/src/components/ui/week-nav-header';
 import {
@@ -475,18 +476,23 @@ export function ScheduleShiftsScreen({
           label={tCommon('back')}
         />
       ) : null}
-      <View className="gap-1">
-        <H1>{heading}</H1>
-        <Small testID="schedule-lead" className="text-muted-strong">
-          {lead}
-        </Small>
-        {/* The week range is not repeated here — `WeekNavHeader` below
-            already owns and renders that exact string. */}
-        <Figure28 testID="schedule-week-total">
-          {t('shifts.weekTotal', {
-            duration: formatDuration(weekTotalMinutes),
-          })}
-        </Figure28>
+      <View className="flex-row items-start justify-between gap-3">
+        <View className="flex-1 gap-1">
+          <H1>{heading}</H1>
+          <Small testID="schedule-lead" className="text-muted-strong">
+            {lead}
+          </Small>
+          {/* The week range is not repeated here — `WeekNavHeader` below
+              already owns and renders that exact string. */}
+          <Figure28 testID="schedule-week-total">
+            {t('shifts.weekTotal', {
+              duration: formatDuration(weekTotalMinutes),
+            })}
+          </Figure28>
+        </View>
+        {/* Tab-root only: Settings is reached from the header now (WP-C),
+            and the pushed variant above already has its own back button. */}
+        {showBack ? null : <SettingsHeaderButton />}
       </View>
       {/* S11: a nanny had no pattern-level surface at all — this is the one
           link into her read-only `NannyUsualWeekScreen` from her Schedule

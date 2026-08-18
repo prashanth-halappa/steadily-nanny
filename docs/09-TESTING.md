@@ -302,6 +302,7 @@ Layout: reusable fragments in `.maestro/flows/` (e.g. `login.yaml`), numbered sc
 **Rules:**
 
 - Prefer `testID`/`id` selectors over text.
+- **Tab bar: `tab-today` / `tab-schedule` / `tab-hours` / `tab-inbox`.** There is no `tab-settings` — WP-C gave the fourth slot to the Inbox and pushed Settings behind the `header-settings` gear that every root screen carries. Reach Settings with `tapOn: { id: "header-settings" }` (or `openLink: steadilynanny:///(private)/settings`), and leave it with `tapOn: { id: "settings-back" }` before any `tapOn: tab-*` — a pushed screen covers the tab bar.
 - Preserve login between tests: `launchApp: clearState: false`, and compose a shared `login.yaml` via `runFlow`.
 - **Do not** use `anyOf:` or a `timeout:` inside `assertVisible` — unsupported in the pinned Maestro. Use `waitForAnimationToEnd` instead, and `runFlow: when: visible:` for conditional steps.
 - Tab bars without testIDs: use coordinate taps or fuzzy text.

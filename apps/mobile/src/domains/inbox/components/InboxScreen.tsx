@@ -13,12 +13,13 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
+import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
-import { BackButton } from '@/src/components/ui/back-button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { PersonAvatar } from '@/src/components/ui/person-avatar';
 import { ScreenHeader } from '@/src/components/ui/screen-header';
+import { SettingsHeaderButton } from '@/src/components/ui/settings-header-button';
 import { Body, MetadataLabel, Small } from '@/src/components/ui/typography';
 import { useInboxItems } from '@/src/domains/inbox/hooks/useInboxItems';
 import {
@@ -43,19 +44,22 @@ const CONTENT_STYLE = {
 
 export function InboxScreen() {
   const { t } = useTranslation('inbox');
-  const { t: tCommon } = useTranslation('common');
   const router = useRouter();
   const elevation = useElevation();
   const { timeZoneFor } = useHouseholdLookup();
   const { items, isLoading, isError, refetch } = useInboxItems();
   const { refreshControl } = usePullToRefresh();
+  // A tab root now (WP-C), so the floating tab bar overlays the last rows
+  // unless the scroll reserves its height — same reason every other tab
+  // root does this.
+  const tabBarScrollPadding = useTabBarScrollPadding();
 
   return (
     <ScrollView
       testID="inbox-screen"
       className="flex-1 bg-background"
       contentContainerStyle={{
-        paddingBottom: SCREEN_CONTENT_STYLE.paddingBottom,
+        paddingBottom: tabBarScrollPadding,
         flexGrow: 1,
       }}
       refreshControl={refreshControl}
@@ -63,17 +67,9 @@ export function InboxScreen() {
       <View className="min-h-full flex-1 gap-8">
         <ScreenHeader
           testID="inbox-header"
-          backButton={
-            <View className="mb-1">
-              <BackButton
-                testID="inbox-back"
-                onPress={() => router.back()}
-                label={tCommon('back')}
-              />
-            </View>
-          }
           title={t('screenTitle')}
           contextLine={t('screenSubtitle')}
+          trailingAction={<SettingsHeaderButton />}
         />
 
         {isLoading ? (

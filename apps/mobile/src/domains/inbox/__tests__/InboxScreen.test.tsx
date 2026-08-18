@@ -40,6 +40,9 @@ beforeAll(async () => {
   }));
   mock.module('expo-router', () => ({
     useRouter: () => ({ push: mockPush, back: mock() }),
+    // `SettingsHeaderButton` (the header icon that replaced the Settings
+    // tab) reaches for the singleton, not the hook.
+    router: { push: mockPush, back: mock() },
   }));
   mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
     useActiveHousehold: () => ({
@@ -129,12 +132,15 @@ describe('InboxScreen', () => {
     expect(queryByTestId('error-state')).toBeNull();
   });
 
-  it('renders the shared BackButton with its testID and a working back callback', () => {
-    const { getByTestId } = render(<InboxScreen />);
-    const back = getByTestId('inbox-back');
-    expect(back.props.accessibilityRole).toBe('button');
-    fireEvent.press(back);
-    // useRouter's back is a bare mock() here — pressing must not throw.
+  // WP-C: the inbox is a tab root now, so there is nothing to go back TO —
+  // the back button is gone and the settings icon takes its place.
+  it('carries the settings header icon and no back button', () => {
+    const { getByTestId, queryByTestId } = render(<InboxScreen />);
+
+    expect(queryByTestId('inbox-back')).toBeNull();
+    expect(getByTestId('header-settings').props.accessibilityRole).toBe(
+      'button'
+    );
   });
 
   it('surfaces ErrorState + retry on query failure — never empty-success', () => {

@@ -189,6 +189,8 @@ beforeAll(async () => {
 
   mock.module('expo-router', () => ({
     useRouter: () => ({ push: mock(), back: mock() }),
+    // `SettingsHeaderButton` in the hero band reaches for the singleton.
+    router: { push: mock(), back: mock() },
   }));
   mock.module('@/src/domains/today/hooks/useHouseholdIsLive', () => ({
     useHouseholdIsLive: mock(() => false),

@@ -9,7 +9,7 @@
 # Exception: onboarding-stuck-clearstate.yaml (third state below) — see header.
 #
 # Third state (2026-08-11): authenticated with no household yet, mid the
-# onboarding wizard — no tab bar, so the settings-tab logout arm below never
+# onboarding wizard — no app shell, so the Settings deep-link logout arm below never
 # runs. Flows 14/15 leave accounts here when they fail partway. CodeEntryScreen's
 # wizard variant exposes `code-screen-sign-out` (not the settings/join variant);
 # role/start/household/children/permission screens do not. Two arms below: tap
@@ -192,17 +192,20 @@ appId: com.jetto.steadily.nanny
                 timeout: 5000
                 optional: true
 
-# Live session → sign out via the Settings tab. Signed-out edge: the
-# (private) deep link redirects to welcome and logout.yaml no-ops.
+# Live session → sign out via Settings. WP-C moved Settings out of the tab
+# group, so the deep link is /(private)/settings — it lands directly on
+# `settings-screen`, which is exactly what logout.yaml asserts before
+# scrolling to sign-out. Signed-out edge: the (private) deep link redirects
+# to welcome and logout.yaml no-ops.
 - runFlow:
     when:
       notVisible:
         id: 'welcome-screen'
     commands:
-      - openLink: steadilynanny:///(private)/(tabs)/settings
+      - openLink: steadilynanny:///(private)/settings
       - waitForAnimationToEnd
-      # Notification soft-ask sheet may be covering the tab bar — logout.yaml
-      # also guards on it, but its own guard needs the tab bar visible.
+      # Notification soft-ask sheet may be covering the screen — logout.yaml
+      # also guards on it, but its own guard needs `settings-screen` visible.
       - runFlow:
           when:
             visible:

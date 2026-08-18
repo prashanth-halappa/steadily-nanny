@@ -55,7 +55,7 @@ never a bare `<Modal>` (GOLDEN-FIXES #1). Confirmations that must block:
 
 ### Navigation
 
-- New row in `apps/mobile/src/app/(private)/(tabs)/settings.tsx`, parent branch
+- New row in `apps/mobile/src/app/(private)/settings/index.tsx`, parent branch
   of `settings-household-section` (after `settings-manage-household`, before
   `settings-view-availability`): `testID="settings-pay"`, label **"Pay & terms"**.
 - Route `apps/mobile/src/app/(private)/settings/pay/index.tsx` → `/settings/pay`.

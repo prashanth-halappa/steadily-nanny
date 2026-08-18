@@ -1,12 +1,21 @@
 # Sign out to the welcome wall so the next login.yaml / login-nanny.yaml
 # can authenticate as a different role on the same simulator.
 #
-# Assumes an authenticated session (tabs visible). No-op if already on welcome.
+# Assumes an authenticated session. No-op if already on welcome.
+#
+# WP-C: Settings is no longer a tab — it is a pushed screen reached from the
+# `header-settings` gear that every root screen carries. The gear is the
+# entry guard now, and it is NOT visible once Settings is already open (that
+# screen has a back button instead), so the tap is guarded while the
+# `settings-screen` assertion below it is NOT: a caller that pops back to
+# Settings from one of its pushed children still gets signed out, and a
+# caller standing somewhere with no way in fails loudly instead of silently
+# running its next leg as the wrong user (flows 03/06/08's lesson).
 appId: com.jetto.steadily.nanny
 ---
 # The notification soft-ask sheet ("Stay in the loop") can pop over any
 # signed-in screen once its snoozed state is wiped; it blocks every selector
-# under it. Dismiss before touching the tab bar.
+# under it. Dismiss before touching the header.
 - runFlow:
     when:
       visible:
@@ -18,12 +27,17 @@ appId: com.jetto.steadily.nanny
 
 - runFlow:
     when:
-      visible:
-        id: 'tab-settings'
+      notVisible:
+        id: 'welcome-screen'
     commands:
-      - tapOn:
-          id: 'tab-settings'
-      - waitForAnimationToEnd
+      - runFlow:
+          when:
+            visible:
+              id: 'header-settings'
+          commands:
+            - tapOn:
+                id: 'header-settings'
+            - waitForAnimationToEnd
       - assertVisible:
           id: 'settings-screen'
       - runFlow:
@@ -36,29 +50,23 @@ appId: com.jetto.steadily.nanny
             - waitForAnimationToEnd
       # 25s, not 10s. `settings-sign-out` is the LAST control on a long
       # settings page (households list → Account → Language → Legal & help →
-      # then the button, settings.tsx:516). Caught in the act 2026-08-12: the
-      # failure frame showed the page scrolled only as far as "Legal & help",
-      # i.e. the scroll was still working when the 10s budget expired. The
-      # element is not missing and not gated — it is an unconditional
-      # top-level Button — so "Element not found: settings-sign-out" here has
-      # always meant "ran out of scrolling time", which is what made this look
-      # like a third unfixed gap in the reset path.
+      # then the button). Caught in the act 2026-08-12: the failure frame
+      # showed the page scrolled only as far as "Legal & help", i.e. the
+      # scroll was still working when the 10s budget expired. The element is
+      # not missing and not gated — it is an unconditional top-level Button —
+      # so "Element not found: settings-sign-out" here has always meant "ran
+      # out of scrolling time".
       # `centerElement: true` is the load-bearing part, not the timeout.
       # MEASURED 2026-08-12 from a live hierarchy dump at the exact failure:
-      # `settings-sign-out` sits at [22,818][380,866] and the TAB BAR occupies
-      # [0,791][402,874] — so the button's centre (201,842) is inside the tab
+      # `settings-sign-out` sat at [22,818][380,866] and the TAB BAR occupied
+      # [0,791][402,874] — so the button's centre (201,842) was inside the tab
       # bar, and a plain `scrollUntilVisible` stops as soon as the button is in
       # the hierarchy (visibility is hierarchy-based, not occlusion-based),
       # then taps the tab bar instead. Maestro reports both COMPLETED.
-      # `centerElement` forces the scroll to continue until the button is
-      # centred in the viewport, clear of the tab bar. Safe to centre here
-      # precisely because this is the LAST control on the page, so there is
-      # nothing to overshoot into.
-      #
-      # This is 13a's root cause. "Element not found: settings-sign-out" was
-      # only the shallower half of it — with more scroll budget the element IS
-      # found, and the tap then silently lands on the tab bar instead. The
-      # button is unconditional (settings.tsx:516); nothing about it is gated.
+      # Settings is a pushed screen since WP-C, so there is no tab bar over it
+      # any more — `centerElement` stays because it also fixes the plain
+      # "stopped scrolling too early" half, and it is safe to centre here
+      # precisely because this is the LAST control on the page.
       - scrollUntilVisible:
           element:
             id: 'settings-sign-out'

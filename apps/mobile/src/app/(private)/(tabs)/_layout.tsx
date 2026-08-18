@@ -1,13 +1,19 @@
 import { Tabs } from 'expo-router';
-import { CalendarDays, Clock, Home, Settings } from 'lucide-react-native';
+import { CalendarDays, Clock, Home, Inbox } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { Pressable, type PressableProps } from 'react-native';
 import { useThemeColors } from '@/lib/design-tokens';
 import { useElevation } from '@/lib/design-tokens/elevation';
 
 /**
- * Main tab bar — Today / Schedule / Hours / Settings for every role, all
- * visible regardless of role (the bar itself is role-uniform). What each
+ * Main tab bar — Today / Schedule / Hours / Inbox for every role, all
+ * visible regardless of role (the bar itself is role-uniform). Settings is
+ * NOT a tab: it is pushed from the `header-settings` icon every root screen
+ * carries (`components/ui/settings-header-button.tsx`), because it is
+ * visited monthly while the shared record between a family and its carer is
+ * visited daily. No badge dot on any tab — the count lives in the Inbox
+ * screen's own lead line, where it says what it is
+ * (docs/design/00-FOUNDATIONS.md §8.5). What each
  * role sees ON the Schedule tab is forked in `schedule.tsx`: nanny gets this
  * week's shifts; parent/helper get the household's schedule-pattern state;
  * while role is still resolving, `schedule.tsx` shows a loading, error (with
@@ -102,11 +108,11 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="settings"
+        name="inbox"
         options={{
-          title: t('tabs.settings'),
+          title: t('tabs.inbox'),
           tabBarIcon: ({ color, size, focused }) => (
-            <Settings
+            <Inbox
               color={color}
               size={size}
               strokeWidth={
@@ -114,7 +120,7 @@ export default function TabsLayout() {
               }
             />
           ),
-          tabBarButton: tabBarButtonWithTestID('tab-settings'),
+          tabBarButton: tabBarButtonWithTestID('tab-inbox'),
         }}
       />
     </Tabs>

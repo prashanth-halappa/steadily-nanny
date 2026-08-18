@@ -2,8 +2,17 @@
 
 Reads with [`01-LAWS.md`](./01-LAWS.md) and [`00-FOUNDATIONS.md`](./00-FOUNDATIONS.md).
 
-Owner: `apps/mobile/src/app/(private)/(tabs)/settings.tsx` and the pushed
-screens under `src/app/(private)/settings/`.
+Owner: `apps/mobile/src/app/(private)/settings/index.tsx` and its sibling
+pushed screens under `src/app/(private)/settings/`.
+
+**Settings is not a tab.** WP-C gave the fourth tab to the Inbox and pushed
+Settings behind the `header-settings` gear that every root screen carries
+(`components/ui/settings-header-button.tsx`) — Settings is visited monthly,
+the shared record between a family and its carer is visited daily. Two
+consequences for this screen: it opens with a `settings-back` `BackButton`
+above the H1, and it sizes its own bottom padding from
+`SCREEN_CONTENT_STYLE` rather than `useTabBarScrollPadding` — there is no
+floating tab bar over it to clear any more.
 
 ---
 
@@ -40,6 +49,7 @@ four sections with no visual differentiation between "change my name" and
 ┌ ScreenWash kind="brand"                                absoluteFill
 │
 │  ┌ HERO BAND ─────────────────────── no card, on the wash
+│  │  BackButton "< Back"    testID settings-back
 │  │  H1 "Settings"                            32/40/600
 │  │  ┌ identity row ─────────────────────────────────
 │  │  │ PersonAvatar 48    H4 "Sara Ahmed"       foreground
@@ -108,7 +118,7 @@ once a month.
 | Group | Rows | Chip |
 |---|---|---|
 | **Your household** | Household switcher, children, invite, household settings, pay, carer availability, carer time off, closures, join a household | `schedule` lavender, except pay → `hours` sage |
-| **Account** | Name, time & timezone, inbox, notifications | `brand` plum |
+| **Account** | Name, time & timezone, notifications | `brand` plum |
 | **Language** | segmented control (§2.3) | — |
 | **Legal & help** | Privacy, terms, get help | `people` rose |
 
@@ -168,7 +178,7 @@ same identity hero, the same grouping, the same chips.
 |---|---|
 | **Loading** | Identity block skeletons (avatar circle + two bars); groups render immediately — they are static route lists and do not need the network. Today the whole screen waits on nothing, which is right; do not regress it. |
 | **Row value pending** | The value slot shows a 60×14 skeleton bar, not an empty space that then jumps. |
-| **Inbox badge** | `inboxBadge` (`:142–143`) renders a count as a muted value string. Promote to a `chipPlum` pill with the count in `primary` — it is the only row on the screen whose value is actionable. |
+| **No inbox row** | Deleted with WP-C. The Inbox is a tab; a Settings row duplicating it was a second front door with its own count to keep in sync. This screen no longer subscribes to `useInboxItems` at all. |
 | **Error** | Settings never blanks. A failed profile read shows the email from the auth store and omits the name row's value. |
 | **Offline** | Banner. Language still switches (it is applied locally first and synced best-effort — `:128–136`); do not gate it. |
 

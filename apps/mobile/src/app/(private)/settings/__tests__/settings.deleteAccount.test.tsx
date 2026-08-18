@@ -1,5 +1,5 @@
 /**
- * @module app/(private)/(tabs)/__tests__/settings.deleteAccount.test
+ * @module app/(private)/settings/__tests__/settings.deleteAccount.test
  *
  * F-B7-1 follow-up: `confirmDeleteAccount`'s bare `catch { return; }` around
  * the delete-account mutation swallowed every failure silently — network
@@ -66,10 +66,10 @@ mock.module('@/src/api/endpoints/user', () => ({
 
 // Declared, not statically imported — mock.module must register before the
 // subject (and its BottomSheetBase import) is resolved.
-let SettingsScreen: typeof import('../settings').default;
+let SettingsScreen: typeof import('../index').default;
 
 beforeAll(async () => {
-  SettingsScreen = (await import('../settings')).default;
+  SettingsScreen = (await import('../index')).default;
 });
 
 beforeEach(() => {

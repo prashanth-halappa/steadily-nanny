@@ -36,7 +36,7 @@ tags:
     env:
       HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
 - tapOn:
-    id: 'tab-settings'
+    id: 'header-settings'
 - waitForAnimationToEnd
 - assertVisible:
     id: 'settings-screen'
@@ -74,9 +74,10 @@ tags:
 - takeScreenshot: nanny-sick-day-booked
 
 # --- Parent: the auto-opened cancel request on today's shift --------------
-# Pop back to a tab first: /(private)/settings/time-off is outside (tabs), and
-# logout.yaml is gated on `tab-settings` being visible, so it would silently
-# no-op here and the parent leg would run as the nanny (flow 06's lesson).
+# Pop back to Settings first: /(private)/settings/time-off is a child of
+# Settings, and logout.yaml's entry guard is the `header-settings` gear that
+# only the root screens carry. One `back` lands on `settings-screen`, which
+# logout.yaml signs out from directly (flow 06's lesson).
 - back
 - waitForAnimationToEnd
 - runFlow: ../flows/logout.yaml

@@ -1,5 +1,5 @@
 /**
- * @module app/(private)/(tabs)/__tests__/settings.behavior.test
+ * @module app/(private)/settings/__tests__/settings.behavior.test
  *
  * Renders the REAL `SettingsScreen` (Pattern B, complementing the existing
  * `settings.test.tsx` Pattern A source-inspection file) — D26: nothing in
@@ -93,10 +93,10 @@ mock.module('@/src/api/endpoints/user', () => ({
 
 // Declared, not statically imported — mock.module must register before the
 // subject (and its BottomSheetBase import) is resolved.
-let SettingsScreen: typeof import('../settings').default;
+let SettingsScreen: typeof import('../index').default;
 
 beforeAll(async () => {
-  SettingsScreen = (await import('../settings')).default;
+  SettingsScreen = (await import('../index')).default;
 });
 
 beforeEach(() => {

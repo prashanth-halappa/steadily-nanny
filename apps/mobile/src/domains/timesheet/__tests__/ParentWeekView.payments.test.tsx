@@ -86,6 +86,8 @@ mock.module('@rn-primitives/alert-dialog', () => {
 
 const routerPushMock = mock();
 mock.module('expo-router', () => ({
+  // `SettingsHeaderButton` in the header band reaches for the singleton.
+  router: { push: mock(), replace: mock(), back: mock(), navigate: mock() },
   useRouter: () => ({ push: routerPushMock, back: mock(), replace: mock() }),
 }));
 

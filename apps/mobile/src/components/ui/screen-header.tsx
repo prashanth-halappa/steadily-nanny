@@ -24,6 +24,12 @@
  *
  * The band is NOT a card: no ground of its own, no shadow, no radius — it
  * IS the top of the wash, exactly like `TodayScreen`'s `HEADER_STYLE`.
+ *
+ * `backButton` and `trailingAction` are NAVIGATION CHROME, not band
+ * elements — they sit outside Rule H's three and do not count against the
+ * one-anchor cap. `trailingAction` renders last in the outer row (the
+ * settings gear, since WP-C made Settings a pushed screen), never inside
+ * the title column, so it can never squeeze the H1.
  */
 import type { ReactNode } from 'react';
 import { View } from 'react-native';
@@ -48,6 +54,9 @@ interface ScreenHeaderProps {
   titleAction?: ReactNode;
   /** Rendered above the title. Pass an existing `BackButton`, not built here. */
   backButton?: ReactNode;
+  /** Navigation chrome pinned to the end of the outer row — e.g.
+   * `SettingsHeaderButton`. Outside Rule H's three band elements. */
+  trailingAction?: ReactNode;
   /** Right-hand illustration (e.g. Today's 104x104 mood art). The title
    * column stays `flex-1` and is never squeezed by it. */
   art?: ReactNode;
@@ -60,6 +69,7 @@ export function ScreenHeader({
   anchor,
   titleAction,
   backButton,
+  trailingAction,
   art,
   testID = 'screen-header',
 }: ScreenHeaderProps) {
@@ -88,6 +98,7 @@ export function ScreenHeader({
           {anchor}
         </View>
         {art}
+        {trailingAction}
       </View>
     </View>
   );

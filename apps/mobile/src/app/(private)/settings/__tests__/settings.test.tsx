@@ -1,8 +1,8 @@
 /**
- * @module app/(private)/(tabs)/__tests__/settings.test
+ * @module app/(private)/settings/__tests__/settings.test
  *
  * Source-inspection test for the settings route (Pattern A, docs/09-TESTING.md
- * §5) — settings.tsx pulls in native-heavy deps (BottomSheetBase / sheets), so
+ * §5) — index.tsx pulls in native-heavy deps (BottomSheetBase / sheets), so
  * we assert architectural markers instead of rendering. Covers the
  * delete-account row required by REVIEW-CHECKLIST.md §8 (App Store Guideline
  * 5.1.1(v)). Keyboard occlusion cannot be simulated under bun:test, so the
@@ -12,7 +12,7 @@
 import { beforeAll, describe, expect, it } from 'bun:test';
 import { join } from 'node:path';
 
-const screenPath = join(__dirname, '../settings.tsx');
+const screenPath = join(__dirname, '../index.tsx');
 let screenSource: string;
 
 beforeAll(async () => {
@@ -107,11 +107,24 @@ describe('SettingsScreen', () => {
     expect(screenSource).toContain("t('settings:notifications')");
   });
 
-  it('keeps the inbox Settings link and shows a count badge from useInboxItems', () => {
-    expect(screenSource).toContain('settings-inbox');
-    expect(screenSource).toContain('useInboxItems');
-    expect(screenSource).toContain('inboxBadge');
-    expect(screenSource).toContain("router.push('/inbox'");
+  // WP-C: the inbox is its own tab now. A Settings row duplicating it was a
+  // second front door with its own count to keep in sync — deleted, along
+  // with the `useInboxItems` subscription this screen no longer needs.
+  it('has no inbox row — the inbox is a tab', () => {
+    expect(screenSource).not.toContain('settings-inbox');
+    expect(screenSource).not.toContain('useInboxItems');
+    expect(screenSource).not.toContain('inboxBadge');
+    expect(screenSource).not.toContain("router.push('/inbox'");
+    expect(screenSource).not.toContain("t('settings:inbox')");
+  });
+
+  // Pushed, not a tab — so it needs a way back, and its own bottom padding
+  // (there is no tab bar overlaying it any more to size against).
+  it('is a pushed screen: back button above the title, no tab-bar padding', () => {
+    expect(screenSource).toContain('settings-back');
+    expect(screenSource).toContain('BackButton');
+    expect(screenSource).not.toContain('useTabBarScrollPadding');
+    expect(screenSource).not.toContain('tabBarScrollPadding');
   });
 
   it('groups navigable rows into one elevated Card per section, not per-row elevation (docs/design/01-LAWS.md)', () => {
@@ -156,19 +169,16 @@ describe('SettingsScreen', () => {
     expect(screenSource).toContain('onboarding.role === SETUP_ROLES.NANNY');
   });
 
-  // REGRESSION: the floating tab bar overlays this screen's content instead
-  // of reserving its own layout space, so the last rows sat at y≈882–926
-  // while the bar started at y≈873 — tapping "Nanny time off" landed on the
-  // Hours tab underneath instead. A fixed `paddingBottom: 100` (the old
-  // SCREEN_CONTENT_STYLE default) wasn't safe-area-aware and wasn't enough
-  // on every device; this screen must size its bottom padding off the real
-  // tab bar height + safe-area inset via useTabBarScrollPadding, not a
-  // reintroduced magic number. A pixel-accurate "is the last row now above
-  // the bar" assertion isn't practical without a real device/layout host —
-  // this pins the wiring instead.
-  it('REGRESSION: sizes scroll bottom padding off the tab bar height, not a static magic number', () => {
-    expect(screenSource).toContain('useTabBarScrollPadding');
-    expect(screenSource).toContain('paddingBottom: tabBarScrollPadding');
+  // WAS a regression test pinning `useTabBarScrollPadding` — the floating
+  // tab bar used to overlay this screen and swallow taps on its last rows.
+  // WP-C pushes Settings above the tab bar entirely, so there is no bar to
+  // size against; `SCREEN_CONTENT_STYLE.paddingBottom` is the pushed-screen
+  // equivalent. The tab-bar assertion moved to the tab roots that still
+  // have one; what stays pinned here is that the padding isn't zero.
+  it('reserves bottom padding for the last rows (sign-out, delete, version)', () => {
+    expect(screenSource).toContain(
+      'contentContainerStyle={SCREEN_CONTENT_STYLE}'
+    );
   });
 
   it('offers join-another-household to EVERY role, outside the parent/carer ternary', () => {

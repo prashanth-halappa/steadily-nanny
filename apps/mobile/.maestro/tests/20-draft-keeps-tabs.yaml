@@ -18,11 +18,11 @@ tags:
   - draft
 ---
 - runFlow: ../flows/login-nanny.yaml
-# login-nanny.yaml's select-household.yaml step ends on the Settings tab
-# (it opens the switcher from there and never taps back) — same pattern as
-# flows 18/19. Switch to the draft household from there.
+# WP-C: Settings is a pushed screen behind the `header-settings` gear, and
+# select-household.yaml now pops back off it, so we open it again here to
+# reach the household switcher and switch to the draft household.
 - tapOn:
-    id: 'tab-settings'
+    id: 'header-settings'
 - waitForAnimationToEnd
 - runFlow:
     when:
@@ -47,6 +47,11 @@ tags:
 - waitForAnimationToEnd
 - assertNotVisible:
     id: 'household-switcher-sheet'
+# Settings is pushed, so the tab bar is behind it — pop back before the tab
+# assertions below, which are the whole point of this flow.
+- tapOn:
+    id: 'settings-back'
+- waitForAnimationToEnd
 
 # --- Today: the tab bar is still here, and the body is the draft home ----
 - tapOn:
@@ -59,7 +64,7 @@ tags:
 - assertVisible:
     id: 'tab-hours'
 - assertVisible:
-    id: 'tab-settings'
+    id: 'tab-inbox'
 - assertVisible:
     id: 'draft-home'
 - assertVisible:
@@ -79,7 +84,7 @@ tags:
 - assertVisible:
     id: 'tab-hours'
 - assertVisible:
-    id: 'tab-settings'
+    id: 'tab-inbox'
 - takeScreenshot: draft-keeps-tabs-schedule
 
 # --- Hours: same story ----------------------------------------------------
@@ -95,5 +100,5 @@ tags:
 - assertVisible:
     id: 'tab-hours'
 - assertVisible:
-    id: 'tab-settings'
+    id: 'tab-inbox'
 - takeScreenshot: draft-keeps-tabs-hours

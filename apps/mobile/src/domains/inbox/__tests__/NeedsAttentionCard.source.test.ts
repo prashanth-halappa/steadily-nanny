@@ -8,7 +8,7 @@ const cardPath = join(__dirname, '../components/NeedsAttentionCard.tsx');
 const todayPath = join(__dirname, '../../today/components/TodayScreen.tsx');
 const settingsPath = join(
   __dirname,
-  '../../../app/(private)/(tabs)/settings.tsx'
+  '../../../app/(private)/settings/index.tsx'
 );
 
 let cardSource: string;
@@ -39,10 +39,11 @@ describe('NeedsAttentionCard source', () => {
     expect(todaySource).toContain('NeedsAttentionCard');
   });
 
-  it('Settings inbox row keeps its link and shows a count badge', () => {
-    expect(settingsSource).toContain('settings-inbox');
-    expect(settingsSource).toContain('useInboxItems');
-    expect(settingsSource).toContain('inboxBadge');
-    expect(settingsSource).toContain("router.push('/inbox'");
+  // WP-C: the inbox got a tab, so Settings stopped carrying a duplicate row
+  // (and a second count to keep in sync). This card is the only remaining
+  // pointer at `/inbox` outside the tab bar itself.
+  it('Settings no longer duplicates the inbox row', () => {
+    expect(settingsSource).not.toContain('settings-inbox');
+    expect(settingsSource).not.toContain('useInboxItems');
   });
 });

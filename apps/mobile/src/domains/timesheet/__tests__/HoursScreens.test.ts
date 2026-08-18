@@ -40,7 +40,7 @@ describe('HoursScreen', () => {
   // the title on its no-household/no-role fallback branch.
   it('renders an H1 title on the main path, not the settings week-starts hint', () => {
     expect(hoursHeroBandSource).toContain('hours-title');
-    expect(hoursHeroBandSource).toMatch(/<H1 testID="hours-title">/);
+    expect(hoursHeroBandSource).toMatch(/<H1\s+testID="hours-title"/);
     expect(hoursHeroBandSource).toContain("t('title')");
     expect(hoursScreenSource).toContain("t('title')");
     expect(hoursScreenSource).not.toContain('hours-monday-week-note');

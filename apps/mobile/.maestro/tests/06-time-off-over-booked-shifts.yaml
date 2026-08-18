@@ -32,7 +32,7 @@ tags:
 # --- Nanny: request time off that overlaps booked shifts ---
 - runFlow: ../flows/login-nanny.yaml
 - tapOn:
-    id: 'tab-settings'
+    id: 'header-settings'
 - waitForAnimationToEnd
 - assertVisible:
     id: 'settings-screen'
@@ -75,10 +75,12 @@ tags:
 - takeScreenshot: nanny-time-off-submitted
 
 # --- Parent: land where CARER_TIME_OFF_CONFLICT push would deep-link ---
-# Pop back to a tab first — logout.yaml is wrapped in `when: visible:
-# tab-settings`, and this screen (a pushed /(private)/settings/time-off
-# route outside (tabs)) has no tab bar, so logout would silently no-op and
-# the parent leg below would run as the still-signed-in nanny.
+# Pop back to Settings first — this screen is /(private)/settings/time-off,
+# a child of Settings, and logout.yaml's own entry guard is the
+# `header-settings` gear, which only the ROOT screens carry. One `back` lands
+# on `settings-screen`, which logout.yaml asserts and signs out from
+# directly. Without it logout would fail loudly (it used to silently no-op
+# and run the parent leg below as the still-signed-in nanny).
 - back
 - waitForAnimationToEnd
 - runFlow: ../flows/logout.yaml

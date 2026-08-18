@@ -41,6 +41,8 @@ mock.module('@/src/components/ui/empty-state', () => {
   };
 });
 mock.module('expo-router', () => ({
+  // `SettingsHeaderButton` in the header band reaches for the singleton.
+  router: { push: mock(), replace: mock(), back: mock(), navigate: mock() },
   useRouter: () => ({ push: mock(), back: mock() }),
 }));
 mock.module('@/src/domains/household', () => ({

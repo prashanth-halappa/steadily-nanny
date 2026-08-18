@@ -87,6 +87,8 @@ beforeAll(async () => {
 
   mockPush = mock();
   mock.module('expo-router', () => ({
+    // `SettingsHeaderButton` in the header band reaches for the singleton.
+    router: { push: mock(), replace: mock(), back: mock(), navigate: mock() },
     useRouter: () => ({ push: mockPush, back: mock() }),
   }));
 
