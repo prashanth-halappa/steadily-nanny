@@ -67,7 +67,7 @@
       "left": "{{name}} left at {{time}} · {{duration}}.",
       "youCovering": "You're covering {{start}} – {{end}}.",
       "parentCovering": "{{parentName}} is covering {{start}} – {{end}}.",
-      "runningLate": "{{name}} says she's running late.",
+      "runningLate": "{{name}} says they're running late.",
       "parentCoveringNanny": "Parent is covering {{start}} – {{end}}. Your day starts {{end}} as planned."
     },
     "status": {
@@ -224,7 +224,7 @@
     "titleNothingSent": "Your rate isn't set in Steadily yet",
     "bodyFamilySent": "{{familyName}} sent you terms on {{date}}. Agree to them and you can clock in straight away.",
     "bodyYouSent": "You sent your terms on {{date}}. {{familyName}} hasn't answered yet.",
-    "bodyNothingSent": "Your rate isn't set in Steadily yet. Send {{familyName}} your terms and you can start clocking in.",
+    "bodyNothingSent": "Neither of you has set a rate in Steadily yet. You can send {{familyName}} your terms, or wait for them to send theirs.",
     "ctaFamilySent": "Review these terms",
     "ctaYouSent": "See what you sent",
     "ctaNothingSent": "Send my terms",
@@ -233,7 +233,7 @@
   },
   "emergencyContactPrompt": {
     "title": "One more number for {{name}}",
-    "body": "If she can't reach you and something's happened, who should she call? A partner, a grandparent, a neighbour — anyone who could get here.",
+    "body": "If {{name}} can't reach you and something's happened, who should they call? A partner, a grandparent, a neighbour — anyone who could get here.",
     "cta": "Add their number",
     "notNow": "Not now",
     "nameLabel": "Their name",
@@ -260,18 +260,18 @@
   "moments": {
     "nannyJoined": {
       "title": "{{name}} has joined {{family}}",
-      "bodyAgreed": "{{name}} can see the week now. She can clock in from her first shift.",
-      "bodyNothingSent": "{{name}} can see the week now. She can clock in once you've both agreed the pay terms.",
-      "bodyYouSent": "{{name}} can see the week now. She can clock in as soon as she agrees to the terms you sent.",
+      "bodyAgreed": "{{name}} can see the week now. They can clock in from their first shift.",
+      "bodyNothingSent": "{{name}} can see the week now. They can clock in once you've both agreed the pay terms.",
+      "bodyYouSent": "{{name}} can see the week now. They can clock in as soon as they agree to the terms you sent.",
       "ctaSetTerms": "Set the pay terms",
       "ctaSeeTerms": "See the terms you sent",
       "cta": "See {{name}}'s profile",
-      "bodyAgreedNoWeek": "{{name}} can see the week now. Nothing's scheduled yet — send her the days and times you need.",
-      "ctaSetWeek": "Set her weekly hours"
+      "bodyAgreedNoWeek": "{{name}} can see the week now. Nothing's scheduled yet — send them the days and times you need.",
+      "ctaSetWeek": "Set {{name}}'s weekly hours"
     },
     "firstClockIn": {
       "title": "Your first clock-in with the {{family}}!",
-      "body": "From here every hour you work is on record — and on the family's Hours tab as it happens."
+      "body": "From here, every hour you work is yours on the record — timed, saved, and there at the end of the week."
     },
     "firstWeekApproved": {
       "title": "Your first week — approved!",

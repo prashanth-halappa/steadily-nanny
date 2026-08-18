@@ -220,3 +220,14 @@ export function getLocalizedAuthErrorMessage(
 
   return t('auth:errors.unknown');
 }
+
+/**
+ * Extracts the real HTTP status code if the error carries a `.response.status`.
+ * Used to distinguish a genuine 404/403 from a generic network failure (where .response is absent).
+ */
+export function httpStatusOf(error: unknown): number | undefined {
+  const err = asErrorLike(error);
+  return typeof err.response?.status === 'number'
+    ? err.response.status
+    : undefined;
+}

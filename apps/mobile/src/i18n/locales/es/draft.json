@@ -97,7 +97,7 @@
   "joined": {
     "title": "Te has unido a la {{family}}",
     "waiting": "Esperando a que la {{family}} revise tus condiciones",
-    "privacy": "No puedes ver el pago ni las horas de la otra niñera, y ella no puede ver los tuyos.",
+    "privacy": "No puedes ver el pago ni las horas de la otra niñera, y esa niñera no puede ver los tuyos.",
     "children_one": "Un niño — {{names}}.",
     "children_other": "{{count}} niños — {{names}}.",
     "childWithAge": "{{name}} ({{age}})",

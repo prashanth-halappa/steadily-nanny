@@ -301,8 +301,10 @@ function MyPayHouseholdCard({
   const agreement = arrangement
     ? resolveTermsAgreement(arrangement, proposals.data, history.data, t)
     : null;
+  // docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B:
+  // a pending read must not compute an agreement fact either.
   const termsStateLabel =
-    !arrangement || agreement === null
+    proposals.isPending || !arrangement || agreement === null
       ? null
       : agreement.kind === 'agreed'
         ? proposalStateWord(

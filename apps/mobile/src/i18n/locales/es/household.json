@@ -64,7 +64,7 @@
     "continueButton": "Continuar",
     "generateButton": "Generar código de invitación",
     "shareButton": "Compartir código",
-    "shareHint": "Ella escribe este código al registrarse. Después ve el nombre de la familia, tu número y las condiciones de arriba.",
+    "shareHint": "Se escribe este código al registrarse. Después se ve el nombre de la familia, tu número y las condiciones de arriba.",
     "shareMessage": "Únete a nuestro hogar en Steadily Nanny — usa el código de invitación {{code}} al iniciar sesión.",
     "errorTitle": "No se pudo generar un código de invitación.",
     "retryButton": "Intentar de nuevo",
@@ -95,7 +95,7 @@
     },
     "absorb": {
       "title": "¿Añadir a {{name}} a tu familia?",
-      "body": "{{name}} ha propuesto unas condiciones y las revisarás a continuación. Se unirá a {{household}} cuando las aceptes y, hasta entonces, no podrá ver el horario ni los datos de tu familia. Nada cambia para quienes ya forman parte de ella.",
+      "body": "{{name}} ha propuesto unas condiciones y las revisarás a continuación. Se unirá a {{household}} cuando las aceptes y, hasta entonces, no podrá ver el horario ni los datos de tu familia. Nada cambia para quienes ya forman parte de la familia.",
       "pickerHint": "Añadir a esta familia.",
       "confirmButton": "Añadir a {{name}}",
       "carerFallback": "esta niñera"

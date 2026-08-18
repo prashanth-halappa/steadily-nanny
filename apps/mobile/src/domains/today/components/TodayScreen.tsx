@@ -718,6 +718,7 @@ export function TodayScreen() {
               weekStartsOn={household.week_starts_on}
               role={onboarding.role}
               isPastMember={isPastMember}
+              householdName={household.name ?? t('household:untitledDraft')}
             />
 
             {isParentView &&

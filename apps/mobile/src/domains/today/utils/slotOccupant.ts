@@ -7,9 +7,9 @@
  * hit the Hours tab underneath).
  *
  * `resolveAttentionOwner` ranks the obligations; this maps that ranking, plus
- * the two facts the ladder cannot see (who she is here, and whether a timer
- * is already running), onto the single thing the slot may hold. Everything it
- * does not name renders in the feed at default tone.
+ * the two facts the ladder cannot see (which role the viewer holds, and
+ * whether a timer is already running), onto the single thing the slot may
+ * hold. Everything it does not name renders in the feed at default tone.
  *
  * A running timer beating every T1 is deliberate: it is the one thing
  * happening RIGHT NOW, and an inbox item waits safely for the length of a
@@ -58,9 +58,9 @@ export function resolveSlotOccupant(inputs: {
     case 'inbox':
       return 'inbox';
     default:
-      // An ordinary day: hers is the clock, his is today's cover. Nothing is
-      // demanding either of them, and the slot still holds the one thing
-      // they opened the app to do.
+      // An ordinary day: the nanny's slot is the clock, the parent's is
+      // today's cover. Nothing is demanding anything, and the slot still
+      // holds the one thing that viewer opened the app to do.
       return activeNanny
         ? 'clockIn'
         : canViewParentSchedule(inputs.role)
