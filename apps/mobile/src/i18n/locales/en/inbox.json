@@ -33,7 +33,7 @@
     },
     "queriedWeek": {
       "title": "Queried week of {{week}}",
-      "subtitle": "A parent asked about this week's hours.",
+      "subtitle": "{{household}} asked about this week's hours.",
       "subtitleWithNote": "{{note}}",
       "cta": "Read and reply"
     },
@@ -95,7 +95,7 @@
     "subtitleSentTodayOpened": "Sent today · opened, not answered.",
     "subtitleOpened": "Sent {{date}} · opened, not answered.",
     "subtitleNotOpened": "Sent {{date}} · not opened yet.",
-    "subtitleBlocking": "Her hours can't be recorded until terms are agreed. Sent {{date}}.",
+    "subtitleBlocking": "{{carer}}'s hours can't be recorded until terms are agreed. Sent {{date}}.",
     "scheduledToday": "{{carer}} has {{hours}} hours scheduled today that can't be recorded yet.",
     "ctaSee": "See what you sent",
     "ctaChange": "Change what you sent",

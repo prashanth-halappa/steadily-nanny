@@ -1,6 +1,5 @@
 {
   "appName": "Steadily Nanny",
-  "theFamily": "La familia",
   "continue": "Continuar",
   "cancel": "Cancelar",
   "save": "Guardar",
@@ -19,6 +18,7 @@
   "notFoundGoHome": "Ir al inicio",
   "restrictedAction": "Solo {{name}} puede {{action}} en este hogar.",
   "restrictedActionOwner": "el titular del hogar",
+  "theFamily": "La familia",
   "tabs": {
     "today": "Hoy",
     "schedule": "Horario",

@@ -88,7 +88,10 @@ export function PendingOfferCard({ nowMs = Date.now() }: { nowMs?: number }) {
             carer: offer.carerDisplayName,
           });
   const subtitle = blocking
-    ? t('pendingOfferCard.subtitleBlocking', { date: sentOn })
+    ? t('pendingOfferCard.subtitleBlocking', {
+        carer: offer.carerDisplayName,
+        date: sentOn,
+      })
     : state.variant === 'sentToday'
       ? state.opened
         ? t('pendingOfferCard.subtitleSentTodayOpened')

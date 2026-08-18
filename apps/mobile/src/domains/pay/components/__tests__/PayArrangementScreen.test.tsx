@@ -164,9 +164,15 @@ const cancelScheduledMock = mock<
 // owns the hook and the HTTP shape under it. Empty by default: §12 says
 // nothing announces a proposal's absence. Mutable so B2 can inject an
 // open proposal without remocking the module.
+let proposalsPending = false;
 let proposalRows: unknown[] = [];
 mock.module('@/src/hooks/queries/useTermsProposals', () => ({
-  useTermsProposals: () => ({ data: proposalRows }),
+  useTermsProposals: () => ({
+    data: proposalsPending ? undefined : proposalRows,
+    isPending: proposalsPending,
+    isError: false,
+    refetch: () => Promise.resolve(),
+  }),
   findOpenTermsProposal: (
     proposals: readonly { status: string }[] | null | undefined
   ) => (proposals ?? []).find(row => row.status === 'proposed'),
@@ -258,6 +264,7 @@ beforeEach(() => {
   routerBack.mockClear();
   searchParams = {};
   proposalRows = [];
+  proposalsPending = false;
 
   listAcksMock.mockImplementation(() => Promise.resolve([]));
   cancelScheduledMock.mockImplementation(() => Promise.resolve({}));
@@ -773,6 +780,20 @@ describe('PayArrangementScreen', () => {
           'proposal.state.agreedWith'
         )
       );
+    });
+
+    it("while proposals are still loading, no terms-state line renders (never a transient 'not agreed')", async () => {
+      proposalsPending = true;
+      const arrangement = arrangementFor(NANNY_A_ID);
+      payCurrentMock.mockImplementation(() => Promise.resolve(arrangement));
+      payHistoryMock.mockImplementation(() => Promise.resolve([arrangement]));
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <PayArrangementScreen />
+      );
+
+      await waitFor(() => expect(getByTestId('pay-current-rate')).toBeTruthy());
+      expect(queryByTestId('pay-terms-state')).toBeNull();
     });
   });
 

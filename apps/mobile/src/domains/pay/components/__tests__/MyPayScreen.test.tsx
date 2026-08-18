@@ -157,8 +157,12 @@ const proposeMock = mock<(input: unknown) => Promise<unknown>>(() =>
   Promise.resolve({})
 );
 const withdrawMock = mock<() => Promise<unknown>>(() => Promise.resolve({}));
+let proposalsPending = false;
 mock.module('@/src/hooks/queries/useTermsProposals', () => ({
-  useTermsProposals: () => ({ data: proposalRows }),
+  useTermsProposals: () => ({
+    data: proposalsPending ? undefined : proposalRows,
+    isPending: proposalsPending,
+  }),
 }));
 mock.module('@/src/hooks/mutations/useProposeTerms', () => ({
   // Scoped to HOUSEHOLD_A: F16 makes "Suggest a change" reachable on EVERY
@@ -228,6 +232,7 @@ beforeEach(() => {
   withdrawMock.mockImplementation(() => Promise.resolve({}));
   proposalRows = [];
   proposeIsError = false;
+  proposalsPending = false;
   routerBack.mockClear();
 
   payHistoryMock.mockImplementation(() => Promise.resolve([]));
@@ -657,6 +662,24 @@ describe('MyPayScreen', () => {
           getByTestId(`my-pay-terms-state-${HOUSEHOLD_A}`).props.children
         ).toBe('proposal.state.agreedWith')
       );
+    });
+
+    it('while proposals are still loading, my-pay-terms-state-<HOUSEHOLD_A> does not render and no side-data retry renders', async () => {
+      proposalsPending = true;
+      payHistoryMock.mockImplementation(() =>
+        Promise.resolve([arrangementFor(HOUSEHOLD_A)])
+      );
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <MyPayScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-household-${HOUSEHOLD_A}`)).toBeTruthy()
+      );
+      // await waitFor over the card is enough; terms state line is inside the card
+      expect(queryByTestId(`my-pay-terms-state-${HOUSEHOLD_A}`)).toBeNull();
+      expect(queryByTestId(`my-pay-side-data-retry-${HOUSEHOLD_A}`)).toBeNull();
     });
   });
 
