@@ -32,12 +32,16 @@ interface NannyWeekLineProps {
   /** Household `week_starts_on` (0=Sunday..6=Saturday) — the week this line
    * totals is the household's business week, not a hardcoded Monday. */
   weekStartsOn: number;
+  /** Names who sent/queried the week in the status label — falls back to
+   * `common:theFamily` inside `timesheetPillLabel` when null. */
+  householdName?: string | null;
 }
 
 export function NannyWeekLine({
   householdId,
   timeZone,
   weekStartsOn,
+  householdName = null,
 }: NannyWeekLineProps) {
   const { t: tToday } = useTranslation('today');
   const { t: tHours } = useTranslation('hours');
@@ -82,7 +86,12 @@ export function NannyWeekLine({
   // The SAME mapping the Hours tab renders — a second copy of it is how
   // two surfaces start disagreeing about one fact, which is the whole
   // bug class this screen was rebuilt to remove.
-  const statusLabel = timesheetPillLabel(timesheetStatus, 'nanny', tHours);
+  const statusLabel = timesheetPillLabel(
+    timesheetStatus,
+    'nanny',
+    tHours,
+    householdName
+  );
   const lineText = `${tToday('weekLine', { duration })} · ${statusLabel}`;
 
   // D-32/§2.3b: the SAME copy key and the SAME rule as `WeekEarningsLine`'s

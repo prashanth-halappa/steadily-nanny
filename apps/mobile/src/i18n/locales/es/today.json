@@ -233,7 +233,7 @@
   },
   "emergencyContactPrompt": {
     "title": "Un número más para {{name}}",
-    "body": "Si ella no puede localizarte y algo ha pasado, ¿a quién debería llamar? Una pareja, un abuelo, un vecino — cualquiera que pueda llegar rápido.",
+    "body": "Si {{name}} no puede localizarte y algo ha pasado, ¿a quién debería llamar? Una pareja, un abuelo, un vecino — cualquiera que pueda llegar rápido.",
     "cta": "Añadir su número",
     "notNow": "Ahora no",
     "nameLabel": "Su nombre",

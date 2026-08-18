@@ -169,10 +169,15 @@ export function subtitleForItem(
       return t('items.pendingPattern.subtitle', {
         start: formatDisplayDate(item.dtstart),
       });
+    // ponytail: `InboxItem` has no `householdName` yet, so this always falls
+    // to `common:theFamily` — swap in the real field once a later WP adds it
+    // to the item type.
     case 'queried_week':
       return item.queryNote?.trim()
         ? t('items.queriedWeek.subtitleWithNote', { note: item.queryNote })
-        : t('items.queriedWeek.subtitle');
+        : t('items.queriedWeek.subtitle', {
+            household: t('common:theFamily'),
+          });
     case 'submitted_week':
       return item.carerDisplayName
         ? t('items.submittedWeek.subtitle', { carer: item.carerDisplayName })

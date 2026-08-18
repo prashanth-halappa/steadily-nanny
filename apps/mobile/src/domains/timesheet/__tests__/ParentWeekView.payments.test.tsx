@@ -324,12 +324,15 @@ function keyOfCall(index: number): string | undefined {
 }
 
 let ParentWeekView: typeof import('../components/ParentWeekView').ParentWeekView;
+let RecordPaymentSheet: typeof import('../components/RecordPaymentSheet').RecordPaymentSheet;
 let getWeekDates: typeof import('../utils/week').getWeekDates;
 let formatWeekRangeLabel: typeof import('../utils/week').formatWeekRangeLabel;
 
 beforeAll(async () => {
   ParentWeekView = (await import('../components/ParentWeekView'))
     .ParentWeekView;
+  RecordPaymentSheet = (await import('../components/RecordPaymentSheet'))
+    .RecordPaymentSheet;
   const weekUtils = await import('../utils/week');
   getWeekDates = weekUtils.getWeekDates;
   formatWeekRangeLabel = weekUtils.formatWeekRangeLabel;
@@ -493,6 +496,20 @@ describe('ParentWeekView — a failed or pending payments read', () => {
     expect(queryByTestId('hours-paid-state-badge')).toBeNull();
     expect(queryByTestId('hours-mark-paid-button')).toBeNull();
     expect(getByTestId('hours-paid-state-retry')).toBeTruthy();
+  });
+
+  // docs/11-MONEY.md §4 — unknown ≠ zero. The mark-paid button is already
+  // hidden, but the sheet must not be in the tree with a `?? 0` balance
+  // waiting for the next entry point to open it.
+  it('does not mount the record-payment sheet while the balance is unknown', async () => {
+    listPaymentsMock.mockImplementation(() => new Promise(() => {}));
+
+    const { getByTestId, queryByTestId, UNSAFE_queryByType } =
+      renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-money-card')).toBeTruthy());
+    expect(UNSAFE_queryByType(RecordPaymentSheet)).toBeNull();
+    expect(queryByTestId('hours-record-payment-sheet')).toBeNull();
   });
 });
 

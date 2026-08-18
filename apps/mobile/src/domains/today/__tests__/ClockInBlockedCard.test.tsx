@@ -238,6 +238,11 @@ describe('ClockInBlockedCard — one title, three owners', () => {
     expect(
       tree.getByTestId('today-clock-in-blocked-cta-label').props.children
     ).toBe('clockInBlocked.ctaFamilySent');
+    // She owes THEM a reply on this branch — the filled button's "you owe
+    // someone this" grammar is correct here.
+    expect(tree.getByTestId('today-clock-in-blocked-cta').props.variant).toBe(
+      'default'
+    );
   });
 
   it('names who has not answered when SHE sent', () => {
@@ -253,6 +258,9 @@ describe('ClockInBlockedCard — one title, three owners', () => {
     expect(
       tree.getByTestId('today-clock-in-blocked-cta-label').props.children
     ).toBe('clockInBlocked.ctaYouSent');
+    expect(tree.getByTestId('today-clock-in-blocked-cta').props.variant).toBe(
+      'default'
+    );
   });
 
   it('offers the first move when nobody has sent anything', () => {
@@ -266,6 +274,12 @@ describe('ClockInBlockedCard — one title, three owners', () => {
     expect(
       tree.getByTestId('today-clock-in-blocked-cta-label').props.children
     ).toBe('clockInBlocked.ctaNothingSent');
+    // Nobody is owed anything on this branch — neither side has sent terms
+    // yet — so the filled button's "you owe someone this" grammar is wrong
+    // here; it declines to ghost.
+    expect(tree.getByTestId('today-clock-in-blocked-cta').props.variant).toBe(
+      'ghost'
+    );
   });
 });
 

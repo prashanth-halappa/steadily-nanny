@@ -170,16 +170,20 @@ function weekTotalTone(
 
 /** Forked by viewer (P0-5): the nanny reads her own week from her side of
  * the conversation ("With the family", not "Ready for your approval" — that
- * sentence is about someone else's action, not hers). */
+ * sentence is about someone else's action, not hers). `householdName` names
+ * WHO sent it / asked the question — falls back to `common:theFamily` when
+ * the caller doesn't have it in scope yet. */
 export function timesheetPillLabel(
   status: TimesheetStatus | null | undefined,
   role: EarningsRole,
-  t: (key: string, options?: Record<string, unknown>) => string
+  t: (key: string, options?: Record<string, unknown>) => string,
+  householdName?: string | null
 ): string {
   if (status === 'approved') return t('statusApproved');
   if (role === 'nanny') {
-    if (status === 'submitted') return t('nannyStatusSubmitted');
-    if (status === 'queried') return t('nannyStatusQueried');
+    const household = householdName ?? t('common:theFamily');
+    if (status === 'submitted') return t('nannyStatusSubmitted', { household });
+    if (status === 'queried') return t('nannyStatusQueried', { household });
     return t('nannyStatusNotSubmitted');
   }
   if (status === 'submitted') return t('statusSubmitted');
@@ -194,14 +198,15 @@ function statusHeadlineLabel(
   status: TimesheetStatus | null | undefined,
   role: EarningsRole,
   approvedDateLabel: string | null | undefined,
-  t: (key: string, options?: Record<string, unknown>) => string
+  t: (key: string, options?: Record<string, unknown>) => string,
+  householdName?: string | null
 ): string {
   if (status === 'approved' && role === 'parent') {
     return approvedDateLabel
       ? t('approvedOnDate', { date: approvedDateLabel })
       : t('statusApproved');
   }
-  return timesheetPillLabel(status, role, t);
+  return timesheetPillLabel(status, role, t, householdName);
 }
 
 export function WeekTotal({
@@ -297,7 +302,8 @@ export function WeekTotal({
                 timesheetStatus,
                 earningsRole,
                 approvedDateLabel,
-                t
+                t,
+                householdName
               )}
             </H3>
           </View>
