@@ -261,7 +261,9 @@ function WeeklyHoursNotSetGroupCard({
         ? t('todayCard.noWeekBody', { name: names[0] })
         : t('todayCard.noWeekBodyPrefilled')
       : t('todayCard.noWeekBodyMulti');
-    const cta = solo ? t('todayCard.noWeekCta') : t('todayCard.noWeekCtaMulti');
+    const cta = solo
+      ? t('todayCard.noWeekCta', { name: names[0] })
+      : t('todayCard.noWeekCtaMulti');
 
     return (
       <Card tone="default" testID="today-weekly-hours-not-set-card">
@@ -303,7 +305,7 @@ function WeeklyHoursNotSetGroupCard({
       : t('todayCard.noWeekDeclinedTitle', { name });
   const body =
     group.kind === 'draft'
-      ? t('todayCard.noWeekDraftBody')
+      ? t('todayCard.noWeekDraftBody', { name })
       : t('todayCard.noWeekDeclinedBody');
   const cta =
     group.kind === 'draft'

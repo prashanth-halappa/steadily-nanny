@@ -13,6 +13,8 @@ import { render } from '@testing-library/react-native';
 const HOUSEHOLD_ID = '11111111-1111-4111-8111-111111111111';
 const ME = '22222222-2222-4222-8222-222222222222';
 
+let params: { householdId?: string } = { householdId: HOUSEHOLD_ID };
+
 let mockUseHouseholdById: ReturnType<typeof mock>;
 let mockUseSchedulePatterns: ReturnType<typeof mock>;
 let mockUseSchedulePattern: ReturnType<typeof mock>;
@@ -57,7 +59,10 @@ beforeAll(async () => {
   mockPush = mock();
 
   mock.module('@/src/hooks/queries/useHouseholdById', () => ({
-    useHouseholdById: () => mockUseHouseholdById(),
+    useHouseholdById: (id: string | null) => mockUseHouseholdById(id),
+  }));
+  mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
+    useActiveHousehold: () => ({ householdId: HOUSEHOLD_ID }),
   }));
   mock.module('@/src/hooks/queries/useSchedulePatterns', () => ({
     useSchedulePatterns: () => mockUseSchedulePatterns(),
@@ -74,7 +79,7 @@ beforeAll(async () => {
   }));
   mock.module('expo-router', () => ({
     useRouter: () => ({ push: mockPush, back: mock() }),
-    useLocalSearchParams: () => ({ householdId: HOUSEHOLD_ID }),
+    useLocalSearchParams: () => params,
   }));
 
   const mod = await import('../NannyUsualWeekScreen');
@@ -82,6 +87,7 @@ beforeAll(async () => {
 });
 
 beforeEach(() => {
+  params = { householdId: HOUSEHOLD_ID };
   mockUseHouseholdById.mockImplementation(() => ({
     household: { id: HOUSEHOLD_ID, name: 'The Smiths', timezone: 'UTC' },
     isLoading: false,
@@ -173,5 +179,12 @@ describe('NannyUsualWeekScreen', () => {
     }));
     const { getByTestId } = render(<NannyUsualWeekScreen />);
     expect(getByTestId('nanny-usual-week-withdrawn')).toBeTruthy();
+  });
+
+  it('falls back to the active household when the route has no householdId', () => {
+    params = {};
+    mockUseHouseholdById.mockClear();
+    render(<NannyUsualWeekScreen />);
+    expect(mockUseHouseholdById).toHaveBeenCalledWith(HOUSEHOLD_ID);
   });
 });

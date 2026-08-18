@@ -300,16 +300,58 @@ describe('ShiftDetailScreen — C4 failed reads are not "missing" (Pattern C)', 
       refetch: mockShiftRefetch,
     }));
 
-    const { getByTestId, queryByTestId, getByText } = render(
+    const { getByTestId, queryByTestId, getByText, queryByText } = render(
       <ShiftDetailScreen />
     );
 
     expect(getByTestId('shift-detail-error')).toBeTruthy();
     expect(getByTestId('error-state')).toBeTruthy();
+    expect(getByText('states.network.title')).toBeTruthy();
+    expect(queryByText('states.notFound.title')).toBeNull();
     expect(queryByTestId('shift-detail-missing')).toBeNull();
 
     fireEvent.press(getByText('tryAgain'));
     expect(mockShiftRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("a 404 read renders the notFound ErrorState, not 'No connection'", () => {
+    mockUseShift.mockImplementation(() => ({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: { response: { status: 404 } },
+      refetch: mockShiftRefetch,
+    }));
+
+    const { getByTestId, queryByTestId, getByText, queryByText } = render(
+      <ShiftDetailScreen />
+    );
+
+    expect(getByTestId('shift-detail-error')).toBeTruthy();
+    expect(getByTestId('error-state')).toBeTruthy();
+    expect(getByText('states.notFound.title')).toBeTruthy();
+    expect(queryByText('states.network.title')).toBeNull();
+    expect(queryByTestId('shift-detail-missing')).toBeNull();
+  });
+
+  it('a 403 read renders the notFound ErrorState (never leaks whether the shift exists)', () => {
+    mockUseShift.mockImplementation(() => ({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: { response: { status: 403 } },
+      refetch: mockShiftRefetch,
+    }));
+
+    const { getByTestId, queryByTestId, getByText, queryByText } = render(
+      <ShiftDetailScreen />
+    );
+
+    expect(getByTestId('shift-detail-error')).toBeTruthy();
+    expect(getByTestId('error-state')).toBeTruthy();
+    expect(getByText('states.notFound.title')).toBeTruthy();
+    expect(queryByText('states.network.title')).toBeNull();
+    expect(queryByTestId('shift-detail-missing')).toBeNull();
   });
 
   it('renders an ErrorState with retry on membershipsError, never an endless spinner', () => {

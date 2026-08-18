@@ -43,6 +43,8 @@ interface ThisWeekCardProps {
   weekStartsOn: number;
   role: SetupRole | null;
   isPastMember: boolean;
+  /** Passed straight through to `NannyWeekLine`'s status label. */
+  householdName?: string | null;
 }
 
 export function ThisWeekCard({
@@ -51,6 +53,7 @@ export function ThisWeekCard({
   weekStartsOn,
   role,
   isPastMember,
+  householdName = null,
 }: ThisWeekCardProps) {
   const { t } = useTranslation('today');
   const router = useRouter();
@@ -96,6 +99,7 @@ export function ThisWeekCard({
             householdId={householdId}
             timeZone={timeZone}
             weekStartsOn={weekStartsOn}
+            householdName={householdName}
           />
         ) : null}
 

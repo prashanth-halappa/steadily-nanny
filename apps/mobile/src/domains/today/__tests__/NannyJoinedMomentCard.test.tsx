@@ -249,7 +249,9 @@ describe('NannyJoinedMomentCard — agreed terms, but still no week', () => {
       label: string;
       onPress: () => void;
     };
-    expect(secondary.label).toBe('moments.nannyJoined.ctaSetWeek');
+    expect(secondary.label).toBe(
+      'moments.nannyJoined.ctaSetWeek({"name":"Andrea"})'
+    );
     secondary.onPress();
     expect(mockPush).toHaveBeenCalledWith('/(private)/schedule/build');
   });

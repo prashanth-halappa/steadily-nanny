@@ -10,9 +10,10 @@
  *   1. `termsBlocked`  — the clock-in block sits above `overdue`, because an
  *                        overdue clock-out corrupts a record that exists,
  *                        while the block prevents the record existing at all.
- *   2. `sentOfferBlocking` — A7's parent-side half of the same block: HE
- *                        wrote the terms, so only he can unblock them, and
- *                        she has a shift today that cannot be recorded. It
+ *   2. `sentOfferBlocking` — A7's parent-side half of the same block: THE
+ *                        PARENT wrote the terms, so only the parent can
+ *                        unblock them, and the nanny has a shift today that
+ *                        cannot be recorded. It
  *                        DISPLACES `overdue`, for the same reason rung 1
  *                        does — an overdue clock-out is one record to fix
  *                        after the fact, this is every record prevented.
@@ -51,7 +52,7 @@ export type AttentionOwner =
   | null;
 
 export function resolveAttentionOwner(inputs: {
-  /** A1's hard block: she cannot clock in until terms are agreed. Optional
+  /** A1's hard block: the nanny cannot clock in until terms are agreed. Optional
    * so callers that predate the rung keep compiling — an omitted flag is
    * "not blocked". */
   termsBlocked?: boolean;

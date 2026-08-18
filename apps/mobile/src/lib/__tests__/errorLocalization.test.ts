@@ -12,6 +12,7 @@ import { ERROR_CODES } from '@steadily-nanny/shared-types/errorCodes';
 import {
   ERROR_CODE_TO_I18N_KEY,
   getLocalizedErrorMessage,
+  httpStatusOf,
 } from '../errorLocalization';
 
 const t = (key: string) => key;
@@ -187,5 +188,25 @@ describe('getLocalizedErrorMessage', () => {
         expect(ERROR_CODE_TO_I18N_KEY[code]).toBeDefined();
       }
     });
+  });
+});
+
+describe('httpStatusOf', () => {
+  it('returns 404 for an error with response.status 404', () => {
+    expect(httpStatusOf({ response: { status: 404 } })).toBe(404);
+  });
+
+  it('returns undefined for a plain error', () => {
+    expect(httpStatusOf(new Error('Network error occurred'))).toBeUndefined();
+  });
+
+  it('returns undefined for null, undefined, or string', () => {
+    expect(httpStatusOf(null)).toBeUndefined();
+    expect(httpStatusOf(undefined)).toBeUndefined();
+    expect(httpStatusOf('not an error')).toBeUndefined();
+  });
+
+  it('returns undefined when response.status is not a number', () => {
+    expect(httpStatusOf({ response: { status: '404' } })).toBeUndefined();
   });
 });
