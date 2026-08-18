@@ -147,6 +147,7 @@ Every row here needs, in one commit: the `PUSH_NOTIFICATION_TYPES` key, the
 | N17 | `pay_terms_backdated` | carer | immediate | hoursAndPay | — | `settings/my-pay` | 3-U1, `screens-pay-terms.md` §7.4 (M1) |
 | N18 | `pay_terms_scheduled_change_cancelled` | carer | immediate | hoursAndPay | — | `settings/my-pay` | 3-U1, `screens-pay-terms.md` §6.1 (M4) |
 | N19 | `pay_terms_disagreed` | parent | immediate | hoursAndPay | — | `settings/pay` | 3-U1, **D-45** — `screens-pay-terms.md` §8.3.1 owns the copy |
+| N20 | `terms_proposal_reminder` | both | immediate, **user-initiated** | hoursAndPay | — | `proposalReview` | WP-G — `termsProposalCommandService.remind`. The ONLY push in this table a person sends by tapping a button; there is no job behind it. Audience `both` because the author is whichever side wrote the round and the recipient is always the other one. At most one per round per 48h, on the round's age and on the last reminder alike (`push_reminder_log`). `screens-pay-terms.md` §7.5 owns the copy |
 
 **N17–N19 are cross-spec: this table owns the rows, `screens-pay-terms.md` owns
 the copy.** Do not restate their titles/bodies here — one home per string, and

@@ -20,6 +20,10 @@ tags:
     id: 'today-header'
 - assertVisible:
     id: 'today-pinned-slot'
+# On an ordinary day the parent's occupant is today's cover — his slot is only
+# empty for a role with neither a clock nor a coverage view.
+- assertVisible:
+    id: 'today-coverage'
 - takeScreenshot: today-pinned-slot-before-scroll
 
 - scrollUntilVisible:

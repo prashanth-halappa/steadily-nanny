@@ -164,6 +164,9 @@ describe('InboxScreen', () => {
           id: 'cr-1',
           shiftId: 'shift-1',
           requestKind: 'time_change',
+          requestedAt: '2026-08-08T09:00:00.000Z',
+          requesterName: null,
+          shiftStartsAt: null,
         },
       ] satisfies InboxItem[],
     }));
@@ -215,6 +218,7 @@ describe('InboxScreen', () => {
           householdId: 'hh-1',
           weekStart: '2026-07-28',
           queryNote: 'Break looks long',
+          householdName: null,
         },
       ] satisfies InboxItem[],
     }));
@@ -294,6 +298,9 @@ describe('InboxScreen', () => {
           id: 'cr-1',
           shiftId: 'shift-1',
           requestKind: 'time_change',
+          requestedAt: '2026-08-08T09:00:00.000Z',
+          requesterName: null,
+          shiftStartsAt: null,
         },
         {
           kind: 'submitted_week',
@@ -322,6 +329,9 @@ describe('InboxScreen', () => {
           id: 'cr-1',
           shiftId: 'shift-1',
           requestKind: 'time_change',
+          requestedAt: '2026-08-08T09:00:00.000Z',
+          requesterName: null,
+          shiftStartsAt: null,
         },
         {
           kind: 'pending_pattern',
@@ -336,6 +346,7 @@ describe('InboxScreen', () => {
           householdId: 'hh-1',
           weekStart: '2026-07-28',
           queryNote: 'Break looks long',
+          householdName: null,
         },
       ] satisfies InboxItem[],
     }));

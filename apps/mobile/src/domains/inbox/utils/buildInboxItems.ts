@@ -50,6 +50,10 @@ import {
 import type { PayArrangementAck } from '@steadily-nanny/shared-types/schemas/payArrangementAck.schema';
 import { resolveAckState } from '@/src/domains/pay/utils/ackState';
 import {
+  type CarerNameSource,
+  resolveCarerName,
+} from '@/src/domains/schedule/utils/memberDisplayName';
+import {
   isParentEditorRole,
   SETUP_ROLES,
   type SetupRole,
@@ -61,7 +65,13 @@ export type InboxChangeRequestInput = {
   requested_by: string | null;
   kind: string;
   status: string;
+  created_at: string;
 };
+
+/** The one household-member shape `buildInboxItems` needs to name a
+ * change request's author (WP-H) — a subset of `HouseholdMember`, resolved
+ * the same way every other carer name on this app is (`resolveCarerName`). */
+export type InboxHouseholdMemberInput = { user_id: string } & CarerNameSource;
 
 export type InboxPatternInput = {
   id: string;
@@ -171,6 +181,13 @@ export type InboxItem =
       id: string;
       shiftId: string;
       requestKind: string;
+      requestedAt: string;
+      /** Who opened it — resolved against the household roster; null when
+       * the requester is not (or no longer) a member the viewer can see. */
+      requesterName: string | null;
+      /** Null unless the shift is already in scope (the viewer's own
+       * `me/shifts` glance window) — never a second fetch just for this. */
+      shiftStartsAt: string | null;
     }
   | {
       kind: 'pending_pattern';
@@ -185,6 +202,7 @@ export type InboxItem =
       householdId: string;
       weekStart: string;
       queryNote: string | null;
+      householdName: string | null;
     }
   | {
       kind: 'submitted_week';
@@ -348,6 +366,11 @@ export function buildInboxItems(input: {
   termsProposals?: readonly InboxTermsProposalInput[];
   termsAcks?: readonly InboxTermsAckInput[];
   unsettledReimbursements?: readonly InboxUnsettledReimbursementInput[];
+  /** Every household the viewer belongs to — `queried_week`'s householdName. */
+  households?: readonly { id: string; name: string | null }[];
+  /** Every household's member roster the hook already fetches — flattened,
+   * since a change request carries no household id to look one up by. */
+  householdMembers?: readonly InboxHouseholdMemberInput[];
   /** When true, the viewer is a removed member — nanny inbox kinds that
    * require an active membership (e.g. `terms_ack`) are suppressed. */
   isPastMember?: boolean;
@@ -356,6 +379,12 @@ export function buildInboxItems(input: {
   const nowMs = input.nowISO ? Date.parse(input.nowISO) : Date.now();
   const items: InboxItem[] = [];
 
+  const householdsById = new Map((input.households ?? []).map(h => [h.id, h]));
+  const membersByUserId = new Map(
+    (input.householdMembers ?? []).map(m => [m.user_id, m])
+  );
+  const shiftsById = new Map((input.shifts ?? []).map(s => [s.id, s]));
+
   for (const req of input.changeRequests) {
     if (req.status !== 'pending') continue;
     // `requested_by` goes NULL when its author's account is deleted
@@ -363,11 +392,15 @@ export function buildInboxItems(input: {
     // the request would stick in every remaining member's inbox forever
     // with no counterparty left to answer it.
     if (!me || !req.requested_by || req.requested_by === me) continue;
+    const requester = membersByUserId.get(req.requested_by);
     items.push({
       kind: 'change_request',
       id: req.id,
       shiftId: req.shift_id,
       requestKind: req.kind,
+      requestedAt: req.created_at,
+      requesterName: requester ? resolveCarerName(requester, '') || null : null,
+      shiftStartsAt: shiftsById.get(req.shift_id)?.starts_at ?? null,
     });
   }
 
@@ -393,6 +426,7 @@ export function buildInboxItems(input: {
       householdId: sheet.household_id,
       weekStart: sheet.week_start,
       queryNote: sheet.query_note,
+      householdName: householdsById.get(sheet.household_id)?.name ?? null,
     });
   }
 
@@ -628,12 +662,10 @@ function sortDateFor(item: InboxItem): string | null {
       return item.proposedAt;
     case 'terms_ack':
       return item.validFrom;
-    // change_request carries no date on this shape — insertion order stands
-    // (a stable sort's fallback), which is an acceptable tie-break: two
-    // change requests competing for the same rank is rare, and neither one
-    // decays faster than the other in a way this shape can see.
+    // WP-H: the day it was opened — oldest-unanswered-first, same tie-break
+    // every other kind here already uses.
     case 'change_request':
-      return null;
+      return item.requestedAt;
   }
 }
 

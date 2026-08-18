@@ -36,6 +36,11 @@ interface QueryNoteSheetProps {
   /** The last send's refusal, stated INSIDE the sheet: a toast fired over an
    * open BottomSheetBase is not visible on iOS (GOLDEN-FIXES #40). */
   submitError?: string | null;
+  /** A quiet, optional aside above the note input — a moment's pause before
+   * sending (e.g. the parent's query hint: a quieter reading of the day
+   * often explains it). Omitted entirely when the caller has nothing to
+   * say here, so the nanny's flag entry point is unchanged. */
+  beforeYouSend?: string;
 }
 
 export function QueryNoteSheet({
@@ -50,6 +55,7 @@ export function QueryNoteSheet({
   sheetId = 'hours-query-note',
   testID = 'hours-query-sheet',
   submitError = null,
+  beforeYouSend,
 }: QueryNoteSheetProps) {
   const [note, setNote] = useState('');
 
@@ -72,6 +78,14 @@ export function QueryNoteSheet({
       <View className="gap-4 px-6 pb-4">
         <H4>{title}</H4>
         <Body className="text-muted-foreground">{hint}</Body>
+        {beforeYouSend ? (
+          <Small
+            testID={`${testID}-before-you-send`}
+            className="text-muted-foreground"
+          >
+            {beforeYouSend}
+          </Small>
+        ) : null}
         {/* Inner testIDs stay fixed even when the outer `testID` is
             overridden: `.maestro/tests/04-timesheet-query-correct-approve.yaml`
             drives them by name, and only one instance of this sheet is ever

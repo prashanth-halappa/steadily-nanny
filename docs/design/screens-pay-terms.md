@@ -901,6 +901,47 @@ is an ordinary change with an ordinary consequence line; the affected-weeks
 table is a reduction affordance, not a backdating affordance, because a raise
 that reaches back does not need to be defended against.
 
+### 7.5 Nudging a round nobody has answered (WP-G)
+
+A round can sit unanswered for a week. Until now the only thing the author
+could do about it was send a text message at 11pm, which is precisely the
+out-of-app negotiation this whole feature exists to replace.
+
+**One tap, never automatic.** `POST /terms-proposals/:id/remind` is the only
+way a reminder is ever sent. There is no job, no digest, and no "we noticed
+you haven't replied" — the app never chases anybody on its own initiative,
+because only a person knows whether chasing is the right move today.
+
+**Both sides may nudge, and only the author may.** Chasing is the AUTHOR's
+move — the same gate `withdraw` uses, not `decline`'s. The counterparty's move
+is to answer. So the parent's `TermsSentReceipt` carries it and the nanny's
+carries the identical affordance, and neither side gets a button that means
+"remind me to remind you".
+
+**Once every two days, on both clocks.** The server refuses unless the round
+is at least 48h old AND at least 48h have passed since the last reminder for
+it. The first clock stops a nudge on the same evening the terms went out — at
+that point it is a second notification about a message nobody has had an
+ordinary chance to read. The second stops the button being tap-to-repeat.
+Persistence is the existing `push_reminder_log` ledger (047/060) under
+`terms_proposal_remind:<proposalId>:<instant>`; no new table.
+
+**Where it appears.**
+
+| Surface | Shown when | Not shown when |
+|---|---|---|
+| `TermsSentReceipt` (both roles) | any open round the reader authored | once a reminder has gone this session — the button is replaced by "Reminded {date}" |
+| `PendingOfferCard` (Today, parent) | `waiting` and `stale` | `sentToday` (nobody has had a chance) and `blocking` (§A7 — when she is standing in the house unable to record her hours, the fix is to move the terms, not to ask again more politely) |
+
+**The refusal is inline, not a toast.** "You can send one reminder every two
+days." renders as a muted line under the button that was just tapped. It is
+the answer to that tap and it has to stay on screen long enough to be acted
+on; a toast that vanishes is the wrong shape for "come back on Thursday".
+
+**The push carries no figure** (A8) and the row does not move: no status
+change, no `updated_at`. §7.2's chain is a record of what was OFFERED, not of
+who was impatient.
+
 ---
 
 ## 8. Acknowledgment and version history (D-31)
@@ -1553,6 +1594,45 @@ employees of the same family is the failure this domain does not recover from.
 **Past member.** Read-only, header reads "Ended {date}", history intact. Same
 rule as `screens-hours.md` §6: the screen *says* the person is no longer with
 the household rather than silently omitting the buttons.
+
+### 13.2 Verified 2026-08-18: a nanny with a live arrangement can propose new terms
+
+Traced end to end, code-read only, against a live mid-relationship raise (not
+a fresh onboarding):
+
+1. `MyPayScreen.tsx:384` — `my-pay-suggest-change-${household.id}` is
+   reachable whenever `canWrite` is true, independent of whether `arrangement`
+   is set (F16's hoist, see the comment at `MyPayScreen.tsx:350`).
+2. `MyPayScreen.tsx:611–619` — the button opens `PayChangeSheet mode="propose"`,
+   pre-filled from `currentArrangement={arrangement ?? undefined}` — a live
+   arrangement flows in as the starting diff rather than blocking the sheet.
+3. `MyPayScreen.tsx:68,195,624` — submit calls `useProposeTerms` /
+   `useProposeTerms.ts`, which posts to `termsProposalApi.propose`
+   (`api/endpoints/termsProposals.ts:141–155`).
+4. That hits `POST /households/:householdId/carers/:carerId/terms-proposals`
+   (`termsProposalRoutes.ts`), gated only by `authWithValidation` — no
+   `authWithOwnership`, by design (GOLDEN-FIXES #32).
+5. `termsProposalCommandService.propose` (`termsProposalCommandService.ts:166–225`)
+   gates on `resolveSide(this.members, householdId, callerId)` — membership
+   only. **No check for an existing arrangement, in either direction** — the
+   method has no arrangement lookup at all before inserting the new
+   `proposed` row.
+6. The parent sees it as a `terms_proposal` (received) inbox item
+   (`buildInboxItems.ts:484–506`, direction `'carer'`), surfaced by
+   `TermsProposalCard` (Today's T1 slot for this kind —
+   `TermsProposalCard.tsx`), whose CTA pushes `hrefForItem` →
+   `/(private)/pay/proposal/${item.id}` (`inboxItemCopy.ts:63–66`) →
+   `apps/mobile/src/app/(private)/pay/proposal/[id].tsx`, i.e.
+   `ProposalReviewScreen`.
+
+(Correction to the original trace sketch: the parent-side card is
+`TermsProposalCard`, not `PendingOfferCard` — `PendingOfferCard` is the
+mirror card for the proposal's own author tracking a proposal she sent,
+`usePendingOffer.ts:1–16`.)
+
+No gap found. The write gate is membership, not "no arrangement yet" —
+a nanny mid-relationship can send a raise request exactly the same way a
+nanny with no arrangement sends a first offer.
 
 ---
 

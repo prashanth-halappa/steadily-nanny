@@ -17,11 +17,13 @@
 import type {
   AcceptTermsProposalRequest,
   CreateTermsProposalRequest,
+  RemindTermsProposalResponse,
   TermsProposal,
 } from '@steadily-nanny/shared-types/schemas/termsProposal.schema';
 import {
   AcceptTermsProposalRequestSchema,
   CreateTermsProposalRequestSchema,
+  RemindTermsProposalResponseSchema,
   TermsProposalListResponseSchema,
   TermsProposalResponseSchema,
   TermsProposalSchema,
@@ -33,6 +35,7 @@ import { apiClient } from '@/src/api/client';
 export type {
   AcceptTermsProposalRequest,
   CreateTermsProposalRequest,
+  RemindTermsProposalResponse,
   TermsProposal,
 };
 
@@ -59,6 +62,8 @@ export const termsProposalEndpoints = {
   // B4 — the counterparty's refusal, distinct from withdraw.
   decline: (proposalId: string) => `/v1/terms-proposals/${proposalId}/decline`,
   viewed: (proposalId: string) => `/v1/terms-proposals/${proposalId}/viewed`,
+  // WP-G — the author's nudge on her own unanswered round.
+  remind: (proposalId: string) => `/v1/terms-proposals/${proposalId}/remind`,
 } as const;
 
 // `current` is the one read that legitimately has nothing to return: before
@@ -207,6 +212,27 @@ export const termsProposalApi = {
     const parsed = TermsProposalResponseSchema.safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
     return parsed.data.terms_proposal;
+  },
+
+  /**
+   * WP-G — nudge the side that has not answered. At most one every 48 hours,
+   * enforced server-side; a refusal is a 409 carrying
+   * `TERMS_PROPOSAL_REMINDER_TOO_SOON`, which `useRemindTerms` renders under
+   * the button rather than in a toast.
+   *
+   * Answers with the INSTANT, not the proposal: nothing on the row changed,
+   * and a response shaped like the row would invite the caller to write a
+   * reminder into §7.2's chain of what was offered.
+   */
+  remind: async (proposalId: string): Promise<RemindTermsProposalResponse> => {
+    const response = await apiClient.post(
+      termsProposalEndpoints.remind(proposalId)
+    );
+    const parsed = RemindTermsProposalResponseSchema.safeParse(
+      response.data.data
+    );
+    if (!parsed.success) throw parsed.error;
+    return parsed.data;
   },
 
   /**
