@@ -499,7 +499,7 @@ elevation, no `Animated.View`.
 | Component | File | What it is |
 |---|---|---|
 | `WeekBars` | `week-bars.tsx` | 7-bar minutes chart. `dayMinutes` / `todayIndex` are Postgres dow (0=Sunday); `weekStartsOn` rotates display via `getWeekdayOrder` (same helper as `WeekStrip`). A zero day still paints a stub. Today is `primary`; other days `muted` / `border`. One accessibility label summarises the week. |
-| `SplitTrack` | `split-track.tsx` | Horizontal bar split by `flex: value`. Caller supplies every hue. Renders nothing when the total is 0. |
+| `SplitTrack` | `split-track.tsx` | Horizontal bar split by `flex: value`. Caller supplies every hue. Renders nothing when the total is 0. Two consumers: `HoursHeroBand` (the week's hours) and `TodayCoverage`'s day bar (today as who has it — `primary` nanny / `primaryLight` parent cover / `warning` gap). |
 | `WeekDots` | `week-dots.tsx` | 7 dots, filled `primary` for days with hours. Same dow / week-start contract as `WeekBars`. |
 | `NowLine` | `now-line.tsx` | Static "you are here" marker: a dot, a hairline rule, a tabular `Small` label. No timer. |
 | `DayHeader` | `day-header.tsx` | Agenda day-section header (`01-LAWS.md` Rule A). Keeps `schedule-day-today-${localDate}` and `schedule-day-total-${localDate}` testIDs. |

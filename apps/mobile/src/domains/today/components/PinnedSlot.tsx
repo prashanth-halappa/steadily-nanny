@@ -16,8 +16,15 @@
  * That is what stops a sixth rung inventing a sixth styling convention —
  * one slot, one occupant.
  *
- * Empty (a parent on an ordinary day) it has no padding and therefore zero
- * height; the feed simply starts higher.
+ * `TodayCoverage` is the deliberate exception: it does NOT call
+ * `usePinnedTone()`, because its own state machine already decides gap
+ * (attention) vs routine (default), and it occupies the slot in both. Asking
+ * the slot as well would give one card two answers.
+ *
+ * Empty it has no padding and therefore zero height; the feed simply starts
+ * higher. That is now rare — an ordinary day pins the clock for a nanny and
+ * today's cover for a parent, so the slot stands empty only for a role with
+ * neither (a past-member nanny).
  */
 import { createContext, type ReactNode, useContext } from 'react';
 import { View } from 'react-native';

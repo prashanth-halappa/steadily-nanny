@@ -21,6 +21,7 @@ import {
   toCoveredShift,
   toNeedWindow,
 } from '@/src/domains/schedule/utils/uncoveredWeek';
+import { queryState } from '@/src/hooks/queries/queryState';
 import { useHouseholdClosures } from '@/src/hooks/queries/useHouseholdClosures';
 import { useHouseholdCommitments } from '@/src/hooks/queries/useHouseholdCommitments';
 import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
@@ -29,7 +30,7 @@ import { wallClockToUtcIso } from '@/src/lib/wallClock';
 
 export type UncoveredTodayState =
   | { status: 'loading' }
-  | { status: 'error' }
+  | { status: 'error'; retry: () => void }
   | { status: 'setup' }
   | { status: 'noNeedToday'; localDate: string; weekday: number }
   | { status: 'covered'; localDate: string }
@@ -110,23 +111,23 @@ export function useUncoveredToday(
   const commitmentsQuery = useHouseholdCommitments(householdId);
   const closuresQuery = useHouseholdClosures(householdId);
 
+  // `isLoading` stays hand-rolled: the three queries are disabled while
+  // there is no household, and a disabled query is `isPending` for good
+  // (queryState.ts's PITFALL). The error/retry half is `queryState`'s —
+  // a disabled query is never `isError`, so it is safe to read straight.
   const isLoading =
     !localDate ||
     shiftsQuery.isLoading ||
     commitmentsQuery.isLoading ||
     closuresQuery.isLoading;
-  const isError =
-    shiftsQuery.isError || commitmentsQuery.isError || closuresQuery.isError;
+  const reads = queryState(shiftsQuery, commitmentsQuery, closuresQuery);
 
-  return useMemo(() => {
-    if (!localDate || !timeZone) {
+  const settled = useMemo((): Exclude<
+    UncoveredTodayState,
+    { status: 'error' }
+  > => {
+    if (!localDate || !timeZone || isLoading) {
       return { status: 'loading' };
-    }
-    if (isLoading) {
-      return { status: 'loading' };
-    }
-    if (isError) {
-      return { status: 'error' };
     }
     return computeUncoveredToday({
       localDate,
@@ -139,9 +140,16 @@ export function useUncoveredToday(
     localDate,
     timeZone,
     isLoading,
-    isError,
     commitmentsQuery.data,
     shiftsQuery.data,
     closuresQuery.data,
   ]);
+
+  // ERROR WINS OVER LOADING, and outside the memo so the rrule expansion
+  // above keeps its data-only deps rather than recomputing on every render
+  // for the sake of a fresh `retry` closure.
+  if (reads.status === 'error') {
+    return { status: 'error', retry: reads.retry };
+  }
+  return settled;
 }

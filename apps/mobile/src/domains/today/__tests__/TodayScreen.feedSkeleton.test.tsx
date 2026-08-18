@@ -12,7 +12,7 @@
  * import, per docs/09-TESTING.md / TodayScreen.cardOrder.test.tsx.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { render } from '@testing-library/react-native';
+import { render, within } from '@testing-library/react-native';
 
 mock.module('@/lib/animations/useReducedMotion', () => ({
   useReducedMotion: mock(() => false),
@@ -217,7 +217,15 @@ describe('TodayScreen — feed skeleton (P4.2)', () => {
     const tree = render(<TodayScreen />);
 
     expect(tree.queryByTestId('today-feed-skeleton')).not.toBeNull();
-    expect(tree.queryByTestId('today-card-order-marker')).toBeNull();
+    // The FEED is what the skeleton stands in for. The pinned slot sits
+    // outside it and keeps its occupant throughout — hers is the clock, his
+    // is the coverage surface, and neither waits on wave two.
+    const pinned = within(
+      tree.getByTestId('today-pinned-slot')
+    ).queryAllByTestId('today-card-order-marker');
+    expect(tree.queryAllByTestId('today-card-order-marker')).toHaveLength(
+      pinned.length
+    );
   });
 
   it('replaces the skeleton with the real feed once wave-two queries resolve', () => {
