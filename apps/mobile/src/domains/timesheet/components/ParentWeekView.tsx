@@ -1083,8 +1083,8 @@ export function ParentWeekView({
                     : isActionable || isApproved
                       ? null
                       : isQueried
-                        ? t('waitingAfterQuery')
-                        : t('waitingForHours')
+                        ? t('waitingAfterQuery', { name: carerName })
+                        : t('waitingForHours', { name: carerName })
               }
             />
             <WeekQueryThread
@@ -1212,7 +1212,7 @@ export function ParentWeekView({
           ...SCREEN_CONTENT_STYLE,
           paddingBottom: tabBarScrollPadding,
         }}
-        accessibilityLabel={t('carerWeek')}
+        accessibilityLabel={t('carerWeek', { name: carerName })}
       />
 
       <QueryNoteSheet
@@ -1221,7 +1221,7 @@ export function ParentWeekView({
         onSubmit={handleQuerySubmit}
         isSubmitting={queryTimesheet.isPending}
         title={t('queryTitle')}
-        hint={t('queryHint')}
+        hint={t('queryHint', { name: carerName })}
         placeholder={t('queryNotePlaceholder')}
         submitLabel={t('querySubmit')}
       />
