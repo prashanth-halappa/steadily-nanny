@@ -1,0 +1,22 @@
+# Shared helper for the cx-*.yaml capture flows only (see their headers) —
+# NOT one of the existing flows/*.yaml, so composing it doesn't violate "do
+# not modify any existing flow file". Clears the iOS "Open in ‘Steadily
+# Nanny’?" system alert that a custom-scheme `openLink` can raise even
+# without a reinstall (observed repeatedly navigating between deep links in
+# one live session, not just the post-install case the harness already knew
+# about). No-op when the alert is absent.
+appId: com.jetto.steadily.nanny
+---
+- extendedWaitUntil:
+    visible:
+      text: '^Open$'
+    timeout: 4000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        text: '^Open$'
+    commands:
+      - tapOn:
+          text: '^Open$'
+      - waitForAnimationToEnd

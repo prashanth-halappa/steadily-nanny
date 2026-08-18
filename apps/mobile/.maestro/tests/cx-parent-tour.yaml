@@ -1,0 +1,149 @@
+# CX persona capture — PARENT role. Screenshot-only walk of the in-scope
+# surfaces (see scratchpad/cx/BRIEF.md) for a two-persona CX writeup. Not a
+# regression test: no destructive actions, reuses existing flows/testIDs.
+appId: com.jetto.steadily.nanny
+tags:
+  - cx
+---
+# The sim can already be sitting on a live session when this starts, and
+# login.yaml's reset-to-welcome subflow deep-links to the Settings tab to
+# sign out — which raises the iOS "Open in 'Steadily Nanny'?" system alert
+# even without a reinstall (that flow's own header only anticipates it
+# post-reinstall). See cx-dismiss-open-alert.yaml's header for why this is a
+# new helper file rather than a fix to reset-to-welcome.yaml.
+- runFlow: cx-dismiss-open-alert.yaml
+- runFlow: ../flows/login.yaml
+
+# login.yaml's select-household subflow leaves the Settings tab active (it
+# opens the household switcher from there and never taps back) — Today is
+# not the tab you land on.
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+
+# --- Today -----------------------------------------------------------------
+- assertVisible:
+    id: 'today-header'
+- takeScreenshot: cx-parent-today
+- swipe:
+    start: 50%,70%
+    end: 50%,25%
+- waitForAnimationToEnd
+- takeScreenshot: cx-parent-today-scrolled
+
+# --- Schedule: agenda, then week ribbon -------------------------------------
+- tapOn:
+    id: 'tab-schedule'
+- waitForAnimationToEnd
+- takeScreenshot: cx-parent-schedule-agenda
+- runFlow:
+    when:
+      visible:
+        id: 'calendar-view-switcher'
+    commands:
+      - tapOn:
+          id: 'calendar-view-week_ribbon'
+      - waitForAnimationToEnd
+      # A plain state toggle, not an animated transition — waitForAnimationToEnd
+      # alone returned before the re-render, producing a screenshot identical
+      # to the agenda view. Wait for the week view's own marker instead.
+      - extendedWaitUntil:
+          visible:
+            id: 'calendar-week-ribbon-view'
+          timeout: 5000
+          optional: true
+      - takeScreenshot: cx-parent-schedule-week
+
+# Shift detail — a known TODAY shift from the seed fixtures. Bounded wait,
+# not an instant guard: the screen mounts after a data fetch and a bare
+# `when: visible` can evaluate before it resolves (see 07's header on this
+# exact class of flake). Screenshot unconditionally so a redirect/error state
+# is still captured and reported honestly rather than silently skipped.
+- openLink: steadilynanny:///(private)/schedule/shifts/${PHASE4_TODAY_SHIFT_ID}
+- waitForAnimationToEnd
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'shift-detail-screen'
+    timeout: 8000
+    optional: true
+- takeScreenshot: cx-parent-shift-detail
+
+# Extra shift builder — parent-only entry point off the Schedule tab.
+- openLink: steadilynanny:///(private)/schedule/shifts/extra
+- waitForAnimationToEnd
+- runFlow: cx-dismiss-open-alert.yaml
+- runFlow:
+    when:
+      visible:
+        id: 'schedule-extra-shift-screen'
+    commands:
+      - takeScreenshot: cx-parent-extra-shift
+
+# --- Hours -------------------------------------------------------------------
+- openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${PHASE4_SEED_WEEK_START}
+- waitForAnimationToEnd
+- runFlow: cx-dismiss-open-alert.yaml
+- assertVisible:
+    id: 'hours-screen'
+- takeScreenshot: cx-parent-hours-week
+
+# Earnings breakdown — the OT week (07-terms-setup-and-ca-ot-week.yaml),
+# not the seed week above: PHASE4_SEED_WEEK_START has 0m logged for this
+# household/carer (confirmed on screen), so it has no earnings line to open.
+- openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${PHASE4_OT_WEEK_START}
+- waitForAnimationToEnd
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'hours-earnings-line-pressable'
+    timeout: 8000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        id: 'hours-earnings-line-pressable'
+    commands:
+      - tapOn:
+          id: 'hours-earnings-line-pressable'
+      - waitForAnimationToEnd
+      - takeScreenshot: cx-parent-earnings-breakdown
+
+# Payments ledger — parent-only.
+- openLink: steadilynanny:///(private)/payments
+- waitForAnimationToEnd
+- runFlow: cx-dismiss-open-alert.yaml
+- runFlow:
+    when:
+      visible:
+        id: 'payments-screen'
+    commands:
+      - takeScreenshot: cx-parent-payments
+
+# --- Inbox ---------------------------------------------------------------
+- openLink: steadilynanny:///(private)/inbox
+- waitForAnimationToEnd
+- runFlow: cx-dismiss-open-alert.yaml
+- assertVisible:
+    id: 'inbox-screen'
+- takeScreenshot: cx-parent-inbox
+
+# --- Pay / terms -----------------------------------------------------------
+- openLink: steadilynanny:///(private)/settings/pay
+- waitForAnimationToEnd
+- runFlow: cx-dismiss-open-alert.yaml
+- runFlow:
+    when:
+      visible:
+        id: 'pay-screen'
+    commands:
+      - takeScreenshot: cx-parent-pay-arrangement
+      - runFlow:
+          when:
+            visible:
+              id: 'pay-open-proposal-review'
+          commands:
+            - tapOn:
+                id: 'pay-open-proposal-review'
+            - waitForAnimationToEnd
+            - takeScreenshot: cx-parent-proposal-review

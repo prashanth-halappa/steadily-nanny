@@ -1,0 +1,82 @@
+# CX persona capture — onboarding / invite / join. Run LAST: uses clearState
+# and a fresh account walk, which destroys any live session on the sim.
+#
+# Deliberately stops at household-screen without tapping its CTA and bails
+# via reset-to-welcome — role/start/household have no useMutation calls (pure
+# local wizard state, confirmed by reading the components), but the next step
+# (children/invite) does write real rows, and PHASE4_NEW_PARENT_EMAIL is a
+# fixture other Maestro flows (14/15) may still depend on being unconsumed.
+# Also captures the SETTINGS-side invite/join screens off the already
+# signed-in seed parent, which are real app state and safe to view read-only.
+appId: com.jetto.steadily.nanny
+tags:
+  - cx
+---
+# --- Welcome + login (no auth) ----------------------------------------------
+# A real clearState wipe first (destroys the dev-client's
+# EXDevMenuIsOnboardingFinished preference, per reset-to-welcome.yaml's own
+# header, and drops the app back in the dev-client LAUNCHER, not welcome).
+# reset-to-welcome.yaml already has the full, hard-won recovery for exactly
+# that state (repeat-3 intro-sheet dismissal, then the launcher's
+# expo-development-client deep link to force the bundle back in) — reuse it
+# rather than re-deriving it here.
+- launchApp:
+    clearState: true
+- runFlow: ../flows/reset-to-welcome.yaml
+- takeScreenshot: cx-onboarding-welcome
+- tapOn:
+    id: 'welcome-sign-in-email'
+- assertVisible:
+    id: 'login-screen'
+- takeScreenshot: cx-onboarding-login
+# Not `back`: reset-to-welcome.yaml (which login-no-household.yaml calls
+# next) has no state for "on login-screen, unauthenticated" distinct from
+# "on welcome" or "live session" — both a `back` nav-pop and letting
+# reset-to-welcome recover from login-screen mid-session failed (runs
+# 2026-08-18_090821, _091259). A genuine process relaunch sidesteps the
+# whole class: cold start always re-evaluates auth state and a session-less
+# account always lands on welcome, so let login-no-household.yaml's own
+# leading reset-to-welcome.yaml call (launchApp, not nav) do the work.
+- launchApp:
+    clearState: false
+
+# --- Role / start / household: ABANDONED, not captured -------------------
+# Tried 3 times (login-no-household.yaml signing in as PHASE4_NEW_PARENT_EMAIL
+# to reach role-screen): a dev-client-launcher stall, a failed nav `back` off
+# login-screen, then a run where the password field was left empty by
+# `inputText` (screenshot shows the email typed but the password box blank,
+# "That email or password doesn't look right") — three distinct failure
+# shapes, all Maestro-side flakiness in this exact class this codebase's own
+# flow comments call "the occlusion class", not a product issue. Per the
+# brief's own budget guardrail (3 failures → note and move on), this segment
+# is not in the corpus. welcome-screen and login-screen ARE captured above.
+
+# --- Settings-side invite / join screens (seed parent, already onboarded) --
+- runFlow: ../flows/login.yaml
+- openLink: steadilynanny:///(private)/settings/invite
+- waitForAnimationToEnd
+- runFlow: cx-dismiss-open-alert.yaml
+- runFlow:
+    when:
+      notVisible:
+        id: 'welcome-screen'
+    commands:
+      - takeScreenshot: cx-onboarding-settings-invite
+- openLink: steadilynanny:///(private)/settings/invites
+- waitForAnimationToEnd
+- runFlow: cx-dismiss-open-alert.yaml
+- runFlow:
+    when:
+      notVisible:
+        id: 'welcome-screen'
+    commands:
+      - takeScreenshot: cx-onboarding-settings-invites
+- openLink: steadilynanny:///(private)/settings/join-household
+- waitForAnimationToEnd
+- runFlow: cx-dismiss-open-alert.yaml
+- runFlow:
+    when:
+      notVisible:
+        id: 'welcome-screen'
+    commands:
+      - takeScreenshot: cx-onboarding-settings-join-household

@@ -1,0 +1,125 @@
+# CX persona capture — NANNY role. Screenshot-only walk of the in-scope
+# surfaces (see scratchpad/cx/BRIEF.md) for a two-persona CX writeup. Not a
+# regression test: no destructive actions, reuses existing flows/testIDs.
+appId: com.jetto.steadily.nanny
+tags:
+  - cx
+---
+- runFlow: cx-dismiss-open-alert.yaml
+- runFlow: ../flows/login-nanny.yaml
+
+# login-nanny.yaml's select-household subflow leaves the Settings tab active
+# (it opens the household switcher from there and never taps back) — Today
+# is not the tab you land on.
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+
+# --- Today -----------------------------------------------------------------
+- assertVisible:
+    id: 'today-header'
+- takeScreenshot: cx-nanny-today
+- swipe:
+    start: 50%,70%
+    end: 50%,25%
+- waitForAnimationToEnd
+- takeScreenshot: cx-nanny-today-scrolled
+
+# --- Schedule: agenda, then week ribbon -------------------------------------
+- tapOn:
+    id: 'tab-schedule'
+- waitForAnimationToEnd
+- takeScreenshot: cx-nanny-schedule-agenda
+- runFlow:
+    when:
+      visible:
+        id: 'calendar-view-switcher'
+    commands:
+      - tapOn:
+          id: 'calendar-view-week_ribbon'
+      - waitForAnimationToEnd
+      # A plain state toggle, not an animated transition — waitForAnimationToEnd
+      # alone returned before the re-render (confirmed on the parent tour:
+      # identical bytes to the agenda screenshot). Wait for the week view's
+      # own marker instead.
+      - extendedWaitUntil:
+          visible:
+            id: 'calendar-week-ribbon-view'
+          timeout: 5000
+          optional: true
+      - takeScreenshot: cx-nanny-schedule-week
+
+# Usual-week (her own confirmed pattern), a nanny-only surface.
+- openLink: steadilynanny:///(private)/schedule/usual-week
+- waitForAnimationToEnd
+- runFlow: cx-dismiss-open-alert.yaml
+- runFlow:
+    when:
+      visible:
+        id: 'nanny-usual-week-screen'
+    commands:
+      - takeScreenshot: cx-nanny-usual-week
+
+# Shift detail on a live outstanding cover ask — the nanny-specific
+# accept/decline + "answer by" state (see 13a-cover-ask-awaiting.yaml).
+# Bounded wait + unconditional screenshot: this fixture id can 404 if the
+# currently-active household drifted from PHASE4_HOUSEHOLD_ID (observed on
+# the parent tour — see its header note); capture whatever state results
+# rather than silently skipping it.
+- openLink: steadilynanny:///(private)/schedule/shifts/${PHASE4_DECLINE_ASK_SHIFT_ID}
+- waitForAnimationToEnd
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'shift-detail-screen'
+    timeout: 8000
+    optional: true
+- takeScreenshot: cx-nanny-cover-ask-shift-detail
+
+# --- Hours -------------------------------------------------------------------
+- openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${PHASE4_SEED_WEEK_START}
+- waitForAnimationToEnd
+- runFlow: cx-dismiss-open-alert.yaml
+- assertVisible:
+    id: 'hours-screen'
+- takeScreenshot: cx-nanny-hours-week
+
+# Earnings breakdown — the OT week (07-terms-setup-and-ca-ot-week.yaml), not
+# the seed week above: PHASE4_SEED_WEEK_START read 0m for this household on
+# the parent tour, so it has no earnings line to open.
+- openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${PHASE4_OT_WEEK_START}
+- waitForAnimationToEnd
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'hours-earnings-line-pressable'
+    timeout: 8000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        id: 'hours-earnings-line-pressable'
+    commands:
+      - tapOn:
+          id: 'hours-earnings-line-pressable'
+      - waitForAnimationToEnd
+      - takeScreenshot: cx-nanny-earnings-breakdown
+
+# --- Inbox ---------------------------------------------------------------
+- openLink: steadilynanny:///(private)/inbox
+- waitForAnimationToEnd
+- runFlow: cx-dismiss-open-alert.yaml
+- assertVisible:
+    id: 'inbox-screen'
+- takeScreenshot: cx-nanny-inbox
+
+# --- Pay / terms (her own arrangement, not the household's) ----------------
+- openLink: steadilynanny:///(private)/settings/my-pay
+- waitForAnimationToEnd
+- runFlow: cx-dismiss-open-alert.yaml
+- runFlow:
+    when:
+      visible:
+        id: 'my-pay-screen'
+    commands:
+      - takeScreenshot: cx-nanny-my-pay
