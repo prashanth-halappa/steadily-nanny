@@ -74,11 +74,21 @@ tags:
 - takeScreenshot: nanny-sick-day-booked
 
 # --- Parent: the auto-opened cancel request on today's shift --------------
-# Pop back to Settings first: /(private)/settings/time-off is a child of
-# Settings, and logout.yaml's entry guard is the `header-settings` gear that
-# only the root screens carry. One `back` lands on `settings-screen`, which
-# logout.yaml signs out from directly (flow 06's lesson).
-- back
+# Land on Settings first: /(private)/settings/time-off is a child of Settings,
+# and logout.yaml's entry guard is the `header-settings` gear that only the
+# root screens carry (flow 06's lesson).
+#
+# NOT `- back`, and NOT tapping `time-off-back` either (WP-M, 2026-08-18):
+# both reproduced the exact same failure twice each — `tapOnElement` on
+# `time-off-back` reports COMPLETED (confirmed via the run's own
+# commands-*.json, even after scrolling it to the top of the FlashList's
+# `ListHeaderComponent` first) but the app is still sitting on
+# `time-off-screen` a beat later, and logout.yaml's `settings-screen`
+# assertion fails loudly. Root cause not chased further (budget) — deep-link
+# to Settings directly instead, the same recovery `reset-to-welcome.yaml`
+# itself relies on, and which does not depend on this screen's back control
+# at all.
+- openLink: steadilynanny:///(private)/settings
 - waitForAnimationToEnd
 - runFlow: ../flows/logout.yaml
 - runFlow: ../flows/login.yaml

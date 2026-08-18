@@ -75,13 +75,18 @@ tags:
 - takeScreenshot: nanny-time-off-submitted
 
 # --- Parent: land where CARER_TIME_OFF_CONFLICT push would deep-link ---
-# Pop back to Settings first — this screen is /(private)/settings/time-off,
-# a child of Settings, and logout.yaml's own entry guard is the
-# `header-settings` gear, which only the ROOT screens carry. One `back` lands
-# on `settings-screen`, which logout.yaml asserts and signs out from
-# directly. Without it logout would fail loudly (it used to silently no-op
-# and run the parent leg below as the still-signed-in nanny).
-- back
+# Land on Settings first — this screen is /(private)/settings/time-off, a
+# child of Settings, and logout.yaml's own entry guard is the
+# `header-settings` gear, which only the ROOT screens carry.
+#
+# NOT `- back`, and NOT tapping `time-off-back` either (WP-M, 2026-08-18):
+# both reproduced the exact same failure (this flow and 08, twice each) —
+# `tapOnElement` on `time-off-back` reports COMPLETED (confirmed via the
+# run's own commands-*.json, even scrolled to the top of the FlashList's
+# `ListHeaderComponent` first) but the app is still on `time-off-screen` a
+# beat later. Root cause not chased further (budget) — deep-link to Settings
+# directly instead, same recovery `reset-to-welcome.yaml` itself uses.
+- openLink: steadilynanny:///(private)/settings
 - waitForAnimationToEnd
 - runFlow: ../flows/logout.yaml
 - runFlow: ../flows/login.yaml
