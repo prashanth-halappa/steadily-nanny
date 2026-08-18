@@ -142,6 +142,9 @@ const CHANGE_REQUEST: InboxItem = {
   id: 'cr-1',
   shiftId: 'shift-1',
   requestKind: 'time_change',
+  requestedAt: '2026-08-08T09:00:00.000Z',
+  requesterName: null,
+  shiftStartsAt: null,
 };
 const UNCOVERED_STATE = {
   status: 'uncovered' as const,

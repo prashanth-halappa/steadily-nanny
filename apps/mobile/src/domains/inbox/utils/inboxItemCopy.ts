@@ -86,12 +86,29 @@ export function titleForItem(
   timeZone = 'UTC'
 ): string {
   switch (item.kind) {
-    case 'change_request':
+    // WP-H: named by who asked, when there is a name to give — "split" and
+    // "handover" keep the generic kind-worded title, same as an unresolved
+    // requester (a removed/deleted account — `buildInboxItems` resolves that
+    // to `null`).
+    case 'change_request': {
+      const name = item.requesterName;
+      if (name) {
+        if (item.requestKind === 'counter_offer') {
+          return t('items.changeRequest.titleCounterOffer', { name });
+        }
+        if (item.requestKind === 'time_change') {
+          return t('items.changeRequest.titleTimeChange', { name });
+        }
+        if (item.requestKind === 'cancel') {
+          return t('items.changeRequest.titleCancel', { name });
+        }
+      }
       return t('items.changeRequest.title', {
         kind: t(`items.changeRequest.kind.${item.requestKind}`, {
           defaultValue: item.requestKind,
         }),
       });
+    }
     case 'pending_pattern':
       return t('items.pendingPattern.title');
     case 'queried_week':
@@ -163,8 +180,12 @@ export function subtitleForItem(
   timeZone: string
 ): string {
   switch (item.kind) {
+    // "Asked 24 Aug" — the date it was opened, same day/month convention
+    // every other kind here uses.
     case 'change_request':
-      return t('items.changeRequest.subtitle');
+      return t('items.changeRequest.subtitleAsked', {
+        askedDate: proposedOn(item.requestedAt, timeZone),
+      });
     case 'pending_pattern':
       return t('items.pendingPattern.subtitle', {
         start: formatDisplayDate(item.dtstart),
@@ -172,7 +193,9 @@ export function subtitleForItem(
     case 'queried_week':
       return item.queryNote?.trim()
         ? t('items.queriedWeek.subtitleWithNote', { note: item.queryNote })
-        : t('items.queriedWeek.subtitle');
+        : t('items.queriedWeek.subtitle', {
+            household: item.householdName ?? t('common:theFamily'),
+          });
     case 'submitted_week':
       return item.carerDisplayName
         ? t('items.submittedWeek.subtitle', { carer: item.carerDisplayName })
