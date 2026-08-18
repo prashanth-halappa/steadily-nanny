@@ -151,7 +151,7 @@ describe('WeekRibbonView source', () => {
     expect(viewSource).not.toContain('opacity: filled ? 0.85 : 0.15');
     expect(viewSource).toContain('opacity: 1');
     expect(viewSource).toContain('borderWidth: 0');
-    expect(viewSource).toContain('themeColors.muted');
+    expect(viewSource).toContain('themeColors.border');
   });
 
   it('renders a status legend after the grid, with a 4th item gated on 2+ distinct carers', () => {

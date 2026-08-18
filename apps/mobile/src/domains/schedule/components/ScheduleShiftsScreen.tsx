@@ -683,6 +683,7 @@ export function ScheduleShiftsScreen({
           timeOff={timeOff}
           householdTimeZone={timeZone}
           weekDates={weekDates}
+          uncoveredByDay={canViewCover ? uncoveredWeek.byDay : undefined}
           listHeader={gutterlessHeader}
         />
       ) : null}

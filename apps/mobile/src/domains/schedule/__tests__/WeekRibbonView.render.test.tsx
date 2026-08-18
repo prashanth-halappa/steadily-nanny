@@ -13,6 +13,7 @@
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import type { CarerTimeOff } from '@steadily-nanny/shared-types/schemas/availability.schema';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import type { UncoveredWindow } from '@steadily-nanny/shared-types/uncoveredCare';
 import { render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 
@@ -128,8 +129,20 @@ function makeShift(overrides: Partial<Shift> = {}): Shift {
   } as Shift;
 }
 
+function makeUncoveredWindow(
+  overrides: Partial<UncoveredWindow> = {}
+): UncoveredWindow {
+  return {
+    childId: 'child-1',
+    commitmentId: 'commitment-1',
+    startsAt: '2026-08-03T09:00:00.000Z',
+    endsAt: '2026-08-03T10:00:00.000Z',
+    ...overrides,
+  };
+}
+
 describe('WeekRibbonView cell tiers (P1)', () => {
-  it('REGRESSION: cancelled cell paints gray200 #E5DDE2, not the heavier mutedForeground', () => {
+  it('REGRESSION: cancelled cell paints borderStrong #D2C5CD, distinct from the empty-cell rule', () => {
     const { getByTestId } = render(
       <WeekRibbonView
         shifts={[makeShift({ status: 'cancelled' })]}
@@ -141,10 +154,10 @@ describe('WeekRibbonView cell tiers (P1)', () => {
     const cell = StyleSheet.flatten(
       getByTestId(`week-ribbon-cell-${MONDAY_DOW}-9`).props.style
     );
-    expect(cell.backgroundColor).toBe('#E5DDE2');
+    expect(cell.backgroundColor).toBe('#D2C5CD');
   });
 
-  it('declined cell gets the same gray200 treatment as cancelled', () => {
+  it('declined cell gets the same borderStrong treatment as cancelled', () => {
     const { getByTestId } = render(
       <WeekRibbonView
         shifts={[makeShift({ status: 'declined' })]}
@@ -156,7 +169,7 @@ describe('WeekRibbonView cell tiers (P1)', () => {
     const cell = StyleSheet.flatten(
       getByTestId(`week-ribbon-cell-${MONDAY_DOW}-9`).props.style
     );
-    expect(cell.backgroundColor).toBe('#E5DDE2');
+    expect(cell.backgroundColor).toBe('#D2C5CD');
   });
 
   it('an empty cell renders a thin (~2px) rule instead of a full-height capsule', () => {
@@ -177,5 +190,95 @@ describe('WeekRibbonView cell tiers (P1)', () => {
     );
     expect(empty.height).toBeLessThanOrEqual(2);
     expect(occupied.height).toBeGreaterThan(empty.height as number);
+  });
+});
+
+describe('WeekRibbonView densestShift precedence', () => {
+  it('REGRESSION: cancelled-then-confirmed twins at the same starts_at paint as confirmed', () => {
+    // The existing suite only ever passes one shift per day, which is why
+    // it never caught this: shiftRepository order is starts_at only, so the
+    // cancelled twin can sit first and densestShift's occupying[0] fallback
+    // paints the cell cancelled.
+    const { getByTestId } = render(
+      <WeekRibbonView
+        shifts={[
+          makeShift({ id: 'shift-cancelled', status: 'cancelled' }),
+          makeShift({ id: 'shift-confirmed', status: 'confirmed' }),
+        ]}
+        weekDates={WEEK_DATES}
+        householdTimeZone="Europe/London"
+      />
+    );
+
+    expect(
+      getByTestId(`week-ribbon-cell-${MONDAY_DOW}-9`).props.accessibilityLabel
+    ).toBe('confirmed');
+  });
+
+  it('cancelled-only cell colour is not the empty-cell colour', () => {
+    const { getByTestId } = render(
+      <WeekRibbonView
+        shifts={[makeShift({ status: 'cancelled' })]}
+        weekDates={WEEK_DATES}
+        householdTimeZone="Europe/London"
+      />
+    );
+
+    const cancelled = StyleSheet.flatten(
+      getByTestId(`week-ribbon-cell-${MONDAY_DOW}-9`).props.style
+    );
+    const empty = StyleSheet.flatten(
+      getByTestId(`week-ribbon-cell-${MONDAY_DOW}-10`).props.style
+    );
+    expect(cancelled.backgroundColor).not.toBe(empty.backgroundColor);
+  });
+});
+
+describe('WeekRibbonView uncovered cells', () => {
+  it('paints an uncovered window cell and the uncovered legend item', () => {
+    const { getByTestId, getByText } = render(
+      <WeekRibbonView
+        shifts={[]}
+        weekDates={WEEK_DATES}
+        householdTimeZone="Europe/London"
+        uncoveredByDay={{ '2026-08-03': [makeUncoveredWindow()] }}
+      />
+    );
+
+    expect(
+      getByTestId(`week-ribbon-cell-${MONDAY_DOW}-9`).props.accessibilityLabel
+    ).toBe('uncovered');
+    expect(getByText('cover.rowPill')).toBeTruthy();
+  });
+
+  it('uncovered wins over a shift in the same cell', () => {
+    const { getByTestId } = render(
+      <WeekRibbonView
+        shifts={[makeShift({ status: 'confirmed' })]}
+        weekDates={WEEK_DATES}
+        householdTimeZone="Europe/London"
+        uncoveredByDay={{ '2026-08-03': [makeUncoveredWindow()] }}
+      />
+    );
+
+    expect(
+      getByTestId(`week-ribbon-cell-${MONDAY_DOW}-9`).props.accessibilityLabel
+    ).toBe('uncovered');
+  });
+
+  it('omits uncovered cells and the uncovered legend item when uncoveredByDay is omitted', () => {
+    const { getByTestId, queryByText, queryByLabelText } = render(
+      <WeekRibbonView
+        shifts={[makeShift({ status: 'confirmed' })]}
+        weekDates={WEEK_DATES}
+        householdTimeZone="Europe/London"
+      />
+    );
+
+    expect(
+      getByTestId(`week-ribbon-cell-${MONDAY_DOW}-9`).props.accessibilityLabel
+    ).toBe('confirmed');
+    expect(queryByLabelText('uncovered')).toBeNull();
+    expect(queryByText('cover.rowPill')).toBeNull();
   });
 });

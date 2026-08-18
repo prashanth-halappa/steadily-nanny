@@ -399,6 +399,7 @@ decision in its header.
 |---|---|---|---|
 | Today `TodayCoverage` card | Yes | Yes (read-only reassurance / alert) | **No** — gated by `canViewParentSchedule` on `TodayScreen` |
 | Schedule uncovered rows | Yes | Yes (view) | **No** — `canViewCover` = `canViewParentSchedule` |
+| Schedule Week grid uncovered cells | Yes | Yes (view) | **No** — `canViewCover` = `canViewParentSchedule` |
 | Uncovered row actions (ask / I’ve got it / edit hours) | Yes | **No** — `canEditCover` = `isParentEditorRole` (parent only) | **No** |
 | `parent_cover` shift on agenda | Yes (+ undo when editor) | View only | **Yes** — muted row, no navigation to shift detail; shows who is covering |
 | `uncovered_care_detected` push | Yes | No | No |
