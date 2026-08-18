@@ -92,6 +92,7 @@ import { usePendingExpenses } from '@/src/hooks/queries/usePendingExpenses';
 import { useReimbursementSettlements } from '@/src/hooks/queries/useReimbursementSettlements';
 import { useTimesheetThread } from '@/src/hooks/queries/useTimesheetThread';
 import { useWeekExpenses } from '@/src/hooks/queries/useWeekExpenses';
+import { useWeekPayDueDate } from '@/src/hooks/queries/useWeekPayDueDate';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useWeekTimesheet } from '@/src/hooks/queries/useWeekTimesheet';
 import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
@@ -201,6 +202,11 @@ export function ParentWeekView({
   // here for the household-level currency fallback below (same pattern as
   // `NannyWeekView`'s Daylight P0-5 household-name read).
   const activeHousehold = useActiveHousehold();
+  // Declared up here with the hooks, not beside its first use below: the
+  // due-date hook needs it, and this component early-returns on loading and
+  // on error long before that point.
+  const weekStartsOn =
+    activeHousehold.household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON;
   const membersQuery = useHouseholdMembers(householdId);
   const entriesQuery = useWeekTimeEntries(householdId, weekStartISO);
   const timesheetQuery = useWeekTimesheet(householdId, weekStartISO);
@@ -352,6 +358,18 @@ export function ParentWeekView({
   const entries = allEntries.filter(e => carerKeyOf(e) === selectedCarerId);
   const timesheet =
     weekTimesheets.find(t => carerKeyOf(t) === selectedCarerId) ?? null;
+  // WP-F: when the pay period this week belongs to falls due — PRESENTATION
+  // ONLY, and three-valued (`undefined` means "not known yet"). Keyed to the
+  // SELECTED carer's own arrangement, the same one the money card below
+  // states a balance for, so a multi-carer household can never read one
+  // carer's pay day over another's figures. See the hook's doc.
+  const dueDate = useWeekPayDueDate({
+    householdId,
+    carerId: timesheet?.carer_id,
+    weekStartISO,
+    weekEndISO: weekDates[weekDates.length - 1] ?? weekStartISO,
+    weekStartsOn,
+  });
   // False alarm (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B): every caller of
   // `timesheetStatus` below used to pre-coerce `timesheet?.status ?? null`,
   // and `WeekTotal`'s `hasStatus` reads `null` as "genuinely not
@@ -702,8 +720,6 @@ export function ParentWeekView({
       ? formatMoney(sumPaymentsMinor(payments), settlementCurrency)
       : null;
   const todayISO = localDateInZone(timeZone, new Date(nowMs));
-  const weekStartsOn =
-    activeHousehold.household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON;
   const dayMinutes = [0, 0, 0, 0, 0, 0, 0];
   for (let i = 0; i < weekDates.length; i++) {
     const date = weekDates[i];
@@ -1126,6 +1142,8 @@ export function ParentWeekView({
               settlementCurrency={settlementCurrency}
               paidStateUnknown={paymentsUnknown}
               onRetryPayments={() => void paymentsQuery.refetch()}
+              dueDate={dueDate}
+              todayISO={todayISO}
               onPaymentPress={payment => setSelectedPaymentId(payment.id)}
               onMarkPaidPress={
                 isApproved && !readOnly ? handleOpenRecordPayment : undefined
