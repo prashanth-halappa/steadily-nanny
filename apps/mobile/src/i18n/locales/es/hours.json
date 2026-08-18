@@ -14,6 +14,7 @@
   "query": "Consultar",
   "queryTitle": "Consultar esta semana",
   "queryHint": "Cuéntale a tu cuidadora qué no cuadra — esto retiene la aprobación hasta resolverlo.",
+  "queryBeforeYouSend": "Vale la pena pensarlo primero: un día más largo puede ser una recogida tardía, uno más corto un evento escolar. Si aun así no cuadra, di qué día.",
   "queryNotePlaceholder": "p. ej. El jueves parece más largo de lo esperado",
   "querySubmit": "Enviar consulta",
   "approvedToast": "Semana aprobada",

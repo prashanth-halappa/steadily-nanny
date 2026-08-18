@@ -1554,6 +1554,45 @@ employees of the same family is the failure this domain does not recover from.
 rule as `screens-hours.md` §6: the screen *says* the person is no longer with
 the household rather than silently omitting the buttons.
 
+### 13.2 Verified 2026-08-18: a nanny with a live arrangement can propose new terms
+
+Traced end to end, code-read only, against a live mid-relationship raise (not
+a fresh onboarding):
+
+1. `MyPayScreen.tsx:384` — `my-pay-suggest-change-${household.id}` is
+   reachable whenever `canWrite` is true, independent of whether `arrangement`
+   is set (F16's hoist, see the comment at `MyPayScreen.tsx:350`).
+2. `MyPayScreen.tsx:611–619` — the button opens `PayChangeSheet mode="propose"`,
+   pre-filled from `currentArrangement={arrangement ?? undefined}` — a live
+   arrangement flows in as the starting diff rather than blocking the sheet.
+3. `MyPayScreen.tsx:68,195,624` — submit calls `useProposeTerms` /
+   `useProposeTerms.ts`, which posts to `termsProposalApi.propose`
+   (`api/endpoints/termsProposals.ts:141–155`).
+4. That hits `POST /households/:householdId/carers/:carerId/terms-proposals`
+   (`termsProposalRoutes.ts`), gated only by `authWithValidation` — no
+   `authWithOwnership`, by design (GOLDEN-FIXES #32).
+5. `termsProposalCommandService.propose` (`termsProposalCommandService.ts:166–225`)
+   gates on `resolveSide(this.members, householdId, callerId)` — membership
+   only. **No check for an existing arrangement, in either direction** — the
+   method has no arrangement lookup at all before inserting the new
+   `proposed` row.
+6. The parent sees it as a `terms_proposal` (received) inbox item
+   (`buildInboxItems.ts:484–506`, direction `'carer'`), surfaced by
+   `TermsProposalCard` (Today's T1 slot for this kind —
+   `TermsProposalCard.tsx`), whose CTA pushes `hrefForItem` →
+   `/(private)/pay/proposal/${item.id}` (`inboxItemCopy.ts:63–66`) →
+   `apps/mobile/src/app/(private)/pay/proposal/[id].tsx`, i.e.
+   `ProposalReviewScreen`.
+
+(Correction to the original trace sketch: the parent-side card is
+`TermsProposalCard`, not `PendingOfferCard` — `PendingOfferCard` is the
+mirror card for the proposal's own author tracking a proposal she sent,
+`usePendingOffer.ts:1–16`.)
+
+No gap found. The write gate is membership, not "no arrangement yet" —
+a nanny mid-relationship can send a raise request exactly the same way a
+nanny with no arrangement sends a first offer.
+
 ---
 
 ## 14. States

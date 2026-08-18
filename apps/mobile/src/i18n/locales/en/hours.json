@@ -14,6 +14,7 @@
   "query": "Query",
   "queryTitle": "Query this week",
   "queryHint": "Tell your carer what looks off — this holds off approval until it's sorted.",
+  "queryBeforeYouSend": "Worth a thought first: a longer day may be a late pickup, a shorter one a school event. If it still looks off, say which day.",
   "queryNotePlaceholder": "e.g. Thursday looks longer than expected",
   "querySubmit": "Send query",
   "approvedToast": "Week approved",

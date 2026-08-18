@@ -199,6 +199,16 @@ describe('ParentWeekView', () => {
     expect(weekTotalSource).toContain('hours-approve-waiting');
   });
 
+  // WP-L: a moment's pause before a query — a quieter reading of the day
+  // often explains it (a longer day is a late pickup, a shorter one a
+  // school event), so the sheet says that before the note field, not just
+  // "tell your carer what looks off".
+  it('passes a de-escalation hint into the query sheet', () => {
+    expect(parentWeekViewSource).toContain(
+      "beforeYouSend={t('queryBeforeYouSend')}"
+    );
+  });
+
   // SUPERSEDED by TIER0-CX-SPEC.md §4.3: approving now freezes a gross
   // figure alongside the hours, so the tap opens `ApproveWeekDialog` (an
   // `AlertDialog`, GOLDEN-FIXES #1) instead of calling the mutation
@@ -311,5 +321,14 @@ describe('QueryNoteSheet', () => {
 
   it('disables submit until a note is entered', () => {
     expect(queryNoteSheetSource).toMatch(/disabled=\{!note\.trim\(\)/);
+  });
+
+  // WP-L: an optional quiet block above the note input — rendered only when
+  // a caller passes it, so the nanny's flag entry point (no prop passed)
+  // stays exactly as it reads today.
+  it('renders an optional beforeYouSend block above the note input, only when passed', () => {
+    expect(queryNoteSheetSource).toMatch(/beforeYouSend\?:\s*string/);
+    expect(queryNoteSheetSource).toContain('${testID}-before-you-send');
+    expect(queryNoteSheetSource).toMatch(/beforeYouSend[\s\S]*?<Textarea/);
   });
 });
