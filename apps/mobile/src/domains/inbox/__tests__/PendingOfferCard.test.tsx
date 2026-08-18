@@ -421,6 +421,28 @@ describe('PendingOfferCard — person', () => {
   });
 });
 
+describe('PendingOfferCard — provisional (WP-K)', () => {
+  // sentToday / waiting / stale are all "waiting on the nanny to answer" —
+  // dashed border, no shadow. `blocking` is L1 attention and keeps its own
+  // tone treatment; a dashed border there would blunt the one card that is
+  // allowed to shout.
+  it('is provisional (dashed border) in the quiet, non-blocking states', () => {
+    mockItems = [offer(3)]; // waiting, unopened, no shift today
+    const className = renderPinned().getByTestId('today-pending-offer-card')
+      .props.className as string;
+
+    expect(className).toContain('border-dashed');
+  });
+
+  it('is NOT provisional once it is blocking — attention tone owns it instead', () => {
+    mockShifts = [SHIFT_TODAY];
+    const className = renderPinned().getByTestId('today-pending-offer-card')
+      .props.className as string;
+
+    expect(className).not.toContain('border-dashed');
+  });
+});
+
 describe('PendingOfferCard — when it does not mount', () => {
   it('renders nothing with no sent offer', () => {
     mockItems = [];

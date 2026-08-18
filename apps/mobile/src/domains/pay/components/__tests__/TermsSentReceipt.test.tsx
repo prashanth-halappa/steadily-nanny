@@ -87,6 +87,14 @@ describe('TermsSentReceipt', () => {
     ).toBe('receipt.mustAgreeCarer');
   });
 
+  // WP-K: an open round the reader authored is waiting on the other person to
+  // answer — dashed border, no shadow, same as any other provisional card.
+  it('is provisional — dashed border, no elevation shadow, while the round is open', () => {
+    const className = renderReceipt().getByTestId('pay-terms-receipt').props
+      .className as string;
+    expect(className).toContain('border-dashed');
+  });
+
   it('unopened reads "Not opened yet" — never a fabricated seen', () => {
     expect(
       renderReceipt({ viewed_at: null }).getByTestId('pay-terms-receipt-seen')

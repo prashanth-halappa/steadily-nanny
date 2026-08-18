@@ -33,12 +33,19 @@ export type CardTone =
  * 20px corner radius; the radius degenerates and the bar poked past the
  * card's rounded corners), which is further reason not to reintroduce it.
  * The tinted ground alone does the tiering work.
+ *
+ * `provisional` — dashed = waiting on the other person. Swaps the elevation
+ * shadow for a dashed `borderStrong` outline; same radius/padding, no other
+ * change. Use it for a card whose subject hasn't happened yet from this
+ * device's point of view (an invite nobody's redeemed, terms nobody's
+ * accepted) — never for a state this side already settled.
  */
 function Card({
   className,
   style,
   live = false,
   tone,
+  provisional = false,
   children,
   ...props
 }: ViewProps & {
@@ -46,6 +53,8 @@ function Card({
   /** @deprecated use `tone="live"` instead. Ignored when `tone` is set. */
   live?: boolean;
   tone?: CardTone;
+  /** Dashed border, no shadow — "waiting on the other person" (00-FOUNDATIONS §5.4). */
+  provisional?: boolean;
 }) {
   const elevation = useElevation();
   const colors = useThemeColors();
@@ -71,9 +80,13 @@ function Card({
 
   return (
     <View
-      className={cn('rounded-card bg-card', className)}
+      className={cn(
+        'rounded-card bg-card',
+        provisional && 'border-1.5 border-dashed border-border-strong',
+        className
+      )}
       style={[
-        toneElevation,
+        provisional ? null : toneElevation,
         toneBackground ? { backgroundColor: toneBackground } : null,
         style,
       ]}

@@ -103,7 +103,7 @@ export function TermsSentReceipt({
     : t('receipt.notOpened');
 
   return (
-    <Card testID={testID}>
+    <Card testID={testID} provisional>
       <CardContent className="gap-2">
         <Body testID={`${testID}-title`} weight="medium">
           {t('receipt.sentTo', { name: counterpartyName, date: sentDate })}

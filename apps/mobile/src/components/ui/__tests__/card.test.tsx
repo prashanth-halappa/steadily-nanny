@@ -182,6 +182,38 @@ describe('Card tone (Wave 0 / P0-1)', () => {
   });
 });
 
+describe('Card provisional (WP-K) — dashed border for "waiting on the other person"', () => {
+  it('draws a dashed borderStrong border and drops the elevation shadow', () => {
+    const { getByTestId } = render(<Card testID="card" provisional />);
+    const className = getByTestId('card').props.className as string;
+    const entries = getByTestId('card').props.style as ViewStyle[];
+
+    expect(className).toContain('border-dashed');
+    expect(className).toContain('border-1.5');
+    expect(className).toContain('border-border-strong');
+    expect(elevationStyle(entries)).toBeUndefined();
+  });
+
+  it('keeps the normal shadowed look when provisional is not set', () => {
+    const { getByTestId } = render(<Card testID="card" />);
+    const className = getByTestId('card').props.className as string;
+
+    expect(className).not.toContain('border-dashed');
+    expect(shadowColours(getByTestId('card').props.style)).toContain(INK_RGB);
+  });
+
+  it('provisional still applies the tone tint underneath the dashed border', () => {
+    const { getByTestId } = render(
+      <Card testID="card" provisional tone="positive" />
+    );
+    const entries = getByTestId('card').props.style as ViewStyle[];
+    const bg = entries.find(
+      (s): s is ViewStyle => Boolean(s) && 'backgroundColor' in (s as object)
+    );
+    expect(bg?.backgroundColor).toBe(palette.light.surfacePositive.hex);
+  });
+});
+
 describe('CardContent padding (Daylight UX #40)', () => {
   it('defaults to full p-5.5 — not the header-companion pt-0', async () => {
     const source = await Bun.file(

@@ -294,6 +294,7 @@
   "waitingOnNanny": {
     "title": "Nadie ha usado tu código de invitación todavía",
     "body": "La semana sigue vacía hasta que alguien se una con él.",
+    "promise": "Te avisaremos en cuanto alguien se una.",
     "quietLine": "Tu código de invitación sigue siendo {{code}}.",
     "codeA11y": "Código de invitación {{code}}. Abre tus códigos de invitación.",
     "shareButton": "Compartir código",
