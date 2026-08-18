@@ -196,11 +196,11 @@ tags:
 
 - scrollUntilVisible:
     element:
-      id: 'today-pending-schedule-card'
+      id: 'today-pending-schedule-card-.*'
     direction: DOWN
     timeout: 10000
 - assertVisible:
-    id: 'today-pending-schedule-card'
+    id: 'today-pending-schedule-card-.*'
 - assertNotVisible:
     id: 'today-no-week-yet-card'
 - takeScreenshot: 21-c-nanny-pending-schedule-card

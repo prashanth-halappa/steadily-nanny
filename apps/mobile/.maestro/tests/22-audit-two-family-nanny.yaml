@@ -79,9 +79,9 @@ tags:
 - waitForAnimationToEnd
 - scrollUntilVisible:
     element:
-      id: 'today-pending-schedule-card'
+      id: 'today-pending-schedule-card-.*'
     direction: DOWN
     timeout: 10000
 - assertVisible:
-    id: 'today-pending-schedule-card'
+    id: 'today-pending-schedule-card-.*'
 - takeScreenshot: 22-a5-pending-schedule-other-family

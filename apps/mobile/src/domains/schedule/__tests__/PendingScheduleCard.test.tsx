@@ -139,7 +139,9 @@ describe('PendingScheduleCard', () => {
   it('renders nothing when there is no pending pattern at all', () => {
     const { queryByTestId, toJSON } = render(<PendingScheduleCard />);
 
-    expect(queryByTestId('today-pending-schedule-card')).toBeNull();
+    expect(
+      queryByTestId(`today-pending-schedule-card-${PATTERN_ID}`)
+    ).toBeNull();
     expect(toJSON()).toBeNull();
   });
 
@@ -157,8 +159,10 @@ describe('PendingScheduleCard', () => {
 
     const { getByTestId } = render(<PendingScheduleCard />);
 
-    expect(getByTestId('today-pending-schedule-card')).toBeTruthy();
-    const cta = getByTestId('today-pending-schedule-cta');
+    expect(
+      getByTestId(`today-pending-schedule-card-${PATTERN_ID}`)
+    ).toBeTruthy();
+    const cta = getByTestId(`today-pending-schedule-cta-${PATTERN_ID}`);
     expect(cta).toBeTruthy();
 
     cta.props.onPress?.();
@@ -224,7 +228,9 @@ describe('PendingScheduleCard', () => {
 
     const { queryByTestId } = render(<PendingScheduleCard />);
 
-    expect(queryByTestId('today-pending-schedule-card')).toBeNull();
+    expect(
+      queryByTestId(`today-pending-schedule-card-${PATTERN_ID}`)
+    ).toBeNull();
   });
 
   // P0-6 (Wave 1-D): routine card title promoted off Body/600 (16/24) onto
@@ -275,12 +281,16 @@ describe('PendingScheduleCard', () => {
 
       const { getByTestId, getByText } = render(<PendingScheduleCard />);
 
-      expect(getByTestId('today-pending-schedule-card')).toBeTruthy();
+      expect(
+        getByTestId(`today-pending-schedule-card-${PATTERN_B_ID}`)
+      ).toBeTruthy();
       expect(
         getByText('todayCard.pendingTitleNamed({"family":"Household B"})')
       ).toBeTruthy();
 
-      getByTestId('today-pending-schedule-cta').props.onPress?.();
+      getByTestId(
+        `today-pending-schedule-cta-${PATTERN_B_ID}`
+      ).props.onPress?.();
       expect(mockPush).toHaveBeenCalledWith(
         `/(private)/schedule/respond/${PATTERN_B_ID}`
       );
@@ -305,9 +315,14 @@ describe('PendingScheduleCard', () => {
         isLoading: false,
       }));
 
-      const { getAllByTestId } = render(<PendingScheduleCard />);
+      const { getByTestId } = render(<PendingScheduleCard />);
 
-      expect(getAllByTestId('today-pending-schedule-card')).toHaveLength(2);
+      expect(
+        getByTestId(`today-pending-schedule-card-${PATTERN_ID}`)
+      ).toBeTruthy();
+      expect(
+        getByTestId(`today-pending-schedule-card-${PATTERN_B_ID}`)
+      ).toBeTruthy();
     });
   });
 });

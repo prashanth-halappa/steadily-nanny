@@ -68,7 +68,10 @@ function PendingPatternRow({
   const distinctDaysCount = new Set(days.map(d => d.weekday)).size;
 
   return (
-    <Card testID="today-pending-schedule-card" className="gap-2 p-5.5">
+    <Card
+      testID={`today-pending-schedule-card-${item.patternId}`}
+      className="gap-2 p-5.5"
+    >
       <H4>
         {familyName
           ? t('todayCard.pendingTitleNamed', { family: familyName })
@@ -81,7 +84,7 @@ function PendingPatternRow({
         })}
       </Body>
       <Button
-        testID="today-pending-schedule-cta"
+        testID={`today-pending-schedule-cta-${item.patternId}`}
         onPress={() =>
           router.push(`/(private)/schedule/respond/${item.patternId}` as Href)
         }
