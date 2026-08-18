@@ -29,6 +29,10 @@ import { InlineError } from '@/src/components/ui/inline-error';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
 import { Body, H3, Small } from '@/src/components/ui/typography';
+import { formatDisplayDateWithYear } from '@/src/domains/pay/utils/payArrangementForm';
+import { InviteOfferSummary } from '@/src/domains/setup/components/InviteOfferSummary';
+import { getDeviceCurrency } from '@/src/lib/deviceLocale';
+import { formatRate } from '@/src/lib/money';
 import { formatDateShort } from '@/src/utils/dateFormatting';
 import { useElevation } from '~/lib/design-tokens/elevation';
 import { buildInviteTimeline, resolveInviteState } from '../utils/inviteState';
@@ -47,6 +51,7 @@ interface InviteRowProps {
   onRevoke: () => void;
   isRevoking: boolean;
   isRevokeError: boolean;
+  currency?: string;
 }
 
 export function InviteRow({
@@ -58,6 +63,7 @@ export function InviteRow({
   onRevoke,
   isRevoking,
   isRevokeError,
+  currency,
 }: InviteRowProps) {
   const { t } = useTranslation('draft');
   const elevation = useElevation();
@@ -72,6 +78,7 @@ export function InviteRow({
   const name = invite.label ?? t('sentTo.noLabel');
   // Nothing left to stop once it has been joined, revoked or run out.
   const canStop = state.variant === 'pending';
+  const payOffer = invite.pay_offer;
 
   return (
     <View
@@ -106,6 +113,17 @@ export function InviteRow({
       <Small testID="draft-invite-timeline" className="text-muted-foreground">
         {timeline}
       </Small>
+      {payOffer ? (
+        <InviteOfferSummary
+          testID="draft-invite-offer"
+          rate={formatRate(
+            payOffer.rate_minor,
+            payOffer.currency ?? currency ?? getDeviceCurrency()
+          )}
+          startDate={formatDisplayDateWithYear(payOffer.valid_from)}
+          cancellationPaidWithinHours={payOffer.cancellation_paid_within_hours}
+        />
+      ) : null}
 
       <BottomSheetBase
         sheetId={`draft-invite-menu-${invite.id}`}

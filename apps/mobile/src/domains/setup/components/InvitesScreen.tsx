@@ -104,6 +104,7 @@ export function InvitesScreen() {
             onRetry={() => invitesQuery.refetch()}
             onRevoke={() => revokeInvite.mutate(only.id)}
             isRevoking={revokeInvite.isPending}
+            currency={household?.currency}
           />
           <Button
             testID="invites-share-button"
@@ -134,6 +135,7 @@ export function InvitesScreen() {
                 onRevoke={() => revokeInvite.mutate(invite.id)}
                 isRevoking={revokeInvite.isPending}
                 isRevokeError={revokeInvite.isError}
+                currency={household?.currency}
               />
             ))}
           </View>
@@ -154,6 +156,7 @@ export function InvitesScreen() {
                 onRevoke={() => revokeInvite.mutate(invite.id)}
                 isRevoking={revokeInvite.isPending}
                 isRevokeError={revokeInvite.isError}
+                currency={household?.currency}
               />
             ))}
           </View>

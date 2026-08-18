@@ -17,6 +17,11 @@
  * caller owns `useRevokeInvite` and decides what happens on success (clear
  * the invite it's holding). Rendered only once a code exists; there is
  * nothing to revoke while one is still minting.
+ *
+ * The attached pay offer (when present) is already on the invite row. This
+ * card renders it via `InviteOfferSummary` so a parent who comes back to
+ * the code later can still read the terms. Currency is passed in — the
+ * card stays presentational and does not call `useActiveHousehold`.
  */
 import type { HouseholdInvite } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { useTranslation } from 'react-i18next';
@@ -26,7 +31,11 @@ import { Card } from '@/src/components/ui/card';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Body, Display } from '@/src/components/ui/typography';
+import { formatDisplayDateWithYear } from '@/src/domains/pay/utils/payArrangementForm';
+import { getDeviceCurrency } from '@/src/lib/deviceLocale';
+import { formatRate } from '@/src/lib/money';
 import { formatDateShort } from '@/src/utils/dateFormatting';
+import { InviteOfferSummary } from './InviteOfferSummary';
 
 interface InviteCodeCardProps {
   invite: HouseholdInvite | null;
@@ -34,6 +43,7 @@ interface InviteCodeCardProps {
   onRetry: () => void;
   onRevoke?: () => void;
   isRevoking?: boolean;
+  currency?: string;
 }
 
 export function InviteCodeCard({
@@ -42,28 +52,46 @@ export function InviteCodeCard({
   onRetry,
   onRevoke,
   isRevoking,
+  currency,
 }: InviteCodeCardProps) {
   const { t } = useTranslation('household');
+  const payOffer = invite?.pay_offer;
 
   return (
     <Card className="items-center gap-4 p-5.5">
       {invite ? (
-        <View className="items-center gap-1">
-          <Display
-            testID="invite-code-value"
-            selectable
-            className="text-primary"
-            style={{ letterSpacing: 3.2 }}
-          >
-            {invite.code}
-          </Display>
-          <Body testID="invite-code-meta" className="text-muted-foreground">
-            {t('invite.codeMeta', {
-              role: t(`invite.roles.${invite.role}.title`),
-              date: formatDateShort(invite.expires_at),
-            })}
-          </Body>
-        </View>
+        <>
+          <View className="items-center gap-1">
+            <Display
+              testID="invite-code-value"
+              selectable
+              className="text-primary"
+              style={{ letterSpacing: 3.2 }}
+            >
+              {invite.code}
+            </Display>
+            <Body testID="invite-code-meta" className="text-muted-foreground">
+              {t('invite.codeMeta', {
+                role: t(`invite.roles.${invite.role}.title`),
+                date: formatDateShort(invite.expires_at),
+              })}
+            </Body>
+          </View>
+          {payOffer ? (
+            <View className="w-full">
+              <InviteOfferSummary
+                rate={formatRate(
+                  payOffer.rate_minor,
+                  payOffer.currency ?? currency ?? getDeviceCurrency()
+                )}
+                startDate={formatDisplayDateWithYear(payOffer.valid_from)}
+                cancellationPaidWithinHours={
+                  payOffer.cancellation_paid_within_hours
+                }
+              />
+            </View>
+          ) : null}
+        </>
       ) : (
         <LoadingIndicator />
       )}

@@ -584,6 +584,9 @@ export function PayTermsGroups({
         }
         testID={`${testIDPrefix}-group-holidays`}
       >
+        <Small className="text-muted-foreground">
+          {t('changeSheet.holidayCalendarHint')}
+        </Small>
         <View className="gap-2">
           <Label>{t('changeSheet.workedHolidayPremiumFieldLabel')}</Label>
           <Input

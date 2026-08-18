@@ -35,6 +35,12 @@ import {
   UpdateHouseholdMemberSchema,
   UpdateHouseholdSchema,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
+import {
+  type HouseholdHoliday,
+  HouseholdHolidayListResponseSchema,
+  type SetHouseholdHolidaysRequest,
+  SetHouseholdHolidaysRequestSchema,
+} from '@steadily-nanny/shared-types/schemas/householdHoliday.schema';
 import { z } from 'zod';
 import { apiClient } from '@/src/api/client';
 
@@ -54,6 +60,7 @@ export const householdEndpoints = {
     `/v1/households/${householdId}/invites/${inviteId}`,
   redeemInvite: '/v1/households/invites/redeem',
   previewInvite: (code: string) => `/v1/households/invites/${code}/preview`,
+  holidays: (householdId: string) => `/v1/households/${householdId}/holidays`,
 } as const;
 
 // --- Zod schemas not (yet) in the shared package ----------------------------
@@ -352,5 +359,45 @@ export const householdApi = {
       .safeParse(response.data.data);
     if (!parsed.success) throw parsed.error;
     return parsed.data.membership;
+  },
+
+  /**
+   * This household's holiday toggles — which federal days the family
+   * observes. GET /:id/holidays. Member-visible. Absent rows mean not
+   * observed (the family has not opted that day in).
+   */
+  listHolidays: async (householdId: string): Promise<HouseholdHoliday[]> => {
+    const response = await apiClient.get(
+      householdEndpoints.holidays(householdId)
+    );
+    const parsed = HouseholdHolidayListResponseSchema.safeParse(
+      response.data.data
+    );
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.household_holidays;
+  },
+
+  /**
+   * Replace a set of holiday toggles — PUT /:id/holidays. Owner/parent
+   * only, enforced server-side. Keys not named are left alone. An unknown
+   * `holiday_key` is refused client-side by
+   * `SetHouseholdHolidaysRequestSchema` before the request is sent.
+   */
+  setHolidays: async (
+    householdId: string,
+    input: SetHouseholdHolidaysRequest
+  ): Promise<HouseholdHoliday[]> => {
+    const validated = SetHouseholdHolidaysRequestSchema.safeParse(input);
+    if (!validated.success) throw validated.error;
+
+    const response = await apiClient.put(
+      householdEndpoints.holidays(householdId),
+      validated.data
+    );
+    const parsed = HouseholdHolidayListResponseSchema.safeParse(
+      response.data.data
+    );
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.household_holidays;
   },
 };

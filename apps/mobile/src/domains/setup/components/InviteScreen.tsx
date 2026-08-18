@@ -140,6 +140,7 @@ export function InviteScreen() {
             onRetry={onGenerate}
             onRevoke={onRevoke}
             isRevoking={revokeInvite.isPending}
+            currency={currency}
           />
           <Button
             testID="invite-share-button"

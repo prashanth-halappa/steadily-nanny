@@ -59,6 +59,8 @@ export const queryKeys = {
     // that literal since before this block existed and now delegates here.
     invites: (householdId?: string) =>
       [...queryKeys.household.all, 'invites', householdId] as const,
+    holidays: (householdId?: string) =>
+      [...queryKeys.household.all, 'holidays', householdId] as const,
   },
 
   // A household's children

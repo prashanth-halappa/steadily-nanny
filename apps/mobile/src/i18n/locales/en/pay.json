@@ -89,6 +89,7 @@
     "seventhDayDoubletimeAfterLabel": "Double time after (hours)",
     "seventhDayHint": "A seventh day worked in the same week. Its second tier is paid at the double-time rate above.",
     "workedHolidayPremiumFieldLabel": "Worked-holiday premium",
+    "holidayCalendarHint": "Which days count as holidays is a family-wide list, set in Settings.",
     "workedHolidayPremiumHint": "Leave blank if a worked holiday pays the normal rate.",
     "paidHolidayHoursFieldLabel": "Hours paid for an unworked holiday",
     "paidHolidayHoursHint": "Leave blank if a holiday nobody works is unpaid.",

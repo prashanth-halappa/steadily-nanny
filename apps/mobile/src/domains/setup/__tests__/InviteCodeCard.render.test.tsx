@@ -111,3 +111,38 @@ describe('InviteCodeCard — revoke (D3)', () => {
     expect(queryByTestId('invite-revoke-button')).toBeNull();
   });
 });
+
+describe('InviteCodeCard — pay offer summary', () => {
+  const INVITE_WITH_OFFER = {
+    ...INVITE,
+    pay_offer: {
+      rate_minor: 2200,
+      currency: 'USD',
+      overtime_multiplier: 1.5,
+      cancellation_paid_within_hours: 24,
+      valid_from: '2026-08-17',
+    },
+  } as HouseholdInvite;
+
+  it('renders invite-offer-summary next to the code when pay_offer is on the invite', () => {
+    const { getByTestId } = render(
+      <InviteCodeCard
+        invite={INVITE_WITH_OFFER}
+        isError={false}
+        onRetry={() => {}}
+      />
+    );
+
+    expect(getByTestId('invite-code-value').props.children).toBe('R4K-92T');
+    expect(getByTestId('invite-offer-summary')).toBeTruthy();
+  });
+
+  it('renders no offer summary when the invite has no pay_offer', () => {
+    const { getByTestId, queryByTestId } = render(
+      <InviteCodeCard invite={INVITE} isError={false} onRetry={() => {}} />
+    );
+
+    expect(getByTestId('invite-code-value')).toBeTruthy();
+    expect(queryByTestId('invite-offer-summary')).toBeNull();
+  });
+});

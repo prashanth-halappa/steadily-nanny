@@ -133,16 +133,21 @@ export function ManageInviteScreen() {
     <Card testID="invite-offer-card" className="gap-3 p-4">
       {offerForEdit ? (
         <View className="gap-1">
-          <InviteOfferSummary
-            rate={formatRate(
-              offerForEdit.rate_minor,
-              offerForEdit.currency ?? currency
-            )}
-            startDate={formatDisplayDateWithYear(offerForEdit.valid_from)}
-            cancellationPaidWithinHours={
-              offerForEdit.cancellation_paid_within_hours
-            }
-          />
+          {/* Pre-mint only: once a code exists, InviteCodeCard above already
+              renders the offer from `invite.pay_offer`. Showing it twice
+              would read as two different offers. */}
+          {!hasStarted && payOffer ? (
+            <InviteOfferSummary
+              rate={formatRate(
+                payOffer.rate_minor,
+                payOffer.currency ?? currency
+              )}
+              startDate={formatDisplayDateWithYear(payOffer.valid_from)}
+              cancellationPaidWithinHours={
+                payOffer.cancellation_paid_within_hours
+              }
+            />
+          ) : null}
           <Small
             testID="invite-offer-draft-state"
             className="text-muted-foreground"
@@ -203,6 +208,7 @@ export function ManageInviteScreen() {
             onRetry={onGenerate}
             onRevoke={onRevoke}
             isRevoking={revokeInvite.isPending}
+            currency={currency}
           />
           <Button
             testID="invite-share-button"

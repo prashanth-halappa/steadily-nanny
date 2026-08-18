@@ -19,6 +19,7 @@ import {
   Inbox,
   KeyRound,
   type LucideIcon,
+  PartyPopper,
   Shield,
   User,
   UserPlus,
@@ -365,6 +366,15 @@ export default function SettingsScreen() {
                         router.push('/settings/household-closures' as Href)
                       }
                     />
+                    <SettingsNavRow
+                      testID="settings-household-holidays"
+                      label={t('household:holidays.manageTitle')}
+                      icon={PartyPopper}
+                      tone="schedule"
+                      onPress={() =>
+                        router.push('/settings/household-holidays' as Href)
+                      }
+                    />
                   </>
                 ) : (
                   <>
@@ -392,13 +402,26 @@ export default function SettingsScreen() {
                     {/* Nanny only — a helper has no access to pay at all
                         (docs/TIER0-CX-SPEC.md §8 "Helper role"). */}
                     {onboarding.role === SETUP_ROLES.NANNY ? (
-                      <SettingsNavRow
-                        testID="settings-my-pay"
-                        label={t('pay:myPay.title')}
-                        icon={Banknote}
-                        tone="hours"
-                        onPress={() => router.push('/settings/my-pay' as Href)}
-                      />
+                      <>
+                        <SettingsNavRow
+                          testID="settings-my-pay"
+                          label={t('pay:myPay.title')}
+                          icon={Banknote}
+                          tone="hours"
+                          onPress={() =>
+                            router.push('/settings/my-pay' as Href)
+                          }
+                        />
+                        <SettingsNavRow
+                          testID="settings-household-holidays"
+                          label={t('household:holidays.manageTitle')}
+                          icon={PartyPopper}
+                          tone="schedule"
+                          onPress={() =>
+                            router.push('/settings/household-holidays' as Href)
+                          }
+                        />
+                      </>
                     ) : null}
                     <SettingsNavRow
                       testID="settings-request-time-off"

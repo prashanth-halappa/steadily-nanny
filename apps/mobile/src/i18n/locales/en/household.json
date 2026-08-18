@@ -203,6 +203,26 @@
     "emptyTitle": "No closures yet",
     "emptyDescription": "Dates you add will appear here."
   },
+  "holidays": {
+    "manageTitle": "Holidays",
+    "subtitle": "The days your family treats as holidays. What they pay is set in Pay and terms.",
+    "saveButton": "Save holidays",
+    "savedToast": "Holidays saved.",
+    "readOnlyNote": "A parent sets which days the family observes.",
+    "names": {
+      "new_years_day": "New Year's Day",
+      "martin_luther_king_jr_day": "Martin Luther King, Jr. Day",
+      "presidents_day": "Washington's Birthday",
+      "memorial_day": "Memorial Day",
+      "juneteenth": "Juneteenth National Independence Day",
+      "independence_day": "Independence Day",
+      "labor_day": "Labor Day",
+      "columbus_day": "Columbus Day",
+      "veterans_day": "Veterans Day",
+      "thanksgiving_day": "Thanksgiving Day",
+      "christmas_day": "Christmas Day"
+    }
+  },
   "careHours": {
     "sectionTitle": "When you need your nanny",
     "sectionBody": "Share the regular hours {{childName}} needs your nanny each week. We'll let you know if any of them aren't scheduled or confirmed yet. You can add extra sessions any time.",

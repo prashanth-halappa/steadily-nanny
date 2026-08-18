@@ -61,6 +61,10 @@ describe('SettingsScreen', () => {
     expect(screenSource).toContain('/settings/household');
   });
 
+  it('wires a path to household holidays', () => {
+    expect(screenSource).toContain('settings-household-holidays');
+  });
+
   it('wires a nanny path to update her availability', () => {
     expect(screenSource).toContain('settings-manage-availability');
     expect(screenSource).toContain('/settings/availability');

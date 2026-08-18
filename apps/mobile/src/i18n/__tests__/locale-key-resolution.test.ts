@@ -21,6 +21,7 @@ import {
   HOUSEHOLD_ROLES,
   SHIFT_CHANGE_REQUEST_KINDS,
 } from '@steadily-nanny/shared-types';
+import { US_FEDERAL_HOLIDAY_KEYS } from '@steadily-nanny/shared-types/usFederalHolidays';
 import { SUPPORTED_LANGUAGES } from '../constants';
 import i18n from '../index';
 
@@ -259,6 +260,12 @@ const TEMPLATE_KEY_DECLARATIONS: readonly TemplateKeyDeclaration[] = [
     pattern: /^kinds\.\$\{[^}]+\}$/,
     values: INBOX_KIND_VALUES,
     keyPattern: 'kinds.$1',
+  },
+  {
+    // Household holidays screen — `t(\`holidays.names.${key}\`)`.
+    pattern: /^holidays\.names\.\$\{[^}]+\}$/,
+    values: US_FEDERAL_HOLIDAY_KEYS,
+    keyPattern: 'holidays.names.$1',
   },
 ];
 

@@ -139,4 +139,12 @@ describe('InviteRow', () => {
     // Copying the code is still meaningful — it is hers, and she may want it.
     expect(getByTestId('draft-invite-copy')).toBeTruthy();
   });
+
+  it('renders no offer summary when the invite carries pay_offer: null', () => {
+    const { queryByTestId } = renderRow({
+      invite: makeInvite({ pay_offer: null }),
+    });
+
+    expect(queryByTestId('draft-invite-offer')).toBeNull();
+  });
 });

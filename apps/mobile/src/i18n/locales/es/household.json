@@ -203,6 +203,26 @@
     "emptyTitle": "Aún no hay cierres",
     "emptyDescription": "Las fechas que añadas aparecerán aquí."
   },
+  "holidays": {
+    "manageTitle": "Días festivos",
+    "subtitle": "Los días que tu familia trata como festivos. Lo que se paga se establece en Sueldo y condiciones.",
+    "saveButton": "Guardar festivos",
+    "savedToast": "Festivos guardados.",
+    "readOnlyNote": "Un padre o madre decide qué días observa la familia.",
+    "names": {
+      "new_years_day": "Día de Año Nuevo",
+      "martin_luther_king_jr_day": "Día de Martin Luther King, Jr.",
+      "presidents_day": "Cumpleaños de Washington",
+      "memorial_day": "Día de los Caídos",
+      "juneteenth": "Día Nacional de la Independencia de Juneteenth",
+      "independence_day": "Día de la Independencia",
+      "labor_day": "Día del Trabajo",
+      "columbus_day": "Día de Colón",
+      "veterans_day": "Día de los Veteranos",
+      "thanksgiving_day": "Día de Acción de Gracias",
+      "christmas_day": "Día de Navidad"
+    }
+  },
   "careHours": {
     "sectionTitle": "Cuando necesitas a tu niñera",
     "sectionBody": "Indica las horas habituales cada semana en las que {{childName}} necesita a la niñera. Te avisaremos si alguna no está programada o confirmada todavía. Puedes añadir sesiones extra cuando quieras.",

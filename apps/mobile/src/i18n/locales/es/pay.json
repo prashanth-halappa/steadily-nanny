@@ -89,6 +89,7 @@
     "seventhDayDoubletimeAfterLabel": "Pago doble después de (horas)",
     "seventhDayHint": "Un séptimo día trabajado en la misma semana. Su segundo tramo se paga a la tarifa de pago doble de arriba.",
     "workedHolidayPremiumFieldLabel": "Prima por día festivo trabajado",
+    "holidayCalendarHint": "Qué días cuentan como festivos es una lista de toda la familia, que se define en Ajustes.",
     "workedHolidayPremiumHint": "Déjalo en blanco si un día festivo trabajado se paga a la tarifa normal.",
     "paidHolidayHoursFieldLabel": "Horas pagadas por un día festivo no trabajado",
     "paidHolidayHoursHint": "Déjalo en blanco si un día festivo que nadie trabaja no se paga.",
