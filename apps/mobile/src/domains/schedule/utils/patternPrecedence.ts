@@ -62,3 +62,44 @@ export function resolveActivePattern(
 
   return best;
 }
+
+/** One resolved pattern per distinct carer_id, as returned by
+ * `resolveActivePattern`. */
+export interface CarerPattern {
+  carerId: string | null;
+  pattern: SchedulePattern;
+}
+
+/**
+ * S7/S8: groups patterns by `carer_id` first, then resolves EACH carer's own
+ * precedence — the per-carer counterpart to `resolveActivePattern`, which
+ * only ever spoke for the whole household. A stale row for one carer must
+ * never outrank a live one for a different carer (or for the same carer).
+ */
+export function resolvePerCarerPatterns(
+  patterns: readonly SchedulePattern[]
+): CarerPattern[] {
+  const byCarer = new Map<string | null, SchedulePattern[]>();
+  for (const pattern of patterns) {
+    const carerId = pattern.carer_id ?? null;
+    const group = byCarer.get(carerId);
+    if (group) {
+      group.push(pattern);
+    } else {
+      byCarer.set(carerId, [pattern]);
+    }
+  }
+
+  const sections: CarerPattern[] = [];
+  for (const [carerId, group] of byCarer) {
+    const pattern = resolveActivePattern(group);
+    // `group` is never empty — every entry was created with one element —
+    // so `resolveActivePattern` only returns null here in principle, never
+    // in practice. The guard keeps this function honestly typed without a
+    // non-null assertion.
+    if (pattern) {
+      sections.push({ carerId, pattern });
+    }
+  }
+  return sections;
+}

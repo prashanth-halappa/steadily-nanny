@@ -34,6 +34,7 @@ import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { H3, MetadataLabel } from '@/src/components/ui/typography';
 import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
+import { relativeDaysAgo } from '@/src/domains/schedule/utils/relativeDaysAgo';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
@@ -76,6 +77,17 @@ export function SchedulePatternBanner({
         t(`detail.roleFallback.${role}`),
     }
   );
+  // S6: silence had no surface on the parent's side — the banner read
+  // identically on day 1 and day 30 of an unanswered week. Age-only, no
+  // expiry/new status/job (owner decision, docs/AS-BUILT-SCHEDULE.md §6 S6).
+  const sentAgo =
+    pattern?.status === 'pending' && pattern.sent_at
+      ? relativeDaysAgo(
+          pattern.sent_at,
+          new Date().toISOString().slice(0, 10),
+          t
+        )
+      : null;
 
   if (isLoading) {
     return null;
@@ -115,11 +127,22 @@ export function SchedulePatternBanner({
             ),
         };
       case 'declined':
-        return {
-          message: t('pending.patternBannerDeclined', { name: carerName }),
-          actionLabel: t('pending.patternBannerDeclinedAction'),
-          onAction: () => router.push('/(private)/schedule/usual-week' as Href),
-        };
+        // S10: "See why" pointed at the detail screen even with nothing to
+        // see there — a decline with no message answers nothing. Only offer
+        // it when there's a reason to read; otherwise go straight to the
+        // real next act, same as withdrawn/ended.
+        return pattern.decline_message
+          ? {
+              message: t('pending.patternBannerDeclined', { name: carerName }),
+              actionLabel: t('pending.patternBannerDeclinedAction'),
+              onAction: () =>
+                router.push('/(private)/schedule/usual-week' as Href),
+            }
+          : {
+              message: t('pending.patternBannerDeclined', { name: carerName }),
+              actionLabel: t('pending.patternBannerBuildAction'),
+              onAction: () => router.push('/(private)/schedule/build' as Href),
+            };
       case 'withdrawn':
         return {
           message: t('pending.patternBannerWithdrawn'),
@@ -161,6 +184,14 @@ export function SchedulePatternBanner({
         className="gap-3 p-4"
       >
         <H3 testID="schedule-pattern-banner-status">{message}</H3>
+        {sentAgo ? (
+          <MetadataLabel
+            testID="schedule-pattern-banner-sent-age"
+            className="text-muted-foreground"
+          >
+            {sentAgo}
+          </MetadataLabel>
+        ) : null}
         {canEdit ? (
           <Button
             testID="schedule-pattern-banner-action"

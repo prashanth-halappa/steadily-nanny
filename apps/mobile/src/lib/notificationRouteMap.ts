@@ -78,6 +78,15 @@ export const shiftsCalendarHref: NotificationRouteResolver = data =>
     householdId: asString(data.householdId),
   });
 
+// S11: the nanny's read-only "Your usual week" surface — same route the
+// parent's pattern banner pushes, which forks by role (NannyUsualWeekScreen
+// vs SchedulePendingScreen). `householdId` picks which family's usual week,
+// since a nanny can work for more than one.
+const carerUsualWeekHref: NotificationRouteResolver = data =>
+  appendQuery('/(private)/schedule/usual-week', {
+    householdId: asString(data.householdId),
+  });
+
 // 3-O (§7.2/§13): the review screen IS the proposal — there is no list to
 // fall back to, so a payload without the id resolves to nothing rather than
 // opening the wrong contract.
@@ -121,6 +130,7 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_SENT]: patternRespondHref,
   [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_RESPONDED]: scheduleTabHref,
   [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_AMENDED]: shiftsCalendarHref,
+  [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_WITHDRAWN]: carerUsualWeekHref,
 
   [PUSH_NOTIFICATION_TYPES.SHIFT_CHANGE_REQUESTED]: shiftDetailHref,
   [PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_ACCEPTED]: shiftDetailHref,
@@ -169,7 +179,7 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   [PUSH_NOTIFICATION_TYPES.PAY_TERMS_BACKDATED]: () =>
     '/(private)/settings/my-pay',
   // §6.1/N19 — the "cancelled raise" push. Same destination as PAY_TERMS_SET:
-  // the terms document already shows the scheduled card gone.
+  // routes to My pay, which shows the scheduled-change card.
   [PUSH_NOTIFICATION_TYPES.PAY_TERMS_SCHEDULED_CHANGE_CANCELLED]: () =>
     '/(private)/settings/my-pay',
   // D-45/N20 — parent-targeted. Lands on the household's pay hub, where the

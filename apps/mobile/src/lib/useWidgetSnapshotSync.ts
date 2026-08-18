@@ -29,6 +29,7 @@ import {
   DEFAULT_WEEK_STARTS_ON,
   getWeekStartISO,
 } from '@/src/domains/timesheet/utils/week';
+import { useRefreshDayThread } from '@/src/hooks/mutations/useRefreshDayThread';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useDayThread } from '@/src/hooks/queries/useDayThread';
@@ -41,6 +42,7 @@ import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useWeekTimesheet } from '@/src/hooks/queries/useWeekTimesheet';
 import i18n from '@/src/i18n';
+import { reportWidgetFailure } from '@/src/lib/expoWidgets';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { wallClockToUtcIso } from '@/src/lib/wallClock';
 import { useAuthStore } from '@/src/store/auth';
@@ -112,7 +114,24 @@ export function useWidgetSnapshotSync(): void {
     dayTo
   );
   const members = useHouseholdMembers(isParent ? householdId : null);
+  const { mutate: refreshDayThread } = useRefreshDayThread();
   const dayThread = useDayThread(isParent ? householdId : null, today);
+
+  // S14: the day-thread GET no longer detects uncovered care as a side
+  // effect, so `removeParentCover` and the parent time-edit can leave the
+  // STORED rows `useDayThread` reads below stale until the nightly sweep.
+  // Ask for the explicit recheck first — parent-only (a nanny doesn't feed
+  // todaysCover), best-effort: swallow + log, never block the read.
+  // ponytail: no debounce/guard against duplicate in-flight calls — fires on
+  // every dep change, TanStack's own request lifecycle is cheap enough at
+  // this call frequency (same stance the module doc above already takes).
+  useEffect(() => {
+    if (!isParent || !householdId) return;
+    refreshDayThread(
+      { householdId, localDate: today },
+      { onError: error => reportWidgetFailure('dayThreadRefresh', error) }
+    );
+  }, [isParent, householdId, today, refreshDayThread]);
 
   const runningEntry = running.data ?? null;
   const entries = weekEntries.data;

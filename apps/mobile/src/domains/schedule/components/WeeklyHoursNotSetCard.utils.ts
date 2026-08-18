@@ -99,3 +99,61 @@ export function resolveWeeklyHoursNotSet({
     dismissKey,
   };
 }
+
+/**
+ * S7 (PER-CARER EVERYWHERE): this card used to speak for `carers.data?.[0]`
+ * only (`ponytail:` comment on the old code admitted it) — a second nanny's
+ * missing week was invisible. Every `setup` carer (no pattern at all, or her
+ * only one withdrew/ended — `VARIANT_BY_REASON` already collapses those
+ * three reasons together) shares ONE combined card, since the act is
+ * identical for all of them: open the builder, which lets her pick which
+ * carer. `draft`/`declined` stay one card PER carer — each names a specific
+ * pattern to resume or explain, so joining them would either resume the
+ * wrong draft or hide which of two declines needs a look.
+ */
+export interface WeeklyHoursSetupGroup {
+  kind: 'setup';
+  carerUserIds: readonly string[];
+  dismissKeys: readonly string[];
+}
+export interface WeeklyHoursSoloGroup {
+  kind: 'draft' | 'declined';
+  carerUserId: string;
+  dismissKey: string;
+}
+export type WeeklyHoursNotSetGroup =
+  | WeeklyHoursSetupGroup
+  | WeeklyHoursSoloGroup;
+
+export function groupWeeklyHoursNotSetCards(
+  entries: readonly { carerUserId: string; state: WeeklyHoursNotSetState }[]
+): WeeklyHoursNotSetGroup[] {
+  const setupCarerIds: string[] = [];
+  const setupDismissKeys: string[] = [];
+  const soloGroups: WeeklyHoursSoloGroup[] = [];
+
+  for (const { carerUserId, state } of entries) {
+    if (state.kind !== 'card') continue;
+    if (state.variant === 'setup') {
+      setupCarerIds.push(carerUserId);
+      setupDismissKeys.push(state.dismissKey);
+    } else {
+      soloGroups.push({
+        kind: state.variant,
+        carerUserId,
+        dismissKey: state.dismissKey,
+      });
+    }
+  }
+
+  const groups: WeeklyHoursNotSetGroup[] = [];
+  if (setupCarerIds.length > 0) {
+    groups.push({
+      kind: 'setup',
+      carerUserIds: setupCarerIds,
+      dismissKeys: setupDismissKeys,
+    });
+  }
+  groups.push(...soloGroups);
+  return groups;
+}

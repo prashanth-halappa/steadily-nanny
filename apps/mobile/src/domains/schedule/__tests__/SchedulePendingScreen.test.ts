@@ -215,4 +215,37 @@ describe('SchedulePendingScreen', () => {
     expect(screenSource).not.toContain('/schedule` (index)');
     expect(screenSource).toContain('usual-week');
   });
+
+  // S7/S8: one section per carer, via the SAME precedence utility the other
+  // five call sites use — never the household-wide
+  // `.find(p => p.status !== 'ended')` this screen used to run.
+  it('S7/S8: resolves ONE pattern per carer via resolvePerCarerPatterns, never a bare list-wide .find', () => {
+    expect(screenSource).toContain('resolvePerCarerPatterns');
+    expect(screenSource).not.toMatch(/\(patterns\.data \?\? \[\]\)\.find\(/);
+  });
+
+  it('S7: names the carer above each section, only when there is more than one', () => {
+    expect(screenSource).toContain('schedule-pending-carer-name');
+    expect(screenSource).toContain('showCarerLabel');
+    expect(screenSource).toContain('sections.length > 1');
+  });
+
+  // S9: an ended pattern used to be excluded before this screen ever saw
+  // it, so the "your usual week has ended" banner routed here to find "No
+  // schedule yet" — erasing the fact that a week had ever existed.
+  it("S9: 'ended' is its own PatternStatusIndicator state and CTA, not folded into the empty state", () => {
+    expect(screenSource).toContain("case 'ended':\n        return 'ended';");
+    expect(screenSource).toContain("pattern.status === 'ended'");
+    expect(screenSource).toContain('pending.setNewWeekCta');
+  });
+
+  // S6: silence had no surface on the parent's side of the confirmation
+  // flow — the detail screen read identically on day 1 and day 30.
+  it('S6: shows a relative "Sent X ago" age line for a pending pattern', () => {
+    expect(screenSource).toContain('relativeDaysAgo');
+    expect(screenSource).toContain('schedule-pending-sent-age');
+    expect(screenSource).toContain(
+      "pattern.status === 'pending' && pattern.sent_at"
+    );
+  });
 });

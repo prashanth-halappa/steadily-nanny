@@ -212,6 +212,20 @@ describe('shiftApi.listDayThread', () => {
   });
 });
 
+describe('shiftApi.refreshDayThread', () => {
+  it('POSTs the refresh route with { local_date } and resolves void (S14)', async () => {
+    apiClient.post.mockResolvedValue({ data: { data: {} } });
+
+    const result = await shiftApi.refreshDayThread(householdId, '2026-01-07');
+
+    expect(apiClient.post).toHaveBeenCalledWith(
+      `/v1/households/${householdId}/day-thread/refresh`,
+      { local_date: '2026-01-07' }
+    );
+    expect(result).toBeUndefined();
+  });
+});
+
 describe('shiftApi.accept', () => {
   it('POSTs /v1/shifts/:id/accept (body-less) and unwraps { shift, warnings }', async () => {
     apiClient.post.mockResolvedValue({

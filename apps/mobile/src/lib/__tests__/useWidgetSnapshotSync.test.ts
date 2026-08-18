@@ -31,6 +31,9 @@ setSystemTime(PINNED_NOW);
 afterAll(() => setSystemTime());
 
 const applyWidgetSnapshotsMock = mock((_set: WidgetSnapshotSet) => {});
+const refreshDayThreadMutateMock = mock(
+  (_vars: { householdId: string; localDate: string }, _opts?: unknown) => {}
+);
 
 let useWidgetSnapshotSync: typeof import('../useWidgetSnapshotSync').useWidgetSnapshotSync;
 let widgetSnapshotActual: typeof import('../widgetSnapshot');
@@ -157,6 +160,9 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useDayThread', () => ({
     useDayThread: () => ({ data: [] }),
   }));
+  mock.module('@/src/hooks/mutations/useRefreshDayThread', () => ({
+    useRefreshDayThread: () => ({ mutate: refreshDayThreadMutateMock }),
+  }));
 
   useWidgetSnapshotSync = (await import('../useWidgetSnapshotSync'))
     .useWidgetSnapshotSync;
@@ -164,9 +170,23 @@ beforeAll(async () => {
 
 beforeEach(() => {
   applyWidgetSnapshotsMock.mockClear();
+  refreshDayThreadMutateMock.mockClear();
   mockWeekEntries.mockReturnValue({ data: [] });
   mockWeekTimesheets.mockReturnValue({ data: [] });
   mockTodayShifts.mockReturnValue({ data: [] });
+});
+
+describe('useWidgetSnapshotSync parent path — day-thread refresh (S14)', () => {
+  it('fires the best-effort refresh mutation before/alongside the day-thread read', async () => {
+    renderHookWithProviders(() => useWidgetSnapshotSync());
+
+    await waitFor(() =>
+      expect(refreshDayThreadMutateMock).toHaveBeenCalledWith(
+        { householdId: HOUSEHOLD_ID, localDate: '2026-08-06' },
+        expect.anything()
+      )
+    );
+  });
 });
 
 describe('useWidgetSnapshotSync parent path — voided entries (069)', () => {

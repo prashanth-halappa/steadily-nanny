@@ -23,16 +23,35 @@
  * `slotOccupant.ts` — per their module docs, a rung that displaces nothing
  * is not a rung.
  *
+ * S7 (PER-CARER EVERYWHERE): this used to speak for `carers.data?.[0]` only
+ * — a household's second nanny with no usual week, or a declined one, was
+ * invisible. Every carer gets her own resolved state
+ * (`resolveWeeklyHoursNotSet`); `groupWeeklyHoursNotSetCards`
+ * (`WeeklyHoursNotSetCard.utils.ts`) then decides what renders: every
+ * `setup` carer (no pattern at all / withdrawn / ended — the identical next
+ * act) shares ONE combined card naming all of them, while `draft`/
+ * `declined` carers each keep their own card (joining those would either
+ * resume the wrong draft or hide which of two declines needs a look).
+ * `ponytail:` the once-per-relationship "nanny joined" celebration frame
+ * (`useMomentPeek`) still only suppresses the card for the FIRST carer in
+ * the list — a second nanny's join moment overlapping this card is a rare
+ * enough edge case not to worth a second snapshot hook here; upgrade if it
+ * turns out to matter.
+ *
  * Takes no props and renders `null` on an ordinary day, same shape as
- * `PendingScheduleCard`. Every decision lives in
+ * `PendingScheduleCard`. Every per-carer decision lives in
  * `WeeklyHoursNotSetCard.utils`.
  */
+import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { HOUSEHOLD_STATES } from '@steadily-nanny/shared-types/schemas/household.schema';
+import { useQueries } from '@tanstack/react-query';
 import { type Href, useRouter } from 'expo-router';
 import { CalendarDays } from 'lucide-react-native';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { payArrangementApi } from '@/src/api/endpoints/payArrangements';
+import { queryKeys } from '@/src/api/queryKeys';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { IconChip } from '@/src/components/ui/icon-chip';
@@ -41,9 +60,10 @@ import { Body, H4 } from '@/src/components/ui/typography';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { useUncoveredToday } from '@/src/domains/today/hooks/useUncoveredToday';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
-import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useSchedulePatterns } from '@/src/hooks/queries/useSchedulePatterns';
+import { isValidId, QUERY_TIMING } from '@/src/hooks/queries/utils';
+import { formatNameList } from '@/src/lib/widgetSnapshot';
 import {
   useCardDismissal,
   useTodayCardDismissalStore,
@@ -52,8 +72,9 @@ import { useHouseholdCarers } from '../hooks/useHouseholdCarers';
 import { resolveCarerName } from '../utils/memberDisplayName';
 import { resolveActivePattern } from '../utils/patternPrecedence';
 import {
+  groupWeeklyHoursNotSetCards,
   resolveWeeklyHoursNotSet,
-  type WeeklyHoursNotSetVariant,
+  type WeeklyHoursNotSetGroup,
 } from './WeeklyHoursNotSetCard.utils';
 
 const EXTRA_SHIFT_HREF = '/(private)/schedule/shifts/extra' as Href;
@@ -96,12 +117,6 @@ function useMomentPeek(key: string | null): boolean {
   return key !== null && !alreadySeen;
 }
 
-const ROUTE_BY_VARIANT: Record<WeeklyHoursNotSetVariant, Href> = {
-  setup: BUILD_HREF,
-  draft: BUILD_HREF,
-  declined: USUAL_WEEK_HREF,
-};
-
 export function WeeklyHoursNotSetCard() {
   const { t } = useTranslation('schedule');
   const router = useRouter();
@@ -114,90 +129,191 @@ export function WeeklyHoursNotSetCard() {
   const { isDismissed, dismiss } = useCardDismissal();
 
   const carers = useHouseholdCarers(householdId);
-  // Wave 1 households have exactly one nanny. With two, this card speaks for
-  // the first — the copy is per-relationship and a second card would be two
-  // to-dos about the same missing thing.
-  // ponytail: one carer, upgrade to per-carer cards if multi-nanny lands.
-  const carer = carers.data?.[0] ?? null;
-  const carerUserId = carer?.user_id ?? null;
+  const carerList: HouseholdMember[] = carers.data ?? [];
+  const firstCarer = carerList[0] ?? null;
 
-  const arrangement = useCurrentPayArrangement(householdId, carerUserId);
+  // S7: one pay-arrangement read per carer (docs/timeOff/usePaidFamilyCounts.ts
+  // is the precedent for a dynamic-length `useQueries` list in this codebase)
+  // — a fixed single `useCurrentPayArrangement` call can't cover N carers.
+  const arrangementQueries = useQueries({
+    queries: carerList.map(carer => ({
+      queryKey: queryKeys.pay.current(householdId ?? undefined, carer.user_id),
+      queryFn: () =>
+        payArrangementApi.getCurrent(
+          householdId as string,
+          carer.user_id as string
+        ),
+      staleTime: QUERY_TIMING.STALE_1M,
+      enabled: isValidId(householdId) && isValidId(carer.user_id),
+    })),
+  });
 
   const patterns = useSchedulePatterns(householdId);
-  // Only patterns addressed to HER: a week sent to the other nanny says
-  // nothing about this relationship, and a carer-less sketch is addressed to
-  // nobody.
-  const activePattern = resolveActivePattern(
-    (patterns.data ?? []).filter(p => p.carer_id === carerUserId)
-  );
 
   // `setup` means zero commitments, i.e. nothing for the builder to prefill
-  // from. Every other state means the care-hours seed will land.
+  // from. Only used for the SINGLE-carer setup card's body fork below —
+  // ponytail: the combined multi-carer card skips the prefill distinction,
+  // one generic body for all of them.
   const uncovered = useUncoveredToday(householdId, household?.timezone);
 
   const momentShowing = useMomentPeek(
     householdId &&
-      carerUserId &&
-      carer &&
-      Date.now() - new Date(carer.joined_at).getTime() < JOINED_CARD_MAX_AGE_MS
-      ? `nannyJoined:${householdId}:${carerUserId}`
+      firstCarer &&
+      Date.now() - new Date(firstCarer.joined_at).getTime() <
+        JOINED_CARD_MAX_AGE_MS
+      ? `nannyJoined:${householdId}:${firstCarer.user_id}`
       : null
   );
 
-  const state = resolveWeeklyHoursNotSet({
-    householdId,
-    carerUserId,
-    isParentEditor: isParentEditorRole(onboarding.role),
-    isPastMember: onboarding.isPastMember,
-    householdIsLive: household?.state === HOUSEHOLD_STATES.LIVE,
-    hasActiveNanny: (carers.data ?? []).length > 0,
-    termsAgreed: !!arrangement.data,
-    patternStatus: activePattern?.status ?? null,
-    momentShowing,
-    isDismissed,
+  const isParentEditor = isParentEditorRole(onboarding.role);
+  const householdIsLive = household?.state === HOUSEHOLD_STATES.LIVE;
+  const patternsData = patterns.data ?? [];
+
+  const entries = carerList.map((carer, index) => {
+    const carerUserId = carer.user_id;
+    const activePattern = resolveActivePattern(
+      patternsData.filter(p => p.carer_id === carerUserId)
+    );
+    const state = resolveWeeklyHoursNotSet({
+      householdId,
+      carerUserId,
+      isParentEditor,
+      isPastMember: onboarding.isPastMember,
+      householdIsLive,
+      hasActiveNanny: carerList.length > 0,
+      termsAgreed: !!arrangementQueries[index]?.data,
+      patternStatus: activePattern?.status ?? null,
+      momentShowing: carer.user_id === firstCarer?.user_id && momentShowing,
+      isDismissed,
+    });
+    return { carer, carerUserId, activePattern, state };
   });
 
-  // Both reads have to settle before the card can name a reason — guessing
+  // Both reads have to settle before ANY card can name a reason — guessing
   // shows "you haven't set a week" for a frame to a parent whose draft is
   // sitting right there.
-  if (state.kind === 'hidden' || !patterns.isSuccess || !carers.isSuccess) {
+  if (!patterns.isSuccess || !carers.isSuccess) {
     return null;
   }
 
-  const name =
-    resolveCarerName(carer, '').trim().split(/\s+/)[0] ||
+  const groups = groupWeeklyHoursNotSetCards(
+    entries.map(({ carerUserId, state }) => ({ carerUserId, state }))
+  );
+  if (groups.length === 0) {
+    return null;
+  }
+
+  const entryByCarerId = new Map(entries.map(e => [e.carerUserId, e]));
+  const nameFor = (carerUserId: string): string =>
+    resolveCarerName(entryByCarerId.get(carerUserId)?.carer, '').trim() ||
     t('build.carerFallbackName');
 
-  // Literal `t()` per branch — a ternary inside `t(...)` hides the other key
-  // from the locale-key guard.
+  return (
+    <>
+      {groups.map(group => (
+        <WeeklyHoursNotSetGroupCard
+          key={
+            group.kind === 'setup'
+              ? `setup:${group.carerUserIds.join(',')}`
+              : `${group.kind}:${group.carerUserId}`
+          }
+          group={group}
+          nameFor={nameFor}
+          activePatternFor={carerUserId =>
+            entryByCarerId.get(carerUserId)?.activePattern ?? null
+          }
+          uncoveredIsSetup={uncovered.status === 'setup'}
+          onDismiss={dismiss}
+          onNavigate={href => router.push(href)}
+        />
+      ))}
+    </>
+  );
+}
+
+function WeeklyHoursNotSetGroupCard({
+  group,
+  nameFor,
+  activePatternFor,
+  uncoveredIsSetup,
+  onDismiss,
+  onNavigate,
+}: {
+  group: WeeklyHoursNotSetGroup;
+  nameFor: (carerUserId: string) => string;
+  activePatternFor: (
+    carerUserId: string
+  ) => ReturnType<typeof resolveActivePattern>;
+  uncoveredIsSetup: boolean;
+  onDismiss: (key: string) => void;
+  onNavigate: (href: Href) => void;
+}) {
+  const { t } = useTranslation('schedule');
+
+  if (group.kind === 'setup') {
+    const names = group.carerUserIds.map(nameFor);
+    const solo = names.length === 1;
+    const title = solo
+      ? t('todayCard.noWeekTitle', { name: names[0] })
+      : t('todayCard.noWeekTitleMulti', { names: formatNameList(names) });
+    const body = solo
+      ? uncoveredIsSetup
+        ? t('todayCard.noWeekBody', { name: names[0] })
+        : t('todayCard.noWeekBodyPrefilled')
+      : t('todayCard.noWeekBodyMulti');
+    const cta = solo ? t('todayCard.noWeekCta') : t('todayCard.noWeekCtaMulti');
+
+    return (
+      <Card tone="default" testID="today-weekly-hours-not-set-card">
+        <CardContent className="gap-3">
+          <View className="flex-row items-center gap-2">
+            <IconChip tone="schedule" icon={CalendarDays} />
+            <H4>{title}</H4>
+          </View>
+          <Body className="text-muted-foreground">{body}</Body>
+          <Button
+            testID="today-weekly-hours-not-set-cta"
+            variant="default"
+            onPress={() => onNavigate(BUILD_HREF)}
+          >
+            <Text className="text-primary-foreground font-medium">{cta}</Text>
+          </Button>
+          <Button
+            testID="today-weekly-hours-not-set-adhoc"
+            variant="ghost"
+            onPress={() => {
+              for (const key of group.dismissKeys) onDismiss(key);
+              onNavigate(EXTRA_SHIFT_HREF);
+            }}
+          >
+            <Text className="text-foreground">
+              {t('todayCard.noWeekAdHoc')}
+            </Text>
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const name = nameFor(group.carerUserId);
+  const activePattern = activePatternFor(group.carerUserId);
   const title =
-    state.variant === 'draft'
+    group.kind === 'draft'
       ? t('todayCard.noWeekDraftTitle', { name })
-      : state.variant === 'declined'
-        ? t('todayCard.noWeekDeclinedTitle', { name })
-        : t('todayCard.noWeekTitle', { name });
-
+      : t('todayCard.noWeekDeclinedTitle', { name });
   const body =
-    state.variant === 'draft'
+    group.kind === 'draft'
       ? t('todayCard.noWeekDraftBody')
-      : state.variant === 'declined'
-        ? t('todayCard.noWeekDeclinedBody')
-        : uncovered.status === 'setup'
-          ? t('todayCard.noWeekBody', { name })
-          : t('todayCard.noWeekBodyPrefilled');
-
+      : t('todayCard.noWeekDeclinedBody');
   const cta =
-    state.variant === 'draft'
+    group.kind === 'draft'
       ? t('todayCard.noWeekDraftCta')
-      : state.variant === 'declined'
-        ? t('todayCard.noWeekDeclinedCta')
-        : t('todayCard.noWeekCta');
-
+      : t('todayCard.noWeekDeclinedCta');
   // Resuming a draft reopens THAT pattern rather than starting a second one.
   const href =
-    state.variant === 'draft' && activePattern
+    group.kind === 'draft' && activePattern
       ? (`${BUILD_HREF}?patternId=${activePattern.id}` as Href)
-      : ROUTE_BY_VARIANT[state.variant];
+      : USUAL_WEEK_HREF;
 
   return (
     <Card tone="default" testID="today-weekly-hours-not-set-card">
@@ -210,24 +326,10 @@ export function WeeklyHoursNotSetCard() {
         <Button
           testID="today-weekly-hours-not-set-cta"
           variant="default"
-          onPress={() => router.push(href)}
+          onPress={() => onNavigate(href)}
         >
           <Text className="text-primary-foreground font-medium">{cta}</Text>
         </Button>
-        {state.variant === 'setup' ? (
-          <Button
-            testID="today-weekly-hours-not-set-adhoc"
-            variant="ghost"
-            onPress={() => {
-              dismiss(state.dismissKey);
-              router.push(EXTRA_SHIFT_HREF);
-            }}
-          >
-            <Text className="text-foreground">
-              {t('todayCard.noWeekAdHoc')}
-            </Text>
-          </Button>
-        ) : null}
       </CardContent>
     </Card>
   );

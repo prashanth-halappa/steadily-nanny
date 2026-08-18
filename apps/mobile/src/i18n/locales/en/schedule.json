@@ -111,7 +111,12 @@
     "adjustBack": "Back",
     "patternBannerEnded": "Your usual week with {{name}} has ended",
     "patternBannerNoneNoCarer": "No weekly hours set yet",
-    "patternBannerNoneNoCarerAction": "Invite a nanny"
+    "patternBannerNoneNoCarerAction": "Invite a nanny",
+    "sentToday": "Sent today",
+    "sentAgo_one": "Sent {{count}} day ago",
+    "sentAgo_other": "Sent {{count}} days ago",
+    "statusEnded": "Ended",
+    "setNewWeekCta": "Set a new usual week"
   },
   "respond": {
     "screenTitle": "Review your week",
@@ -180,7 +185,8 @@
     "awayBand": "Away",
     "awaySummary": "Your carer has time off this week — see Agenda for details.",
     "axisTime": "Time",
-    "legendMultiCarer": "Tap a block to see who's covering it."
+    "legendMultiCarer": "Tap a block to see who's covering it.",
+    "usualWeekLink": "Your usual week"
   },
   "clash": {
     "busyOverlap": "This overlaps another commitment — you can still continue.",
@@ -294,7 +300,10 @@
     "noWeekNannyAvailabilityCta": "Check the hours you're available",
     "noWeekNannyHide": "Hide this",
     "nextUpEmptyNoWeek": "Nothing scheduled — you haven't set {{name}}'s weekly hours yet.",
-    "nextUpEmptyNoWeekNanny": "Nothing scheduled with {{familyName}} in the next two weeks."
+    "nextUpEmptyNoWeekNanny": "Nothing scheduled with {{familyName}} in the next two weeks.",
+    "noWeekTitleMulti": "Set {{names}}'s usual weeks",
+    "noWeekBodyMulti": "Set the days and times you need each week, and each of them will get it to accept.",
+    "noWeekCtaMulti": "Set their weekly hours"
   },
   "calendarViews": {
     "agenda": "Agenda",
@@ -386,5 +395,17 @@
     "parent_other": "{{name}} is with the children {{count}} days this week.",
     "parentNoCarer_one": "The children are covered {{count}} day this week.",
     "parentNoCarer_other": "The children are covered {{count}} days this week."
+  },
+  "week": {
+    "leadPerCarer_one": "{{name}} {{count}} day",
+    "leadPerCarer_other": "{{name}} {{count}} days"
+  },
+  "usualWeek": {
+    "screenTitle": "Your usual week",
+    "emptyTitle": "No usual week with {{family}} yet",
+    "emptyBody": "{{family}} hasn't sent you one yet.",
+    "withdrawnTitle": "{{family}} withdrew your usual week.",
+    "endedTitle": "Your usual week with {{family}} has ended.",
+    "declinedTitle": "You declined the usual week {{family}} sent."
   }
 }

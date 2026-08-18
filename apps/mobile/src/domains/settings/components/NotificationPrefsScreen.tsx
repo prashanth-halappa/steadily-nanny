@@ -79,6 +79,7 @@ const PUSH_TYPE_GROUP: Record<PushNotificationType, NotificationGroup> = {
   schedule_pattern_amended: 'schedule',
   schedule_pattern_responded: 'schedule',
   schedule_pattern_sent: 'schedule',
+  schedule_pattern_withdrawn: 'schedule',
   shift_cancelled: 'schedule',
   shift_change_requested: 'schedule',
   shift_confirmed: 'schedule',

@@ -284,3 +284,67 @@ palette), 240×240pt at `variant="default"`, 160×160pt inline. No hero
 illustration on this tab — the week strip and the week figure are the visual
 anchor, and a decorative image above a dense list is the thing that pushes the
 first real row below the fold.
+
+---
+
+## 8. Multi-nanny usual week
+
+Owner decision (docs/AS-BUILT-SCHEDULE.md §6 S7, "PER-CARER EVERYWHERE"),
+closing the spec gap the as-built map named: *"nothing says how a usual week
+works with two nannies"*.
+
+**The rule is one usual week per (household, carer).** Two nannies working
+for the same household are two independent agreements, never one shared
+week. Nothing about carer B's usual week — whether it exists, its status, its
+days, its total — is inferred from, blended with, or defaulted from carer A's.
+A household with two nannies has two `schedule_patterns` rows in play at
+once, each resolved by its own precedence (`resolveActivePattern`,
+`patternPrecedence.ts`), never by one row picked across the whole household.
+
+**Every banner or card that speaks about a usual week names the carer it is
+about.** A message that says "is with {{name}}" or "hasn't set a usual week"
+without saying whose is a household-wide claim about a per-carer fact — the
+exact defect class `SchedulePendingScreen.tsx:107`'s old
+`.find(p => p.status !== 'ended')` produced (S8): the banner could name one
+carer's pattern while the screen it pushed to rendered a different one's.
+
+**Totals are per carer, never summed across carers.** "N days this week"
+answers a different question for a two-nanny household than for a one-nanny
+one — it is not "how much coverage exists" but "how much of THIS agreement is
+being worked". `ScheduleShiftsScreen`'s parent-lead line used to name the
+first carer while counting every carer's shifts (`carersQuery.data?.[0]`
+paired with a household-wide day count) — a wrong factual claim the moment a
+second nanny worked days of her own. With one carer the existing single-line
+lead stands; with two or more, each carer gets her own count, rendered as a
+short per-carer list ("Priya 3 days · Maya 2 days"), never folded into one
+number or one name.
+
+**The pending/usual-week detail screen lists per carer.** `/(private)/
+schedule/usual-week` (`SchedulePendingScreen`) resolves ONE pattern PER
+carer present in the household's `schedule_patterns` rows
+(`resolvePerCarerPatterns`) and renders one named section per carer, each
+with its own status, preview and actions (withdraw, adjust, build a new
+week) — never one row standing in for whichever carer's pattern happened to
+sort first. A carer with no pattern at all gets no section here (that gap is
+Today's `WeeklyHoursNotSetCard`'s job, not this screen's); a carer whose only
+pattern has ended still gets a section (S9), not silence.
+
+**Today's "set a usual week" nudge combines carers with the identical next
+act, and only those.** `WeeklyHoursNotSetCard` groups every carer with no
+non-ended pattern (no pattern at all, or her only one withdrew or ended —
+the same door: open the builder, which lets a parent pick which carer) into
+ONE combined card naming all of them ("Set Priya's usual week" /
+"Set Priya and Maya's usual weeks"). A carer with a half-built draft or a
+declined week keeps her OWN card — each names a specific pattern to resume
+or explain, and joining two different next acts into one card would either
+resume the wrong draft or hide which of two declines needs a look.
+
+**What is deliberately still household-wide.** The Schedule tab's own
+`SchedulePatternBanner` (the L1 card above the calendar) still resolves and
+names ONE active pattern for the household, via the same
+`resolveActivePattern` five other call sites use — it was not part of this
+pass's scope and is not itself a bug the audit named (the top-of-screen
+banner is a single-glance surface by design; per-carer detail lives one tap
+away, on the usual-week screen above). If a future pass makes it per-carer
+too, apply the same rule: name the carer, never sum, never let one carer's
+state stand in for another's.
