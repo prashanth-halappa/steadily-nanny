@@ -27,6 +27,7 @@ import { InlineError } from '@/src/components/ui/inline-error';
 import { Input } from '@/src/components/ui/input';
 import { Text } from '@/src/components/ui/text';
 import { Body, H3 } from '@/src/components/ui/typography';
+import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useUpdateHousehold } from '@/src/hooks/mutations/useUpdateHousehold';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
@@ -40,6 +41,7 @@ function dismissalKey(householdId: string) {
 
 export function EmergencyContactPromptCard() {
   const { t } = useTranslation('today');
+  const { t: tSettings } = useTranslation('settings');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -52,9 +54,11 @@ export function EmergencyContactPromptCard() {
   const { isDismissed, dismiss } = useCardDismissal();
   const updateHousehold = useUpdateHousehold();
 
-  const hasActiveCarer = (members.data ?? []).some(
+  const activeCarer = (members.data ?? []).find(
     m => m.status === 'active' && (m.role === 'nanny' || m.role === 'helper')
   );
+  const hasActiveCarer = !!activeCarer;
+  const carerName = resolveCarerName(activeCarer, tSettings('role.nanny'));
   const key = household ? dismissalKey(household.id) : null;
 
   const shouldRender =
@@ -100,7 +104,7 @@ export function EmergencyContactPromptCard() {
       <CardContent className="gap-3">
         <H3>{t('emergencyContactPrompt.title', { name: household.name })}</H3>
         <Body className="text-muted-foreground">
-          {t('emergencyContactPrompt.body')}
+          {t('emergencyContactPrompt.body', { name: carerName })}
         </Body>
         <View className="flex-row gap-2">
           <Button

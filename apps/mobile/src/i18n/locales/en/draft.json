@@ -97,7 +97,7 @@
   "joined": {
     "title": "You've joined the {{family}}",
     "waiting": "Waiting for the {{family}} to review your terms",
-    "privacy": "You can't see the other nanny's pay or hours, and she can't see yours.",
+    "privacy": "You can't see the other nanny's pay or hours, and they can't see yours.",
     "children_one": "One child — {{names}}.",
     "children_other": "{{count}} children — {{names}}.",
     "childWithAge": "{{name}} ({{age}})",

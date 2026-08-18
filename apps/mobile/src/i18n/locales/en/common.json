@@ -18,6 +18,7 @@
   "notFoundGoHome": "Go home",
   "restrictedAction": "Only {{name}} can {{action}} in this household.",
   "restrictedActionOwner": "the household owner",
+  "theFamily": "The family",
   "tabs": {
     "today": "Today",
     "schedule": "Schedule",

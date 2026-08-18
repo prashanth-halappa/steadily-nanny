@@ -90,7 +90,7 @@ export function NannyJoinedMomentCard({
     ? hasWeek
       ? undefined
       : {
-          label: t('moments.nannyJoined.ctaSetWeek'),
+          label: t('moments.nannyJoined.ctaSetWeek', { name }),
           onPress: () => router.push('/(private)/schedule/build' as Href),
         }
     : parentSent

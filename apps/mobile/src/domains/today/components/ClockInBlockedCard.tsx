@@ -126,6 +126,11 @@ export function ClockInBlockedCard({ household }: { household: Household }) {
       </Body>
       <Button
         testID="today-clock-in-blocked-cta"
+        // §3's ownership: nothing is owed on this branch — the family hasn't
+        // sent anything either — so it declines the filled button's "you owe
+        // someone this" grammar. `familySent`/`youSent` DO owe a reply and
+        // keep the filled treatment.
+        variant={gate.variant === 'nothingSent' ? 'ghost' : 'default'}
         size="lg"
         className="w-full"
         onPress={() =>
@@ -134,7 +139,11 @@ export function ClockInBlockedCard({ household }: { household: Household }) {
       >
         <Text
           testID="today-clock-in-blocked-cta-label"
-          className="text-primary-foreground font-medium"
+          className={
+            gate.variant === 'nothingSent'
+              ? 'text-foreground font-medium'
+              : 'text-primary-foreground font-medium'
+          }
         >
           {cta}
         </Text>

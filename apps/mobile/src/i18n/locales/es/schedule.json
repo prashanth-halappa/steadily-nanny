@@ -139,7 +139,7 @@
     "childWindow": "{{childName}} {{start}}–{{end}}",
     "structuralNoteLabelled": "Es más corto que un día completo por “{{label}}”.",
     "structuralNote": "Estas horas se repiten cada semana: la familia las definió así a propósito.",
-    "availabilityLoadFailed": "No pudimos cargar tu disponibilidad, así que aquí no se marca nada según ella."
+    "availabilityLoadFailed": "No pudimos cargar tu disponibilidad, así que aquí no se marca nada a partir de eso."
   },
   "shifts": {
     "screenTitle": "Turnos",

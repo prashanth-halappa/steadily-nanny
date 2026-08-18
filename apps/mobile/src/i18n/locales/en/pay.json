@@ -1,6 +1,6 @@
 {
   "title": "Pay & terms",
-  "subtitle": "Rates and terms, kept in one place your nanny can see too.",
+  "subtitle": "Rates and terms, in one place you both see.",
   "sideDataUnknown": "We couldn't check where things stand with these terms.",
   "notSet": "Not set",
   "noCancellationPay": "No cancellation pay",
@@ -177,7 +177,7 @@
     "cancellationRequiredHint": "Choose one — this is the one term with no blank state."
   },
   "promptCard": {
-    "title": "Finish setting up {{name}}",
+    "title": "Set up pay with {{name}}",
     "description": "Add their pay terms so weeks can be totalled.",
     "action": "Set up pay"
   },

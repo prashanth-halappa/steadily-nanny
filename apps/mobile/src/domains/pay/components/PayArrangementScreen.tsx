@@ -317,8 +317,10 @@ function CarerPayDetail({
     arrangement?.created_by && arrangement.created_by === me
       ? t('proposal.you')
       : resolveCarerName(setByMember, t('proposal.theFamily'));
+  // docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B:
+  // a pending read must not compute an agreement fact either.
   const termsStateLabel =
-    agreement === null
+    proposals.isPending || agreement === null
       ? null
       : agreement.kind === 'agreed'
         ? proposalStateWord(

@@ -11,8 +11,9 @@
  * the parent's pattern banner pushes, forked by role in the route file
  * (`SchedulePendingScreen` is parent/helper-only and resolves its household
  * from `useActiveHousehold`, which only ever answers for a single
- * household; this screen resolves its household from the query param via
- * `useHouseholdById`, the Pattern A detail-screen rule).
+ * household; this screen is param-first via `useHouseholdById` — Pattern A —
+ * and falls back to `useActiveHousehold().householdId` when the query param
+ * is absent, so callers that push without `?householdId=` still resolve).
  *
  * Read-only: no withdraw, no adjust, no respond — those live on
  * `ScheduleRespondScreen` (pending) and are otherwise parent-only. This is
@@ -34,6 +35,7 @@ import { PatternStatusIndicator } from '@/src/domains/schedule/components/Patter
 import { SchedulePatternPreview } from '@/src/domains/schedule/components/SchedulePatternPreview';
 import { resolveActivePattern } from '@/src/domains/schedule/utils/patternPrecedence';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
+import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholdById } from '@/src/hooks/queries/useHouseholdById';
 import { useSchedulePattern } from '@/src/hooks/queries/useSchedulePattern';
@@ -51,10 +53,12 @@ export function NannyUsualWeekScreen() {
   const tabBarScrollPadding = useTabBarScrollPadding();
   const { refreshControl } = usePullToRefresh();
   const params = useLocalSearchParams<{ householdId?: string }>();
-  const householdId =
+  const active = useActiveHousehold();
+  const paramId =
     typeof params.householdId === 'string' && params.householdId.length > 0
       ? params.householdId
       : null;
+  const householdId = paramId ?? active.householdId;
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
 
   const household = useHouseholdById(householdId);

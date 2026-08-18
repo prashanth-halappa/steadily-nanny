@@ -1,6 +1,6 @@
 {
   "title": "Sueldo y condiciones",
-  "subtitle": "Tarifas y condiciones, en un solo lugar que tu niñera también puede ver.",
+  "subtitle": "Tarifas y condiciones, en un lugar que ambos veis.",
   "sideDataUnknown": "No pudimos comprobar cómo están estas condiciones.",
   "notSet": "No establecido",
   "noCancellationPay": "Sin pago por cancelación",
@@ -177,7 +177,7 @@
     "cancellationRequiredHint": "Elige una opción — esta es la única condición que no puede quedar en blanco."
   },
   "promptCard": {
-    "title": "Termina de configurar a {{name}}",
+    "title": "Configura el pago con {{name}}",
     "description": "Añade sus condiciones de pago para poder totalizar las semanas.",
     "action": "Configurar el pago"
   },

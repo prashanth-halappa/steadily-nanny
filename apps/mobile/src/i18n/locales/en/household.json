@@ -9,7 +9,7 @@
     "householdNameLabel": "Family name",
     "householdNamePlaceholder": "e.g. The Ruiz family",
     "phoneLabel": "Your mobile number",
-    "phoneHint": "Your nanny will see this. It's how she reaches you during the day.",
+    "phoneHint": "Your nanny will see this. It's how they reach you during the day.",
     "phoneHintNanny": "The family will see this. It's how they reach you.",
     "phonePlaceholder": "e.g. 07700 900123",
     "phoneRequired": "Please enter your mobile number.",
@@ -64,7 +64,7 @@
     "continueButton": "Continue",
     "generateButton": "Generate invite code",
     "shareButton": "Share code",
-    "shareHint": "She types this code when she signs up. Then she sees the family name, your number, and the terms above.",
+    "shareHint": "They type this code when they sign up. Then they see the family name, your number, and the terms above.",
     "shareMessage": "Join our household on Steadily Nanny — use invite code {{code}} when you sign in.",
     "errorTitle": "Couldn't generate an invite code.",
     "retryButton": "Try again",
@@ -103,9 +103,9 @@
   },
   "decision": {
     "title": "You're already set up with {{existingName}}",
-    "bodyCarer": "{{nannyName}} is in it, and her schedule, hours and pay history live there. Joining another family would close this one.",
+    "bodyCarer": "{{nannyName}} is in it, and their schedule, hours and pay history live there. Joining another family would close this one.",
     "bodyNoCarer": "Joining {{otherName}} would close {{existingName}}. Nothing is deleted — you just won't be able to add to it any more.",
-    "wallLine": "To join another family, you'd need to remove {{nannyName}} from {{existingName}} first. Her hours stay on the record either way.",
+    "wallLine": "To join another family, you'd need to remove {{nannyName}} from {{existingName}} first. Their hours stay on the record either way.",
     "inviteInsteadButton": "Invite them to {{existingName}} instead",
     "joinAndCloseButton": "Join {{otherName}} and close {{existingName}}",
     "shareMessage": "Join our family on Steadily. Code: {{code}}. It keeps {{nannyName}}'s schedule, hours and pay in one place for both of us."
@@ -243,7 +243,7 @@
       "timeLabel": "Time",
       "labelLabel": "Label (optional)",
       "labelPlaceholder": "e.g. After-school club",
-      "labelHelper": "Your nanny sees this on her schedule, so she knows the shape of the day is deliberate.",
+      "labelHelper": "Your nanny sees this on their schedule, so they know the shape of the day is deliberate.",
       "labelA11y": "Optional label",
       "readback": "{{daysSummary}}, {{start}}–{{end}} for {{childName}}.",
       "submit": "Add hours"
