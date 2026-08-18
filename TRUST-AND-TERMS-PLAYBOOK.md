@@ -724,6 +724,15 @@ defaults marked ★):
 | D-56 | 2026-08-12 | **All four owed Today/inbox surfaces ship**, under an explicit attention hierarchy: `terms_proposal` gets a dedicated card (it had ZERO owners — filtered from NeedsAttentionCard for a card nobody built); `terms_ack` and `reimbursement_owed` are ROWS inside NeedsAttentionCard; "Withdraw the ask" is a LINK inside TodayCoverage. Caps: parent ≤3 attention-shaped cards, nanny ≤2, using the existing `demoted` mechanic. Owner verbatim: *"too many cards may confuse the user, so while it is important to show the cards, they should focus the user on the right thing."* | B3's one-owner rule is what makes extra surfaces safe; a card per fact is what makes them useless |
 | D-57 | 2026-08-12 | **Two concurrency defects found by the Phase 5 money-path trace are ACCEPTED, not fixed**: duplicate `pay_arrangements` on simultaneous proposal-accept, and the non-atomic reimbursement settlement sum/insert. Both need a DB function holding `FOR UPDATE` (077's shape) — too large for a freeze. Recorded in `docs/ROLLBACK-RUNBOOK.md` §9 with symptoms and real fixes | Both need two actors racing within milliseconds at single-digit-household scale; `effectiveOn`'s `created_at desc` tie-break keeps pricing deterministic even with a duplicate row |
 | D-58 | 2026-08-12 | **Sentry is disabled for this release** (owner, via Expo secrets), so §11's +24/48/72h Sentry triage cannot be armed as written. The post-ship watch substitutes: the nightly `integrity-checks` cron first, then API logs (4xx spikes + any 500 on shift creation), then the D-39 PostHog funnel, then `cron.job`/`job_runs` volumes | A watch plan that names a signal nobody is collecting is worse than one that names the signals that exist |
+| D-59 | 2026-08-17 | **S4:** in-household overlap refused; cross-household advisory + persisted | |
+| D-60 | 2026-08-17 | **S6:** parent-side age only, no expiry | |
+| D-61 | 2026-08-17 | **S7:** per-carer everywhere | |
+| D-62 | 2026-08-17 | **F13:** excluded — removal is the only termination; follow-up | |
+| D-63 | 2026-08-17 | **S1:** own shifts only; helper none | |
+| D-64 | 2026-08-17 | **P1:** refuse reopen while paid; clock-out into a paid week keeps approval + payments and flags | |
+| D-65 | 2026-08-17 | **double-tap:** idempotency key | |
+| D-66 | 2026-08-17 | **S2:** job-health job, no Sentry — D-58 stands | |
+| D-67 | 2026-08-17 | **hybrid deep-link:** nav-time hybrid, detail screens resolve per entity, tab screens switch active household on deep link with toast | |
 
 ---
 

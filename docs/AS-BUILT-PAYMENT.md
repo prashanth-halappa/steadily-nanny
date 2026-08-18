@@ -8,6 +8,20 @@
 
 ---
 
+## Status — 2026-08-17 remediation
+
+| Finding | Status |
+|---|---|
+| P1 | Fixed in WP-P1. Decided: "refuse reopen while paid; clock-out into a paid week keeps approval + payments and flags" |
+| P2 | Fixed in WP-P1 |
+| P3 | Fixed in WP-T1 |
+| P4 | Fixed in WP-A1/A2 |
+| P5 | Fixed in WP-F1 |
+| P6 | Fixed in WP-F1 |
+| P7 | Follow-up |
+| P8 | Fixed in WP-P1 |
+| P9 | Fixed in WP-P1 |
+
 ## 1. Method and limits
 
 Two independent read-only passes — data model + API, and mobile CX — plus a docs-only pass. **Nothing was executed:** no tests run, no app launched, no database queried. Test files were read.

@@ -1846,3 +1846,12 @@ the terms she just agreed to. Fixed by forking the redirect on role
 (`isNanny ? '/settings/my-pay' : '/settings/pay'`), with a component test
 covering the carer branch (`ProposalReviewScreen.test.tsx`). Flow 16 now
 asserts the carer lands on `my-pay-screen` with the arrangement rendered.
+
+## D57 — Pattern A: the wrong household's context
+Cross-cutting defect where a component renders an entity that carries its own `household_id`, but takes name, timezone, `week_starts_on`, currency or date formatting from `useActiveHousehold` — without checking if the two agree. Fixed in WP-A1 (render-time) and WP-A2 (nav-time).
+
+## D58 — Pattern B: an unhandled query renders as a factual assertion
+Cross-cutting defect where a component runs several queries but gates loading/error on only some. The ungated ones fall through to a render that states something as fact — like "Paid so far £0.00" on a dropped connection, which invited double payments because the database accepts them without a unique index. Fixed in WP-B2/B3.
+
+## D59 — Pattern C: fail-open and fail-closed, inconsistently
+Cross-cutting defect where `useTermsGate` failed open by design, but its outer role gate (`useIsOnboarded`) converted a failed memberships read into `role: null`, making it fail-closed. This caused instances like the clock-in card silently disappearing with no error or retry. Fixed in WP-B1.

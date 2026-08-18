@@ -10,6 +10,26 @@
 
 ---
 
+## Status — 2026-08-17 remediation
+
+| Finding | Status |
+|---|---|
+| S1 | Fixed in WP-S1 |
+| S2 | Fixed in WP-J1/J2. Decided: "job-health job, no Sentry — D-58 stands" |
+| S3 | Fixed in WP-S1 |
+| S4 | Fixed in WP-S1b. Decided: "in-household overlap refused; cross-household advisory + persisted" |
+| S5 | Fixed in WP-S1 |
+| S6 | Fixed in WP-S2. Decided: "parent-side age only, no expiry" |
+| S7 | Fixed in WP-S2. Decided: "per-carer everywhere" |
+| S8 | Fixed in WP-S2 |
+| S9 | Fixed in WP-S2 |
+| S10 | Fixed in WP-S2 |
+| S11 | Fixed in WP-S2 |
+| S12 | Fixed in WP-S1 |
+| S13 | Fixed in WP-S1 |
+| S14 | Fixed in WP-S1 |
+| S15 | Fixed in WP-J1/J2 |
+
 ## 1. Method and limits
 
 Three independent read-only passes — data model, API + jobs, mobile CX — plus a docs-only pass, cross-checked. **Nothing was executed:** no tests run, no app launched, no database queried. Test files were *read*. Anything unproven is marked unknown rather than assumed.
@@ -168,7 +188,7 @@ Three routes into a `pending` shift needing per-shift confirmation: an extra/cov
 
 This is exactly the shape migration `087_payroll_read_scope.sql` removed from `time_entries` and `timesheets`, with the rationale written in: *"a HELPER… and a SECOND NANNY can both read another carer's pay."* The identical argument applies to shifts and was never applied. Unlike pay — defended at RLS, service and UI — scheduling defends this at **neither** RLS nor service (`shiftQueryService.assertMember` has no carer narrowing). Reachable through PostgREST with the anon key plus a user JWT; the API bypasses RLS as service role.
 
-**S2 — job failure has no automated surface, and the documented check cannot detect it.** All 11 jobs are registered as `SELECT net.http_post(...)`. **pg_net is asynchronous** — `cron.job_run_details.status = 'succeeded'` proves only the *enqueue* succeeded. `net._http_response` has **zero readers repo-wide** (verified). `job_runs` is written by every job and read only by the in-flight guard. Sentry is off (D-58). A 401 from a rotated Vault key, a 500, and a dead API are indistinguishable from success in the query `POST-SHIP-WATCH.md` §1–2 prescribes.
+**S2 — job failure has no automated surface, and the documented check cannot detect it.** All 11 jobs (actually 9 cron jobs) are registered as `SELECT net.http_post(...)`. **pg_net is asynchronous** — `cron.job_run_details.status = 'succeeded'` proves only the *enqueue* succeeded. `net._http_response` has **zero readers repo-wide** (verified). `job_runs` is written by every job and read only by the in-flight guard. Sentry is off (D-58). A 401 from a rotated Vault key, a 500, and a dead API are indistinguishable from success in the query `POST-SHIP-WATCH.md` §1–2 prescribes.
 
 `POST-SHIP-WATCH.md:44-50` records an observation consistent with the bad case — zero integrity rows in `job_runs` on 2026-08-14 while cron reported success — and explains it as a pure-SQL cron, which `057:64-75` contradicts.
 
@@ -181,7 +201,7 @@ select status_code, count(*) from net._http_response
 where created > now() - interval '7 days' group by status_code;
 ```
 
-**If `scheduleHorizonJob` stops: ~11 weeks of silence, then a slow fade.** The horizon is absolute per run, so the frontier freezes while today advances. The mobile forward-nav clamp derives from the *same* constant, so the app renders empty future weeks that look exactly like "no schedule set that far out". Complaints arrive around day 84. Worse, all four of its sweeps swallow errors and `return 0`, so a run where **every sweep failed** records `errorCount: 0, status: 'success'`.
+**If `scheduleHorizonJob` stops: ~11 weeks of silence, then a slow fade.** The horizon is absolute per run, so the frontier freezes while today advances. The mobile forward-nav clamp derives from the *same* constant, so the app renders empty future weeks that look exactly like "no schedule set that far out". Complaints arrive around day 84. Worse, all five of its sweeps swallow errors and `return 0`, so a run where **every sweep failed** records `errorCount: 0, status: 'success'`.
 
 ### Medium
 
@@ -235,7 +255,7 @@ Its symptoms: `SchedulePendingScreen.tsx:107` shows only the first non-ended pat
 
 ### Security
 
-**S15 — all five mutating job endpoints sit before the auth layer** (`app.ts:61` vs `:76`), guarded only by a shared static key, with no user, household, role or rate limit. Anyone holding `JOB_API_KEY` can cancel every pending cover ask and complete every past confirmed shift **across all households**. `jobAuth.ts` has **no test**.
+**S15 — all five mutating job endpoints sit before the auth layer** (`app.ts:61` vs `:76`), guarded only by a shared static key, with no user, household, role or rate limit (though express-rate-limit is already installed). Anyone holding `JOB_API_KEY` can cancel every pending cover ask and complete every past confirmed shift **across all households**. `jobAuth.ts` has **no test**, though it is already timing-safe.
 
 ---
 
@@ -247,7 +267,7 @@ Its symptoms: `SchedulePendingScreen.tsx:107` shows only the first non-ended pat
 
 **Including the newest feature.** `migration101MultiBlockPatternDays.test.ts` is six `toContain` assertions against migration text, and its header records that it was written *before the migration existed*. It proves the file says the right thing, not that two blocks per weekday work. That migration is already applied to production.
 
-Also missing: no `routes/` tests for the schedule domain at all; nothing pins the absent mutability check on parent-cover delete; the materialisation demotion path is untested; cron-contract tests exist for only 4 of 10 schedules.
+Also missing: no `routes/` tests for the schedule domain at all; nothing pins the absent mutability check on parent-cover delete; the materialisation demotion path is untested; cron-contract tests exist for 7 (now 10) of 10 schedules, not 4.
 
 > **Mobile side:** most schedule *screen* tests are Pattern A source-inspection tests asserting substrings against the component **file** rather than rendering it — `ScheduleRespondScreen.test.ts`, `ScheduleBuildScreen.test.ts`, `SchedulePendingScreen.test.ts` and `SchedulePatternPreview.test.ts` all say so in their own headers. **None of the render-time defects in `CROSS-CUTTING-DEFECT-PATTERNS.md` would be caught by the existing suite.**
 
