@@ -169,6 +169,9 @@ Card tone={weekTotalTone(...)}  p-5.5  gap-3
   appreciation block.
 - `Approve` at `size="lg"`, full width, `variant="default"`. `Query` as
   `ghost` with `text-destructive` — correct as built.
+- `Query`'s `QueryNoteSheet` opens with a quiet `beforeYouSend` aside above the
+  note field, offering a quieter reading of the day before the note is typed
+  (§7 Voice: acknowledgement, not grading).
 - Never colour an approved sentence green: `success` on `surfacePositive` v2 is
   4.26:1. Approved sentences are `foreground` on the green ground (13.55:1). The
   ground carries the meaning; the words stay readable.

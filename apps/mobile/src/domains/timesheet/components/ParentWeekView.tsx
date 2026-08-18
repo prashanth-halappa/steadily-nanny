@@ -1222,6 +1222,7 @@ export function ParentWeekView({
         isSubmitting={queryTimesheet.isPending}
         title={t('queryTitle')}
         hint={t('queryHint', { name: carerName })}
+        beforeYouSend={t('queryBeforeYouSend')}
         placeholder={t('queryNotePlaceholder')}
         submitLabel={t('querySubmit')}
       />
