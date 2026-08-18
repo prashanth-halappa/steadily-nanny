@@ -94,6 +94,7 @@ import { useShift } from '@/src/hooks/queries/useShift';
 import { useShiftChangeRequests } from '@/src/hooks/queries/useShiftChangeRequests';
 import { useShiftEvents } from '@/src/hooks/queries/useShiftEvents';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
+import { httpStatusOf } from '@/src/lib/errorLocalization';
 import { localDateInZone } from '@/src/lib/localDate';
 import { showSuccessToast } from '@/src/lib/toast';
 import {
@@ -345,14 +346,16 @@ export function ShiftDetailScreen() {
   // C4 — a FAILED read is neither a spinner nor "this shift doesn't exist".
   // `useIsOnboarded` reports a failed memberships query as `status: 'loading'`
   // plus `membershipsError`, so without this branch that failure spun forever
-  // with no way back; and a `shiftQuery` error fell through to the notFound
-  // copy below, which tells the reader her shift was deleted when the network
-  // merely blipped. Both are recoverable, so both get the retry.
+  // with no way back. For the shift itself: a 404/403 is a settled "gone or not yours"
+  // — notFound copy, still recoverable via retry; everything else stays network.
   if (shiftQuery.isError || onboarding.membershipsError) {
+    const shiftStatus = httpStatusOf(shiftQuery.error);
+    const variant =
+      shiftStatus === 404 || shiftStatus === 403 ? 'notFound' : 'network';
     return (
       <View testID="shift-detail-error" className="flex-1 bg-background">
         <ErrorState
-          variant="network"
+          variant={variant}
           onRetry={() => {
             if (shiftQuery.isError) void shiftQuery.refetch();
             if (onboarding.membershipsError) onboarding.retryMemberships();
