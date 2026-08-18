@@ -53,11 +53,6 @@ function toEpochDay(date: CalendarDate): number {
   return Date.UTC(date.y, date.m - 1, date.d);
 }
 
-/** 0 = Sunday .. 6 = Saturday. */
-function _weekdayOf(epochMillis: number): number {
-  return new Date(epochMillis).getUTCDay();
-}
-
 function formatDateOnly(epochMillis: number): string {
   const dt = new Date(epochMillis);
   const y = dt.getUTCFullYear();
