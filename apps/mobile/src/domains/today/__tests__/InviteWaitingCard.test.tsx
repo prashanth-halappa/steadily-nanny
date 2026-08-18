@@ -97,4 +97,20 @@ describe('InviteWaitingCard', () => {
     fireEvent.press(getByTestId('today-invite-waiting-dismiss'));
     expect(queryByTestId('today-invite-waiting')).toBeNull();
   });
+
+  // WP-K: this card's whole subject is "waiting on the nanny to act" —
+  // dashed border, no shadow, plus a line promising she'll be told.
+  it('is provisional (dashed border) and promises a heads-up the moment someone joins', () => {
+    const { getByTestId, getByText } = render(
+      <InviteWaitingCard
+        householdId={HOUSEHOLD_ID}
+        hasActiveNanny={false}
+        now={NOW}
+      />
+    );
+    const className = getByTestId('today-invite-waiting').props
+      .className as string;
+    expect(className).toContain('border-dashed');
+    expect(getByText('waitingOnNanny.promise')).toBeTruthy();
+  });
 });

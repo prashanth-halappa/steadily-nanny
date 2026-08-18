@@ -233,6 +233,18 @@ mock.module('@/src/api/endpoints/payments', () => ({
   },
 }));
 
+// WP-F: the parent view now reads the arrangement to say WHEN the week falls
+// due. Mocked here for the first time — an unmocked read would reach axios.
+const getCurrentArrangementMock = mock(
+  (): Promise<Record<string, unknown> | null> => Promise.resolve(null)
+);
+mock.module('@/src/api/endpoints/payArrangements', () => ({
+  payArrangementApi: {
+    getCurrent: getCurrentArrangementMock,
+    listHistory: mock(() => Promise.resolve([])),
+  },
+}));
+
 const listSettlementsMock = mock(() => Promise.resolve([] as unknown[]));
 mock.module('@/src/api/endpoints/reimbursementSettlements', () => ({
   reimbursementSettlementApi: {
@@ -414,10 +426,13 @@ beforeEach(() => {
     sharePdfMock,
     showErrorToastMock,
     showSuccessToastMock,
+    getCurrentArrangementMock,
   ]) {
     m.mockReset();
   }
   routerPushMock.mockClear();
+
+  getCurrentArrangementMock.mockImplementation(() => Promise.resolve(null));
 
   listSettlementsMock.mockImplementation(() => Promise.resolve([]));
   listEntriesMock.mockImplementation(() => Promise.resolve([makeEntry()]));
@@ -1167,5 +1182,52 @@ describe('ParentWeekView — correcting a payment', () => {
     await openDetail(view);
 
     expect(view.queryByTestId('payments-detail-correct')).toBeNull();
+  });
+});
+
+/**
+ * WP-F — the Unpaid badge gets a due date. The calendar rule itself is pinned
+ * in `packages/shared-types/tests/payPeriod.test.ts`; this pins that the view
+ * feeds it the week, the household week start, and the family's OWN stated
+ * schedule, rather than inventing one.
+ */
+describe('ParentWeekView — when the week falls due', () => {
+  it('states the due date under the Unpaid badge from the stated pay schedule', async () => {
+    // Weekly, paid on Fridays. The week 3–9 Aug closes Sunday 9 Aug, so the
+    // next Friday — 14 Aug — is when it is due. `nowMs` is 9 Aug, so it is
+    // still ahead, not overdue.
+    getCurrentArrangementMock.mockImplementation(() =>
+      Promise.resolve({
+        id: 'arr-1',
+        household_id: HOUSEHOLD_ID,
+        carer_id: CARER_ID,
+        currency: 'GBP',
+        pay_frequency: 'weekly',
+        pay_day_of_week: 5,
+        pay_day_of_month: null,
+        valid_from: '2026-01-01',
+      })
+    );
+
+    const view = renderParentView();
+
+    await waitFor(() =>
+      expect(view.getByTestId('hours-paid-state-due').props.children).toBe(
+        'paid.dueOn'
+      )
+    );
+  });
+
+  it('says nothing at all while the arrangement has not loaded', async () => {
+    // The read never resolves — "we do not know yet" must not print
+    // "No pay day set" over a household that has one.
+    getCurrentArrangementMock.mockImplementation(() => new Promise(() => {}));
+
+    const view = renderParentView();
+
+    await waitFor(() =>
+      expect(view.getByTestId('hours-paid-state-badge')).toBeTruthy()
+    );
+    expect(view.queryByTestId('hours-paid-state-due')).toBeNull();
   });
 });

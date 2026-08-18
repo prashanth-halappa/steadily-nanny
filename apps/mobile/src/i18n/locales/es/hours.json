@@ -173,7 +173,10 @@
     "notCorrectableError": "Ese pago no se puede corregir.",
     "note": "Steadily deja constancia de que el dinero se movió; no lo mueve.",
     "exceedsGrossError": "Eso es más de lo que queda por pagar de esta semana.",
-    "weekNotApprovedError": "Aprueba la semana primero: los pagos se registran sobre un total aprobado."
+    "weekNotApprovedError": "Aprueba la semana primero: los pagos se registran sobre un total aprobado.",
+    "dueOn": "Vence el {{date}}",
+    "overdueSince": "Vencido desde el {{date}}",
+    "noSchedule": "No hay día de pago fijado — consulta Pago y condiciones"
   },
   "export": {
     "button": "Exportar semana",

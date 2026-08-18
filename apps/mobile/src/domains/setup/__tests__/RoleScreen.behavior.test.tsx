@@ -92,4 +92,19 @@ describe('RoleScreen — the role fork asks exactly one question (D-33)', () => 
     expect(mockReplace).not.toHaveBeenCalled();
     expect(useSetupProgressStore.getState().role).toBeNull();
   });
+
+  // WP-K: the role fork is reversible (StartScreen's back returns here). A
+  // returning user should see their prior choice, not a blank fork that
+  // silently re-asks a question already answered.
+  it('shows the previously chosen role as already selected', () => {
+    useSetupProgressStore.getState().setRole('nanny');
+    const { getByTestId } = render(<RoleScreen />);
+
+    expect(getByTestId('role-nanny').props.accessibilityState).toEqual({
+      selected: true,
+    });
+    expect(getByTestId('role-parent').props.accessibilityState).toEqual({
+      selected: false,
+    });
+  });
 });

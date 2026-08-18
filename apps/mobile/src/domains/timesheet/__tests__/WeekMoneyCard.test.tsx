@@ -68,6 +68,7 @@ function renderCard(
       paidState={null}
       payments={[]}
       settlementCurrency="GBP"
+      todayISO="2026-08-18"
       {...props}
     />
   );

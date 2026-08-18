@@ -650,3 +650,12 @@ describe('CodeEntryScreen — absorption confirm (§8.2 / D-34)', () => {
     expect(screen.queryByTestId('absorption-separate-household')).toBeNull();
   });
 });
+
+describe('CodeEntryScreen — where the code lives (WP-K)', () => {
+  it('shows a "where to look" block above the input, with the hint key', () => {
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    expect(screen.getByTestId('code-entry-where-to-look')).toBeTruthy();
+    expect(screen.getByText('onboarding.code.whereToLook')).toBeTruthy();
+  });
+});

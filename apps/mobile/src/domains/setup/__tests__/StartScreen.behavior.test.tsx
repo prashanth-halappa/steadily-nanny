@@ -140,12 +140,14 @@ describe('StartScreen — both cards for both roles (D-33)', () => {
     expect(nannyJoin).toBe(parentJoin);
   });
 
-  it('back returns to the role fork', () => {
+  it('back returns to the role fork and rewinds currentStep so a resume lands on ROLE, not START', () => {
     useSetupProgressStore.getState().setRole('nanny');
+    useSetupProgressStore.getState().setCurrentStep('START');
     const { getByTestId } = render(<StartScreen />);
     fireEvent.press(getByTestId('start-screen-back'));
 
     expect(mockReplace).toHaveBeenCalledWith('/onboarding/role');
+    expect(useSetupProgressStore.getState().currentStep).toBe('ROLE');
   });
 
   it('does nothing until a card is picked', () => {

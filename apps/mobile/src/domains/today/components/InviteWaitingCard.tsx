@@ -93,11 +93,14 @@ export function InviteWaitingCard({
   }
 
   return (
-    <Card testID="today-invite-waiting">
+    <Card testID="today-invite-waiting" provisional>
       <CardContent className="gap-3">
         <Body weight="medium">{t('waitingOnNanny.title')}</Body>
         <Small className="text-muted-foreground">
           {t('waitingOnNanny.body')}
+        </Small>
+        <Small className="text-muted-foreground">
+          {t('waitingOnNanny.promise')}
         </Small>
         <Pressable
           accessibilityRole="button"

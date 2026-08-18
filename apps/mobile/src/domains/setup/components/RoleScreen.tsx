@@ -30,7 +30,10 @@ import { SetupScreenShell } from './SetupScreenShell';
 export function RoleScreen() {
   const { t } = useTranslation('auth');
   const router = useRouter();
-  const [selected, setSelected] = useState<SetupRole | null>(null);
+  const persistedRole = useSetupProgressStore(s => s.role);
+  // Reversible fork: a user who came back here via StartScreen's `onBack`
+  // sees the role they already picked, not a blank re-ask.
+  const [selected, setSelected] = useState<SetupRole | null>(persistedRole);
   const setRole = useSetupProgressStore(s => s.setRole);
   const setCurrentStep = useSetupProgressStore(s => s.setCurrentStep);
 

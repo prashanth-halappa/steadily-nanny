@@ -55,6 +55,10 @@ interface WeekMoneyCardProps {
   /** Forwarded verbatim to `PaidStateSection` — see that component's doc. */
   paidStateUnknown?: boolean;
   onRetryPayments?: () => void;
+  /** Both forwarded verbatim to `PaidStateSection`'s due line — including
+   * `undefined` meaning "not known yet", which must survive the trip. */
+  dueDate?: string | null;
+  todayISO: string;
   /** PARENT view only — its absence is the read-only contract. */
   onMarkPaidPress?: () => void;
   isMarkPaidDisabled?: boolean;
@@ -90,6 +94,8 @@ export function WeekMoneyCard({
   settlementCurrency,
   paidStateUnknown = false,
   onRetryPayments,
+  dueDate,
+  todayISO,
   onMarkPaidPress,
   isMarkPaidDisabled = false,
   onPaymentPress,
@@ -199,6 +205,8 @@ export function WeekMoneyCard({
           currency={settlementCurrency}
           paidStateUnknown={paidStateUnknown}
           onRetryPayments={onRetryPayments}
+          dueDate={dueDate}
+          todayISO={todayISO}
           onMarkPaidPress={onMarkPaidPress}
           isMarkPaidDisabled={isMarkPaidDisabled}
           onPaymentPress={onPaymentPress}

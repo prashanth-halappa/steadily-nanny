@@ -18,6 +18,8 @@ export * from './errorCodes';
 export * from './locale';
 // Onboarding step machine
 export * from './onboarding';
+// Pay-period grouping + due dates (presentation only, dependency-free)
+export * from './payPeriod';
 // Result type for explicit error handling
 export * from './result';
 export * from './schemas/availability.schema';
