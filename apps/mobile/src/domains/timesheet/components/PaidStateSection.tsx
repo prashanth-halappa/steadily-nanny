@@ -32,6 +32,16 @@
  * its total from anything other than `paidState`, which is itself derived once
  * in `utils/paidState`. The only re-ordering it does is D-20's grouping below.
  *
+ * THE DUE LINE under the badge (WP-F) is PRESENTATION ONLY — a calendar fact
+ * derived from the terms the family already stated (`pay_frequency` +
+ * `pay_day_of_week`/`pay_day_of_month`), never a money fact and never part of
+ * any total. `dueDate` is deliberately THREE-valued: a date, `null` for "the
+ * family has stated no pay schedule", and `undefined` for "we do not know
+ * yet" — an arrangement query still in flight or errored. Collapsing unknown
+ * onto `null` would print "No pay day set" over a household that has one,
+ * which is docs/11-MONEY.md §4's unknown-is-not-zero rule applied to a date.
+ * Unknown renders nothing at all.
+ *
  * CORRECTIONS (D-20, attention spec §4.1) render as a row DIRECTLY UNDER the
  * payment they reverse, indented one step, with the original row unchanged and
  * keeping its full amount forever. The figure is negative, tabular, and the
@@ -147,6 +157,21 @@ interface PaidStateSectionProps {
   paidStateUnknown?: boolean;
   /** Wired to the payments query's own `refetch`. */
   onRetryPayments?: () => void;
+  /**
+   * When the pay period this week belongs to falls due, household-local
+   * `YYYY-MM-DD`, from `computePayDueDate`
+   * (`@steadily-nanny/shared-types/payPeriod`).
+   *
+   * `null` — the family has stated no pay schedule, so the line points them
+   * at Pay & terms. `undefined` — NOT KNOWN yet (arrangement still loading,
+   * or the read failed); the line is withheld entirely rather than claiming
+   * there is no schedule. See the module doc.
+   */
+  dueDate?: string | null;
+  /** Today in the household's timezone, `YYYY-MM-DD` — what "overdue" is
+   * measured against. Passed in, never read off a clock in here, so this
+   * component stays pure and the week views keep one source of "today". */
+  todayISO: string;
   testID?: string;
 }
 
@@ -159,6 +184,8 @@ export function PaidStateSection({
   onPaymentPress,
   paidStateUnknown = false,
   onRetryPayments,
+  dueDate,
+  todayISO,
   testID = 'hours-paid-state',
 }: PaidStateSectionProps) {
   const { t } = useTranslation('hours');
@@ -194,6 +221,18 @@ export function PaidStateSection({
           <Text testID={`${testID}-badge`}>{t(BADGE_COPY_KEY[status])}</Text>
         </Badge>
       </View>
+
+      {status !== 'paid' && dueDate !== undefined ? (
+        <Small testID={`${testID}-due`} className="text-muted-foreground">
+          {dueDate === null
+            ? t('paid.noSchedule')
+            : dueDate < todayISO
+              ? t('paid.overdueSince', {
+                  date: formatEarningsLongDate(dueDate),
+                })
+              : t('paid.dueOn', { date: formatEarningsLongDate(dueDate) })}
+        </Small>
+      ) : null}
 
       <AmountRow
         testID={`${testID}-total`}

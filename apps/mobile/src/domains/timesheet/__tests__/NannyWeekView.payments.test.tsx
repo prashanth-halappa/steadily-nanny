@@ -209,9 +209,12 @@ mock.module('@/src/api/endpoints/timesheets', () => {
     },
   };
 });
+const getCurrentArrangementMock = mock(
+  (): Promise<Record<string, unknown> | null> => Promise.resolve(null)
+);
 mock.module('@/src/api/endpoints/payArrangements', () => ({
   payArrangementApi: {
-    getCurrent: mock(() => Promise.resolve(null)),
+    getCurrent: getCurrentArrangementMock,
     listHistory: mock(() => Promise.resolve([])),
   },
 }));
@@ -321,6 +324,8 @@ beforeEach(() => {
   listExpensesForWeekMock.mockReset();
   listPaymentsMock.mockReset();
   listSettlementsMock.mockReset();
+  getCurrentArrangementMock.mockReset();
+  getCurrentArrangementMock.mockImplementation(() => Promise.resolve(null));
   routerPushMock.mockClear();
 
   listEntriesMock.mockImplementation(() => Promise.resolve([entry]));
@@ -754,5 +759,60 @@ describe('NannyWeekView — who recorded it, before the members read lands', () 
     expect(
       getByTestId('payments-detail-recorded-by-value').props.children
     ).toBe('detail.someone');
+  });
+});
+
+/**
+ * WP-F — she reads the SAME due date the paying family does, off the same
+ * arrangement. Two answers to "when is this owed" is the whole failure this
+ * shares one util to avoid.
+ */
+describe('NannyWeekView — when the week falls due', () => {
+  it('states the due date under the Unpaid badge from the stated pay schedule', async () => {
+    // Weekly, paid on Fridays: the 3–9 Aug week closes Sunday 9 Aug and is
+    // due Friday 14 Aug. `nowMs` is 12 Aug, so it is still ahead.
+    getCurrentArrangementMock.mockImplementation(() =>
+      Promise.resolve({
+        id: 'arr-1',
+        household_id: HOUSEHOLD_ID,
+        carer_id: CARER_ID,
+        currency: 'GBP',
+        pay_frequency: 'weekly',
+        pay_day_of_week: 5,
+        pay_day_of_month: null,
+        valid_from: '2026-01-01',
+      })
+    );
+
+    const view = renderNannyView();
+
+    await waitFor(() =>
+      expect(view.getByTestId('hours-paid-state-due').props.children).toBe(
+        'paid.dueOn'
+      )
+    );
+  });
+
+  it('points at Pay & terms when the family has stated no pay schedule', async () => {
+    getCurrentArrangementMock.mockImplementation(() =>
+      Promise.resolve({
+        id: 'arr-1',
+        household_id: HOUSEHOLD_ID,
+        carer_id: CARER_ID,
+        currency: 'GBP',
+        pay_frequency: null,
+        pay_day_of_week: null,
+        pay_day_of_month: null,
+        valid_from: '2026-01-01',
+      })
+    );
+
+    const view = renderNannyView();
+
+    await waitFor(() =>
+      expect(view.getByTestId('hours-paid-state-due').props.children).toBe(
+        'paid.noSchedule'
+      )
+    );
   });
 });
