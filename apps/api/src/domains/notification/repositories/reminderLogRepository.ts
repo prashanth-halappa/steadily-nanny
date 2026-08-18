@@ -67,6 +67,52 @@ export class ReminderLogRepository {
   }
 
   /**
+   * When this user last had a reminder recorded under `keyPrefix` — the read
+   * half of the ledger, added for WP-G's user-initiated nudge.
+   *
+   * The job's reminders never need this: their keys are fully determined by
+   * the subject (a shift id, a date), so "already sent" IS the unique
+   * violation on {@link claim} and no lookup is required. A nudge is
+   * different — it is rate-limited on ELAPSED TIME rather than deduped on
+   * identity, so its keys carry the instant (`...:<iso>`), every claim wins,
+   * and the limit is enforced by reading the newest row back.
+   *
+   * @param keyPrefix the literal `reminder_key` prefix, e.g.
+   *   `terms_proposal_remind:<id>:`. Matched with `like` and no wildcards of
+   *   its own, so one proposal's history can never answer for another's.
+   * @returns the newest `sent_at`, or `null` when nothing was ever recorded.
+   */
+  async findLastSentAt(
+    userId: string,
+    keyPrefix: string
+  ): Promise<string | null> {
+    const { data, error } = await supabaseService
+      .from(TABLE)
+      .select('sent_at')
+      .eq('user_id', userId)
+      .like('reminder_key', `${keyPrefix}%`)
+      .order('sent_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to read push reminder log',
+        'PUSH_REMINDER_LOG_SELECT_FAILED',
+        {
+          userId,
+          keyPrefix,
+          operation: 'findLastSentAt',
+          dbError: error.message,
+          code: error.code,
+        }
+      );
+    }
+
+    return data?.sent_at ?? null;
+  }
+
+  /**
    * Release a claimed slot after a send that turned out not to deliver
    * anything, so the next run retries instead of the reminder being
    * permanently suppressed by a claim row nothing was ever sent for.

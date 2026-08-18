@@ -358,7 +358,10 @@
     "mustAgreeParent": "{{name}} needs to agree before they can clock in.",
     "mustAgreeCarer": "{{name}} needs to agree before you can clock in.",
     "seenBy": "Seen by {{name}} {{date}}",
-    "notOpened": "Not opened yet"
+    "notOpened": "Not opened yet",
+    "remind": "Send a reminder",
+    "reminded": "Reminded {{date}}",
+    "remindTooSoon": "You can send one reminder every two days."
   },
   "notAgreedSetBy": "Set by {{name}} on {{date}} · not agreed in Steadily"
 }

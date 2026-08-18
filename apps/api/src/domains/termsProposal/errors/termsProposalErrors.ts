@@ -134,3 +134,36 @@ export class TermsProposalValidationError extends ValidationError {
     this.name = 'TermsProposalValidationError';
   }
 }
+
+/**
+ * 409 — WP-G: the reminder was asked for too early.
+ *
+ * TWO CLOCKS, BOTH 48 HOURS, both in `metadata.reason`:
+ *
+ * - `proposal_too_fresh` — the round itself is younger than the window. A
+ *   nudge on the same evening the terms were sent is not a reminder, it is a
+ *   second notification about a message the other side has not had an
+ *   ordinary chance to read.
+ * - `reminded_recently` — a reminder for this round is already less than 48h
+ *   old. The whole affordance exists because the alternative is a text
+ *   message at 11pm; a button that could be tapped repeatedly would be worse
+ *   than the thing it replaces.
+ *
+ * A CONFLICT and not a 429: nothing is being throttled for capacity, and this
+ * is not about the caller's request rate. It is a state answer about a
+ * negotiation that is genuinely theirs — "not yet", the same shape as
+ * `TermsProposalNotActionableError`'s "not any more". `ConflictError` fixes
+ * the client-visible code to `CONFLICT`, so the client branches on
+ * `metadata.reason` (the `NO_PAY_ARRANGEMENT` convention in
+ * `errorLocalization.ts`), never on the message.
+ */
+export class TermsProposalReminderTooSoonError extends ConflictError {
+  constructor(proposalId: string, reason: string, metadata?: ErrorMetadata) {
+    super(
+      'You can send one reminder every two days',
+      'TERMS_PROPOSAL_REMINDER_TOO_SOON',
+      { proposalId, reason, ...metadata }
+    );
+    this.name = 'TermsProposalReminderTooSoonError';
+  }
+}

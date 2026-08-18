@@ -198,6 +198,30 @@ export class TermsProposalController {
   }
 
   /**
+   * POST /terms-proposals/:proposalId/remind — WP-G, the author's one-tap
+   * nudge.
+   *
+   * Answers with the INSTANT and not the row. Nothing about the proposal
+   * changed — no status, no `updated_at` — and returning it would invite a
+   * client to treat chasing as a lifecycle event and render it into §7.2's
+   * "How we got here", which is a record of what was offered rather than of
+   * who was impatient. The 48-hour refusal is a 409 from the service
+   * (`TermsProposalReminderTooSoonError`), handled here like any other.
+   */
+  static async remind(req: Request, res: Response, next: NextFunction) {
+    try {
+      const proposalId = req.params.proposalId as string;
+      const { reminded_at } = await termsProposalCommandService.remind(
+        getAuthUserId(req),
+        proposalId
+      );
+      return sendSuccessResponse(res, 'Reminder sent', { reminded_at });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
    * POST /terms-proposals/:proposalId/viewed — §5.3's receipt.
    *
    * A POST rather than a side effect of `getById`: that read is also what the

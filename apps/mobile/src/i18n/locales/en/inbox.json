@@ -95,7 +95,10 @@
     "scheduledToday": "{{carer}} has {{hours}} hours scheduled today that can't be recorded yet.",
     "ctaSee": "See what you sent",
     "ctaChange": "Change what you sent",
-    "withdraw": "Withdraw"
+    "withdraw": "Withdraw",
+    "remind": "Send a reminder",
+    "reminded": "Reminded {{date}}",
+    "remindTooSoon": "You can send one reminder every two days."
   },
   "lead_one": "{{count}} thing waiting on you.",
   "lead_other": "{{count}} things waiting on you.",

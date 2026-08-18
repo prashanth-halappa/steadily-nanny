@@ -204,6 +204,17 @@ export const TermsProposalResponseSchema = z.object({
   terms_proposal: TermsProposalSchema,
 });
 
+/**
+ * Response to a reminder (WP-G). The INSTANT, and deliberately not the row:
+ * a nudge changes nothing about the proposal, and answering with the
+ * proposal would invite a client to treat chasing as a lifecycle event and
+ * write it into the "How we got here" chain, which is a record of what was
+ * OFFERED, not of who was impatient.
+ */
+export const RemindTermsProposalResponseSchema = z.object({
+  reminded_at: z.iso.datetime({ offset: true }),
+});
+
 export type TermsProposal = z.infer<typeof TermsProposalSchema>;
 export type CreateTermsProposalRequest = z.infer<
   typeof CreateTermsProposalRequestSchema
@@ -215,3 +226,6 @@ export type TermsProposalListResponse = z.infer<
   typeof TermsProposalListResponseSchema
 >;
 export type TermsProposalResponse = z.infer<typeof TermsProposalResponseSchema>;
+export type RemindTermsProposalResponse = z.infer<
+  typeof RemindTermsProposalResponseSchema
+>;

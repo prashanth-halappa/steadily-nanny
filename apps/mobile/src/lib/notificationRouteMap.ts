@@ -209,6 +209,10 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   // B4 — like WITHDRAWN, the record is worth seeing: the review screen still
   // renders the `declined` pill in history.
   [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_DECLINED]: proposalReviewHref,
+  // WP-G — the nudge lands on the thing it is a nudge about. The whole point
+  // of the tap was "please look at this", so anywhere but the round itself
+  // would be the app quietly failing to deliver the message it just sent.
+  [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_REMINDER]: proposalReviewHref,
   // N15 is the one that is NOT a pending decision: once terms are agreed
   // there is nothing to review, and the arrangement on her My pay screen is
   // now the fact. Same static destination as PAY_TERMS_SET, for the same

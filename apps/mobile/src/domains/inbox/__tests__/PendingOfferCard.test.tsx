@@ -55,6 +55,9 @@ let mockRole: string;
 let mockShifts: unknown[];
 let mockPush: ReturnType<typeof mock>;
 let mockWithdraw: ReturnType<typeof mock>;
+let mockRemind: ReturnType<typeof mock>;
+let mockRemindData: { reminded_at: string } | undefined;
+let mockRemindTooSoon: boolean;
 
 beforeAll(async () => {
   mock.module('react-i18next', () => ({
@@ -96,6 +99,17 @@ beforeAll(async () => {
     useWithdrawTerms: () => ({ mutateAsync: mockWithdraw, isPending: false }),
   }));
 
+  mockRemind = mock(() => Promise.resolve());
+  mock.module('@/src/hooks/mutations/useRemindTerms', () => ({
+    useRemindTerms: () => ({
+      mutateAsync: mockRemind,
+      data: mockRemindData,
+      error: null,
+      isPending: false,
+    }),
+    isRemindTooSoon: () => mockRemindTooSoon,
+  }));
+
   const mod = await import('../components/PendingOfferCard');
   PendingOfferCard = mod.PendingOfferCard;
 });
@@ -106,6 +120,9 @@ beforeEach(() => {
   mockShifts = [];
   mockPush.mockClear();
   mockWithdraw.mockClear();
+  mockRemind.mockClear();
+  mockRemindData = undefined;
+  mockRemindTooSoon = false;
 });
 
 /** The strongest position available — anything quiet here is quiet anywhere. */
@@ -286,6 +303,68 @@ describe('PendingOfferCard — actions', () => {
     expect(
       renderPinned().queryByTestId('today-pending-offer-withdraw')
     ).toBeNull();
+  });
+
+  // WP-G. The nudge is for the middle of the offer's life: not the day it
+  // was sent (nobody has had a chance to read it), and never while she is
+  // standing in the house unable to clock in — at that point the fix is to
+  // change the terms, not to ask again more politely.
+  it('offers the nudge once the offer has been waiting, and once it is stale', () => {
+    for (const daysAgo of [3, 10]) {
+      mockItems = [offer(daysAgo)];
+      expect(
+        renderPinned().getByTestId('today-pending-offer-remind')
+      ).toBeTruthy();
+    }
+  });
+
+  it('never on the day it was sent', () => {
+    mockItems = [offer(0)];
+
+    expect(
+      renderPinned().queryByTestId('today-pending-offer-remind')
+    ).toBeNull();
+  });
+
+  it('never on a blocking offer — asking again does not open her clock', () => {
+    mockItems = [offer(12)];
+    mockShifts = [SHIFT_TODAY];
+
+    expect(
+      renderPinned().queryByTestId('today-pending-offer-remind')
+    ).toBeNull();
+  });
+
+  it('nudges through the mutation', () => {
+    mockItems = [offer(3)];
+
+    fireEvent.press(renderPinned().getByTestId('today-pending-offer-remind'));
+
+    expect(mockRemind).toHaveBeenCalled();
+  });
+
+  it('trades the button for the dated fact once one has gone', () => {
+    mockItems = [offer(3)];
+    mockRemindData = { reminded_at: '2026-08-24T09:00:00.000Z' };
+
+    const tree = renderPinned();
+
+    expect(tree.queryByTestId('today-pending-offer-remind')).toBeNull();
+    expect(
+      tree.getByTestId('today-pending-offer-reminded').props.children
+    ).toBe('pendingOfferCard.reminded({"date":"24 Aug"})');
+  });
+
+  it('answers a too-soon refusal inline, and never claims one was sent', () => {
+    mockItems = [offer(3)];
+    mockRemindTooSoon = true;
+
+    const tree = renderPinned();
+
+    expect(
+      tree.getByTestId('today-pending-offer-remind-too-soon').props.children
+    ).toBe('pendingOfferCard.remindTooSoon');
+    expect(tree.queryByTestId('today-pending-offer-reminded')).toBeNull();
   });
 
   it('withdraws through the mutation, never in place', () => {
