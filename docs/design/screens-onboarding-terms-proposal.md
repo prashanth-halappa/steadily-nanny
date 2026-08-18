@@ -175,6 +175,13 @@ the `persistedRole` hack (`:50–51`) entirely; `selected` becomes a plain
 `RoleOptionCard.tsx` is unchanged — its 2px selected border is the documented
 Daylight exception and stays.
 
+**Reversible (WP-K, 2026-08-18):** the START screen's "← Back" (shown in
+§3.2's diagram) returns here, and `RoleScreen` reads the persisted `role` back
+into its local `selected` state on mount, so the card she already picked
+shows selected rather than a blank re-ask. `onBack` also rewinds
+`setupProgress.currentStep` to `ROLE`, so a resume after a kill mid-fork lands
+on this screen, not back on START.
+
 ### 3.2 Start fork — `/onboarding/start` *(new)*
 
 The screen D-33 is actually asking for. Identical component vocabulary, so it
@@ -279,6 +286,16 @@ Rules that make this safe:
 This is the whole reason §6.2's page shows `R4K-92T` in plain text next to the
 button: the button covers mode a, the visible code covers mode b, and the
 family picks whichever happened to them without the app needing to know which.
+
+**"Where to look" hint (WP-K, 2026-08-18):** mode b (empty field, typing cold)
+gets a small muted block above the code input, `testID="code-entry-where-to-
+look"`, that reuses `household:invite.shareMessage` interpolated with the
+sample code `R4K-92T` — the same text she'll see in the message she was
+actually sent — with the code segment rendered bold, plus one line,
+`onboarding.code.whereToLook`: "It's in the message you were sent — six
+characters like R4K-92T." It shows the real invite text rather than inventing
+separate copy, so there's no gap between what this screen describes and what
+lands in her messages.
 
 ---
 

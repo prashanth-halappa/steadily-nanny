@@ -95,6 +95,9 @@ import { useSetupProgressStore } from '@/src/store/setupProgress';
 /** `nanny.getsteadily.app/t/R4K-92T` -> `R4K-92T`. */
 const DEEP_LINK_CODE_PATTERN = /\/t\/([A-Za-z0-9-]+)/;
 
+/** Sample code shown in the "where to look" hint — matches `household:invite.shareMessage`'s doc comment example everywhere else in this file. */
+const SAMPLE_INVITE_CODE = 'R4K-92T';
+
 export interface CodeEntryScreenProps {
   /**
    * SETTINGS ENTRY POINT (`/settings/join-household`). Presence of this
@@ -443,6 +446,18 @@ export function CodeEntryScreen({
     runJoin();
   };
 
+  // Reuses the real invite text (`household:invite.shareMessage`) rather than
+  // inventing separate copy, so "where to look" shows exactly what she'll see
+  // in her messages, with a sample code standing in for the real one. Splits
+  // on the sample code to bold just that segment; falls back to the whole
+  // string unbolded if the message ever stops containing it verbatim (e.g.
+  // the key-echo test mock).
+  const sampleInviteMessage = tHousehold('invite.shareMessage', {
+    code: SAMPLE_INVITE_CODE,
+  });
+  const [beforeSampleCode, afterSampleCode] =
+    sampleInviteMessage.split(SAMPLE_INVITE_CODE);
+
   if (isResumingPastCode) {
     return (
       <SetupScreenShell
@@ -536,6 +551,27 @@ export function CodeEntryScreen({
           ) : null}
         </View>
       )}
+
+      <View
+        testID="code-entry-where-to-look"
+        className="gap-1 rounded-cell bg-muted p-3"
+      >
+        <Small className="text-muted-foreground">
+          {beforeSampleCode}
+          {afterSampleCode !== undefined ? (
+            <Small
+              className="text-muted-foreground"
+              style={{ fontWeight: '700' }}
+            >
+              {SAMPLE_INVITE_CODE}
+            </Small>
+          ) : null}
+          {afterSampleCode}
+        </Small>
+        <Small className="text-muted-foreground">
+          {t('onboarding.code.whereToLook')}
+        </Small>
+      </View>
 
       <View className="gap-2">
         <FieldLabel>{t('onboarding.code.inviteCodeLabel')}</FieldLabel>

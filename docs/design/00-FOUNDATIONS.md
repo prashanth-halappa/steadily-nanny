@@ -311,6 +311,14 @@ translucent `bg-*/NN` class (a shadow over a translucent ground reads wrong on
 device). See `01-LAWS.md` Rule B for what colour the text on these tints may
 be.
 
+**`provisional` (WP-K, 2026-08-18)** — `<Card provisional>` swaps the
+elevation shadow for a dashed `1.5px` `borderStrong` outline, same radius and
+padding otherwise. Dashed = waiting on the other person: an invite nobody has
+redeemed yet, an open terms round, a non-blocking pending offer. Composes with
+`tone` (the tint still applies underneath the dashed border) — it does not
+replace the tone system, it marks a different axis (state of the world vs.
+state of urgency).
+
 `Card` has no `accent` prop. It used to draw a 4px inset bar down the card's
 left edge; removed after user feedback on device ("you don't need the left
 border") and a genuine rendering defect — a 4px-wide element can't carry the

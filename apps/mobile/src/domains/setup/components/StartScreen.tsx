@@ -74,8 +74,11 @@ export function StartScreen() {
   };
 
   // `replace`, not `back()`: RoleScreen navigates here with `replace`, so it
-  // is no longer on the stack to go back to.
+  // is no longer on the stack to go back to. `setCurrentStep` rewinds the
+  // persisted progress too, so a resume after a kill mid-fork lands back on
+  // ROLE rather than re-launching straight into START.
   const onBack = () => {
+    setCurrentStep(SETUP_STEPS.ROLE);
     router.replace(getSetupStepRoute(SETUP_STEPS.ROLE) as Href);
   };
 

@@ -137,6 +137,11 @@ export function PendingOfferCard({ nowMs = Date.now() }: { nowMs?: number }) {
       // life, and the day someone pins it for a different reason, age must
       // still not be able to make it shout.
       tone={blocking ? tone : 'default'}
+      // Same axis as the tone rule above: non-blocking is "waiting on her to
+      // answer" (dashed, provisional); blocking is L1 attention and keeps its
+      // own elevation — a dashed border there would blunt the one state that
+      // is allowed to shout.
+      provisional={!blocking}
       className="gap-3 p-5.5"
     >
       <View className="flex-row items-center gap-3">
