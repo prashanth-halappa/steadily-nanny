@@ -225,7 +225,9 @@ describe('PendingOfferCard — copy per variant', () => {
     );
     expect(
       tree.getByTestId('today-pending-offer-subtitle').props.children
-    ).toBe('pendingOfferCard.subtitleBlocking({"date":"21 Aug"})');
+    ).toBe(
+      'pendingOfferCard.subtitleBlocking({"carer":"Marisol","date":"21 Aug"})'
+    );
   });
 
   // The number is what makes it concrete — "she has 6 hours today" beats any
