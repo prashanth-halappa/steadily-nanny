@@ -364,10 +364,10 @@ describe('TodayCoverage — 10 Aug 2026 gap + plan', () => {
     ).toBeLessThan(testIdIndex(tree, 'coverage-footer'));
   });
 
-  // Today, left to right, as who has it: the 09:00–11:22 hole and the
-  // confirmed 11:22 shift, in that order. The plan lines say the same thing
-  // in words — the bar says it in one glance.
-  it('renders the day bar with a gap segment and a nanny segment', () => {
+  // The gap state's plan lines stay; the strip does not. An all-amber bar
+  // sitting outside the attention card reads as an orphan and amplifies
+  // alarm — the sentences below the card already say who has it.
+  it('does NOT render the day bar in the gap state', () => {
     const tree = renderWithProviders(
       <TodayCoverage
         householdId={HOUSEHOLD_ID}
@@ -377,9 +377,61 @@ describe('TodayCoverage — 10 Aug 2026 gap + plan', () => {
       />
     );
 
-    expect(tree.getByTestId('today-coverage-day-bar')).toBeTruthy();
-    expect(tree.getByTestId('today-coverage-day-bar-gap-0')).toBeTruthy();
-    expect(tree.getByTestId('today-coverage-day-bar-nanny-1')).toBeTruthy();
+    expect(tree.queryByTestId('today-coverage-day-bar')).toBeNull();
+    expect(tree.getByTestId('today-coverage-plan-confirmed-1122')).toBeTruthy();
+  });
+
+  // Booked is the only state that gets the strip: plan lines with no card
+  // above them, today left-to-right as who has it.
+  it('renders the day bar in the booked state', () => {
+    const covering = makeShift({
+      id: 'confirmed-full',
+      status: 'confirmed',
+      starts_at: '2026-08-10T08:00:00.000Z',
+      ends_at: '2026-08-10T16:00:00.000Z',
+      shift_children: [
+        {
+          id: 'sc-full',
+          shift_id: 'confirmed-full',
+          child_id: CHILD_ID,
+          starts_at: '2026-08-10T08:00:00.000Z',
+          ends_at: '2026-08-10T16:00:00.000Z',
+          created_at: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    });
+    mockShiftsRange.mockImplementation(() => ({
+      data: [covering],
+      isLoading: false,
+    }));
+    try {
+      const uncovered = computeUncoveredToday({
+        localDate: LOCAL_DATE,
+        timezone: ZONE,
+        commitments: [makeCommitment()],
+        shifts: [covering],
+        closures: [],
+      });
+      expect(uncovered.status).toBe('covered');
+
+      const tree = renderWithProviders(
+        <TodayCoverage
+          householdId={HOUSEHOLD_ID}
+          timeZone={ZONE}
+          weekStartsOn={1}
+          householdChildren={[{ id: CHILD_ID, name: 'H1 Child1' } as never]}
+        />
+      );
+
+      expect(tree.queryByTestId('today-coverage-gap-card')).toBeNull();
+      expect(tree.getByTestId('today-coverage-day-bar')).toBeTruthy();
+      expect(tree.getByTestId('today-coverage-day-bar-nanny-0')).toBeTruthy();
+    } finally {
+      mockShiftsRange.mockImplementation(() => ({
+        data: aug10Shifts(),
+        isLoading: false,
+      }));
+    }
   });
 
   // The mechanic itself is gone, not just unused — one slot, one occupant.
