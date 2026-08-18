@@ -3,18 +3,35 @@
  *
  * Usual-week detail screen, pushed from the Schedule tab's pattern banner
  * (`/(private)/schedule/usual-week`) — NOT the Schedule tab root; the
- * calendar (`ScheduleShiftsScreen`) is. Shows the household's current
- * schedule-pattern state and the next action for it:
+ * calendar (`ScheduleShiftsScreen`) is. Shows the household's schedule
+ * pattern(s), ONE SECTION PER CARER (S7 — "PER-CARER EVERYWHERE", owner
+ * decision, docs/AS-BUILT-SCHEDULE.md §6 S7/S8/S9; the design rule lives in
+ * docs/design/screens-schedule.md's "Multi-nanny usual week" section):
+ * a stale row for one carer must never outrank a live one for a different
+ * carer, or hide behind it. Each carer's own precedence-resolved pattern
+ * (`resolvePerCarerPatterns`, S8's fix for the `.find(p => p.status !==
+ * 'ended')` this screen used to run across the WHOLE household) gets its
+ * own block:
  *
  *  - no pattern at all           -> empty state with a "build one" CTA
  *  - `draft` (started, not sent) -> prompt to continue building
- *  - `pending` (sent, awaiting)  -> status + preview + Withdraw action
- *  - `accepted`                  -> status + preview + link to this week's shifts
- *  - `declined` / `withdrawn`    -> status + decline note + CTA to build a new week
+ *  - `pending` (sent, awaiting)  -> status + preview + "Sent X ago" (S6) +
+ *                                   Withdraw action
+ *  - `accepted`                  -> status + preview + link to this week's
+ *                                   shifts
+ *  - `declined` / `withdrawn`    -> status + decline note (S10: "See why"
+ *                                   only offered by the banner when there's
+ *                                   a reason to read) + CTA to build a new
+ *                                   week
+ *  - `ended`                     -> S9: its own state (read-only preview +
+ *                                   "Set a new usual week"), not the empty
+ *                                   state — an ended pattern used to be
+ *                                   filtered out entirely, so this screen
+ *                                   read "No schedule yet" for a household
+ *                                   that plainly once had one.
  *
  * Patterns come back from the API already ordered by `created_at` descending
- * (see `apps/api/src/domains/schedule/repositories/schedulePatternRepository.ts`),
- * so the first entry that isn't `ended` is the one this screen cares about.
+ * (see `apps/api/src/domains/schedule/repositories/schedulePatternRepository.ts`).
  *
  * Parent/helper only. Normal navigation never sends a nanny here, but a
  * deep link could — see `schedule-pending-not-available` below for the
@@ -41,7 +58,10 @@
  * starts a genuinely NEW pattern, since there is no draft to resume in
  * those states.
  */
-import type { AmendSchedulePatternInput } from '@steadily-nanny/shared-types/schemas/schedule.schema';
+import type {
+  AmendSchedulePatternInput,
+  SchedulePattern,
+} from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import { type Href, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -67,12 +87,14 @@ import { Button, buttonVariants } from '@/src/components/ui/button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
-import { Body, H1, Small } from '@/src/components/ui/typography';
+import { Body, H1, H3, Small } from '@/src/components/ui/typography';
 import { AdjustSchedulePatternSheet } from '@/src/domains/schedule/components/AdjustSchedulePatternSheet';
 import { PatternStatusIndicator } from '@/src/domains/schedule/components/PatternStatusIndicator';
 import { SchedulePatternPreview } from '@/src/domains/schedule/components/SchedulePatternPreview';
 import { parseWeeklyRruleInterval } from '@/src/domains/schedule/utils';
 import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
+import { resolvePerCarerPatterns } from '@/src/domains/schedule/utils/patternPrecedence';
+import { relativeDaysAgo } from '@/src/domains/schedule/utils/relativeDaysAgo';
 import {
   canViewParentSchedule,
   isParentEditorRole,
@@ -93,120 +115,36 @@ import { useElevation } from '~/lib/design-tokens/elevation';
 const BUILD_HREF = '/(private)/schedule/build' as Href;
 const SHIFTS_HREF = '/(private)/schedule/shifts' as Href;
 
-export function SchedulePendingScreen() {
-  const { t } = useTranslation('schedule');
-  const { t: tCommon } = useTranslation('common');
-  const elevation = useElevation();
-  // Same tab-bar dead-zone fix as Settings (BUG1) — this is the Schedule
-  // tab's root for a parent with no accepted pattern.
-  const tabBarScrollPadding = useTabBarScrollPadding();
-  const { refreshControl } = usePullToRefresh();
-  const router = useRouter();
-  const currentUserId = useAuthStore(s => s.user?.id ?? null);
+type ChildSummary = { id: string; name: string; colour: string | null };
 
-  const onboarding = useIsOnboarded();
-  const patterns = useSchedulePatterns(onboarding.householdId);
-  const pattern = (patterns.data ?? []).find(p => p.status !== 'ended') ?? null;
-  const withdraw = useWithdrawSchedulePattern(pattern?.id);
-  const amend = useAmendSchedulePattern(pattern?.id);
+/**
+ * One carer's pattern, fully self-contained: it owns its own detail /
+ * withdraw / amend queries, so mounting N of these (one per carer) never
+ * shares mutation state between carers.
+ */
+function SchedulePendingCarerSection({
+  pattern,
+  carerName,
+  canEditSchedule,
+  childrenById,
+  showCarerLabel,
+}: {
+  pattern: SchedulePattern;
+  carerName: string;
+  canEditSchedule: boolean;
+  childrenById: Map<string, ChildSummary>;
+  showCarerLabel: boolean;
+}) {
+  const { t } = useTranslation('schedule');
+  const router = useRouter();
+  const elevation = useElevation();
+
+  const withdraw = useWithdrawSchedulePattern(pattern.id);
+  const amend = useAmendSchedulePattern(pattern.id);
   const [adjustOpen, setAdjustOpen] = useState(false);
   const detail = useSchedulePattern(
-    pattern && pattern.status !== 'draft' ? pattern.id : null
+    pattern.status !== 'draft' ? pattern.id : null
   );
-  const children = useChildren(onboarding.householdId);
-  const membersQuery = useHouseholdMembers(onboarding.householdId);
-  const childrenById = new Map(
-    (children.data ?? []).map(c => [
-      c.id,
-      { id: c.id, name: c.name, colour: c.colour },
-    ])
-  );
-  const membersByUserId = useMemo(
-    () =>
-      new Map(
-        (membersQuery.data ?? []).map(member => [member.user_id, member])
-      ),
-    [membersQuery.data]
-  );
-  const memberLabels = useMemo(
-    () => ({
-      you: t('detail.you'),
-      someone: t('detail.someone'),
-      roleFallback: (role: 'owner' | 'parent' | 'nanny' | 'helper') =>
-        t(`detail.roleFallback.${role}`),
-    }),
-    [t]
-  );
-  const carerName = resolveMemberDisplayName(
-    pattern?.carer_id,
-    currentUserId,
-    membersByUserId,
-    memberLabels
-  );
-
-  const canEditSchedule = isParentEditorRole(onboarding.role);
-
-  // C5 (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §C): a loading/error guard
-  // must precede the role gate below — otherwise `onboarding.role` is still
-  // null while onboarding resolves (or forever, on a failed read), and the
-  // household's OWN parent is told this screen "isn't available to you".
-  // Mirrors ScheduleBuildScreen.tsx's ordering (loading/error first, role
-  // gate second).
-  const onboardingQs = queryState(onboardingAsQuery(onboarding));
-  if (onboardingQs.status === 'error') {
-    return (
-      <View testID="schedule-pending-screen" className="flex-1 bg-background">
-        <ErrorState variant="network" onRetry={onboardingQs.retry} />
-      </View>
-    );
-  }
-  if (onboardingQs.status === 'loading') {
-    return (
-      <View
-        testID="schedule-pending-screen"
-        style={{ flex: 1 }}
-        className="items-center justify-center bg-background"
-      >
-        <LoadingIndicator />
-      </View>
-    );
-  }
-
-  // Parent/helper only. Normal navigation never sends a nanny here, but a
-  // bare `null` used to leave a deep-linked nanny staring at a blank
-  // screen — no message, no back affordance, nothing. Mirrors
-  // TimeOffScreen's `time-off-not-available` pattern.
-  if (!canViewParentSchedule(onboarding.role)) {
-    return (
-      <View
-        testID="schedule-pending-not-available"
-        className="flex-1 bg-background"
-      >
-        <View
-          style={{
-            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
-            paddingTop: SCREEN_CONTENT_STYLE.padding,
-          }}
-        >
-          <BackButton
-            testID="schedule-pending-not-available-back"
-            onPress={() => router.back()}
-            label={tCommon('back')}
-          />
-        </View>
-        <View
-          className="mt-8"
-          style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
-        >
-          <EmptyState
-            variant="inline"
-            title={t('pending.notAvailableTitle')}
-            description={t('pending.notAvailableDescription')}
-          />
-        </View>
-      </View>
-    );
-  }
 
   // Discarding the withdraw mutation's promise with a bare `void` operator
   // suppresses only the lint warning, not the rejection itself — a failure
@@ -220,9 +158,7 @@ export function SchedulePendingScreen() {
     }
   };
 
-  // Same try/catch discipline as handleWithdraw above — `onError` already
-  // surfaces a toast, but discarding the mutation's promise with a bare
-  // `void` operator would still leave the rejection unhandled.
+  // Same try/catch discipline as handleWithdraw above.
   const handleAmend = async (input: AmendSchedulePatternInput) => {
     try {
       await amend.mutateAsync(input);
@@ -233,75 +169,44 @@ export function SchedulePendingScreen() {
     showSuccessToast(t('pending.adjustSuccessToast'));
   };
 
-  // `onboarding.status === 'loading'` is already handled by the guard
-  // above (which now precedes the role gate) — `patterns` is the one query
-  // still in flight past that point.
-  const isLoading = patterns.isLoading;
-
   const patternStatus = ():
     | 'pending'
     | 'accepted'
     | 'declined'
-    | 'withdrawn' => {
-    switch (pattern?.status) {
+    | 'withdrawn'
+    | 'ended' => {
+    switch (pattern.status) {
       case 'accepted':
         return 'accepted';
       case 'declined':
         return 'declined';
       case 'withdrawn':
         return 'withdrawn';
+      case 'ended':
+        return 'ended';
       default:
         return 'pending';
     }
   };
 
-  return (
-    <ScrollView
-      testID="schedule-pending-screen"
-      className="flex-1 bg-background"
-      contentContainerStyle={{
-        ...SCREEN_CONTENT_STYLE,
-        paddingBottom: tabBarScrollPadding,
-      }}
-      refreshControl={refreshControl}
-    >
-      <BackButton
-        testID="schedule-pending-back"
-        onPress={() => router.back()}
-        label={tCommon('back')}
-      />
-      <H1>{t('pending.screenTitle')}</H1>
+  // S6: the parent's pending week read identically on day 1 and day 30 —
+  // no sense of how long it had been sitting unanswered. Age-only.
+  const sentAgo =
+    pattern.status === 'pending' && pattern.sent_at
+      ? relativeDaysAgo(
+          pattern.sent_at,
+          new Date().toISOString().slice(0, 10),
+          t
+        )
+      : null;
 
-      {isLoading ? (
-        <LoadingIndicator messages={[t('pending.loading')]} />
-      ) : patterns.isError ? (
-        // False alarm: a failed patterns read fell through the same
-        // `?? []` a genuinely-empty list does, showing "build a week"
-        // over a real pending/accepted week the parent already sent.
-        <View testID="schedule-pending-error" className="mt-6">
-          <ErrorState variant="network" onRetry={() => patterns.refetch()} />
-        </View>
-      ) : !pattern ? (
-        <View testID="schedule-pending-empty" className="mt-6 gap-4">
-          <EmptyState
-            variant="inline"
-            image={illustrations.emptyPending}
-            title={t('pending.emptyTitle')}
-            description={t('pending.emptyBody')}
-          />
-          {canEditSchedule ? (
-            <Button
-              testID="schedule-pending-build-cta"
-              onPress={() => router.push(BUILD_HREF)}
-            >
-              <Text className="text-primary-foreground font-medium">
-                {t('pending.emptyCta')}
-              </Text>
-            </Button>
-          ) : null}
-        </View>
-      ) : pattern.status === 'draft' ? (
-        <View testID="schedule-pending-draft" className="mt-6 gap-4">
+  return (
+    <View className="gap-4">
+      {showCarerLabel ? (
+        <H3 testID="schedule-pending-carer-name">{carerName}</H3>
+      ) : null}
+      {pattern.status === 'draft' ? (
+        <View testID="schedule-pending-draft" className="gap-4">
           <Body weight="semibold">{t('pending.draftTitle')}</Body>
           <Body className="text-muted-foreground">
             {t('pending.draftBody')}
@@ -322,11 +227,19 @@ export function SchedulePendingScreen() {
           ) : null}
         </View>
       ) : (
-        <View className="mt-6 gap-4">
+        <View className="gap-4">
           <PatternStatusIndicator
             testID="schedule-pending-status"
             status={patternStatus()}
           />
+          {sentAgo ? (
+            <Small
+              testID="schedule-pending-sent-age"
+              className="text-muted-foreground"
+            >
+              {sentAgo}
+            </Small>
+          ) : null}
           <Small
             testID="schedule-pending-subject"
             className="text-muted-foreground"
@@ -467,6 +380,203 @@ export function SchedulePendingScreen() {
               </Text>
             </Button>
           ) : null}
+
+          {/* S9: an ended pattern used to be filtered out before this screen
+              ever saw it, so the banner's "your usual week has ended" routed
+              here to find "No schedule yet" — a truer state than an empty
+              one, and its own CTA copy ("Set a new usual week") rather than
+              reusing the declined/withdrawn "Build your week" wording. */}
+          {pattern.status === 'ended' && canEditSchedule ? (
+            <Button
+              testID="schedule-pending-build-cta"
+              onPress={() => router.push(BUILD_HREF)}
+            >
+              <Text className="text-primary-foreground font-medium">
+                {t('pending.setNewWeekCta')}
+              </Text>
+            </Button>
+          ) : null}
+        </View>
+      )}
+    </View>
+  );
+}
+
+export function SchedulePendingScreen() {
+  const { t } = useTranslation('schedule');
+  const { t: tCommon } = useTranslation('common');
+  // Same tab-bar dead-zone fix as Settings (BUG1) — this is the Schedule
+  // tab's root for a parent with no accepted pattern.
+  const tabBarScrollPadding = useTabBarScrollPadding();
+  const { refreshControl } = usePullToRefresh();
+  const router = useRouter();
+  const currentUserId = useAuthStore(s => s.user?.id ?? null);
+
+  const onboarding = useIsOnboarded();
+  const patterns = useSchedulePatterns(onboarding.householdId);
+  const children = useChildren(onboarding.householdId);
+  const membersQuery = useHouseholdMembers(onboarding.householdId);
+  const childrenById = new Map(
+    (children.data ?? []).map(c => [
+      c.id,
+      { id: c.id, name: c.name, colour: c.colour },
+    ])
+  );
+  const membersByUserId = useMemo(
+    () =>
+      new Map(
+        (membersQuery.data ?? []).map(member => [member.user_id, member])
+      ),
+    [membersQuery.data]
+  );
+  const memberLabels = useMemo(
+    () => ({
+      you: t('detail.you'),
+      someone: t('detail.someone'),
+      roleFallback: (role: 'owner' | 'parent' | 'nanny' | 'helper') =>
+        t(`detail.roleFallback.${role}`),
+    }),
+    [t]
+  );
+
+  const canEditSchedule = isParentEditorRole(onboarding.role);
+
+  // S7/S8: one section per carer, each resolved by its OWN precedence
+  // (`resolvePerCarerPatterns`) — replaces the household-wide
+  // `.find(p => p.status !== 'ended')` this screen used to run, which could
+  // name one carer's pattern while a DIFFERENT carer's live week sat
+  // unrepresented.
+  const sections = resolvePerCarerPatterns(patterns.data ?? []);
+
+  // C5 (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §C): a loading/error guard
+  // must precede the role gate below — otherwise `onboarding.role` is still
+  // null while onboarding resolves (or forever, on a failed read), and the
+  // household's OWN parent is told this screen "isn't available to you".
+  // Mirrors ScheduleBuildScreen.tsx's ordering (loading/error first, role
+  // gate second).
+  const onboardingQs = queryState(onboardingAsQuery(onboarding));
+  if (onboardingQs.status === 'error') {
+    return (
+      <View testID="schedule-pending-screen" className="flex-1 bg-background">
+        <ErrorState variant="network" onRetry={onboardingQs.retry} />
+      </View>
+    );
+  }
+  if (onboardingQs.status === 'loading') {
+    return (
+      <View
+        testID="schedule-pending-screen"
+        style={{ flex: 1 }}
+        className="items-center justify-center bg-background"
+      >
+        <LoadingIndicator />
+      </View>
+    );
+  }
+
+  // Parent/helper only. Normal navigation never sends a nanny here, but a
+  // bare `null` used to leave a deep-linked nanny staring at a blank
+  // screen — no message, no back affordance, nothing. Mirrors
+  // TimeOffScreen's `time-off-not-available` pattern.
+  if (!canViewParentSchedule(onboarding.role)) {
+    return (
+      <View
+        testID="schedule-pending-not-available"
+        className="flex-1 bg-background"
+      >
+        <View
+          style={{
+            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingTop: SCREEN_CONTENT_STYLE.padding,
+          }}
+        >
+          <BackButton
+            testID="schedule-pending-not-available-back"
+            onPress={() => router.back()}
+            label={tCommon('back')}
+          />
+        </View>
+        <View
+          className="mt-8"
+          style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
+        >
+          <EmptyState
+            variant="inline"
+            title={t('pending.notAvailableTitle')}
+            description={t('pending.notAvailableDescription')}
+          />
+        </View>
+      </View>
+    );
+  }
+
+  // `onboarding.status === 'loading'` is already handled by the guard
+  // above (which now precedes the role gate) — `patterns` is the one query
+  // still in flight past that point.
+  const isLoading = patterns.isLoading;
+
+  return (
+    <ScrollView
+      testID="schedule-pending-screen"
+      className="flex-1 bg-background"
+      contentContainerStyle={{
+        ...SCREEN_CONTENT_STYLE,
+        paddingBottom: tabBarScrollPadding,
+      }}
+      refreshControl={refreshControl}
+    >
+      <BackButton
+        testID="schedule-pending-back"
+        onPress={() => router.back()}
+        label={tCommon('back')}
+      />
+      <H1>{t('pending.screenTitle')}</H1>
+
+      {isLoading ? (
+        <LoadingIndicator messages={[t('pending.loading')]} />
+      ) : patterns.isError ? (
+        // False alarm: a failed patterns read fell through the same
+        // `?? []` a genuinely-empty list does, showing "build a week"
+        // over a real pending/accepted week the parent already sent.
+        <View testID="schedule-pending-error" className="mt-6">
+          <ErrorState variant="network" onRetry={() => patterns.refetch()} />
+        </View>
+      ) : sections.length === 0 ? (
+        <View testID="schedule-pending-empty" className="mt-6 gap-4">
+          <EmptyState
+            variant="inline"
+            image={illustrations.emptyPending}
+            title={t('pending.emptyTitle')}
+            description={t('pending.emptyBody')}
+          />
+          {canEditSchedule ? (
+            <Button
+              testID="schedule-pending-build-cta"
+              onPress={() => router.push(BUILD_HREF)}
+            >
+              <Text className="text-primary-foreground font-medium">
+                {t('pending.emptyCta')}
+              </Text>
+            </Button>
+          ) : null}
+        </View>
+      ) : (
+        <View className="mt-6 gap-6">
+          {sections.map(section => (
+            <SchedulePendingCarerSection
+              key={section.carerId ?? 'no-carer'}
+              pattern={section.pattern}
+              carerName={resolveMemberDisplayName(
+                section.carerId,
+                currentUserId,
+                membersByUserId,
+                memberLabels
+              )}
+              canEditSchedule={canEditSchedule}
+              childrenById={childrenById}
+              showCarerLabel={sections.length > 1}
+            />
+          ))}
         </View>
       )}
     </ScrollView>

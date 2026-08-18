@@ -10,7 +10,12 @@ import { View } from 'react-native';
 import { cn } from '@/lib/utils';
 import { Caption, Label } from '@/src/components/ui/typography';
 
-type PatternStatus = 'pending' | 'accepted' | 'declined' | 'withdrawn';
+type PatternStatus =
+  | 'pending'
+  | 'accepted'
+  | 'declined'
+  | 'withdrawn'
+  | 'ended';
 
 const STATUS_STYLES: Record<
   PatternStatus,
@@ -29,6 +34,13 @@ const STATUS_STYLES: Record<
     statusText: 'text-destructive',
   },
   withdrawn: {
+    border: 'border-border',
+    statusText: 'text-muted-foreground',
+  },
+  // S9: an ended pattern used to fall through to "no schedule yet" — it
+  // reads the same as `withdrawn` (a live week that is no longer live),
+  // not as an error state.
+  ended: {
     border: 'border-border',
     statusText: 'text-muted-foreground',
   },
@@ -54,6 +66,8 @@ export function PatternStatusIndicator({
         return t('pending.statusDeclined');
       case 'withdrawn':
         return t('pending.statusWithdrawn');
+      case 'ended':
+        return t('pending.statusEnded');
       default:
         return t('pending.statusPending');
     }

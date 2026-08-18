@@ -38,6 +38,10 @@ export const PUSH_NOTIFICATION_TYPES = {
   // Schedule (Batch 1 / 2A)
   SCHEDULE_PATTERN_AMENDED: 'schedule_pattern_amended',
   SCHEDULE_PATTERN_SENT: 'schedule_pattern_sent',
+  // S11: a parent pulled back a pending proposal before the carer answered.
+  // Carer-targeted, same as SCHEDULE_PATTERN_SENT — she is the one who was
+  // waiting on it.
+  SCHEDULE_PATTERN_WITHDRAWN: 'schedule_pattern_withdrawn',
 
   // Pay (TIER0-PLAN.md Phase 2)
   PAY_TERMS_SET: 'pay_terms_set',
@@ -304,6 +308,7 @@ export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
   [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_AMENDED]: 'carer',
   [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_RESPONDED]: 'parent',
   [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_SENT]: 'carer',
+  [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_WITHDRAWN]: 'carer',
   [PUSH_NOTIFICATION_TYPES.SHIFT_CANCELLED]: 'parent',
   [PUSH_NOTIFICATION_TYPES.SHIFT_CHANGE_REQUESTED]: 'both',
   [PUSH_NOTIFICATION_TYPES.SHIFT_CONFIRMED]: 'parent',

@@ -49,6 +49,7 @@ import {
 import { CrossFamilyRhythmView } from '@/src/domains/schedule/components/CrossFamilyRhythmView';
 import { WeekRibbonView } from '@/src/domains/schedule/components/WeekRibbonView';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
+import { carerDayBreakdown } from '@/src/domains/schedule/utils/carerDayBreakdown';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import {
   RESOLVED_STATUSES,
@@ -250,6 +251,28 @@ export function ScheduleShiftsScreen({
   );
   const nannyFirstName =
     resolveCarerName(carersQuery.data?.[0], '').trim().split(/\s+/)[0] ?? '';
+  // S7: naming only the first carer while counting every carer's shifts was
+  // a wrong factual claim the moment a second nanny worked days of her own
+  // (docs/AS-BUILT-SCHEDULE.md §6 S7). Two or more active carers get their
+  // own per-carer breakdown instead of one name standing in for the total.
+  const carerList = carersQuery.data ?? [];
+  const perCarerLead = useMemo(
+    () =>
+      carerList.length > 1
+        ? carerDayBreakdown(
+            carerList.map(carer => ({
+              userId: carer.user_id,
+              name: resolveCarerName(carer, t('build.carerFallbackName')),
+            })),
+            coveringShifts
+          )
+            .map(entry =>
+              t('week.leadPerCarer', { name: entry.name, count: entry.days })
+            )
+            .join(' · ')
+        : null,
+    [carerList, coveringShifts, t]
+  );
   const uncoveredWeek = useMemo(() => {
     if (!canViewCover) {
       return { byDay: {} as Record<string, never[]>, totalCount: 0 };
@@ -386,14 +409,16 @@ export function ScheduleShiftsScreen({
         count: coveringShifts.length,
         hours: formatDuration(weekTotalMinutes),
       })
-    : nannyFirstName
-      ? t('lead.parent', {
-          name: nannyFirstName,
-          count: coveringDayCount,
-        })
-      : t('lead.parentNoCarer', {
-          count: coveringDayCount,
-        });
+    : perCarerLead !== null
+      ? perCarerLead
+      : nannyFirstName
+        ? t('lead.parent', {
+            name: nannyFirstName,
+            count: coveringDayCount,
+          })
+        : t('lead.parentNoCarer', {
+            count: coveringDayCount,
+          });
 
   // P0 0.2: a shared "No shifts yet" read as "you have nothing on" to a
   // nanny when the truth was "nobody has done their part yet" — fork by
@@ -477,6 +502,25 @@ export function ScheduleShiftsScreen({
           })}
         </Figure28>
       </View>
+      {/* S11: a nanny had no pattern-level surface at all — this is the one
+          link into her read-only `NannyUsualWeekScreen` from her Schedule
+          tab root. Parent/helper reach the equivalent screen via
+          `SchedulePatternBanner` instead, so this is nanny-only. */}
+      {isNannyVoice ? (
+        <Button
+          testID="schedule-shifts-usual-week-link"
+          variant="ghost"
+          size="sm"
+          className="self-start"
+          onPress={() =>
+            router.push(
+              `/(private)/schedule/usual-week?householdId=${activeHousehold.householdId}` as Href
+            )
+          }
+        >
+          {t('shifts.usualWeekLink')}
+        </Button>
+      ) : null}
       {patternBanner}
       {coverInputsFailed ? (
         <InlineRetry

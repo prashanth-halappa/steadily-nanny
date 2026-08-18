@@ -41,6 +41,8 @@ export const shiftEndpoints = {
     `/v1/households/${householdId}/shifts/${shiftId}/events`,
   dayThread: (householdId: string, localDate: string) =>
     `/v1/households/${householdId}/day-thread?local_date=${encodeURIComponent(localDate)}`,
+  refreshDayThread: (householdId: string) =>
+    `/v1/households/${householdId}/day-thread/refresh`,
 } as const;
 
 /**
@@ -203,5 +205,20 @@ export const shiftApi = {
 
   removeParentCover: async (shiftId: string): Promise<void> => {
     await apiClient.delete(shiftEndpoints.removeParentCover(shiftId));
+  },
+
+  /**
+   * Parent-only: explicit uncovered-care recheck (S14) — `listDayThread`'s GET
+   * no longer detects as a side effect, so this is how a client asks the
+   * STORED `uncovered_care` rows to catch up with the live picture. Body-less
+   * response envelope (`{}`); nothing to validate against.
+   */
+  refreshDayThread: async (
+    householdId: string,
+    localDate: string
+  ): Promise<void> => {
+    await apiClient.post(shiftEndpoints.refreshDayThread(householdId), {
+      local_date: localDate,
+    });
   },
 };

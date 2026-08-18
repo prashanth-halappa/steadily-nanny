@@ -109,13 +109,14 @@ mock.module('@/src/hooks/queries/useChildren', () => ({
   useChildren: () => ({ data: [], isLoading: false }),
 }));
 
+const mockUseHouseholdCarers: ReturnType<typeof mock> = mock(() => ({
+  data: [],
+  isLoading: false,
+  isError: false,
+  refetch: mock(() => Promise.resolve()),
+}));
 mock.module('@/src/domains/schedule/hooks/useHouseholdCarers', () => ({
-  useHouseholdCarers: () => ({
-    data: [],
-    isLoading: false,
-    isError: false,
-    refetch: mock(() => Promise.resolve()),
-  }),
+  useHouseholdCarers: () => mockUseHouseholdCarers(),
 }));
 
 mock.module('@/src/hooks/mutations/useCreateParentCover', () => ({
@@ -247,6 +248,14 @@ beforeEach(() => {
   // Every case but the deep-link ones renders with a bare link.
   mockSearchParams = {};
   mockShowInfoToast.mockClear();
+  // Default back to zero carers — only the S7 per-carer-lead tests override
+  // this, and every other test in this file is written expecting it.
+  mockUseHouseholdCarers.mockImplementation(() => ({
+    data: [],
+    isLoading: false,
+    isError: false,
+    refetch: mock(() => Promise.resolve()),
+  }));
 });
 
 describe('ScheduleShiftsScreen', () => {
@@ -690,6 +699,109 @@ describe('ScheduleShiftsScreen', () => {
       expect(getByTestId('schedule-lead').props.children).toBe(
         'lead.parentNoCarer'
       );
+    });
+
+    // S7: naming only the first carer while counting every carer's shifts
+    // was a wrong factual claim the moment a second nanny worked days of
+    // her own — two active carers get a per-carer breakdown instead.
+    it('S7: two carers get a per-carer breakdown, never one name for the combined total', () => {
+      mockUseIsOnboarded.mockImplementation(() => ({
+        role: 'parent',
+        status: 'onboarded',
+      }));
+      mockUseHouseholdCarers.mockImplementation(() => ({
+        data: [
+          {
+            user_id: 'priya-id',
+            display_name_override: 'Priya',
+            profile_name: null,
+          },
+          {
+            user_id: 'maya-id',
+            display_name_override: 'Maya',
+            profile_name: null,
+          },
+        ],
+        isLoading: false,
+        isError: false,
+        refetch: mock(() => Promise.resolve()),
+      }));
+      mockUseShiftsRange.mockImplementation(() => ({
+        data: [
+          makeShift({
+            id: 's1',
+            carer_id: 'priya-id',
+            local_date: '2026-08-03',
+          }),
+          makeShift({
+            id: 's2',
+            carer_id: 'maya-id',
+            local_date: '2026-08-04',
+          }),
+        ],
+        isLoading: false,
+        isError: false,
+        error: null,
+      }));
+
+      const { getByTestId } = render(<ScheduleShiftsScreen />);
+
+      // The global react-i18next mock echoes the key and drops params, so
+      // two per-carer segments joined render as the key twice, NOT the
+      // single-carer `lead.parent` key.
+      expect(getByTestId('schedule-lead').props.children).toBe(
+        'week.leadPerCarer · week.leadPerCarer'
+      );
+    });
+
+    // S11: a nanny had no pattern-level surface at all — this is her one
+    // link into it from her Schedule tab root.
+    it('S11: a nanny sees the "Your usual week" link; a parent does not', () => {
+      mockUseIsOnboarded.mockImplementation(() => ({
+        role: 'nanny',
+        status: 'onboarded',
+      }));
+      const nanny = render(<ScheduleShiftsScreen />);
+      expect(nanny.getByTestId('schedule-shifts-usual-week-link')).toBeTruthy();
+      nanny.unmount();
+
+      mockUseIsOnboarded.mockImplementation(() => ({
+        role: 'parent',
+        status: 'onboarded',
+      }));
+      const parent = render(<ScheduleShiftsScreen />);
+      expect(
+        parent.queryByTestId('schedule-shifts-usual-week-link')
+      ).toBeNull();
+    });
+
+    it('S7: a single carer still gets the ordinary lead.parent line, not the per-carer key', () => {
+      mockUseIsOnboarded.mockImplementation(() => ({
+        role: 'parent',
+        status: 'onboarded',
+      }));
+      mockUseHouseholdCarers.mockImplementation(() => ({
+        data: [
+          {
+            user_id: 'priya-id',
+            display_name_override: 'Priya',
+            profile_name: null,
+          },
+        ],
+        isLoading: false,
+        isError: false,
+        refetch: mock(() => Promise.resolve()),
+      }));
+      mockUseShiftsRange.mockImplementation(() => ({
+        data: [makeShift({ id: 's1', carer_id: 'priya-id' })],
+        isLoading: false,
+        isError: false,
+        error: null,
+      }));
+
+      const { getByTestId } = render(<ScheduleShiftsScreen />);
+
+      expect(getByTestId('schedule-lead').props.children).toBe('lead.parent');
     });
 
     it('gives a helper the PARENT voice, not a third one — helper sees the household schedule same as a parent', () => {

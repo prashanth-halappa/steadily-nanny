@@ -111,7 +111,12 @@
     "adjustBack": "Atrás",
     "patternBannerEnded": "Tu semana habitual con {{name}} ha terminado",
     "patternBannerNoneNoCarer": "Aún no hay horas semanales fijadas",
-    "patternBannerNoneNoCarerAction": "Invitar a una niñera"
+    "patternBannerNoneNoCarerAction": "Invitar a una niñera",
+    "sentToday": "Enviado hoy",
+    "sentAgo_one": "Enviado hace {{count}} día",
+    "sentAgo_other": "Enviado hace {{count}} días",
+    "statusEnded": "Terminada",
+    "setNewWeekCta": "Configura un nuevo horario habitual"
   },
   "respond": {
     "screenTitle": "Revisa tu semana",
@@ -180,7 +185,8 @@
     "awayBand": "Ausente",
     "awaySummary": "Tu cuidador tiene tiempo libre esta semana — mira Agenda para los detalles.",
     "axisTime": "Hora",
-    "legendMultiCarer": "Toca un bloque para ver quién lo cubre."
+    "legendMultiCarer": "Toca un bloque para ver quién lo cubre.",
+    "usualWeekLink": "Tu horario habitual"
   },
   "clash": {
     "busyOverlap": "Esto se solapa con otro compromiso — aún puedes continuar.",
@@ -296,7 +302,10 @@
     "noWeekNannyAvailabilityCta": "Revisa las horas en las que estás disponible",
     "noWeekNannyHide": "Ocultar esto",
     "nextUpEmptyNoWeek": "No hay nada programado: todavía no has fijado las horas semanales de {{name}}.",
-    "nextUpEmptyNoWeekNanny": "No hay nada programado con {{familyName}} en las próximas dos semanas."
+    "nextUpEmptyNoWeekNanny": "No hay nada programado con {{familyName}} en las próximas dos semanas.",
+    "noWeekTitleMulti": "Configura el horario habitual de {{names}}",
+    "noWeekBodyMulti": "Indica los días y horarios que necesitas cada semana, para que puedan aceptarlo.",
+    "noWeekCtaMulti": "Configura sus horarios semanales"
   },
   "calendarViews": {
     "agenda": "Agenda",
@@ -388,5 +397,17 @@
     "parent_other": "{{name}} está con los niños {{count}} días esta semana.",
     "parentNoCarer_one": "Los niños están cubiertos {{count}} día esta semana.",
     "parentNoCarer_other": "Los niños están cubiertos {{count}} días esta semana."
+  },
+  "week": {
+    "leadPerCarer_one": "{{name}} {{count}} día",
+    "leadPerCarer_other": "{{name}} {{count}} días"
+  },
+  "usualWeek": {
+    "screenTitle": "Tu horario habitual",
+    "emptyTitle": "Aún no hay un horario habitual con {{family}}",
+    "emptyBody": "{{family}} todavía no te lo ha enviado.",
+    "withdrawnTitle": "{{family}} retiró tu horario habitual.",
+    "endedTitle": "Tu horario habitual con {{family}} ha terminado.",
+    "declinedTitle": "Rechazaste el horario habitual que {{family}} envió."
   }
 }

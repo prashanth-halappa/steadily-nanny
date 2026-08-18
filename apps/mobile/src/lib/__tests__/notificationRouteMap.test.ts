@@ -127,6 +127,18 @@ describe('NOTIFICATION_ROUTE_MAP resolvers', () => {
     ).toBe('/(private)/schedule/shifts?patternId=pat-1&householdId=hh-1');
   });
 
+  // S11: a nanny had no pattern-level surface at all — never told when a
+  // usual week she accepted was withdrawn. Routes to the same
+  // /schedule/usual-week the parent's banner pushes, which forks by role.
+  it('routes pattern-withdrawn to /schedule/usual-week with householdId, so a nanny working two families lands on the right one', () => {
+    expect(
+      resolve(PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_WITHDRAWN, {
+        patternId: 'pat-1',
+        householdId: 'hh-1',
+      })
+    ).toBe('/(private)/schedule/usual-week?householdId=hh-1');
+  });
+
   it('routes shift / change-request pushes to shift detail with ids', () => {
     const shiftTypes = [
       PUSH_NOTIFICATION_TYPES.SHIFT_CHANGE_REQUESTED,

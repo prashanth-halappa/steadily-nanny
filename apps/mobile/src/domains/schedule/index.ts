@@ -7,6 +7,7 @@
  */
 
 export { CalendarViewSwitcher } from './components/CalendarViewSwitcher';
+export { NannyUsualWeekScreen } from './components/NannyUsualWeekScreen';
 export { NoWeekYetCard } from './components/NoWeekYetCard';
 export { PendingScheduleCard } from './components/PendingScheduleCard';
 export { ScheduleBuildScreen } from './components/ScheduleBuildScreen';

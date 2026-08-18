@@ -411,7 +411,21 @@ export class SchedulePatternCommandService {
     if (pattern.status !== 'pending') {
       throw new PatternNotPendingError(patternId, pattern.status);
     }
-    return this.patternRepo.update(patternId, { status: 'withdrawn' });
+    const updated = await this.patternRepo.update(patternId, {
+      status: 'withdrawn',
+    });
+    if (updated.carer_id) {
+      notifyUser(updated.carer_id, {
+        title: 'Usual week withdrawn',
+        body: 'A parent pulled back the usual week they sent you.',
+        data: {
+          type: PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_WITHDRAWN,
+          patternId: updated.id,
+          householdId: updated.household_id,
+        },
+      });
+    }
+    return updated;
   }
 
   /**

@@ -16,8 +16,10 @@
 import { describe, expect, it } from 'bun:test';
 import type { SchedulePatternStatus } from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import {
+  groupWeeklyHoursNotSetCards,
   resolveWeeklyHoursNotSet,
   type WeeklyHoursNotSetReason,
+  type WeeklyHoursNotSetState,
   type WeeklyHoursNotSetVariant,
 } from '../components/WeeklyHoursNotSetCard.utils';
 
@@ -217,6 +219,116 @@ describe('resolveWeeklyHoursNotSet — the reason token re-arms the card', () =>
     const state = resolveWeeklyHoursNotSet({ ...base, carerUserId: 'carer-2' });
     expect(state).toMatchObject({
       dismissKey: 'weeklyHoursNotSet:hh-1:carer-2:none',
+    });
+  });
+});
+
+// S7: `carers.data?.[0]` used to be the whole story. A second nanny with no
+// week set was invisible; a second nanny with a declined week was invisible.
+describe('groupWeeklyHoursNotSetCards', () => {
+  const hidden: WeeklyHoursNotSetState = { kind: 'hidden' };
+  const setupCard = (
+    carerUserId: string,
+    reason: WeeklyHoursNotSetReason = 'none'
+  ): { carerUserId: string; state: WeeklyHoursNotSetState } => ({
+    carerUserId,
+    state: {
+      kind: 'card',
+      reason,
+      variant: 'setup',
+      dismissKey: `weeklyHoursNotSet:hh-1:${carerUserId}:${reason}`,
+    },
+  });
+  const draftCard = (
+    carerUserId: string
+  ): { carerUserId: string; state: WeeklyHoursNotSetState } => ({
+    carerUserId,
+    state: {
+      kind: 'card',
+      reason: 'draft',
+      variant: 'draft',
+      dismissKey: `weeklyHoursNotSet:hh-1:${carerUserId}:draft`,
+    },
+  });
+  const declinedCard = (
+    carerUserId: string
+  ): { carerUserId: string; state: WeeklyHoursNotSetState } => ({
+    carerUserId,
+    state: {
+      kind: 'card',
+      reason: 'declined',
+      variant: 'declined',
+      dismissKey: `weeklyHoursNotSet:hh-1:${carerUserId}:declined`,
+    },
+  });
+
+  it('returns nothing when every carer is hidden', () => {
+    expect(
+      groupWeeklyHoursNotSetCards([
+        { carerUserId: 'carer-1', state: hidden },
+        { carerUserId: 'carer-2', state: hidden },
+      ])
+    ).toEqual([]);
+  });
+
+  it('one carer, setup: a single-carer setup group', () => {
+    expect(groupWeeklyHoursNotSetCards([setupCard('carer-1')])).toEqual([
+      {
+        kind: 'setup',
+        carerUserIds: ['carer-1'],
+        dismissKeys: ['weeklyHoursNotSet:hh-1:carer-1:none'],
+      },
+    ]);
+  });
+
+  it('two carers, both setup: ONE combined group naming both', () => {
+    const groups = groupWeeklyHoursNotSetCards([
+      setupCard('carer-1'),
+      setupCard('carer-2', 'withdrawn'),
+    ]);
+    expect(groups).toEqual([
+      {
+        kind: 'setup',
+        carerUserIds: ['carer-1', 'carer-2'],
+        dismissKeys: [
+          'weeklyHoursNotSet:hh-1:carer-1:none',
+          'weeklyHoursNotSet:hh-1:carer-2:withdrawn',
+        ],
+      },
+    ]);
+  });
+
+  it('draft and declined stay ONE group per carer, never joined', () => {
+    const groups = groupWeeklyHoursNotSetCards([
+      draftCard('carer-1'),
+      declinedCard('carer-2'),
+    ]);
+    expect(groups).toEqual([
+      { kind: 'draft', carerUserId: 'carer-1', dismissKey: expect.any(String) },
+      {
+        kind: 'declined',
+        carerUserId: 'carer-2',
+        dismissKey: expect.any(String),
+      },
+    ]);
+  });
+
+  it('a mix: setup carers combine, draft/declined carers stay separate', () => {
+    const groups = groupWeeklyHoursNotSetCards([
+      setupCard('carer-1'),
+      draftCard('carer-2'),
+      setupCard('carer-3'),
+      declinedCard('carer-4'),
+    ]);
+    expect(groups).toHaveLength(3);
+    expect(groups[0]).toMatchObject({
+      kind: 'setup',
+      carerUserIds: ['carer-1', 'carer-3'],
+    });
+    expect(groups[1]).toMatchObject({ kind: 'draft', carerUserId: 'carer-2' });
+    expect(groups[2]).toMatchObject({
+      kind: 'declined',
+      carerUserId: 'carer-4',
     });
   });
 });

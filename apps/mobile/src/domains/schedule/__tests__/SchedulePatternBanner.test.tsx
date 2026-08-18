@@ -157,6 +157,43 @@ describe('SchedulePatternBanner', () => {
     expect(mockPush).toHaveBeenCalledWith('/(private)/schedule/usual-week');
   });
 
+  // S6: the banner read identically on day 1 and day 30 of an unanswered
+  // week — no sense of how long it had been sitting. Age-only, no expiry.
+  it('pending WITH sent_at: shows a "Sent X ago" age line', () => {
+    const pattern = makePattern({
+      status: 'pending',
+      sent_at: '2000-01-01T00:00:00.000Z',
+    });
+    const { getByTestId } = render(
+      <SchedulePatternBanner pattern={pattern} householdId={HOUSEHOLD_ID} />
+    );
+
+    expect(getByTestId('schedule-pattern-banner-sent-age').children[0]).toBe(
+      'pending.sentAgo'
+    );
+  });
+
+  it('pending with NO sent_at: no age line renders', () => {
+    const pattern = makePattern({ status: 'pending', sent_at: null });
+    const { queryByTestId } = render(
+      <SchedulePatternBanner pattern={pattern} householdId={HOUSEHOLD_ID} />
+    );
+
+    expect(queryByTestId('schedule-pattern-banner-sent-age')).toBeNull();
+  });
+
+  it('accepted: no age line renders even if sent_at is set (only pending is age-tracked)', () => {
+    const pattern = makePattern({
+      status: 'accepted',
+      sent_at: '2000-01-01T00:00:00.000Z',
+    });
+    const { queryByTestId } = render(
+      <SchedulePatternBanner pattern={pattern} householdId={HOUSEHOLD_ID} />
+    );
+
+    expect(queryByTestId('schedule-pattern-banner-sent-age')).toBeNull();
+  });
+
   it('draft: "isn\'t sent yet" + "Finish it" pushes /schedule/build?patternId=', () => {
     const pattern = makePattern({ status: 'draft' });
     const { getByTestId } = render(
@@ -172,8 +209,11 @@ describe('SchedulePatternBanner', () => {
     );
   });
 
-  it('declined: "{{name}} declined" + "See why" pushes /schedule/usual-week', () => {
-    const pattern = makePattern({ status: 'declined' });
+  it('declined WITH a reason: "{{name}} declined" + "See why" pushes /schedule/usual-week', () => {
+    const pattern = makePattern({
+      status: 'declined',
+      decline_message: 'Can only do mornings',
+    });
     const { getByTestId } = render(
       <SchedulePatternBanner pattern={pattern} householdId={HOUSEHOLD_ID} />
     );
@@ -181,8 +221,29 @@ describe('SchedulePatternBanner', () => {
     expect(getByTestId('schedule-pattern-banner-status').children[0]).toBe(
       'pending.patternBannerDeclined(Priya)'
     );
+    expect(getByTestId('schedule-pattern-banner-action').props.children).toBe(
+      'pending.patternBannerDeclinedAction'
+    );
     getByTestId('schedule-pattern-banner-action').props.onPress?.();
     expect(mockPush).toHaveBeenCalledWith('/(private)/schedule/usual-week');
+  });
+
+  // S10: "See why" used to point at the detail screen even with nothing to
+  // see there — a decline with no message answers nothing.
+  it('declined with NO reason: "See why" is replaced by the real next act, straight to /schedule/build', () => {
+    const pattern = makePattern({ status: 'declined', decline_message: null });
+    const { getByTestId } = render(
+      <SchedulePatternBanner pattern={pattern} householdId={HOUSEHOLD_ID} />
+    );
+
+    expect(getByTestId('schedule-pattern-banner-status').children[0]).toBe(
+      'pending.patternBannerDeclined(Priya)'
+    );
+    expect(getByTestId('schedule-pattern-banner-action').props.children).toBe(
+      'pending.patternBannerBuildAction'
+    );
+    getByTestId('schedule-pattern-banner-action').props.onPress?.();
+    expect(mockPush).toHaveBeenCalledWith('/(private)/schedule/build');
   });
 
   it('withdrawn: "You withdrew" + "Build one" pushes /schedule/build with NO patternId', () => {

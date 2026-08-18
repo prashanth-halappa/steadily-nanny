@@ -102,6 +102,65 @@ Three routes into a `pending` shift needing per-shift confirmation: an extra/cov
 > now have executing tests (`tests/integration/shiftRpcs.integration.test.ts`),
 > as do the new policies and constraints (`shiftRls`, `shiftOverlap`,
 > `schedulePatternInvariants`).
+>
+> **Update (2026-08-17, schedule product gaps pass).** **S6, S7, S8, S9 and
+> S10 are fixed; S11 is fixed except its scheduled-change surface**, which
+> is a parallel pay-terms work item, not a scheduling one. Owner decisions
+> binding this pass: S6 is parent-side "Sent {{relative}}" AGE ONLY — no
+> expiry, no new status, no job; the nanny's silence stays a deliberate
+> refusal, unchanged. S7 is "PER-CARER EVERYWHERE" — written up as
+> `docs/design/screens-schedule.md`'s new §8 "Multi-nanny usual week", the
+> spec gap the finding below named as never having been written down. S11's
+> nanny surface is a new read-only "Your usual week" screen, not an
+> editable one.
+>
+> **S6** — `SchedulePatternBanner.tsx` and `SchedulePendingScreen.tsx` both
+> render a "Sent X ago" line for a `pending` pattern from `sent_at`
+> (`relativeDaysAgo.ts`), age-only as decided.
+>
+> **S7/S8** — `SchedulePendingScreen.tsx:107`'s `.find(p => p.status !==
+> 'ended')` is gone, replaced by `resolvePerCarerPatterns`
+> (`patternPrecedence.ts`) — one `resolveActivePattern`-resolved section PER
+> carer, named. `WeeklyHoursNotSetCard.tsx`'s `carers.data?.[0]` (the
+> `ponytail:`-flagged line) is gone: `groupWeeklyHoursNotSetCards`
+> (`WeeklyHoursNotSetCard.utils.ts`) combines every carer with no non-ended
+> pattern into one named card and keeps a draft/declined carer's own card
+> separate (joining those would resume the wrong draft or hide which
+> decline needs a look). `ScheduleShiftsScreen.tsx`'s parent-lead line no
+> longer names one carer while counting every carer's shifts — two or more
+> active carers get a per-carer breakdown (`carerDayBreakdown.ts`, new
+> `week.leadPerCarer` key), a single carer keeps the original line
+> (`schedule-lead-plurals.test.ts` unchanged and still green). **Left
+> out of this pass on purpose:** the Schedule tab's own top-of-screen
+> `SchedulePatternBanner` (via `(tabs)/schedule.tsx`) still resolves and
+> names ONE pattern for the household — it was not one of the concrete
+> sites this pass's task named, and per-carer detail is one tap away on the
+> usual-week screen it links to. Flagged in the new design-doc section as a
+> known remaining gap, not silently accepted.
+>
+> **S9** — `SchedulePendingScreen`'s per-carer section renders an `ended`
+> pattern in its own state (`PatternStatusIndicator`'s new `ended` variant,
+> read-only preview, "Set a new usual week" CTA) instead of falling through
+> to the empty state.
+>
+> **S10** — `SchedulePatternBanner`'s declined case only offers "See why"
+> (→ the usual-week detail screen) when `pattern.decline_message` is
+> non-empty; with no message it goes straight to `/schedule/build`, the
+> same as withdrawn/ended.
+>
+> **S11** — `SCHEDULE_PATTERN_WITHDRAWN` is a real push type
+> (`notification.schema.ts`), emitted from `schedulePatternCommandService
+> .withdraw` to the pattern's carer. A nanny reaches a new read-only
+> `NannyUsualWeekScreen` (`/(private)/schedule/usual-week?householdId=`,
+> role-forked in the route file, `useHouseholdById`-resolved since she can
+> work for more than one household) from her Schedule tab and from the push
+> itself (`notificationRouteMap.ts`). The false
+> `notificationRouteMap.ts` comment near
+> `PAY_TERMS_SCHEDULED_CHANGE_CANCELLED` ("the terms document already shows
+> the scheduled card gone") is corrected to say what actually happens — it
+> routes to My pay, which shows the card. **The scheduled-change surface
+> itself is still open**, being built in parallel (pay-terms domain, not
+> scheduling).
 
 ### High
 

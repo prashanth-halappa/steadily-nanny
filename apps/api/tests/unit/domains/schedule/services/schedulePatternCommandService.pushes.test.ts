@@ -137,6 +137,39 @@ describe('SchedulePatternCommandService — carer pushes', () => {
     );
   });
 
+  it('withdraw pushes the carer with SCHEDULE_PATTERN_WITHDRAWN', async () => {
+    const pending = patternFor({ status: 'pending', carer_id: 'carer-1' });
+    const svc = new SchedulePatternCommandService(
+      makePatternRepo({
+        update: mock(async (id: string, data: Record<string, unknown>) => ({
+          ...pending,
+          id,
+          ...data,
+        })),
+      }),
+      makeEmptyRepos(),
+      makeEmptyRepos(),
+      makeMemberRepo('owner'),
+      makeEmptyRepos(),
+      makeQueries(pending),
+      makeMaterialisation()
+    );
+
+    await svc.withdraw('u1', 'p1');
+
+    expect(notifyUser).toHaveBeenCalledTimes(1);
+    expect(notifyUser).toHaveBeenCalledWith(
+      'carer-1',
+      expect.objectContaining({
+        data: expect.objectContaining({
+          type: PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_WITHDRAWN,
+          patternId: 'p1',
+          householdId: 'h1',
+        }),
+      })
+    );
+  });
+
   it('amend pushes the carer with SCHEDULE_PATTERN_AMENDED', async () => {
     const accepted = patternFor({ status: 'accepted', carer_id: 'carer-1' });
     const svc = new SchedulePatternCommandService(
