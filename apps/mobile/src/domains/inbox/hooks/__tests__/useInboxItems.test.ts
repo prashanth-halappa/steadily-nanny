@@ -385,3 +385,43 @@ describe('useInboxItems — per-household today/window (Pattern A root)', () => 
     setSystemTime();
   });
 });
+
+// WP-H — a change request names who asked. The roster read used to be
+// parent-only (it fed only the terms-proposal targets); it now runs for a
+// nanny viewer too, so a change request opened by a parent can be resolved.
+describe('useInboxItems — change_request requester name (WP-H)', () => {
+  it('resolves requested_by against the household member roster for a nanny viewer', async () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'nanny' as const,
+      status: 'onboarded' as const,
+    }));
+    listMembers.mockResolvedValue([
+      {
+        user_id: 'user-parent',
+        role: 'parent',
+        status: 'active',
+        display_name_override: null,
+        profile_name: 'Dana Lee',
+      },
+    ]);
+    listPendingChangeRequests.mockResolvedValue([
+      {
+        id: 'cr-1',
+        shift_id: 'shift-1',
+        requested_by: 'user-parent',
+        kind: 'time_change',
+        status: 'pending',
+        created_at: '2026-08-10T09:00:00.000Z',
+      },
+    ]);
+
+    const { result } = renderHookWithProviders(() => useInboxItems());
+
+    await waitFor(() => expect(result.current.items.length).toBe(1));
+    expect(result.current.items[0]).toMatchObject({
+      kind: 'change_request',
+      requesterName: 'Dana Lee',
+    });
+    expect(listMembers).toHaveBeenCalled();
+  });
+});

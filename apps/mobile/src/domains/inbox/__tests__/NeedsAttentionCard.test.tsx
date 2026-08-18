@@ -38,6 +38,9 @@ const CHANGE_REQUEST: InboxItem = {
   id: 'cr-1',
   shiftId: 'shift-1',
   requestKind: 'time_change',
+  requestedAt: '2026-08-08T09:00:00.000Z',
+  requesterName: 'Test Nanny',
+  shiftStartsAt: null,
 };
 
 const SECOND_CHANGE_REQUEST: InboxItem = {
@@ -45,6 +48,9 @@ const SECOND_CHANGE_REQUEST: InboxItem = {
   id: 'cr-2',
   shiftId: 'shift-2',
   requestKind: 'cancel',
+  requestedAt: '2026-08-08T09:00:00.000Z',
+  requesterName: 'Test Nanny',
+  shiftStartsAt: null,
 };
 
 const PENDING_PATTERN: InboxItem = {
@@ -69,6 +75,7 @@ const QUERIED_WEEK: InboxItem = {
   householdId: 'hh-1',
   weekStart: '2026-07-28',
   queryNote: null,
+  householdName: null,
 };
 
 /** Belongs to `hh-2` (America/New_York) — active household on this fixture

@@ -12,7 +12,11 @@
   "items": {
     "changeRequest": {
       "title": "Respond to {{kind}}",
+      "titleCounterOffer": "{{name}} suggested a different time",
+      "titleTimeChange": "{{name}} asked to change a shift",
+      "titleCancel": "{{name}} asked to cancel a shift",
       "subtitle": "A schedule change is waiting on your reply.",
+      "subtitleAsked": "Asked {{askedDate}}",
       "cta": "Review request",
       "kind": {
         "time_change": "time change",

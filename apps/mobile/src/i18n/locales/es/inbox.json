@@ -12,7 +12,11 @@
   "items": {
     "changeRequest": {
       "title": "Responder a {{kind}}",
+      "titleCounterOffer": "{{name}} sugirió un horario diferente",
+      "titleTimeChange": "{{name}} pidió cambiar un turno",
+      "titleCancel": "{{name}} pidió cancelar un turno",
       "subtitle": "Un cambio de horario espera tu respuesta.",
+      "subtitleAsked": "Solicitado el {{askedDate}}",
       "cta": "Revisar solicitud",
       "kind": {
         "time_change": "cambio de horario",

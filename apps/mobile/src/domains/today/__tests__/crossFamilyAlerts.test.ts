@@ -261,6 +261,7 @@ describe('resolveCrossFamilyAlerts — ordinary inbox noise never qualifies', ()
       householdId: OTHER_A,
       weekStart: '2026-08-10',
       queryNote: 'Check Tuesday',
+      householdName: null,
     },
     {
       kind: 'submitted_week',
@@ -306,6 +307,9 @@ describe('resolveCrossFamilyAlerts — ordinary inbox noise never qualifies', ()
       id: 'cr1',
       shiftId: 'shift-1',
       requestKind: 'time_change',
+      requestedAt: '2026-08-10T09:00:00.000Z',
+      requesterName: null,
+      shiftStartsAt: null,
     },
   ];
 

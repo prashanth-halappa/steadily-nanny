@@ -71,10 +71,72 @@ describe('change_request href', () => {
       id: 'cr-1',
       shiftId: 'shift-1',
       requestKind: 'time_change',
+      requestedAt: '2026-08-24T09:00:00.000Z',
+      requesterName: 'Marisol',
+      shiftStartsAt: null,
     };
     expect(hrefForItem(item)).toBe(
       '/(private)/schedule/shifts/shift-1?changeRequestId=cr-1'
     );
+  });
+});
+
+// WP-H — the row names who asked and when, not just what kind of change.
+describe('change_request copy names the requester and the date (WP-H)', () => {
+  function makeItem(overrides: Partial<InboxItem> = {}): InboxItem {
+    return {
+      kind: 'change_request',
+      id: 'cr-1',
+      shiftId: 'shift-1',
+      requestKind: 'time_change',
+      requestedAt: '2026-08-24T09:00:00.000Z',
+      requesterName: 'Marisol',
+      shiftStartsAt: null,
+      ...overrides,
+    } as InboxItem;
+  }
+
+  it('titles counter_offer, time_change, and cancel by the requester name', () => {
+    expect(
+      titleForItem(makeItem({ requestKind: 'counter_offer' }), t, ZONE)
+    ).toBe('items.changeRequest.titleCounterOffer');
+    expect(
+      titleForItem(makeItem({ requestKind: 'time_change' }), t, ZONE)
+    ).toBe('items.changeRequest.titleTimeChange');
+    expect(titleForItem(makeItem({ requestKind: 'cancel' }), t, ZONE)).toBe(
+      'items.changeRequest.titleCancel'
+    );
+  });
+
+  it('falls back to the generic kind-worded title for split/handover', () => {
+    expect(titleForItem(makeItem({ requestKind: 'split' }), t, ZONE)).toBe(
+      'items.changeRequest.title'
+    );
+    expect(titleForItem(makeItem({ requestKind: 'handover' }), t, ZONE)).toBe(
+      'items.changeRequest.title'
+    );
+  });
+
+  it('falls back to the generic title when the requester is unresolved', () => {
+    expect(titleForItem(makeItem({ requesterName: null }), t, ZONE)).toBe(
+      'items.changeRequest.title'
+    );
+  });
+
+  it('subtitle names the date it was asked', () => {
+    expect(subtitleForItem(makeItem(), t, ZONE)).toBe(
+      'items.changeRequest.subtitleAsked'
+    );
+  });
+
+  it('has a {{name}} placeholder in both languages, per kind', async () => {
+    for (const language of ['en', 'es'] as const) {
+      const copy = (await locale(language)).items.changeRequest;
+      expect(copy.titleCounterOffer).toContain('{{name}}');
+      expect(copy.titleTimeChange).toContain('{{name}}');
+      expect(copy.titleCancel).toContain('{{name}}');
+      expect(copy.subtitleAsked).toContain('{{askedDate}}');
+    }
   });
 });
 
@@ -86,6 +148,7 @@ describe('hours-tab hrefs carry householdId (HYBRID contract)', () => {
       householdId: 'hh-9',
       weekStart: '2026-07-28',
       queryNote: null,
+      householdName: null,
     };
     expect(hrefForItem(item)).toBe(
       '/(private)/(tabs)/hours?weekStart=2026-07-28&householdId=hh-9'
