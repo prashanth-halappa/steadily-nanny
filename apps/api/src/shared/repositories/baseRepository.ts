@@ -85,6 +85,8 @@ export abstract class BaseRepository<T> {
         {
           id,
           operation: 'update',
+          details: error.message,
+          code: error.code,
         }
       );
     return updated as T;

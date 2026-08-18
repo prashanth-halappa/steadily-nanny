@@ -363,3 +363,28 @@ describe('every path that ends a pattern cleans up its future shifts', () => {
     );
   });
 });
+
+// Migration 104's `schedule_patterns_one_accepted_idx` allows exactly one
+// accepted pattern per (household, carer). Flipping this pattern to
+// `accepted` while the prior one still holds the slot fails the UPDATE, so
+// the supersede MUST land first — a nanny accepting their second revised week
+// got a 500 when it did not.
+describe('respond(accepted) ends the prior pattern BEFORE claiming accepted', () => {
+  it('writes the prior ended update before its own accepted update', async () => {
+    const prior = patternFor({ id: 'p0', status: 'accepted' });
+    const patternRepo = makePatternRepo([prior]);
+    const svc = makeService(
+      patternRepo,
+      makeQueries(patternFor({ status: 'pending' })),
+      makeMaterialisation(makeShiftRepo())
+    );
+
+    await svc.respond('carer-1', 'p1', { status: 'accepted' }, NOW);
+
+    const ids = patternRepo.update.mock.calls.map(
+      (call: unknown[]) => call[0] as string
+    );
+    expect(ids.indexOf('p0')).toBeGreaterThanOrEqual(0);
+    expect(ids.indexOf('p0')).toBeLessThan(ids.indexOf('p1'));
+  });
+});

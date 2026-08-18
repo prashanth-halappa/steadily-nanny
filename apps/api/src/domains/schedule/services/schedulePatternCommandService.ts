@@ -372,6 +372,17 @@ export class SchedulePatternCommandService {
       throw new PatternNotPendingError(patternId, pattern.status);
     }
 
+    if (input.status === 'accepted') {
+      // Supersede BEFORE this pattern flips to `accepted`, not after:
+      // migration 104's `schedule_patterns_one_accepted_idx` allows exactly
+      // one accepted pattern per (household, carer), so writing `accepted`
+      // while the prior one still holds that slot fails the update outright.
+      // Ending the prior first also clears its future shifts, so migration
+      // 062's shift index has nothing live to collide with when
+      // `materialiseAccepted` inserts this pattern's rows.
+      await this.supersedePriorAccepted(pattern, now);
+    }
+
     const updated = await this.patternRepo.update(patternId, {
       status: input.status,
       responded_at: now.toISOString(),
@@ -380,10 +391,6 @@ export class SchedulePatternCommandService {
     });
 
     if (input.status === 'accepted') {
-      // Supersede BEFORE materialising: the prior pattern's identical future
-      // shifts are cancelled first, so migration 062's unique index has
-      // nothing live to collide with when this pattern inserts its own rows.
-      await this.supersedePriorAccepted(updated, now);
       await this.materialiseAccepted(updated, now);
     }
 
