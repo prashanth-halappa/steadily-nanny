@@ -8,6 +8,16 @@
 
 ---
 
+## Status — 2026-08-17 remediation
+
+| Finding | Status |
+|---|---|
+| Pattern A (render-time) | Fixed in WP-A1 |
+| Pattern A (nav-time) | Fixed in WP-A2 |
+| Pattern B | Fixed in WP-B2/B3 |
+| Pattern C (C1-C7) | Fixed in WP-B1 |
+| Two findings outside | Fixed in WP-A1/A2 (`INVITE_REDEEMED` + `PendingScheduleCard` cross-household) |
+
 ## Pattern A — the wrong household's context
 
 **Shape:** a component renders an entity that carries its own `household_id`, but takes name, timezone, `week_starts_on`, currency or date formatting from `useActiveHousehold` — without checking the two agree. Harmless for a single-household user. For a nanny working two families it renders the wrong family's context over the right family's data.
@@ -147,7 +157,7 @@ Worth keeping as the reference set: `useRestrictedAction.ts:66-69` (explicit `UN
 
 ## Two findings outside the three patterns
 
-- **`INVITE_REDEEMED`'s carer arm is dead code.** `notificationRouteMap.ts:225-229` branches on `role`; the emitter (`apps/api/src/domains/household/services/householdCommandService.ts:1122-1126`) never sends it. A nanny's "someone joined with your code" push lands her on parent-facing household settings instead of the proposal she is waiting on.
+- **`INVITE_REDEEMED`'s carer arm was dead code (now fed).** `notificationRouteMap.ts:225-229` branches on `role`; the emitter (`apps/api/src/domains/household/services/householdCommandService.ts:1122-1126`) never sent it. A nanny's "someone joined with your code" push lands her on parent-facing household settings instead of the proposal she is waiting on.
 - **`PendingScheduleCard.tsx:44` is the inverse of Pattern A.** It surfaces only the *active* household's pending pattern, so a nanny with a pending week from her other family sees nothing on Today — a missed obligation rather than a mislabelled one. Compounded by `NeedsAttentionCard.tsx:67-72` filtering `pending_pattern` out of the inbox headline *on the stated grounds that PendingScheduleCard covers it*.
 
 ---

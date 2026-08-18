@@ -10,13 +10,33 @@
 
 ---
 
-## Status: partially fixed 2026-08-17
+## Status — 2026-08-17 remediation
 
-WP-F1, in-flight alongside this doc's edits, fixes: F16, F17, F20, F18, F3, F8, F21, F5, F7, F1 (doc note only — sized, no backfill), F12 (docs), F14 (docs).
-
-Already fixed on `main` before this PR: F23, F19. Fixed separately (WP-B3, gates): F15.
-
-Decision recorded, not a code fix: F13. Not in scope for this pass (unlisted above): F6, F2, F4, F9–F11, F22, and anything else this doc mentions that isn't named here.
+| Finding | Status |
+|---|---|
+| F1 | Fixed in WP-F1 (doc note only) |
+| F2 | Follow-up |
+| F3 | Fixed in WP-F1 |
+| F4 | Follow-up |
+| F5 | Fixed in WP-F1 |
+| F6 | Follow-up |
+| F7 | Fixed in WP-F1 |
+| F8 | Fixed in WP-F1 |
+| F9 | Follow-up |
+| F10 | Follow-up |
+| F11 | Follow-up |
+| F12 | Fixed in WP-F1 |
+| F13 | Decided: "excluded — removal is the only termination; follow-up" |
+| F14 | Fixed in WP-F1 |
+| F15 | Fixed in WP-B3 |
+| F16 | Fixed in WP-F1 |
+| F17 | Fixed in WP-F1 |
+| F18 | Fixed in WP-F1 |
+| F19 | Fixed in WP-A1/A2 |
+| F20 | Fixed in WP-F1 |
+| F21 | Fixed in WP-F1 |
+| F22 | Follow-up |
+| F23 | Fixed in WP-A1/A2 |
 
 ---
 

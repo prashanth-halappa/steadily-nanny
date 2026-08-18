@@ -361,3 +361,18 @@ These fixes are real and were expensive to learn, but the feature they protect i
 - **Where the fix lives:** root `package.json` `lint-staged` block — patterns are scoped to `{apps,packages,scripts}/**` plus root-level files, so docs are never passed to Biome (they're biome-ignored anyway).
 - **What not to do:** don't "fix" this by deleting `docs/templates/biome.json` (it's the copy-paste reference for new repos) or by adding `root: false` to it (that would corrupt the teaching copy — it IS meant to be a root config in the repo that copies it).
 - **Update (D16):** the lint-staged scoping above only ever covered the pre-commit-hook path. The plain root scripts — `bun run format` / `bun run format:check` (`biome check … .` / `biome format .` over the whole tree) — hit the exact same nested-root-config error directly, with no lint-staged file-scoping in front of them to save them, and `CLAUDE.md` instructs every contributor to run `bun run format` before committing. That command had never actually worked in this repo's history (see `docs/DEFECT-LOG.md` D16). Also verified directly: adding a `!docs/templates/**` negation to the root `biome.json`'s `files.includes` does **not** help — Biome's nested-root-config discovery runs before `includes`/ignores are evaluated, confirming the root-cause note above. The actual fix: the teaching file was renamed `docs/templates/biome.json.template` (content unchanged — still a valid root-shaped Biome config, still the copy-paste reference; only the filename changed so Biome's config-discovery, which keys off the literal name `biome.json`, never finds it in the first place). This is strictly more robust than the lint-staged scoping — it closes every invocation path, not just the pre-commit one — and doesn't violate either "what not to do" above.
+
+**47. `hours_changed_after_payment_at` and the D46 drop/re-issue trap**
+- **Symptom:** The API fails to route to an updated database function if the signature has changed.
+- **Root cause:** The `record_timesheet_payment` signature was dropped then re-created instead of replacing in place, preventing overload matches. When a function signature changes, PostgREST will fail requests using the old argument list unless an overload is preserved or the client is updated first.
+- **The fix:** Be careful with drop/re-issue; if a signature changes, ensure both API and DB are coordinated, or maintain an overload.
+
+**48. The `net._http_response` vs `job_runs` monitoring distinction**
+- **Symptom:** A cron job appears successful in `cron.job_run_details` but no work is done.
+- **Root cause:** `cron.job_run_details.status = 'succeeded'` only proves that `pg_net` accepted the enqueue. The actual HTTP result lands in `net._http_response`. `job_runs` is the true signal of job success.
+- **The fix:** Read `job_runs` for job outcomes; use `net._http_response` to catch jobs that fail to reach the API.
+
+**49. The `ScheduleBuildScreen.tsx` overlap bug**
+- **Symptom:** A week sent to the nanny invents hours the parent never asked for (e.g., merging 07:00-13:00 and 15:00-17:00 into a single 07:00-17:00 block).
+- **Root cause:** `unique(pattern_id, weekday)` in the database collapsed independent blocks.
+- **The fix:** Use `unique(pattern_id, weekday, start_time)` to allow disjoint windows to stay separate, and merge only touching/overlapping windows.

@@ -54,7 +54,7 @@ uncovered-digest             35 * * * *
 | `shift-completion` | 089 | nightly 03:40 | D-24/S2. Batch-writes `completed` on past confirmed shifts. Wrong window = wrong statuses at scale. | `select cron.unschedule('shift-completion');` |
 | `no-show-digest` | 090 | `50 * * * *` (job window still `[07:00,10:00)`) | D-26/A1. Morning "you may have missed this" digest. Worst case is push noise, not data damage. | `select cron.unschedule('no-show-digest');` |
 
-**Not yet applied — repo-only as of this section (migration 105, WP-J1/J2):**
+**Pending API deploy (migration 105, WP-J1/J2):**
 
 | Job | Migration | Schedule | Risk it carries | Kill switch |
 |---|---|---|---|---|
@@ -193,7 +193,7 @@ them as orphans and cancels/deletes them: a second, separate blast radius).
 **So the real rollback remains "revert the app code and leave the index
 alone."** 101's own header carries the full two-step SQL and the same warning.
 
-### Migration 102 — paid-week guards — NOT YET APPLIED
+### Migration 102 — paid-week guards — APPLIED 2026-08-17
 
 `102_paid_week_guards.sql` closes `docs/AS-BUILT-PAYMENT.md` §7 P1/P2/P8 in
 one file: an `idempotency_key` on `payments` with a PARTIAL unique index,
@@ -254,7 +254,7 @@ carry it). Today that is zero weeks. Older clients tolerate both new fields
 because `TimesheetSchema.hours_changed_after_payment_at` and
 `CreatePaymentSchema.idempotency_key` are both optional.
 
-### Migrations 103 / 104 — shift read scope + schedule invariants — NOT YET APPLIED
+### Migrations 103 / 104 — shift read scope + schedule invariants — APPLIED 2026-08-17
 
 Two migrations, two very different rollback profiles. **Read this before
 applying either.**
@@ -340,7 +340,7 @@ know `ShiftOverlapsError`, so a refused write surfaces as a 500 instead of a
 rather than recording a `pattern_conflict` and continuing. Prefer dropping the
 constraint to rolling the server back.
 
-### Migration 106 — invite pay-offer promotion outcome — NOT YET APPLIED
+### Migration 106 — invite pay-offer promotion outcome — APPLIED 2026-08-17
 
 `106_invite_pay_offer_promotion.sql` adds a nullable `pay_offer_promotion` text
 column to `household_invites`, CHECKed against
@@ -436,7 +436,8 @@ current scale (single-digit households, one parent acting at a time), and both
 need a DB function or transaction — a change too large to make safely during a
 freeze. Recorded here so the first person to see the symptom knows the cause.
 
-1. **Duplicate arrangements on concurrent proposal accept.** Two parents
+1. **Payments double-tap.** Guarded since 102 (idempotency key).
+2. **Duplicate arrangements on concurrent proposal accept.** Two parents
    accepting the same proposal simultaneously can both pass the answerable
    check and both insert a `pay_arrangements` row — the table deliberately has
    no unique constraint on `(household_id, carer_id, valid_from)`. One
@@ -445,7 +446,7 @@ freeze. Recorded here so the first person to see the symptom knows the cause.
    survivable:** `effectiveOn`'s `created_at desc` tie-break still returns
    exactly one row, so pricing stays deterministic. **Real fix:** a DB
    function holding the proposal row `FOR UPDATE`, mirroring 077's shape.
-2. **Reimbursement settlement sum/insert not atomic.** The approved-expense
+3. **Reimbursement settlement sum/insert not atomic.** The approved-expense
    sum and the settlement insert are separate statements with no `FOR UPDATE`
    (unlike the payment ceiling in 077). The unique index still guarantees one
    settlement row, but its `amount_minor` is fixed at read time, so expenses
@@ -461,26 +462,7 @@ freeze. Recorded here so the first person to see the symptom knows the cause.
    visible mismatch a parent could question — it is **silent, permanent and
    unremediable**: £30 approved, a settlement that captured only £24.60, a
    card reading "Total to reimburse £30.00 / Reimbursed on 12 August", and the
-   £5.40 dropped from the owed list forever, because
-   `reimbursementSettlementService.listUnsettled` suppresses on the EXISTENCE
-   of a settlement row and never on its amount. `086` deliberately gives that
-   table no correction path.
-
-   **The cheap mitigation is a label, not a transaction.** Rendering the
-   settled amount beside the date — "Reimbursed £24.60 on 12 August" under
-   "Total to reimburse £30.00" — makes the race visible the moment it happens,
-   which is all a ledger has to do. That is a far smaller change than the
-   `FOR UPDATE` function and is what makes accepting this race defensible
-   rather than merely cheap. Until it ships, use the detection query in
-   `docs/POST-SHIP-WATCH.md` §6b — the drift is invisible in the product but
-   it IS detectable in SQL.
-
-   Related, and pointed the other way: `NannyWeekView.tsx:587` renders
-   `ReimbursementsCard` but never passes `settledOn`, so the carer's card reads
-   "not reimbursed yet" permanently after she has been paid back. The prop
-   exists and the card is built to use it — the "supplied by the PARENT view
-   only" note in that file attaches to `onMarkReimbursedPress`, not to
-   `settledOn`.
+   £5.40 dropped from the owed list forever (though the settlement race stays accepted, note that on-screen visibility shipped; see `AS-BUILT-PAYMENT.md` §5 refuted link).
 
 ---
 

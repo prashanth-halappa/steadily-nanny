@@ -41,7 +41,7 @@ The contract between apps lives in `shared-types`: the API validates requests wi
 | 06 | [MOBILE-ARCHITECTURE](./06-MOBILE-ARCHITECTURE.md) | `src/` layout, expo-router groups + auth gating, axios client + single-flight 401 refresh, TanStack Query + Zustand/MMKV, i18n, deep links, push, observability |
 | 07 | [MOBILE-UI-SYSTEM](./07-MOBILE-UI-SYSTEM.md) | NativeWind 4 + CSS-variable theme, design tokens, `@rn-primitives` + CVA components, **the Reanimated `className` gotcha** |
 | 08 | [CONVENTIONS](./08-CONVENTIONS.md) | TypeScript non-negotiables, naming, file organization, which Biome rule enforces what |
-| 09 | [TESTING](./09-TESTING.md) | `bun:test`, one-file-per-process + why, coverage baselines, API `mock.module` pattern, mobile Pattern A/B, Maestro E2E |
+| 09 | [TESTING](./09-TESTING.md) | `bun:test`, one-file-per-process + why, coverage baselines, API `mock.module` pattern, DB integration tier (`bun run test:db`), mobile Pattern A/B, Maestro E2E |
 | 10 | [NEW-APP-CHECKLIST](./10-NEW-APP-CHECKLIST.md) | Step-by-step build order from empty folder to first end-to-end feature |
 | 11 | [MONEY](./11-MONEY.md) | Minor-unit + currency-column convention, pay arrangements (effective-dated, append-only), compute-live/freeze-at-approval, no-arrangement-never-zero, PTO ledger, reimbursements-are-not-wages, money-table RLS stance |
 | 12 | [NEED-COVERAGE](./12-NEED-COVERAGE.md) | Per-child need windows vs shift cover, `computeUncovered` in shared-types, live UI vs append-only `uncovered_care` events, detection triggers, `parent_cover`, role visibility, push dedupe |
@@ -50,7 +50,7 @@ The contract between apps lives in `shared-types`: the API validates requests wi
 | — | [AS-BUILT-PAY-TERMS](./AS-BUILT-PAY-TERMS.md) | The pay/terms contract **as the code implements it** — state model, transitions, entry paths, graded defects, and where the design docs above have gone stale |
 | — | [AS-BUILT-SCHEDULE](./AS-BUILT-SCHEDULE.md) | Scheduling and shift confirmation as built — pattern/shift/care-hours model, materialisation, the cron layer and its **monitoring blind spot**, graded defects |
 | — | [AS-BUILT-PAYMENT](./AS-BUILT-PAYMENT.md) | The payment chain as built — what freezes at approval, the race analysis, money-correctness verdicts, and the reimbursement-settlement gap verified link by link |
-| — | [CROSS-CUTTING-DEFECT-PATTERNS](./CROSS-CUTTING-DEFECT-PATTERNS.md) | Three mobile defect **patterns** with ~47 instances across every domain: wrong-household context, unhandled queries that assert facts, and inconsistent fail-open/fail-closed gates. **Read before fixing any single instance** |
+| — | [CROSS-CUTTING-DEFECT-PATTERNS](./CROSS-CUTTING-DEFECT-PATTERNS.md) | Three mobile defect **patterns** across every domain: wrong-household context, unhandled queries that assert facts, and inconsistent fail-open/fail-closed gates. **Fixed in WP-A1/A2 and WP-B1/B2/B3.** |
 
 **If you're an AI agent building a new feature:** read 01–02 for the toolchain, 03 for the shared contract, then 04/05 (API) and 06/07 (mobile) for the layer you're working in, with 08/09 always in effect. Follow 10 as the execution order for a brand-new app built from this pattern.
 

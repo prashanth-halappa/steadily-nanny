@@ -23,6 +23,18 @@ Project ref: `dylhrlvfkibipdkguptz` · Cloud Run: `nanny-api` in
 
 ---
 
+## 2026-08-17 audit sizing
+
+Prod facts as of 2026-08-17:
+- 0 payments
+- 0 timesheets
+- 0 live shifts
+- 1 `pay_arrangements` row (the F1 orphan)
+- 9 crons all healthy
+- `net._http_response` held 132 rows for 7d vs 2400+ `job_runs` (short retention → `job_runs` is the primary signal)
+
+---
+
 ## 1. Integrity checks — the money invariants (do this one first)
 
 The nightly `integrity-checks` cron (04:10 UTC) already runs
@@ -340,13 +352,7 @@ where p.kind = 'correction'
 "this is not detectable" note was wrong. It is invisible **in the product** but
 it is detectable **in SQL**, and those are different claims.
 
-Why it is invisible: the card reads only `settled_at` off the settlement row
-(`ParentWeekView.tsx:617-618`) and pairs that date with a **live** total from
-`earnings.reimbursements_minor`. It never renders `amount_minor`, so there is
-nothing on screen for a wrong amount to contradict. And `listUnsettled`
-suppresses a week on the **existence** of a settlement row, never on its
-amount — so a short settlement drops the remainder out of the owed list
-permanently, and `086` gives that table no correction path.
+**CORRECTED 2026-08-17:** The premise that this failure is "invisible in the product" is now refuted. `expenses.json` carries `"stateSettled": "Reimbursed {{amount}} on {{date}}"`, and the card DOES render `amount_minor` (see `AS-BUILT-PAYMENT.md` §5). The race still exists and causes permanent, unremediable-in-product money loss, but it is now visible on screen rather than silent. `listUnsettled` still suppresses a week on the **existence** of a settlement row, never on its amount — so a short settlement drops the remainder out of the owed list permanently, and `086` gives that table no correction path.
 
 ```sql
 -- Any settlement whose amount disagrees with the approved expenses it settled.

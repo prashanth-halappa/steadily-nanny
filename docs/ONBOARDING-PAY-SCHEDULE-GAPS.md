@@ -147,6 +147,7 @@ Legend: **Yes** = shipped end-to-end · **Partial** = core works, UX/edge gap ·
 | CA duties / classification fork | **Cut / deferred** | Owner 2026-08-11 |
 | Concurrent proposal-accept → duplicate arrangements | **Accepted (D-57)** | `ROLLBACK-RUNBOOK` §9 |
 | Reimbursement settle race (under-settle, silent) | **Accepted (D-57)** | Same |
+| Payment double-tap → duplicate payments | **Guarded since 102 (idempotency key)** | `ROLLBACK-RUNBOOK` §9 |
 | Expense receipt photos | **Deferred (D-30)** | |
 | Provenance-split OT/holiday CSV columns | **Parked** | Needs engine segment tagging |
 
