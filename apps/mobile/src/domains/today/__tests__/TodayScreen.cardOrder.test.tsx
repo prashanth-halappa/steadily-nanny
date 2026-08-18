@@ -357,12 +357,13 @@ describe('TodayScreen — A7, the parent who is the bottleneck', () => {
 
   // THE RULE, at the screen level: a 20-day-old offer with no shift today
   // stays in the feed. Age changes copy, never position and never tone.
-  it('leaves a stale offer with no shift today in the feed, slot empty', () => {
+  it('leaves a stale offer with no shift today in the feed, off the slot', () => {
     sentOffer(false);
 
     const { pinned, feed } = renderScreen('parent');
 
-    expect(pinned).toEqual([]);
+    // The slot falls back to his ordinary-day occupant, not to nothing.
+    expect(pinned).not.toContain('pending-offer');
     expect(feed).toContain('pending-offer');
   });
 
@@ -443,7 +444,7 @@ describe('TodayScreen — A1, the clock-in hard block', () => {
 
     const { pinned, all } = renderScreen('parent');
 
-    expect(pinned).toEqual([]);
+    expect(pinned).not.toContain('clock-in-blocked');
     expect(all).not.toContain('clock-in-blocked');
   });
 
@@ -529,11 +530,36 @@ describe('TodayScreen — the pinned slot holds exactly one thing', () => {
     expect(feed).not.toContain('terms-proposal');
   });
 
-  it("a parent's ordinary day pins nothing at all — an empty slot, zero height", () => {
-    const { pinned, tree } = renderScreen('parent');
+  // The parent's slot was the one that stood empty on an ordinary day, which
+  // put "who has my children today" below the fold behind the week card.
+  // It is his clock: the routine answer earns the slot exactly as hers does.
+  it("a parent's ordinary day pins the coverage surface, handoff folded in as its footer", () => {
+    const { pinned, feed, tree } = renderScreen('parent');
 
-    expect(pinned).toEqual([]);
-    expect(tree.getByTestId(SLOT).props.style).toBeUndefined();
+    expect(pinned).toEqual(['today-coverage', 'handoff-chips']);
+    expect(feed).not.toContain('today-coverage');
+    // Through the surface's `footer`, so there is exactly one of it and it is
+    // not also standing alone down in the feed.
+    expect(feed).not.toContain('handoff-chips');
+    expect(tree.getByTestId(SLOT).props.style).toBeDefined();
+  });
+
+  it('an inbox item takes the slot from routine coverage, which drops to the feed with its footer', () => {
+    mockInboxItems = () => ({
+      items: [{ kind: 'change_request' }],
+      isLoading: false,
+    });
+
+    const { pinned, feed } = renderScreen('parent');
+
+    expect(pinned).toEqual(['needs-attention']);
+    expect(feed).toContain('today-coverage');
+    // The fold travels with the surface — never left behind in the slot, and
+    // never duplicated into its own feed row.
+    expect(feed.filter(n => n === 'handoff-chips')).toHaveLength(1);
+    expect(feed.indexOf('today-coverage')).toBeLessThan(
+      feed.indexOf('handoff-chips')
+    );
   });
 
   it("a parent's coverage gap pins the coverage surface, and the handoff stands alone below", () => {
@@ -644,19 +670,19 @@ describe('TodayScreen — feed order beneath the slot', () => {
     expect(feed).not.toContain('invite-waiting');
   });
 
+  // Wherever the surface goes, the chips go — the fold is a property of the
+  // card, not of the position it happens to be mounted in. On an ordinary day
+  // that position is the slot.
   it('folds the handoff chips into the coverage surface for a parent', () => {
-    const { feed } = renderScreen('parent');
+    const { all, feed } = renderScreen('parent');
 
-    expect(feed).toContain('today-coverage');
-    // Rendered THROUGH the coverage card's `footer`, so it comes after it and
-    // there is only one of it.
-    expect(feed.indexOf('today-coverage')).toBeLessThan(
-      feed.indexOf('handoff-chips')
+    expect(all).toContain('today-coverage');
+    expect(all.filter(n => n === 'handoff-chips')).toHaveLength(1);
+    expect(all.indexOf('today-coverage')).toBeLessThan(
+      all.indexOf('handoff-chips')
     );
-    expect(feed.filter(n => n === 'handoff-chips')).toHaveLength(1);
-    expect(feed.indexOf('this-week')).toBeLessThan(
-      feed.indexOf('today-coverage')
-    );
+    // The week card keeps its feed position under the slot either way.
+    expect(feed).toContain('this-week');
   });
 
   it('offers no clock-in on a household she was removed from', () => {

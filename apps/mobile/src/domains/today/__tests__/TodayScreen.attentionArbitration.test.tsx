@@ -326,6 +326,28 @@ describe('TodayScreen — one T1 per screen (attention arbitration)', () => {
     expect(countAttentionCards(queryByTestId)).toBe(1);
   });
 
+  // A read that failed is not an obligation. The slot says "we couldn't load
+  // this" and hands him a retry; nothing on the screen goes loud, because
+  // nothing on the screen knows anything to be loud about.
+  it('parent + failed uncovered read: retry in the slot, zero attention grounds', () => {
+    mockUseInboxItems.mockReturnValue({ items: [], isLoading: false });
+    mockUseUncoveredToday.mockReturnValue({
+      status: 'error',
+      retry: mock(),
+    });
+    mockUseOverdueClockOut.mockReturnValue({
+      overdue: false,
+      clockInAt: null,
+      shiftEndsAt: null,
+    });
+
+    const tree = renderWithProviders(<TodayScreen />);
+    const slot = within(tree.getByTestId('today-pinned-slot'));
+
+    expect(slot.getByTestId('today-coverage-retry')).toBeTruthy();
+    expect(countAttentionCards(tree.queryByTestId)).toBe(0);
+  });
+
   it('nothing needs attention: zero attention surfaces', () => {
     mockUseInboxItems.mockReturnValue({ items: [], isLoading: false });
     mockUseUncoveredToday.mockReturnValue({

@@ -364,6 +364,24 @@ describe('TodayCoverage — 10 Aug 2026 gap + plan', () => {
     ).toBeLessThan(testIdIndex(tree, 'coverage-footer'));
   });
 
+  // Today, left to right, as who has it: the 09:00–11:22 hole and the
+  // confirmed 11:22 shift, in that order. The plan lines say the same thing
+  // in words — the bar says it in one glance.
+  it('renders the day bar with a gap segment and a nanny segment', () => {
+    const tree = renderWithProviders(
+      <TodayCoverage
+        householdId={HOUSEHOLD_ID}
+        timeZone={ZONE}
+        weekStartsOn={1}
+        householdChildren={[{ id: CHILD_ID, name: 'H1 Child1' } as never]}
+      />
+    );
+
+    expect(tree.getByTestId('today-coverage-day-bar')).toBeTruthy();
+    expect(tree.getByTestId('today-coverage-day-bar-gap-0')).toBeTruthy();
+    expect(tree.getByTestId('today-coverage-day-bar-nanny-1')).toBeTruthy();
+  });
+
   // The mechanic itself is gone, not just unused — one slot, one occupant.
   it('SOURCE: carries no `demoted` prop or branch any more', async () => {
     const source = await Bun.file(

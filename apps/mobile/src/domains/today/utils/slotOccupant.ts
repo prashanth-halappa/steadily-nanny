@@ -14,9 +14,12 @@
  * A running timer beating every T1 is deliberate: it is the one thing
  * happening RIGHT NOW, and an inbox item waits safely for the length of a
  * scroll. A terms block still outranks it — see `attentionOwner.ts`.
+ *
+ * The parent's ordinary day pins today's cover at L3; the slot is empty only
+ * for a role that has neither a clock nor a coverage view.
  */
 import type { SetupRole } from '@/src/domains/setup/types';
-import { SETUP_ROLES } from '@/src/domains/setup/types';
+import { canViewParentSchedule, SETUP_ROLES } from '@/src/domains/setup/types';
 import type { AttentionOwner } from './attentionOwner';
 
 export type SlotOccupant =
@@ -24,6 +27,7 @@ export type SlotOccupant =
   | 'pendingOffer'
   | 'clockIn'
   | 'coverageGap'
+  | 'coverage'
   | 'termsProposal'
   | 'inbox'
   | null;
@@ -54,8 +58,13 @@ export function resolveSlotOccupant(inputs: {
     case 'inbox':
       return 'inbox';
     default:
-      // An ordinary day: hers is the clock, his is an empty slot with zero
-      // height — the feed simply starts higher up the screen.
-      return activeNanny ? 'clockIn' : null;
+      // An ordinary day: hers is the clock, his is today's cover. Nothing is
+      // demanding either of them, and the slot still holds the one thing
+      // they opened the app to do.
+      return activeNanny
+        ? 'clockIn'
+        : canViewParentSchedule(inputs.role)
+          ? 'coverage'
+          : null;
   }
 }

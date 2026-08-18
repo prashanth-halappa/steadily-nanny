@@ -35,7 +35,10 @@ describe('resolveSlotOccupant', () => {
     ).toBeNull();
   });
 
-  it('a parent on an ordinary day gets an empty slot — zero height', () => {
+  // Hers is the clock; his is today's cover. An ordinary day is still a day
+  // someone is looking after his children, and that is the one thing he opens
+  // this screen to read.
+  it('a parent on an ordinary day gets the coverage surface', () => {
     expect(
       resolveSlotOccupant({
         role: SETUP_ROLES.PARENT,
@@ -43,7 +46,34 @@ describe('resolveSlotOccupant', () => {
         onClock: false,
         attentionOwner: null,
       })
-    ).toBeNull();
+    ).toBe('coverage');
+  });
+
+  // A helper sees the parent-facing Today (read-only), so she sees the same
+  // cover — the gate is `canViewParentSchedule`, not `role === PARENT`.
+  it('a helper gets the coverage surface too', () => {
+    expect(
+      resolveSlotOccupant({
+        role: SETUP_ROLES.HELPER,
+        isPastMember: false,
+        onClock: false,
+        attentionOwner: null,
+      })
+    ).toBe('coverage');
+  });
+
+  // `isPastMember` exists to withhold the CLOCK, whose every write on a
+  // household she left would 403. Reading who is covering today is not a
+  // write, and it is the only thing the parent side of the slot does.
+  it('a past-member parent keeps the coverage surface, never the clock', () => {
+    const occupant = resolveSlotOccupant({
+      role: SETUP_ROLES.PARENT,
+      isPastMember: true,
+      onClock: true,
+      attentionOwner: null,
+    });
+    expect(occupant).toBe('coverage');
+    expect(occupant).not.toBe('clockIn');
   });
 
   // A running timer is the one thing she is doing RIGHT NOW; an inbox item
