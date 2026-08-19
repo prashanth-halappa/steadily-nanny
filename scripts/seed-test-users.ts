@@ -20,9 +20,16 @@ import { assertLocalSupabaseUrl } from './localSupabaseGuard';
 const TEST_PASSWORD = 'SteadilyTest!2026';
 const TIMEZONE = 'Europe/London';
 
+// The manual pre-launch cast (docs/LAUNCH-MANUAL-PASS.md): enough accounts to
+// stand up two households with two parents and two nannies, so the n-parent /
+// n-nanny / two-family combinations can all be driven without inventing
+// accounts mid-run. Children and households are still created through the app.
 const TEST_USERS = [
   { email: 'parent@steadilynanny.test', name: 'Test Parent' },
   { email: 'nanny@steadilynanny.test', name: 'Test Nanny' },
+  { email: 'coparent@steadilynanny.test', name: 'Test Co-Parent' },
+  { email: 'nanny2@steadilynanny.test', name: 'Test Nanny Two' },
+  { email: 'otherparent@steadilynanny.test', name: 'Other Parent' },
 ] as const;
 
 function loadEnvFile(path: string): Record<string, string> {
@@ -131,7 +138,7 @@ async function main() {
   }
 
   console.log(
-    '\nDone. Seeded users (password is the same for both, not printed here):'
+    '\nDone. Seeded users (password is the same for all, not printed here):'
   );
   for (const testUser of TEST_USERS) {
     console.log(`  ${testUser.email} -> ${seededIds.get(testUser.email)}`);
