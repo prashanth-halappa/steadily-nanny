@@ -87,6 +87,18 @@ mock.module('@/src/api/client', () => ({
   updateAuthToken: mock(() => {}),
 }));
 
+import { useSetupProgressStore } from '../setupProgress';
+
+const queryClientClearMock = mock(() => {});
+mock.module('@/src/api/queryClient', () => ({
+  queryClient: { clear: queryClientClearMock },
+}));
+
+const routerReplaceMock = mock(() => {});
+mock.module('expo-router', () => ({
+  router: { replace: routerReplaceMock },
+}));
+
 let useAuthStore: typeof import('../auth').useAuthStore;
 
 beforeAll(async () => {
@@ -97,6 +109,8 @@ beforeAll(async () => {
 beforeEach(() => {
   setUserContextMock.mockClear();
   clearUserContextMock.mockClear();
+  queryClientClearMock.mockClear();
+  routerReplaceMock.mockClear();
   getUserMock.mockClear();
   getUserMock.mockImplementation(() =>
     Promise.resolve({ data: { user: {} }, error: null })
@@ -219,5 +233,83 @@ describe('auth store — signOut cleanup is unconditional', () => {
     expect(clearUserContextMock).toHaveBeenCalled();
     expect(useAuthStore.getState().session).toBeNull();
     expect(useAuthStore.getState().user).toBeNull();
+  });
+});
+
+describe('auth store — account switch state clearing', () => {
+  beforeEach(async () => {
+    // Reset any previous state from other test blocks
+    useAuthStore.setState({ session: null, user: null } as never);
+    await capturedCallback('INITIAL_SESSION', null);
+    queryClientClearMock.mockClear();
+    routerReplaceMock.mockClear();
+    useSetupProgressStore.getState().reset();
+  });
+
+  it('does not clear user-scoped stores on cold start (first sign-in)', async () => {
+    useSetupProgressStore.getState().setRole('parent');
+    await capturedCallback('SIGNED_IN', {
+      user: { id: 'user-A' },
+      access_token: 'tok',
+    });
+    expect(useSetupProgressStore.getState().role).toBe('parent');
+    expect(queryClientClearMock).toHaveBeenCalled();
+    expect(routerReplaceMock).toHaveBeenCalledWith('/');
+  });
+
+  it('clears user-scoped stores on direct account switch (no sign-out)', async () => {
+    await capturedCallback('SIGNED_IN', {
+      user: { id: 'user-A' },
+      access_token: 'tok',
+    });
+    queryClientClearMock.mockClear();
+    routerReplaceMock.mockClear();
+    useSetupProgressStore.getState().setRole('parent');
+
+    await capturedCallback('SIGNED_IN', {
+      user: { id: 'user-B' },
+      access_token: 'tok',
+    });
+    expect(useSetupProgressStore.getState().role).toBeNull();
+    expect(queryClientClearMock).toHaveBeenCalledTimes(1);
+    expect(routerReplaceMock).toHaveBeenCalledWith('/');
+  });
+
+  it('clears user-scoped stores on sign in -> sign out -> sign in as different user', async () => {
+    await capturedCallback('SIGNED_IN', {
+      user: { id: 'user-A' },
+      access_token: 'tok',
+    });
+    await capturedCallback('SIGNED_OUT', null);
+    queryClientClearMock.mockClear();
+    routerReplaceMock.mockClear();
+    useSetupProgressStore.getState().setRole('parent');
+
+    await capturedCallback('SIGNED_IN', {
+      user: { id: 'user-B' },
+      access_token: 'tok',
+    });
+    expect(useSetupProgressStore.getState().role).toBeNull();
+    expect(queryClientClearMock).toHaveBeenCalledTimes(1);
+    expect(routerReplaceMock).toHaveBeenCalledWith('/');
+  });
+
+  it('does not clear user-scoped stores but does clear queryClient on sign in -> sign out -> sign in as same user', async () => {
+    await capturedCallback('SIGNED_IN', {
+      user: { id: 'user-A' },
+      access_token: 'tok',
+    });
+    await capturedCallback('SIGNED_OUT', null);
+    queryClientClearMock.mockClear();
+    routerReplaceMock.mockClear();
+    useSetupProgressStore.getState().setRole('parent');
+
+    await capturedCallback('SIGNED_IN', {
+      user: { id: 'user-A' },
+      access_token: 'tok',
+    });
+    expect(useSetupProgressStore.getState().role).toBe('parent');
+    expect(queryClientClearMock).toHaveBeenCalledTimes(1);
+    expect(routerReplaceMock).toHaveBeenCalledWith('/');
   });
 });
