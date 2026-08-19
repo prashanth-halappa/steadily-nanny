@@ -24,7 +24,6 @@
  * confirms.
  */
 
-import DateTimePicker from '@react-native-community/datetimepicker';
 import type {
   AmendSchedulePatternInput,
   PauseRange,
@@ -45,6 +44,7 @@ import {
   AlertDialogTrigger,
 } from '@/src/components/ui/alert-dialog';
 import { Button, buttonVariants } from '@/src/components/ui/button';
+import { DateTimeField } from '@/src/components/ui/date-time-field';
 import { FieldError } from '@/src/components/ui/field-error';
 import { FieldLabel } from '@/src/components/ui/field-label';
 import { LoadingButton } from '@/src/components/ui/loading-button';
@@ -208,7 +208,7 @@ export function AdjustSchedulePatternSheet({
             <View className="gap-1">
               <FieldLabel>{t('pending.adjustEndDateLabel')}</FieldLabel>
               <View className="native:h-12 items-center justify-center rounded-lg border border-input bg-card px-2">
-                <DateTimePicker
+                <DateTimeField
                   testID="schedule-adjust-end-date-picker"
                   value={parseDate(endDateValue)}
                   mode="date"

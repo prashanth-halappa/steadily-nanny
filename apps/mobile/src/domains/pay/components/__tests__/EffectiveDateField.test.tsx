@@ -34,7 +34,7 @@ describe('EffectiveDateField source wiring', () => {
 
   it('uses the native date picker in date mode', async () => {
     expect(source).toContain(
-      "import DateTimePicker from '@react-native-community/datetimepicker';"
+      "import { DateTimeField } from '@/src/components/ui/date-time-field';"
     );
     expect(source).toContain('mode="date"');
   });

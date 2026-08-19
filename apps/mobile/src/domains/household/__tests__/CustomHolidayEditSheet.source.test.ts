@@ -43,7 +43,7 @@ describe('CustomHolidayEditSheet', () => {
     );
     expect(source).toContain('parseDate');
     expect(source).toContain('formatDate');
-    expect(source).toContain("from '@react-native-community/datetimepicker'");
+    expect(source).toContain("from '@/src/components/ui/date-time-field'");
     expect(source).toContain('mode="date"');
     expect(source).not.toContain('mode="time"');
   });

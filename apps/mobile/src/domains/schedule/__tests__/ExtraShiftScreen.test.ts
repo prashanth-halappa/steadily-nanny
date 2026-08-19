@@ -23,7 +23,7 @@ describe('ExtraShiftScreen', () => {
 
   it('uses native pickers and disables submit until the form is valid', () => {
     expect(source).toContain('TimeRangePicker');
-    expect(source).toContain('DateTimePicker');
+    expect(source).toContain('DateTimeField');
     expect(source).toContain('isExtraShiftFormValid');
     expect(source).toContain('disabled={!canSubmit}');
     expect(source).not.toMatch(/catch\s*\{\s*return;\s*\}/);

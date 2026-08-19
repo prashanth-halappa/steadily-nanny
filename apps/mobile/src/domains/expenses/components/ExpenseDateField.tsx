@@ -25,9 +25,9 @@
  * render-tested — see `TimeOffScreen.test.tsx` for the identical pattern.
  */
 
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { DateTimeField } from '@/src/components/ui/date-time-field';
 import { FieldError } from '@/src/components/ui/field-error';
 import { FieldLabel } from '@/src/components/ui/field-label';
 import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
@@ -70,7 +70,7 @@ export function ExpenseDateField({
   return (
     <View testID={baseTestID}>
       <FieldLabel>{t('addSheet.dateLabel')}</FieldLabel>
-      <DateTimePicker
+      <DateTimeField
         testID={`${baseTestID}-picker`}
         value={parseDate(value)}
         mode="date"

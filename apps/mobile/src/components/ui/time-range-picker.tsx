@@ -24,9 +24,9 @@
  * genuinely unit-tested (`time-range-picker.utils.test.ts`).
  */
 
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { DateTimeField } from '@/src/components/ui/date-time-field';
 import { Text } from '@/src/components/ui/text';
 import {
   formatTime,
@@ -74,7 +74,7 @@ export function TimeRangePicker({
           <Text className="mb-1 font-medium text-muted-foreground text-xs">
             {t('timeRange.start')}
           </Text>
-          <DateTimePicker
+          <DateTimeField
             testID={`${baseTestID}-start`}
             value={parseTime(start)}
             mode="time"
@@ -86,7 +86,7 @@ export function TimeRangePicker({
           <Text className="mb-1 font-medium text-muted-foreground text-xs">
             {t('timeRange.end')}
           </Text>
-          <DateTimePicker
+          <DateTimeField
             testID={`${baseTestID}-end`}
             value={parseTime(end)}
             mode="time"

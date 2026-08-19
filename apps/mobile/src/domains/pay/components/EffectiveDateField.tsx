@@ -31,9 +31,10 @@
  * validations are retained anyway — this field is not the only writer, and
  * the command service checks server-side.
  */
-import DateTimePicker from '@react-native-community/datetimepicker';
+
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { DateTimeField } from '@/src/components/ui/date-time-field';
 import { Label, Small } from '@/src/components/ui/typography';
 import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
 import {
@@ -85,8 +86,14 @@ export function EffectiveDateField({
 
   return (
     <View className="gap-2">
-      <Label>{t('changeSheet.effectiveLabel')}</Label>
-      <DateTimePicker
+      <Label
+        accessibilityLabel={t('requiredFieldA11y', {
+          label: t('changeSheet.effectiveLabel'),
+        })}
+      >
+        {t('changeSheet.effectiveLabel')} *
+      </Label>
+      <DateTimeField
         testID={`${testIDPrefix}-date-input`}
         mode="date"
         value={parseDate(malformed || empty ? todayISO : value)}

@@ -31,9 +31,9 @@
  * `TimeOffRequestForm.test.tsx`.
  */
 
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
+import { DateTimeField } from '@/src/components/ui/date-time-field';
 import { FieldError } from '@/src/components/ui/field-error';
 import { FieldLabel } from '@/src/components/ui/field-label';
 import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
@@ -83,7 +83,7 @@ export function TimeOffDateRangePicker({
         <View className="flex-1">
           <FieldLabel>{t('dateRange.start')}</FieldLabel>
           <View className="native:h-12 items-center justify-center rounded-lg border border-input bg-card px-2">
-            <DateTimePicker
+            <DateTimeField
               testID={`${baseTestID}-start`}
               value={parseDate(start)}
               mode="date"
@@ -97,7 +97,7 @@ export function TimeOffDateRangePicker({
         <View className="flex-1">
           <FieldLabel>{t('dateRange.end')}</FieldLabel>
           <View className="native:h-12 items-center justify-center rounded-lg border border-input bg-card px-2">
-            <DateTimePicker
+            <DateTimeField
               testID={`${baseTestID}-end`}
               value={parseDate(end)}
               mode="date"

@@ -4,7 +4,7 @@
  * Parent form to POST a one-off extra shift. Uses native date + TimeRangePicker
  * (not free-text) so malformed times cannot silently no-op via wallClockToUtcIso.
  */
-import DateTimePicker from '@react-native-community/datetimepicker';
+
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -25,6 +25,7 @@ import {
 import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
 import { ChildChip } from '@/src/components/ui/child-chip';
+import { DateTimeField } from '@/src/components/ui/date-time-field';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { Text } from '@/src/components/ui/text';
 import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
@@ -233,7 +234,7 @@ export function ExtraShiftScreen() {
         <Small className="text-muted-foreground">
           {t('shifts.extraDateLabel')}
         </Small>
-        <DateTimePicker
+        <DateTimeField
           testID="schedule-extra-date"
           mode="date"
           value={parseDate(date)}

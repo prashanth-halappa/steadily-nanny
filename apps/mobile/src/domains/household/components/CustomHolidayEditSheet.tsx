@@ -20,7 +20,7 @@
  * genuinely unit-tested. `HouseholdHolidaysScreen.test.tsx` mocks this WHOLE
  * FILE so the screen can still be render-tested.
  */
-import DateTimePicker from '@react-native-community/datetimepicker';
+
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
@@ -28,6 +28,7 @@ import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { useThemeColors } from '@/lib/design-tokens/useThemeColors';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { Button } from '@/src/components/ui/button';
+import { DateTimeField } from '@/src/components/ui/date-time-field';
 import { FieldError } from '@/src/components/ui/field-error';
 import { FieldLabel } from '@/src/components/ui/field-label';
 import { Input } from '@/src/components/ui/input';
@@ -142,7 +143,7 @@ export function CustomHolidayEditSheet({
               key={date}
               className="flex-row items-center justify-between gap-3"
             >
-              <DateTimePicker
+              <DateTimeField
                 testID={`custom-holiday-date-${index}`}
                 value={parseDate(date)}
                 mode="date"

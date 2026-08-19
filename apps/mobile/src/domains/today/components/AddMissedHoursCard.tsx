@@ -20,7 +20,6 @@
  * toast is not reliably visible — the carer saw nothing at all.
  */
 
-import DateTimePicker from '@react-native-community/datetimepicker';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import type { TimeEntry } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { SCHEDULED_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
@@ -29,6 +28,7 @@ import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { Button } from '@/src/components/ui/button';
+import { DateTimeField } from '@/src/components/ui/date-time-field';
 import { LoadingButton } from '@/src/components/ui/loading-button';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
@@ -345,7 +345,7 @@ export function AddMissedHoursCard({
             <Text className="font-medium text-muted-foreground text-xs">
               {t('missedHours.dateLabel')}
             </Text>
-            <DateTimePicker
+            <DateTimeField
               testID="today-missed-hours-date"
               mode="date"
               value={parseDate(date)}
