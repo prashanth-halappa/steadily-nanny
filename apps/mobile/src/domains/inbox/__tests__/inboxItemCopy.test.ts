@@ -537,3 +537,71 @@ describe('reimbursement_owed copy (§2.2 rank 8)', () => {
     }
   });
 });
+
+// D66 — the record of a refusal, for the person who proposed. It states the
+// fact and points at the only way forward (a new round); it never grades
+// either side for the answer they gave.
+describe('terms_proposal_declined copy (D66)', () => {
+  const NOW = Date.parse('2026-08-27T12:00:00.000Z');
+
+  function makeItem(overrides: Record<string, unknown> = {}): InboxItem {
+    return {
+      kind: 'terms_proposal_declined',
+      id: 'prop-7',
+      householdId: 'hh-1',
+      carerId: 'carer-7',
+      carerDisplayName: 'Marisol',
+      proposedAt: '2026-08-24T09:00:00.000Z',
+      declinedAt: '2026-08-26T15:00:00.000Z',
+      direction: 'parent',
+      ...overrides,
+    } as InboxItem;
+  }
+
+  it('opens the same review screen, in view mode', () => {
+    expect(hrefForItem(makeItem())).toBe('/(private)/pay/proposal/prop-7');
+  });
+
+  it('names the carer who refused a parent-authored round', () => {
+    expect(titleForItem(makeItem(), t, ZONE)).toBe(
+      'items.termsProposalDeclined.title'
+    );
+    expect(subtitleForItem(makeItem(), t, ZONE)).toBe(
+      'items.termsProposalDeclined.subtitle'
+    );
+    expect(ctaForItem(makeItem(), t)).toBe('items.termsProposalDeclined.cta');
+  });
+
+  // Her own name on a row about the family's answer would name the wrong
+  // actor — the same trap `titleCountered` avoids on the live kind.
+  it('names the family, not the carer, when the carer wrote the round', () => {
+    expect(titleForItem(makeItem({ direction: 'carer' }), t, ZONE)).toBe(
+      'items.termsProposalDeclined.titleFamily'
+    );
+  });
+
+  it('has no deadline — there is nothing counting down', () => {
+    expect(deadlineForItem(makeItem(), t, ZONE, NOW)).toBeNull();
+  });
+
+  it('states the fact and points at the next round, in both languages', async () => {
+    for (const language of ['en', 'es'] as const) {
+      const copy = (await locale(language)).items.termsProposalDeclined;
+      expect(copy.title).toContain('{{carer}}');
+      expect(copy.title).toContain('{{date}}');
+      expect(copy.titleFamily).toContain('{{date}}');
+      expect(copy.titleFamily).not.toContain('{{carer}}');
+      expect(copy.subtitle).toContain('{{sentDate}}');
+      expect(copy.cta.length).toBeGreaterThan(0);
+      // §10: the state word never stands without its date, and the row never
+      // grades the reader for having been refused.
+      for (const key of ['title', 'titleFamily', 'subtitle']) {
+        const text = copy[key].toLowerCase();
+        expect(text).not.toContain('!');
+        expect(text).not.toContain('rejected');
+        expect(text).not.toContain('unfortunately');
+        expect(text).not.toContain('sorry');
+      }
+    }
+  });
+});

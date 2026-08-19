@@ -6,7 +6,9 @@
  * change requests (single GET /me/change-requests), pending schedule
  * patterns, queried timesheet weeks (carer who must respond), — §2.2/§2.3a —
  * the carer's own pending shifts (single GET /me/shifts, the same fan-in
- * shape as change requests), and §7.1's live terms proposals. Exposes an
+ * shape as change requests), and §7.1's terms-proposal chain (the WHOLE
+ * chain — D66 needs the declined round, which the open-proposal read
+ * cannot return). Exposes an
  * error channel so failures never collapse to the empty-success state.
  *
  * Change requests and shifts both use their `me` fan-in endpoint so
@@ -187,14 +189,18 @@ export function useInboxItems() {
     );
   }, [role, currentUserId, households, membersQueries]);
 
+  // The whole CHAIN, not `getCurrent` — D66. `getCurrent` answers only the
+  // `proposed` round, so a DECLINED one could never reach `buildInboxItems`
+  // and the author's record of a refusal would be unreachable code. Same
+  // query count as before, and the same key `useTermsProposals` already
+  // uses, so the pay screen and this list share one cache entry.
   const proposalQueries = useQueries({
     queries: proposalTargets.map(target => ({
-      queryKey: queryKeys.termsProposal.current(
+      queryKey: queryKeys.termsProposal.list(
         target.householdId,
         target.carerId
       ),
-      queryFn: () =>
-        termsProposalApi.getCurrent(target.householdId, target.carerId),
+      queryFn: () => termsProposalApi.list(target.householdId, target.carerId),
       staleTime: QUERY_TIMING.STALE_1M,
       enabled: baseEnabled,
     })),
@@ -282,10 +288,10 @@ export function useInboxItems() {
     [meShiftsQuery.data]
   );
 
-  // `getCurrent` answers `null` when nothing is on the table — a normal
-  // result, dropped here rather than passed on as a hole in the list.
+  // Every round for every carer, flattened. An empty chain is a normal
+  // result (nobody has proposed yet), not a hole in the list.
   const termsProposals = useMemo(
-    () => proposalQueries.flatMap(q => (q.data ? [q.data] : [])),
+    () => proposalQueries.flatMap(q => q.data ?? []),
     [proposalQueries]
   );
 

@@ -1108,13 +1108,15 @@ describe('buildInboxItems — terms_proposal_sent kind (A7)', () => {
 
   it('is a LIVE proposal only — a settled one is history, not pending work', () => {
     for (const status of ['countered', 'accepted', 'withdrawn', 'declined']) {
+      // `declined` gets the author its OWN kind (D66) rather than nothing at
+      // all, so this asserts the absence of the LIVE row, not an empty list.
       expect(
         buildInboxItems({
           ...base,
           role: SETUP_ROLES.PARENT,
           termsProposals: [{ ...parentProposal, status }],
-        })
-      ).toEqual([]);
+        }).map(i => i.kind)
+      ).not.toContain('terms_proposal_sent');
     }
   });
 
@@ -1140,6 +1142,191 @@ describe('buildInboxItems — terms_proposal_sent kind (A7)', () => {
       'terms_ack',
       'terms_proposal_sent',
     ]);
+  });
+});
+
+// D66 — the AUTHOR's record of a refusal. Before this kind existed the
+// decline was pure silence for the person who proposed: the push is
+// fire-and-forget (nothing is written to the database), and her own
+// `terms_proposal_sent` row simply vanished from the list, leaving a blank
+// pay form as if she had never asked.
+describe('buildInboxItems — terms_proposal_declined kind (D66)', () => {
+  const NOW = '2026-08-27T12:00:00.000Z';
+
+  // Parent-authored, refused by the nanny — the parent is the author.
+  const declinedByCarer: InboxTermsProposalInput = {
+    id: 'prop-1',
+    household_id: 'hh-1',
+    carer_id: OTHER,
+    direction: 'parent',
+    status: 'declined',
+    carer_display_name: 'Marisol',
+    created_at: '2026-08-24T09:00:00.000Z',
+    responded_at: '2026-08-26T15:00:00.000Z',
+    weekly_equivalent_minor: 154000,
+    terms: { rate_minor: 2800, currency: 'USD' },
+  };
+
+  // Carer-authored, refused by the family — the nanny is the author.
+  const declinedByFamily: InboxTermsProposalInput = {
+    ...declinedByCarer,
+    id: 'prop-2',
+    carer_id: ME,
+    direction: 'carer',
+  };
+
+  const base = {
+    currentUserId: ME,
+    todayISO: '2026-08-27',
+    nowISO: NOW,
+    changeRequests: [],
+    patterns: [],
+    timesheets: [],
+  };
+
+  it('gives the parent who wrote the terms a durable record that they were declined', () => {
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.PARENT,
+        termsProposals: [declinedByCarer],
+      })
+    ).toEqual([
+      {
+        kind: 'terms_proposal_declined',
+        id: 'prop-1',
+        householdId: 'hh-1',
+        carerId: OTHER,
+        carerDisplayName: 'Marisol',
+        personName: 'Marisol',
+        proposedAt: '2026-08-24T09:00:00.000Z',
+        declinedAt: '2026-08-26T15:00:00.000Z',
+        direction: 'parent',
+      },
+    ]);
+  });
+
+  it('gives the carer who wrote hers the same record when the family refused', () => {
+    const items = buildInboxItems({
+      ...base,
+      role: SETUP_ROLES.NANNY,
+      termsProposals: [declinedByFamily],
+    });
+    expect(items.map(i => i.kind)).toEqual(['terms_proposal_declined']);
+    expect(items[0]).toMatchObject({ carerId: ME, direction: 'carer' });
+  });
+
+  // Self-clearing, and that is the whole dismiss story: sending the next
+  // round IS the acknowledgement, so there is no dismiss state to store.
+  it('says nothing once a newer round exists for that carer', () => {
+    for (const status of ['proposed', 'countered', 'accepted']) {
+      const items = buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.PARENT,
+        termsProposals: [
+          declinedByCarer,
+          {
+            ...declinedByCarer,
+            id: 'prop-newer',
+            status,
+            created_at: '2026-08-27T09:00:00.000Z',
+          },
+        ],
+      });
+      expect(items.map(i => i.kind)).not.toContain('terms_proposal_declined');
+    }
+  });
+
+  // Two declined rounds in a row: the record is about the LATEST refusal,
+  // never a stack of every round the negotiation ever lost.
+  it('keeps only the newest refusal when an earlier round was also declined', () => {
+    const items = buildInboxItems({
+      ...base,
+      role: SETUP_ROLES.PARENT,
+      termsProposals: [
+        declinedByCarer,
+        {
+          ...declinedByCarer,
+          id: 'prop-newer',
+          created_at: '2026-08-27T09:00:00.000Z',
+          responded_at: '2026-08-27T10:00:00.000Z',
+        },
+      ],
+    });
+    expect(items.map(i => i.kind)).toEqual(['terms_proposal_declined']);
+    expect(items[0]).toMatchObject({ id: 'prop-newer' });
+  });
+
+  // A newer round for a DIFFERENT carer supersedes nothing — two nannies in
+  // one household are two independent negotiations (D-21).
+  it('is not superseded by a newer round for another carer', () => {
+    const items = buildInboxItems({
+      ...base,
+      role: SETUP_ROLES.PARENT,
+      termsProposals: [
+        declinedByCarer,
+        {
+          ...declinedByCarer,
+          id: 'prop-other-carer',
+          carer_id: PARENT,
+          status: 'proposed',
+          created_at: '2026-08-27T09:00:00.000Z',
+        },
+      ],
+    });
+    expect(items.map(i => i.kind)).toContain('terms_proposal_declined');
+  });
+
+  it('never shows the record to the side that did the declining', () => {
+    // The nanny refused the parent's terms — she has no record to keep.
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.NANNY,
+        currentUserId: OTHER,
+        termsProposals: [declinedByCarer],
+      })
+    ).toEqual([]);
+    // And the family that refused hers sees nothing either.
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.PARENT,
+        termsProposals: [declinedByFamily],
+      })
+    ).toEqual([]);
+  });
+
+  // D-21, same gate as every other row in this domain.
+  it('is not hers when the declined round names a different carer', () => {
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.NANNY,
+        termsProposals: [{ ...declinedByFamily, carer_id: OTHER }],
+      })
+    ).toEqual([]);
+  });
+
+  it('B5: a helper never sees a declined record — she authors nothing', () => {
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.HELPER,
+        termsProposals: [declinedByCarer, declinedByFamily],
+      })
+    ).toEqual([]);
+  });
+
+  // No `responded_at` on the row (a legacy pre-097 decline) still dates the
+  // record — the day it was sent, never an invented one.
+  it('falls back to the sent date when the row carries no responded_at', () => {
+    const items = buildInboxItems({
+      ...base,
+      role: SETUP_ROLES.PARENT,
+      termsProposals: [{ ...declinedByCarer, responded_at: null }],
+    });
+    expect(items[0]).toMatchObject({ declinedAt: '2026-08-24T09:00:00.000Z' });
   });
 });
 

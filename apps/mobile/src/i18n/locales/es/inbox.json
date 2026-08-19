@@ -80,6 +80,12 @@
       "subtitleNotOpened": "Enviadas el {{date}} · aún sin abrir.",
       "cta": "Ver lo que enviaste"
     },
+    "termsProposalDeclined": {
+      "title": "{{carer}} rechazó las condiciones que enviaste · {{date}}",
+      "titleFamily": "La familia rechazó las condiciones que enviaste · {{date}}",
+      "subtitle": "Enviadas el {{sentDate}}. Envía nuevas condiciones desde Sueldo cuando quieras.",
+      "cta": "Ver lo que enviaste"
+    },
     "crossFamilyClash": {
       "title": "Este turno se superpone con un turno de otra familia",
       "subtitle": "{{date}}, {{time}}",
@@ -115,6 +121,7 @@
     "pending_shift": "Petición de cobertura",
     "terms_proposal": "Condiciones",
     "terms_proposal_sent": "Condiciones",
+    "terms_proposal_declined": "Condiciones",
     "terms_ack": "Condiciones",
     "reimbursement_owed": "Reembolso",
     "cross_family_clash": "Turno superpuesto"

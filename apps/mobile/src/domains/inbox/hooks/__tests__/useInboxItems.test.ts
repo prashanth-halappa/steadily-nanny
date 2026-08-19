@@ -40,7 +40,10 @@ const listTimesheets = mock(() => Promise.resolve([] as unknown[]));
 const listPendingChangeRequests = mock(() => Promise.resolve([] as unknown[]));
 const listMeShifts = mock(() => Promise.resolve([] as unknown[]));
 const listMembers = mock(() => Promise.resolve([] as unknown[]));
-const getCurrentProposal = mock(() => Promise.resolve(null as unknown));
+// D66 — the inbox reads the whole CHAIN, not just the open round: a
+// declined round is the author's record, and `getCurrent` (status
+// `proposed` only) can never return one.
+const listProposals = mock(() => Promise.resolve([] as unknown[]));
 const listUnsettledReimbursements = mock(() =>
   Promise.resolve([] as unknown[])
 );
@@ -102,7 +105,7 @@ beforeAll(async () => {
     householdApi: { listMembers },
   }));
   mock.module('@/src/api/endpoints/termsProposals', () => ({
-    termsProposalApi: { getCurrent: getCurrentProposal },
+    termsProposalApi: { list: listProposals },
   }));
   mock.module('@/src/api/endpoints/reimbursementSettlements', () => ({
     reimbursementSettlementApi: { listUnsettled: listUnsettledReimbursements },
@@ -118,10 +121,10 @@ beforeEach(() => {
   listPendingChangeRequests.mockReset();
   listMeShifts.mockReset();
   listMembers.mockReset();
-  getCurrentProposal.mockReset();
+  listProposals.mockReset();
   listUnsettledReimbursements.mockReset();
   listMembers.mockResolvedValue([]);
-  getCurrentProposal.mockResolvedValue(null);
+  listProposals.mockResolvedValue([]);
   listUnsettledReimbursements.mockResolvedValue([]);
   listPatterns.mockResolvedValue([]);
   listTimesheets.mockResolvedValue([]);
@@ -201,7 +204,7 @@ describe('useInboxItems isError channel', () => {
     listMembers.mockResolvedValue([
       { user_id: CARER, role: 'nanny', status: 'active' },
     ]);
-    getCurrentProposal.mockRejectedValue(new Error('proposal boom'));
+    listProposals.mockRejectedValue(new Error('proposal boom'));
 
     const { result } = renderHookWithProviders(() => useInboxItems());
 
@@ -271,7 +274,7 @@ describe('useInboxItems terms proposals (§7.1)', () => {
       { user_id: CARER, role: 'nanny', status: 'candidate' },
       { user_id: 'user-1', role: 'parent', status: 'active' },
     ]);
-    getCurrentProposal.mockResolvedValue(PROPOSAL);
+    listProposals.mockResolvedValue([PROPOSAL]);
 
     const { result } = renderHookWithProviders(() => useInboxItems());
 
@@ -282,8 +285,34 @@ describe('useInboxItems terms proposals (§7.1)', () => {
       carerDisplayName: 'Marisol',
     });
     // One read per carer, never per parent.
-    expect(getCurrentProposal).toHaveBeenCalledTimes(1);
-    expect(getCurrentProposal).toHaveBeenCalledWith(HOUSEHOLD.id, CARER);
+    expect(listProposals).toHaveBeenCalledTimes(1);
+    expect(listProposals).toHaveBeenCalledWith(HOUSEHOLD.id, CARER);
+  });
+
+  // D66 — the whole reason this hook reads the chain: `getCurrent` returns
+  // only `proposed` rows, so a declined round could never reach the list and
+  // the author's record would be unreachable code.
+  it('reaches a declined round, which the open-proposal read can never return', async () => {
+    listMembers.mockResolvedValue([
+      { user_id: CARER, role: 'nanny', status: 'active' },
+    ]);
+    listProposals.mockResolvedValue([
+      {
+        ...PROPOSAL,
+        direction: 'parent',
+        status: 'declined',
+        responded_at: '2026-08-26T15:00:00.000Z',
+      },
+    ]);
+
+    const { result } = renderHookWithProviders(() => useInboxItems());
+
+    await waitFor(() => expect(result.current.items.length).toBe(1));
+    expect(result.current.items[0]).toMatchObject({
+      kind: 'terms_proposal_declined',
+      id: PROPOSAL.id,
+      declinedAt: '2026-08-26T15:00:00.000Z',
+    });
   });
 
   it('asks nothing about a removed member’s terms', async () => {
@@ -294,7 +323,7 @@ describe('useInboxItems terms proposals (§7.1)', () => {
     const { result } = renderHookWithProviders(() => useInboxItems());
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(getCurrentProposal).not.toHaveBeenCalled();
+    expect(listProposals).not.toHaveBeenCalled();
     expect(result.current.items).toEqual([]);
   });
 });

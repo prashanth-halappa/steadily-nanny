@@ -80,6 +80,12 @@
       "subtitleNotOpened": "Sent {{date}} · not opened yet.",
       "cta": "See what you sent"
     },
+    "termsProposalDeclined": {
+      "title": "{{carer}} declined the terms you sent · {{date}}",
+      "titleFamily": "The family declined the terms you sent · {{date}}",
+      "subtitle": "Sent {{sentDate}}. Send new terms from Pay when you are ready.",
+      "cta": "See what you sent"
+    },
     "crossFamilyClash": {
       "title": "This shift overlaps a shift with another family",
       "subtitle": "{{date}}, {{time}}",
@@ -115,6 +121,7 @@
     "pending_shift": "Cover ask",
     "terms_proposal": "Terms",
     "terms_proposal_sent": "Terms",
+    "terms_proposal_declined": "Terms",
     "terms_ack": "Terms",
     "reimbursement_owed": "Reimbursement",
     "cross_family_clash": "Overlapping shift"
