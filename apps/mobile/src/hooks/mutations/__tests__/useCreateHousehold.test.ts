@@ -11,7 +11,7 @@
  * what `useHouseholds` reads off this exact key — a mismatched shape would
  * render wrong data rather than no data.
  */
-import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import { beforeAll, describe, expect, it, mock, spyOn } from 'bun:test';
 import type { Household } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { QueryClient } from '@tanstack/react-query';
 import { act, waitFor } from '@testing-library/react-native';
@@ -104,5 +104,26 @@ describe('useCreateHousehold — seeds the households list cache (P4.1)', () => 
 
     const seeded = queryClient.getQueryData(queryKeys.household.list());
     expect(seeded).toEqual([existing, NEW_HOUSEHOLD]);
+  });
+
+  it('invalidates user.memberships() after success so onboarding role refetches immediately', async () => {
+    const { result, queryClient } = renderHookWithProviders(
+      () => useCreateHousehold(),
+      { queryClient: buildQueryClient() }
+    );
+    const invalidateQueriesSpy = spyOn(queryClient, 'invalidateQueries');
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        name: 'The Okafors',
+        timezone: 'America/New_York',
+      });
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(invalidateQueriesSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.user.memberships(),
+    });
   });
 });
