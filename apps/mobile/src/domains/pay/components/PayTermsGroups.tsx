@@ -920,11 +920,20 @@ export function PayTermsGroups({
         onConfirm={applyPreset}
       />
 
-      <TermsGlossarySheet
-        visible={glossaryKey !== null}
-        entryKey={glossaryKey}
-        onDismiss={() => setGlossaryKey(null)}
-      />
+      {/* MOUNTED ONLY WHEN OPEN. A BottomSheetBase renders its whole shell —
+          including a `bottom-sheet-close-button` — even at `visible={false}`,
+          so an always-mounted glossary puts a second, invisible close control
+          in the tree of a screen that already has one. That is the
+          GOLDEN-FIXES #1 hazard shape, and it broke ParentWeekView's
+          breakdown test with "Found multiple elements". A definition popup
+          loses nothing by skipping its exit animation. */}
+      {glossaryKey !== null ? (
+        <TermsGlossarySheet
+          visible
+          entryKey={glossaryKey}
+          onDismiss={() => setGlossaryKey(null)}
+        />
+      ) : null}
     </View>
   );
 }
