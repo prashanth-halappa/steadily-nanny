@@ -66,6 +66,7 @@
     "shareButton": "Share code",
     "shareHint": "They type this code when they sign up. Then they see the family name, your number, and the terms above.",
     "shareMessage": "Join our household on Steadily Nanny — use invite code {{code}} when you sign in.",
+    "haveCodeButton": "Have a code instead?",
     "errorTitle": "Couldn't generate an invite code.",
     "retryButton": "Try again",
     "revokeButton": "Revoke code",

@@ -63,6 +63,7 @@
     "doneButton": "Listo",
     "continueButton": "Continuar",
     "generateButton": "Generar código de invitación",
+    "haveCodeButton": "¿Tienes un código en su lugar?",
     "shareButton": "Compartir código",
     "shareHint": "Se escribe este código al registrarse. Después se ve el nombre de la familia, tu número y las condiciones de arriba.",
     "shareMessage": "Únete a nuestro hogar en Steadily Nanny — usa el código de invitación {{code}} al iniciar sesión.",

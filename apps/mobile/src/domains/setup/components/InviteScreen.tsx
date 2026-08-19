@@ -41,6 +41,7 @@ import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShel
 import {
   getSetupStepRoute,
   getStepProgress,
+  SETUP_PATHS,
   SETUP_STEPS,
 } from '@/src/domains/setup/types';
 import { useCreateInvite } from '@/src/hooks/mutations/useCreateInvite';
@@ -57,6 +58,7 @@ export function InviteScreen() {
   const { t } = useTranslation('household');
   const householdId = useSetupProgressStore(s => s.householdId);
   const role = useSetupProgressStore(s => s.role);
+  const setPath = useSetupProgressStore(s => s.setPath);
   const path = useSetupProgressStore(s => s.path);
   const setCurrentStep = useSetupProgressStore(s => s.setCurrentStep);
   const createInvite = useCreateInvite(householdId ?? '');
@@ -220,6 +222,17 @@ export function InviteScreen() {
             disabled={!householdId}
           >
             <Text>{t('invite.generateButton')}</Text>
+          </Button>
+          <Button
+            testID="invite-have-code-instead"
+            variant="ghost"
+            onPress={() => {
+              setPath(SETUP_PATHS.JOIN);
+              setCurrentStep(SETUP_STEPS.CODE);
+              router.push(getSetupStepRoute(SETUP_STEPS.CODE) as Href);
+            }}
+          >
+            <Text>{t('invite.haveCodeButton')}</Text>
           </Button>
         </>
       )}
