@@ -59,6 +59,12 @@ Format: **Symptom → Root cause → Where the fix lives in this repo → What n
 - **Where the fix lives:** `apps/mobile/src/hooks/mutations/useCreateHousehold.ts` (`docs/DEFECT-LOG.md` D60). `useRedeemInvite.ts`, `useAcceptTerms.ts` and `useLeaveHousehold.ts` already did it correctly — that asymmetry is why only the household-creation path showed the bug, and why it never appeared on the nanny side.
 - **What not to do:** don't patch the screen that showed the symptom (the terminal onboarding step) — `useCreateHousehold` has three callers and fixing one leaves the other two broken. Before shipping any mutation, ask whether the server touches `household_members` as part of it; if it does, invalidate `queryKeys.user.memberships()` alongside your own keys.
 
+**7c. Two `useTranslation` hooks in one file must alias the second, or the i18n guard resolves every key against the wrong namespace**
+- **Symptom:** `apps/mobile/src/i18n/__tests__/locale-key-resolution.test.ts` reports a key as missing from a namespace it was never meant to be in — sometimes many keys at once, in a file you only added one line to.
+- **Root cause:** the guard's `parseTranslationBindings` builds a `Map` keyed by the **destructured variable name**. A second `const { t } = useTranslation('other')` anywhere in the file rebinds `t`, last one wins, and every `t(...)` call in that file — including the ones that were already correct — is then resolved against the second namespace. Writing the key as `t('other:some.key')` does NOT rescue it when a binding for `t` already exists.
+- **Where the fix lives:** the convention — alias every hook after the first: `const { t: tHours } = useTranslation('hours')`. Worked examples: `apps/mobile/src/domains/pay/components/AmountRow.tsx` and `PayTermsGroups.tsx` (`docs/DEFECT-LOG.md` D64), and `apps/mobile/src/domains/schedule/components/ScheduleRespondScreen.tsx` (`t` + `tCommon`).
+- **What not to do:** don't add a bare `const { t }` to a file that already has one, and don't reach for the `ns:key` prefix to work around the failure — fix the binding.
+
 **8. Test files matching a route-file naming pattern become real routes in expo-router**
 - **Symptom:** a colocated test file named to match a route file (e.g. something like `_layout.test.tsx` sitting next to `_layout.tsx`) gets picked up by expo-router as an actual navigable route.
 - **Root cause:** expo-router's file-based routing treats any file inside `src/app/` as a route candidate by filename pattern; a test file that shadows a route name collides with it.

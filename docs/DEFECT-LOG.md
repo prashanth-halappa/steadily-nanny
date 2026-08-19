@@ -2019,7 +2019,30 @@ zero. Migration 041's `>= 0` CHECK is likewise left alone.
 jurisdiction, and a floor that pretended otherwise would be a claim it cannot
 support.
 
-**The clarity half** is tracked separately below.
+**The clarity half.** Every field in the form gained a one-line hint that says
+what the term does to the money, not what its name repeats.
+`changeSheet.overtimeAfterLabel` became "Weekly overtime after (hours in a
+week)" — it was the only threshold field naming neither its unit nor its
+period, while its siblings already said "(hours in a day)", and the string
+"40 in a week" appeared only inside the jurisdiction-preset confirm sheet.
+
+And `screens-pay-terms.md` §11.3's glossary, deferred since it was specified,
+finally ships: `TermsGlossarySheet` over `BottomSheetBase`, twelve entries under
+`hours.json`'s `glossary.*`, two plain sentences each, describing this app's
+behaviour and never the law. `AmountRow` gained an optional `onLabelPress`; a
+label with a handler renders a dotted underline and an `info` a11y hint. It is
+the only pressable label in the app, so the affordance has to be visible or it
+is decoration. Opened from the earnings breakdown and from the term-group labels
+in the form itself — the second is what answers "what is overtime after" at the
+moment the question is asked.
+
+**A trap worth knowing** (cost an hour): `locale-key-resolution.test.ts` keys its
+`t`-binding map by the **destructured name**, so a second bare `const { t } =
+useTranslation('hours')` anywhere in a file silently overwrites the first
+binding — last one wins — and every key in that file then resolves against the
+wrong namespace. A component that reads two namespaces must alias the second
+(`const { t: tHours } = …`). The `hours:key` prefix form does not help either
+when a binding for `t` already exists.
 
 ---
 
