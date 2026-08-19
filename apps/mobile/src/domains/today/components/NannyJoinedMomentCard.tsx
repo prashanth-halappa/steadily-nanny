@@ -61,10 +61,10 @@ export function NannyJoinedMomentCard({
     return null;
   }
 
-  // Only a round HE sent is "the terms you sent". Her counter is an open
-  // round too, but calling it his would misname the thing he is about to open.
+  // Both directions mean a live negotiation exists. We branch on direction
+  // only to get the pronouns right; either way it routes to the active
+  // proposal rather than the blank setup form.
   const open = findOpenTermsProposal(proposals.data);
-  const parentSent = open?.direction === 'parent' ? open : null;
 
   // "She can see the week" needs a week she can actually see: a draft is
   // still in his head, and a declined/withdrawn/ended one is off her
@@ -82,8 +82,10 @@ export function NannyJoinedMomentCard({
     ? hasWeek
       ? t('moments.nannyJoined.bodyAgreed', { name })
       : t('moments.nannyJoined.bodyAgreedNoWeek', { name })
-    : parentSent
-      ? t('moments.nannyJoined.bodyYouSent', { name })
+    : open
+      ? open.direction === 'parent'
+        ? t('moments.nannyJoined.bodyYouSent', { name })
+        : t('moments.nannyJoined.bodyTheySent', { name })
       : t('moments.nannyJoined.bodyNothingSent', { name });
 
   const secondaryAction = arrangement.data
@@ -93,11 +95,14 @@ export function NannyJoinedMomentCard({
           label: t('moments.nannyJoined.ctaSetWeek', { name }),
           onPress: () => router.push('/(private)/schedule/build' as Href),
         }
-    : parentSent
+    : open
       ? {
-          label: t('moments.nannyJoined.ctaSeeTerms'),
+          label:
+            open.direction === 'parent'
+              ? t('moments.nannyJoined.ctaSeeTerms')
+              : t('moments.nannyJoined.ctaReviewTerms'),
           onPress: () =>
-            router.push(`/(private)/pay/proposal/${parentSent.id}` as Href),
+            router.push(`/(private)/pay/proposal/${open.id}` as Href),
         }
       : {
           label: t('moments.nannyJoined.ctaSetTerms'),

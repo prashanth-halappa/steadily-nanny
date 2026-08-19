@@ -267,7 +267,9 @@
       "ctaSeeTerms": "Ver las condiciones que enviaste",
       "cta": "Ver el perfil de {{name}}",
       "bodyAgreedNoWeek": "{{name}} ya puede ver la semana. Todavía no hay nada programado: envíale los días y las horas que necesitas.",
-      "ctaSetWeek": "Fijar sus horas semanales"
+      "ctaSetWeek": "Fijar sus horas semanales",
+      "bodyTheySent": "{{name}} ya puede ver la semana. Sus condiciones están contigo, esperando una respuesta.",
+      "ctaReviewTerms": "Revisar sus condiciones"
     },
     "firstClockIn": {
       "title": "¡Tu primer fichaje con {{family}}!",

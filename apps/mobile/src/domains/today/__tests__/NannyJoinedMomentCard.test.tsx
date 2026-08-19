@@ -173,10 +173,7 @@ describe('NannyJoinedMomentCard — four bodies, one celebration', () => {
     );
   });
 
-  // Her own counter is not "the terms you sent" — it is hers, and the parent
-  // owes an answer. Falls back to the nothing-sent route rather than
-  // mislabelling a round he did not write.
-  it('does not call HER counter-proposal "the terms you sent"', () => {
+  it('routes to the open round when SHE has sent terms', () => {
     mockProposals.mockImplementation(() =>
       settled([{ id: PROPOSAL_ID, direction: 'carer', status: 'proposed' }])
     );
@@ -184,7 +181,16 @@ describe('NannyJoinedMomentCard — four bodies, one celebration', () => {
     renderCard();
 
     expect(lastMomentProps?.body).toBe(
-      'moments.nannyJoined.bodyNothingSent({"name":"Andrea"})'
+      'moments.nannyJoined.bodyTheySent({"name":"Andrea"})'
+    );
+    const secondary = lastMomentProps?.secondaryAction as {
+      label: string;
+      onPress: () => void;
+    };
+    expect(secondary.label).toBe('moments.nannyJoined.ctaReviewTerms');
+    secondary.onPress();
+    expect(mockPush).toHaveBeenCalledWith(
+      `/(private)/pay/proposal/${PROPOSAL_ID}`
     );
   });
 
@@ -342,8 +348,10 @@ describe('NannyJoinedMomentCard — the shipped copy', () => {
           bodyAgreedNoWeek: string;
           bodyNothingSent: string;
           bodyYouSent: string;
+          bodyTheySent: string;
           ctaSetTerms: string;
           ctaSeeTerms: string;
+          ctaReviewTerms: string;
           ctaSetWeek: string;
         };
       };
@@ -352,7 +360,7 @@ describe('NannyJoinedMomentCard — the shipped copy', () => {
   }
 
   for (const locale of ['en', 'es'] as const) {
-    it(`opens all four ${locale} bodies with the identical first sentence`, () => {
+    it(`opens all five ${locale} bodies with the identical first sentence`, () => {
       const b = bodies(locale);
       const firstSentence = (s: string) => `${s.split('. ')[0]}.`;
 
@@ -360,11 +368,13 @@ describe('NannyJoinedMomentCard — the shipped copy', () => {
         firstSentence(b.bodyAgreed)
       );
       expect(firstSentence(b.bodyYouSent)).toBe(firstSentence(b.bodyAgreed));
+      expect(firstSentence(b.bodyTheySent)).toBe(firstSentence(b.bodyAgreed));
       expect(firstSentence(b.bodyAgreedNoWeek)).toBe(
         firstSentence(b.bodyAgreed)
       );
       expect(b.ctaSetTerms.length).toBeGreaterThan(0);
       expect(b.ctaSeeTerms.length).toBeGreaterThan(0);
+      expect(b.ctaReviewTerms.length).toBeGreaterThan(0);
       expect(b.ctaSetWeek.length).toBeGreaterThan(0);
     });
   }
@@ -381,6 +391,9 @@ describe('NannyJoinedMomentCard — the shipped copy', () => {
       'clock in from her first shift'
     );
     expect(bodies('en').bodyYouSent).not.toContain(
+      'clock in from her first shift'
+    );
+    expect(bodies('en').bodyTheySent).not.toContain(
       'clock in from her first shift'
     );
   });

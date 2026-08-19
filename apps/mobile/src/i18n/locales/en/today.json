@@ -267,7 +267,9 @@
       "ctaSeeTerms": "See the terms you sent",
       "cta": "See {{name}}'s profile",
       "bodyAgreedNoWeek": "{{name}} can see the week now. Nothing's scheduled yet — send them the days and times you need.",
-      "ctaSetWeek": "Set {{name}}'s weekly hours"
+      "ctaSetWeek": "Set {{name}}'s weekly hours",
+      "bodyTheySent": "{{name}} can see the week now. Their terms are with you, waiting on an answer.",
+      "ctaReviewTerms": "Review their terms"
     },
     "firstClockIn": {
       "title": "Your first clock-in with the {{family}}!",
