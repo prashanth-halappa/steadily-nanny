@@ -10,6 +10,7 @@
  */
 
 import { z } from 'zod';
+import { HOLIDAY_COUNTRIES } from '../holidayPacks';
 // The invite's pay OFFER is a full arrangement request (P8, 098). No cycle:
 // `payArrangement.schema` imports nothing but zod, and `termsProposal.schema`
 // already leans on it the same way for the `terms` bag it carries.
@@ -235,6 +236,17 @@ export const HouseholdSchema = z.object({
   cancellation_paid_within_hours: z.int().min(0).max(336),
   currency: HouseholdCurrencySchema,
   jurisdiction: HouseholdJurisdictionSchema.nullable(),
+  /**
+   * ISO-3166 alpha-2. `.default('US')` keeps every existing `Household`
+   * literal compiling — a response that predates the column IS US, which
+   * is the pack `holidayPacks.ts` already seeded. Write-side is the closed
+   * `HOLIDAY_COUNTRIES` enum on create/update; read stays a two-letter
+   * string so an unknown stored code still parses and degrades to no pack.
+   */
+  country: z
+    .string()
+    .regex(/^[A-Z]{2}$/)
+    .default('US'),
   week_starts_on: HouseholdWeekStartsOnSchema,
   /**
    * `.default(HOUSEHOLD_STATES.LIVE)` keeps a client on this schema working
@@ -274,6 +286,7 @@ export const CreateHouseholdSchema = z
     cancellation_paid_within_hours: z.int().min(0).max(336).optional(),
     currency: HouseholdCurrencySchema.optional(),
     jurisdiction: HouseholdJurisdictionSchema.nullable().optional(),
+    country: z.enum(Object.values(HOLIDAY_COUNTRIES)).optional(),
     week_starts_on: HouseholdWeekStartsOnSchema.optional(),
   })
   .refine(
@@ -304,6 +317,7 @@ export const UpdateHouseholdSchema = z
     cancellation_paid_within_hours: z.int().min(0).max(336).optional(),
     currency: HouseholdCurrencySchema.optional(),
     jurisdiction: HouseholdJurisdictionSchema.nullable().optional(),
+    country: z.enum(Object.values(HOLIDAY_COUNTRIES)).optional(),
     week_starts_on: HouseholdWeekStartsOnSchema.optional(),
     /**
      * The emergency contact (099). Nullable as well as optional, unlike most

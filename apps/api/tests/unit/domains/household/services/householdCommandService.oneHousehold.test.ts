@@ -45,6 +45,7 @@ const liveHousehold: Household = {
   currency: 'USD',
   jurisdiction: null,
   week_starts_on: 1,
+  country: 'US',
   state: 'live',
   created_by: PARENT_ID,
   created_at: 't',
@@ -192,9 +193,10 @@ const stubUsers: any = {
   getProfileById: mock(async () => null),
 };
 const stubHolidays: any = {
-  seedFederalSet: mock(async () => []),
+  seedCountryPack: mock(async () => []),
   upsertMany: mock(async () => []),
   listForHousehold: mock(async () => []),
+  deleteKeysNotIn: mock(async () => undefined),
 };
 const stubTimeEntries: any = { findRunningInHousehold: mock(async () => null) };
 const stubPayArrangements: any = { endForCarer: mock(async () => []) };

@@ -14,6 +14,7 @@ import {
   InviteNotFoundError,
   NotAHouseholdParentError,
 } from '../errors/householdErrors';
+import { HouseholdCustomHolidayRepository } from '../repositories/householdCustomHolidayRepository';
 import { HouseholdHolidayRepository } from '../repositories/householdHolidayRepository';
 import { HouseholdInviteRepository } from '../repositories/householdInviteRepository';
 import { HouseholdMemberRepository } from '../repositories/householdMemberRepository';
@@ -25,6 +26,7 @@ import {
 } from '../schemas';
 import type {
   Household,
+  HouseholdCustomHoliday,
   HouseholdHoliday,
   HouseholdInvite,
   HouseholdMember,
@@ -48,7 +50,11 @@ export class HouseholdQueryService {
     private readonly proposalRepo: Pick<
       TermsProposalRepository,
       'findOpenForCarer'
-    > = new TermsProposalRepository()
+    > = new TermsProposalRepository(),
+    private readonly customHolidayRepo: Pick<
+      HouseholdCustomHolidayRepository,
+      'listForHousehold'
+    > = new HouseholdCustomHolidayRepository()
   ) {}
 
   /** List the households the caller actively belongs to. */
@@ -229,6 +235,19 @@ export class HouseholdQueryService {
   ): Promise<HouseholdHoliday[]> {
     await this.getMembership(userId, householdId);
     return this.holidayRepo.listForHousehold(householdId);
+  }
+
+  /**
+   * The household's authored custom days. ANY active member, nanny included:
+   * same read gate as `listHolidays`. Writes stay parent-only, in the
+   * command service. An empty list is a real answer — no custom days.
+   */
+  async listCustomHolidays(
+    userId: string,
+    householdId: string
+  ): Promise<HouseholdCustomHoliday[]> {
+    await this.getMembership(userId, householdId);
+    return this.customHolidayRepo.listForHousehold(householdId);
   }
 
   /**

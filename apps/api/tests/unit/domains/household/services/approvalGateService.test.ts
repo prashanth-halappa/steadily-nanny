@@ -27,6 +27,7 @@ function makeHousehold(overrides: Partial<Household> = {}): Household {
     created_at: 't',
     updated_at: 't',
     ...overrides,
+    country: overrides.country ?? 'US',
   };
 }
 

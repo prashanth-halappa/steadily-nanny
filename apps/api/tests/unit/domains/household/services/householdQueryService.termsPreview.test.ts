@@ -39,6 +39,7 @@ const draft: Household = {
   currency: 'USD',
   jurisdiction: null,
   week_starts_on: 1,
+  country: 'US',
   state: 'draft',
   created_by: CARER_ID,
   created_at: FIXTURE_CREATED_AT,

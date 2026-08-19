@@ -156,6 +156,8 @@ function makeWeekEarningsService(
     ptoRepo?: ReturnType<typeof makePtoRepo>;
     expenseRepo?: ReturnType<typeof makeExpenseRepo>;
     holidayRepo?: ReturnType<typeof makeHolidayRepo>;
+    householdRepo?: ReturnType<typeof makeHouseholdRepo>;
+    customHolidayRepo?: ReturnType<typeof makeCustomHolidayRepo>;
   } = {}
 ): WeekEarningsService {
   return new WeekEarningsService(
@@ -163,7 +165,9 @@ function makeWeekEarningsService(
     overrides.arrangementRepo ?? makeArrangementRepo(),
     overrides.ptoRepo ?? makePtoRepo(),
     overrides.expenseRepo ?? makeExpenseRepo(),
-    overrides.holidayRepo ?? makeHolidayRepo()
+    overrides.holidayRepo ?? makeHolidayRepo(),
+    overrides.householdRepo ?? makeHouseholdRepo(),
+    overrides.customHolidayRepo ?? makeCustomHolidayRepo()
   );
 }
 
@@ -185,6 +189,25 @@ function makeExpenseRepo(overrides: Record<string, unknown> = {}): any {
  * the case under test says so, which is also what the table means (absence is
  * "nothing agreed"). */
 function makeHolidayRepo(overrides: Record<string, unknown> = {}): any {
+  return {
+    listForHousehold: mock(async () => []),
+    ...overrides,
+  };
+}
+
+/** The household row, for `country`. Null by default so a test that does not
+ * care about country still exercises the US-pack fallback rather than
+ * inventing a country the fixture never chose. */
+function makeHouseholdRepo(overrides: Record<string, unknown> = {}): any {
+  return {
+    findById: mock(async () => null),
+    ...overrides,
+  };
+}
+
+/** 107's authored days. Empty by default — same absence-is-nothing-agreed
+ * reading as the toggle table. */
+function makeCustomHolidayRepo(overrides: Record<string, unknown> = {}): any {
   return {
     listForHousehold: mock(async () => []),
     ...overrides,
@@ -940,11 +963,17 @@ describe('WeekEarningsService.computeForWeek', () => {
     const arrangementRepo = makeArrangementRepo();
     const ptoRepo = makePtoRepo();
     const expenseRepo = makeExpenseRepo();
+    const holidayRepo = makeHolidayRepo();
+    const householdRepo = makeHouseholdRepo();
+    const customHolidayRepo = makeCustomHolidayRepo();
     const svc = makeWeekEarningsService({
       timeEntryRepo,
       arrangementRepo,
       ptoRepo,
       expenseRepo,
+      holidayRepo,
+      householdRepo,
+      customHolidayRepo,
     });
 
     await svc.computeForWeek(HOUSEHOLD_ID, CARER_ID, WEEK_START);
@@ -971,6 +1000,14 @@ describe('WeekEarningsService.computeForWeek', () => {
       HOUSEHOLD_ID,
       WEEK_START,
       WEEK_END_EXCLUSIVE
+    );
+    expect(holidayRepo.listForHousehold).toHaveBeenCalledWith(HOUSEHOLD_ID);
+    // Country and custom days are household-scoped, same as the toggle table
+    // — no carer argument to get wrong. Both land in the same Promise.all as
+    // the other week fetches so the new reads add no serial latency.
+    expect(householdRepo.findById).toHaveBeenCalledWith(HOUSEHOLD_ID);
+    expect(customHolidayRepo.listForHousehold).toHaveBeenCalledWith(
+      HOUSEHOLD_ID
     );
   });
 
@@ -1278,7 +1315,23 @@ describe('buildWeekEarningsInput — observed holidays (3-E4)', () => {
     };
   }
 
-  function build(householdHolidays: any[], weekStart = JULY_WEEK) {
+  function customHolidayRow(over: Record<string, unknown> = {}): any {
+    return {
+      id: 'ch1',
+      household_id: HOUSEHOLD_ID,
+      name: 'Family Day',
+      dates: ['2026-08-05'],
+      created_at: '2026-01-01T00:00:00+00:00',
+      updated_at: '2026-01-01T00:00:00.000Z',
+      ...over,
+    };
+  }
+
+  function build(
+    householdHolidays: any[],
+    weekStart = JULY_WEEK,
+    extra: { country?: string; customHolidays?: any[] } = {}
+  ) {
     return buildWeekEarningsInput({
       weekStart,
       entries: [],
@@ -1286,6 +1339,7 @@ describe('buildWeekEarningsInput — observed holidays (3-E4)', () => {
       ptoLedgerRows: [],
       approvedExpenses: [],
       householdHolidays,
+      ...extra,
     });
   }
 
@@ -1369,6 +1423,64 @@ describe('buildWeekEarningsInput — observed holidays (3-E4)', () => {
       }).observed_holidays
     ).toEqual([]);
   });
+
+  it('a CA household observing victoria_day prices 2026-05-18, not US Memorial Day', () => {
+    // Victoria Day 2026 is Monday 18 May; US Memorial Day is Monday 25 May.
+    // The CA pack is what picks the 18th — the US pack has no victoria_day
+    // key at all, so a wrapper that still called the deleted US-only helper
+    // would hand the engine [] (or, if it confused the two Mondays, the 25th).
+    const built = build(
+      [holidayRow({ holiday_key: 'victoria_day' })],
+      '2026-05-18',
+      { country: 'CA' }
+    );
+    expect(built.observed_holidays).toEqual(['2026-05-18']);
+    expect(built.observed_holidays).not.toContain('2026-05-25');
+  });
+
+  it('a custom holiday date falling in the priced week reaches observed_holidays', () => {
+    const built = build([], WEEK_START, {
+      customHolidays: [customHolidayRow({ dates: ['2026-08-05'] })],
+    });
+    expect(built.observed_holidays).toEqual(['2026-08-05']);
+  });
+
+  it('a US-only key on a CA household contributes nothing', () => {
+    // independence_day is in the US pack and not the CA pack. Observing it
+    // on a Canadian household must not invent the Fourth of July.
+    expect(
+      build([holidayRow({ holiday_key: 'independence_day' })], JULY_WEEK, {
+        country: 'CA',
+      }).observed_holidays
+    ).toEqual([]);
+  });
+
+  it('a custom date equal to a pack date yields exactly ONE observed_holidays entry', () => {
+    // Deduping is the helper's job; two dates here would become two
+    // holiday_premium lines for the same day.
+    const built = build(
+      [holidayRow({ holiday_key: 'independence_day' })],
+      JULY_WEEK,
+      {
+        country: 'US',
+        customHolidays: [customHolidayRow({ dates: ['2026-07-04'] })],
+      }
+    );
+    expect(built.observed_holidays).toEqual(['2026-07-04']);
+  });
+
+  it('a household with no country falls back to the US pack', () => {
+    // Migration 107 not applied: `country` reads as undefined. Pricing must
+    // degrade to today's US behaviour rather than crash or price nothing.
+    expect(
+      build([holidayRow({ holiday_key: 'independence_day' })]).observed_holidays
+    ).toEqual(['2026-07-04']);
+    expect(
+      build([holidayRow({ holiday_key: 'independence_day' })], JULY_WEEK, {
+        country: undefined,
+      }).observed_holidays
+    ).toEqual(['2026-07-04']);
+  });
 });
 
 describe('WeekEarningsService.computeForWeek — holiday fetch', () => {
@@ -1407,7 +1519,9 @@ describe('WeekEarningsService.computeForWeek — holiday fetch', () => {
       }),
       makePtoRepo(),
       makeExpenseRepo(),
-      holidayRepo
+      holidayRepo,
+      makeHouseholdRepo(),
+      makeCustomHolidayRepo()
     );
 
     const result = await svc.computeForWeek(HOUSEHOLD_ID, CARER_ID, JULY_WEEK);

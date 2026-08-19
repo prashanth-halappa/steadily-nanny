@@ -1,12 +1,14 @@
 /**
  * @module tests/unit/domains/household/routes/householdHolidayRoutes
  *
- * The holiday PUT is the only write in this domain whose body is a LIST, and
- * the two refusals that matter live entirely in the shared wire schema — an
- * unresolvable `holiday_key` (a toggle that would price nothing, forever) and
- * a repeated one (two contradictory instructions about the same day). Neither
- * is visible from a service test, because a service test hands the service a
- * body that already parsed.
+ * The holiday PUT is the only write in this domain whose body is a LIST. Two
+ * refusals still live in the shared wire schema: a repeated `holiday_key`
+ * (two contradictory instructions about the same day) and an empty list. An
+ * unresolvable `holiday_key` used to be a third wire refine against a closed
+ * US-federal set, but valid keys now depend on the household's `country`,
+ * which a wire schema cannot see — so that gate lives in
+ * `householdCommandService.setHolidays` (`UnknownHolidayKeyError` → HTTP 400).
+ * Do not restore a closed-set refine on the wire.
  *
  * Same approach as `householdRoutes.test.ts`: a real `express()` app, the REAL
  * router mounted where `routes/index.ts` mounts it, the REAL presets,
@@ -16,8 +18,9 @@
  *  - Both routes exist at `/households/:householdId/holidays` and answer with
  *    the `{ household_holidays: [...] }` envelope.
  *  - A stranger gets 404 from the ownership preset BEFORE either service.
- *  - An unknown key, a duplicate key, and an empty list are each 400'd before
- *    the command service.
+ *  - An unknown key is refused by the command service and surfaces as 400.
+ *    A duplicate key and an empty list are each 400'd before the command
+ *    service.
  *
  * WHAT THIS DOES NOT PROVE:
  *  - The parent-only role gate, which lives in the mocked command service (see
@@ -33,6 +36,7 @@ import {
   mock,
 } from 'bun:test';
 import type { AddressInfo } from 'node:net';
+import { UnknownHolidayKeyError } from '../../../../../src/domains/household/errors/householdErrors';
 
 const HOUSEHOLD_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const OTHER_HOUSEHOLD_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
@@ -202,13 +206,23 @@ describe('PUT /households/:householdId/holidays', () => {
     });
   });
 
-  it('400s an unknown holiday_key at the wire — a toggle that prices nothing', async () => {
+  // Valid keys depend on the household's country (US vs CA pack). The wire
+  // cannot see that, so a closed-set refine here would refuse a real CA key
+  // for a CA household. The gate is `setHolidays` throwing
+  // UnknownHolidayKeyError; this pins that the route still surfaces it as 400.
+  it('400s an unknown holiday_key refused by the service — a toggle that prices nothing', async () => {
+    setHolidaysMock.mockImplementationOnce(async () => {
+      throw new UnknownHolidayKeyError(HOUSEHOLD_ID, 'st_swithins_day');
+    });
+
     const res = await put(`/households/${HOUSEHOLD_ID}/holidays`, {
       holidays: [{ holiday_key: 'st_swithins_day', observed: true }],
     });
 
     expect(res.status).toBe(400);
-    expect(setHolidaysMock).not.toHaveBeenCalled();
+    expect(setHolidaysMock).toHaveBeenCalledWith(AUTH_USER_ID, HOUSEHOLD_ID, {
+      holidays: [{ holiday_key: 'st_swithins_day', observed: true }],
+    });
   });
 
   it('400s a duplicate holiday_key — two contradictory answers for one day', async () => {

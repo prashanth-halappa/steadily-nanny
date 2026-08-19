@@ -9,6 +9,11 @@
  */
 // Straight from the shared package, not via the terms-proposal domain: that
 // package is a leaf and imports nothing of ours, so there is no cycle to dodge.
+
+import {
+  holidayKeysForCountry,
+  isHolidayKeyForCountry,
+} from '@steadily-nanny/shared-types/holidayPacks';
 import {
   PAY_OFFER_PROMOTION_OUTCOMES,
   type PayOfferPromotionOutcome,
@@ -45,6 +50,7 @@ import {
   CannotRemoveOwnerError,
   CannotRemoveSelfError,
   HouseholdHasCarerError,
+  HouseholdNotFoundError,
   InviteAlreadyAcceptedError,
   InviteExpiredError,
   InviteNotFoundError,
@@ -56,8 +62,10 @@ import {
   ParentAlreadyHasHouseholdError,
   PayOfferNotForDraftHouseholdError,
   PayOfferNotForRoleError,
+  UnknownHolidayKeyError,
   WeekStartLockedError,
 } from '../errors/householdErrors';
+import { HouseholdCustomHolidayRepository } from '../repositories/householdCustomHolidayRepository';
 import { HouseholdHolidayRepository } from '../repositories/householdHolidayRepository';
 import { HouseholdInviteRepository } from '../repositories/householdInviteRepository';
 import { HouseholdMemberRepository } from '../repositories/householdMemberRepository';
@@ -74,10 +82,12 @@ import type {
   CreateHouseholdInput,
   CreateHouseholdInviteInput,
   Household,
+  HouseholdCustomHoliday,
   HouseholdHoliday,
   HouseholdInvite,
   HouseholdMember,
   RedeemHouseholdInviteBody,
+  SetHouseholdCustomHolidaysRequest,
   SetHouseholdHolidaysRequest,
   UpdateHouseholdInput,
 } from '../types';
@@ -196,7 +206,7 @@ export class HouseholdCommandService {
     > = new TimesheetRepository(),
     private readonly holidays: Pick<
       HouseholdHolidayRepository,
-      'upsertMany' | 'listForHousehold' | 'seedFederalSet'
+      'upsertMany' | 'listForHousehold' | 'seedCountryPack' | 'deleteKeysNotIn'
     > = new HouseholdHolidayRepository(),
     // P8's promotion target, and F8's withdrawal on removal/leave. The
     // REPOSITORY, never the terms-proposal domain barrel — see the import
@@ -204,7 +214,11 @@ export class HouseholdCommandService {
     private readonly proposals: Pick<
       TermsProposalRepository,
       'create' | 'withdrawOpenForCarer'
-    > = new TermsProposalRepository()
+    > = new TermsProposalRepository(),
+    private readonly customHolidays: Pick<
+      HouseholdCustomHolidayRepository,
+      'replaceSet'
+    > = new HouseholdCustomHolidayRepository()
   ) {}
 
   /**
@@ -263,17 +277,18 @@ export class HouseholdCommandService {
       throw error;
     }
 
-    // Seed the federal holiday set, all observed — what makes the Holidays
-    // group read "all on" the first time a parent opens it (080). Deliberately
-    // NOT rolled back on failure, unlike the membership insert above: absence
-    // means NOT observed, so a household with no holiday rows is a valid state
-    // and every toggle is one PUT away from being right. A household with no
-    // MEMBERS is unreachable forever. Log it and move on.
+    // Seed the country's holiday pack, all observed — what makes the Holidays
+    // group read "all on" the first time a parent opens it (080, 107).
+    // Deliberately NOT rolled back on failure, unlike the membership insert
+    // above: absence means NOT observed, so a household with no holiday rows
+    // is a valid state and every toggle is one PUT away from being right. A
+    // household with no MEMBERS is unreachable forever. Log it and move on.
     try {
-      await this.holidays.seedFederalSet(household.id);
+      await this.holidays.seedCountryPack(household.id, household.country);
     } catch (error) {
-      logger.error('Failed to seed federal holidays for new household', {
+      logger.error('Failed to seed holidays for new household', {
         householdId: household.id,
+        country: household.country,
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -411,7 +426,7 @@ export class HouseholdCommandService {
   }
 
   /**
-   * Set which federal holidays this household observes. Owner/parent only —
+   * Set which holidays this household observes. Owner/parent only —
    * D-12's owner note is "configurable by the parent"; from 3-O the nanny may
    * PROPOSE terms, and a proposal is not a write to this table.
    *
@@ -420,6 +435,10 @@ export class HouseholdCommandService {
    * cannot silently switch off the eleventh. The response is the FULL
    * post-write calendar rather than the touched rows, because the terms screen
    * renders the whole group.
+   *
+   * Validity of a key depends on the household's country, which the wire
+   * schema cannot see — a CA key is writable for a CA household and refused
+   * for a US one. One unknown key refuses the whole request.
    */
   async setHolidays(
     userId: string,
@@ -429,8 +448,34 @@ export class HouseholdCommandService {
     const membership = await this.queries.getMembership(userId, householdId);
     this.assertWriteRole(householdId, membership);
 
+    const household = await this.householdRepo.findById(householdId);
+    if (!household) {
+      throw new HouseholdNotFoundError(householdId);
+    }
+    const unknown = input.holidays.find(
+      entry => !isHolidayKeyForCountry(household.country, entry.holiday_key)
+    );
+    if (unknown) {
+      throw new UnknownHolidayKeyError(householdId, unknown.holiday_key);
+    }
+
     await this.holidays.upsertMany(householdId, input.holidays);
     return this.holidays.listForHousehold(householdId);
+  }
+
+  /**
+   * Replace this household's authored custom days. Same parent gate as
+   * `setHolidays`. An empty set is how the last custom day is deleted —
+   * custom days are dates, not pack keys, and they are country-independent.
+   */
+  async setCustomHolidays(
+    userId: string,
+    householdId: string,
+    input: SetHouseholdCustomHolidaysRequest
+  ): Promise<HouseholdCustomHoliday[]> {
+    const membership = await this.queries.getMembership(userId, householdId);
+    this.assertWriteRole(householdId, membership);
+    return this.customHolidays.replaceSet(householdId, input.custom_holidays);
   }
 
   /**
@@ -442,6 +487,11 @@ export class HouseholdCommandService {
    * reprice weeks nobody re-approved. The existence check runs ONLY when the
    * field is present AND differs from the current value, so an unrelated
    * update (or resubmitting the same value) never pays for the extra query.
+   *
+   * `country` is the other field that reads the current row: a change drops
+   * keys the new pack does not contain, then seeds the new pack. Shared keys
+   * keep their toggle (`seedCountryPack` ignores conflicts). Custom days are
+   * dates and are not touched. The two reads share one `findById`.
    */
   async update(
     userId: string,
@@ -461,8 +511,12 @@ export class HouseholdCommandService {
     }
     await this.assertWriteRoleOrDraftAuthor(householdId, membership);
 
+    let current: Household | null = null;
+    if (input.week_starts_on !== undefined || input.country !== undefined) {
+      current = await this.householdRepo.findById(householdId);
+    }
+
     if (input.week_starts_on !== undefined) {
-      const current = await this.householdRepo.findById(householdId);
       if (current && input.week_starts_on !== current.week_starts_on) {
         const hasTimesheets =
           await this.timesheets.existsForHousehold(householdId);
@@ -472,7 +526,29 @@ export class HouseholdCommandService {
       }
     }
 
-    return this.householdRepo.update(householdId, input);
+    const updated = await this.householdRepo.update(householdId, input);
+
+    if (
+      input.country !== undefined &&
+      current !== null &&
+      input.country !== current.country
+    ) {
+      try {
+        await this.holidays.deleteKeysNotIn(
+          householdId,
+          holidayKeysForCountry(input.country)
+        );
+        await this.holidays.seedCountryPack(householdId, input.country);
+      } catch (error) {
+        logger.error('Failed to resync holiday pack after country change', {
+          householdId,
+          country: input.country,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return updated;
   }
 
   /**
@@ -628,7 +704,8 @@ export class HouseholdCommandService {
         userId,
         code,
         input,
-        invite
+        invite,
+        inviteHousehold
       );
       if (membership) {
         return membership;
@@ -1044,7 +1121,8 @@ export class HouseholdCommandService {
     userId: string,
     code: string,
     input: RedeemHouseholdInviteBody,
-    invite: HouseholdInvite
+    invite: HouseholdInvite,
+    draftHousehold: Household
   ): Promise<HouseholdMember | null> {
     // §8/A4, server backstop. With no `target_household_id` 094 INSTANTIATES a
     // household — a second live family for a parent who already has one,
@@ -1070,6 +1148,29 @@ export class HouseholdCommandService {
 
     switch (result.outcome) {
       case 'redeemed':
+        // 094/096 instantiate a live household with members and children but
+        // NOTHING in household_holidays, and they do not copy the draft's
+        // country. Absence means not observed, so the new family would
+        // silently observe zero holidays. Seed here, best-effort: a failure
+        // logs and the redemption stands. Absorb into an existing household
+        // is exempt — that family already has its calendar.
+        if (!input.target_household_id) {
+          try {
+            await this.householdRepo.update(result.household_id, {
+              country: draftHousehold.country,
+            });
+            await this.holidays.seedCountryPack(
+              result.household_id,
+              draftHousehold.country
+            );
+          } catch (error) {
+            logger.error('Failed to seed holidays for instantiated household', {
+              householdId: result.household_id,
+              country: draftHousehold.country,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
         // A6 — her draft has done its job: a family joined with her code and
         // she now belongs to a LIVE household. 094 leaves the draft standing
         // forever (see its header), and that zombie is what makes the shell

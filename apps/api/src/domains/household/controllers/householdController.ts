@@ -125,6 +125,52 @@ export class HouseholdController {
     }
   }
 
+  /** GET /households/:householdId/custom-holidays — any active member may read. */
+  static async listCustomHolidays(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const householdId = req.params.householdId as string;
+      const household_custom_holidays =
+        await householdQueryService.listCustomHolidays(
+          getAuthUserId(req),
+          householdId
+        );
+      return sendSuccessResponse(res, 'Household custom holidays fetched', {
+        household_custom_holidays,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * PUT /households/:householdId/custom-holidays — parent-gated (role check
+   * in the command service). Answers with the whole set, not just what changed.
+   */
+  static async setCustomHolidays(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const householdId = req.params.householdId as string;
+      const household_custom_holidays =
+        await householdCommandService.setCustomHolidays(
+          getAuthUserId(req),
+          householdId,
+          req.body
+        );
+      return sendSuccessResponse(res, 'Household custom holidays updated', {
+        household_custom_holidays,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   /**
    * The parent's own record of every code she has minted. Parents only — the
    * role check lives in the query service, because only it can see the roster.

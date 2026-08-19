@@ -39,6 +39,7 @@ const liveHousehold: Household = {
   currency: 'USD',
   jurisdiction: null,
   week_starts_on: 1,
+  country: 'US',
   state: 'live',
   created_by: 'u1',
   created_at: 't',
@@ -176,9 +177,10 @@ function makeQueries(membership: HouseholdMember): any {
 
 const stubUsers: any = { ensureProfile: mock(async () => {}) };
 const stubHolidays: any = {
-  seedFederalSet: mock(async () => []),
+  seedCountryPack: mock(async () => []),
   upsertMany: mock(async () => []),
   listForHousehold: mock(async () => []),
+  deleteKeysNotIn: mock(async () => undefined),
 };
 const stubTimeEntries: any = { findRunningInHousehold: mock(async () => null) };
 const stubPayArrangements: any = { endForCarer: mock(async () => []) };
@@ -196,6 +198,7 @@ function makeService(parts: {
   memberRepo?: any;
   inviteRepo?: any;
   queries?: any;
+  holidays?: any;
 }): HouseholdCommandService {
   return new HouseholdCommandService(
     parts.householdRepo ?? makeHouseholdRepo(),
@@ -207,7 +210,7 @@ function makeService(parts: {
     stubPayArrangements,
     stubPtoLedger,
     stubTimesheets,
-    stubHolidays,
+    parts.holidays ?? stubHolidays,
     stubProposals
   );
 }
@@ -560,6 +563,110 @@ describe('redeemInvite — dispatch to the draft redemption function', () => {
     expect(memberRepo.createMembership).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'active' })
     );
+  });
+});
+
+describe('redeemInvite — instantiate seeds the draft’s country pack', () => {
+  const NEW_HOUSEHOLD_ID = 'h-live-from-draft';
+
+  function instantiateService(
+    opts: {
+      draftCountry?: string;
+      holidays?: {
+        seedCountryPack: ReturnType<typeof mock>;
+        upsertMany: ReturnType<typeof mock>;
+        listForHousehold: ReturnType<typeof mock>;
+        deleteKeysNotIn: ReturnType<typeof mock>;
+      };
+    } = {}
+  ) {
+    const draft = {
+      ...draftHousehold,
+      country: opts.draftCountry ?? 'CA',
+    };
+    const householdRepo = makeHouseholdRepo(draft);
+    const holidays = opts.holidays ?? {
+      seedCountryPack: mock(async () => []),
+      upsertMany: mock(async () => []),
+      listForHousehold: mock(async () => []),
+      deleteKeysNotIn: mock(async () => undefined),
+    };
+    const inviteRepo = makeInviteRepo({
+      redeemDraftHousehold: mock(async () => ({
+        outcome: 'redeemed',
+        household_id: NEW_HOUSEHOLD_ID,
+        carer_id: NANNY_ID,
+        proposal: null,
+      })),
+    });
+    const redeemerMembership = {
+      id: 'm-owner',
+      household_id: NEW_HOUSEHOLD_ID,
+      user_id: 'u-parent',
+      role: 'owner',
+      can_edit: true,
+      status: 'active',
+      display_name_override: null,
+      colour: null,
+      joined_at: 't',
+      created_at: 't',
+      updated_at: 't',
+    };
+    const svc = makeService({
+      householdRepo,
+      inviteRepo,
+      holidays,
+      queries: makeQueries(redeemerMembership as HouseholdMember),
+    });
+    return { svc, householdRepo, holidays, inviteRepo };
+  }
+
+  it('copies the draft country onto the new household and seeds that pack', async () => {
+    const { svc, householdRepo, holidays } = instantiateService({
+      draftCountry: 'CA',
+    });
+
+    await svc.redeemInvite('u-parent', { code: 'ABC-234' });
+
+    expect(householdRepo.update).toHaveBeenCalledWith(NEW_HOUSEHOLD_ID, {
+      country: 'CA',
+    });
+    expect(holidays.seedCountryPack).toHaveBeenCalledWith(
+      NEW_HOUSEHOLD_ID,
+      'CA'
+    );
+  });
+
+  it('does not seed when the redemption absorbs into an existing household', async () => {
+    const { svc, householdRepo, holidays } = instantiateService();
+
+    await svc.redeemInvite('u-parent', {
+      code: 'ABC-234',
+      target_household_id: 'h-already-live',
+    });
+
+    expect(householdRepo.update).not.toHaveBeenCalled();
+    expect(holidays.seedCountryPack).not.toHaveBeenCalled();
+  });
+
+  it('logs a seed failure and still returns the membership', async () => {
+    const loggerError = spyOn(logger, 'error').mockImplementation(() => logger);
+    const { svc } = instantiateService({
+      holidays: {
+        seedCountryPack: mock(async () => {
+          throw new Error('seed exploded');
+        }),
+        upsertMany: mock(async () => []),
+        listForHousehold: mock(async () => []),
+        deleteKeysNotIn: mock(async () => undefined),
+      },
+    });
+
+    const result = await svc.redeemInvite('u-parent', { code: 'ABC-234' });
+
+    expect(result).toMatchObject({ id: 'm-owner' });
+    expect(loggerError).toHaveBeenCalled();
+    loggerError.mockRestore();
   });
 });
 

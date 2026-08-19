@@ -23,6 +23,7 @@ import {
   HouseholdMemberParamSchema,
   InviteCodeParamSchema,
   RedeemHouseholdInviteBodySchema,
+  SetHouseholdCustomHolidaysRequestSchema,
   SetHouseholdHolidaysRequestSchema,
   UpdateHouseholdInviteSchema,
   UpdateHouseholdMemberSchema,
@@ -112,6 +113,23 @@ router.put(
   ...authWithOwnership(HouseholdIdParamSchema, householdOwnership),
   validate(SetHouseholdHolidaysRequestSchema, 'body'),
   asyncHandler(HouseholdController.setHolidays)
+);
+
+// Custom days the family authored (107). Same membership/parent split as the
+// pack-key calendar above: any active member may read; writes are parent-only
+// (role check in the command service). A PUT of a SET; an empty list deletes
+// the last custom day.
+router.get(
+  '/:householdId/custom-holidays',
+  ...authWithOwnership(HouseholdIdParamSchema, householdOwnership),
+  asyncHandler(HouseholdController.listCustomHolidays)
+);
+
+router.put(
+  '/:householdId/custom-holidays',
+  ...authWithOwnership(HouseholdIdParamSchema, householdOwnership),
+  validate(SetHouseholdCustomHolidaysRequestSchema, 'body'),
+  asyncHandler(HouseholdController.setCustomHolidays)
 );
 
 // The parent's record of every code minted for this household — parents only

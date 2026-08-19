@@ -6,9 +6,9 @@
  * Backing table: `household_holidays` (supabase/migrations/080_holidays.sql).
  *
  * ONE ROW PER (household, holiday_key) — a TOGGLE, not a date. The dates are
- * a rule, resolved per year by `usFederalHolidays.ts`; storing them here
- * would be a second copy of that rule and eleven more rows a year to keep
- * right. See that module's header.
+ * a pack, resolved per year by `holidayPacks.ts` for the household's country;
+ * storing them here would be a second copy of that pack and a row a year to
+ * keep right. See that module's header.
  *
  * ABSENT MEANS NOT OBSERVED, and that is the null-is-an-explicit-no rule
  * (playbook §2.9) applied to a row set. A household with no rows observes no
@@ -22,22 +22,18 @@
  */
 
 import { z } from 'zod';
-import { isUsFederalHolidayKey } from '../usFederalHolidays';
 
 /**
- * On READ the key is an OPEN string; on WRITE it must be one this build
- * knows. The same asymmetry `EarningsLineKind` has, for the same reason: a
- * row written by a newer server (a state holiday, a household-authored day)
- * must still parse on an older client, while a key this build cannot resolve
- * to a date must never be storable — it would be a toggle that prices
- * nothing, forever, silently.
+ * On READ the key is an OPEN string; on WRITE it is the same shape (1..64).
+ * Validity now depends on the household's country, which a wire schema
+ * cannot see — a CA key is writable for a CA household and refused for a
+ * US one. The closed-set gate MOVED to
+ * `householdCommandService.setHolidays`; do not conclude it evaporated
+ * because this refine is gone.
  */
 const HolidayKeyReadSchema = z.string().min(1).max(64);
 
-const HolidayKeyWriteSchema = HolidayKeyReadSchema.refine(
-  isUsFederalHolidayKey,
-  { message: 'holiday_key must be a known US federal holiday key' }
-);
+const HolidayKeyWriteSchema = HolidayKeyReadSchema;
 
 /** The persisted row as returned to clients. */
 export const HouseholdHolidaySchema = z.object({
@@ -90,4 +86,72 @@ export type SetHouseholdHolidaysRequest = z.infer<
 >;
 export type HouseholdHolidayListResponse = z.infer<
   typeof HouseholdHolidayListResponseSchema
+>;
+
+// =============================================================================
+// household_custom_holidays — household-authored days, not a pack key
+// =============================================================================
+
+/**
+ * The persisted custom-day row as returned to clients. `dates` are the
+ * literal `YYYY-MM-DD`s this family treats as holidays; there is no rule
+ * behind them, which is the whole point of a custom day.
+ */
+export const HouseholdCustomHolidaySchema = z.object({
+  id: z.uuid(),
+  household_id: z.uuid(),
+  name: z.string().min(1).max(60),
+  dates: z.array(z.iso.date()).min(1).max(12),
+  created_at: z.iso.datetime({ offset: true }),
+  updated_at: z.iso.datetime({ offset: true }),
+});
+
+const CustomHolidayWriteNameSchema = z.string().trim().min(1).max(60);
+
+const CustomHolidayWriteDatesSchema = z
+  .array(z.iso.date())
+  .min(1)
+  .max(12)
+  .refine(dates => new Set(dates).size === dates.length, {
+    message: 'dates must not repeat',
+  });
+
+/**
+ * `PUT /households/:householdId/custom-holidays` body — a SET of custom
+ * days, replaced wholesale.
+ *
+ * No `.min(1)`: an empty set is how the last custom day is deleted.
+ * `.max(20)` is the ceiling so a household cannot store an unbounded list
+ * of dates the engine would then scan every week.
+ */
+export const SetHouseholdCustomHolidaysRequestSchema = z.object({
+  custom_holidays: z
+    .array(
+      z.object({
+        name: CustomHolidayWriteNameSchema,
+        dates: CustomHolidayWriteDatesSchema,
+      })
+    )
+    .max(20)
+    .refine(
+      holidays =>
+        new Set(holidays.map(entry => entry.name.toLowerCase())).size ===
+        holidays.length,
+      { message: 'custom holiday names must not repeat' }
+    ),
+});
+
+/** List response envelope — this household's authored days. */
+export const HouseholdCustomHolidayListResponseSchema = z.object({
+  household_custom_holidays: z.array(HouseholdCustomHolidaySchema),
+});
+
+export type HouseholdCustomHoliday = z.infer<
+  typeof HouseholdCustomHolidaySchema
+>;
+export type SetHouseholdCustomHolidaysRequest = z.infer<
+  typeof SetHouseholdCustomHolidaysRequestSchema
+>;
+export type HouseholdCustomHolidayListResponse = z.infer<
+  typeof HouseholdCustomHolidayListResponseSchema
 >;

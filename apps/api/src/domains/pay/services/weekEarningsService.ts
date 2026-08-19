@@ -18,21 +18,30 @@
  *
  * @module domains/pay/services/weekEarningsService
  */
+
+import {
+  HOLIDAY_COUNTRIES,
+  observedHolidayDates,
+} from '@steadily-nanny/shared-types/holidayPacks';
 import type { HouseholdClosure } from '@steadily-nanny/shared-types/schemas/availability.schema';
 import type { Expense } from '@steadily-nanny/shared-types/schemas/expense.schema';
 import { EXPENSE_STATUSES } from '@steadily-nanny/shared-types/schemas/expense.schema';
-import type { HouseholdHoliday } from '@steadily-nanny/shared-types/schemas/householdHoliday.schema';
+import type {
+  HouseholdCustomHoliday,
+  HouseholdHoliday,
+} from '@steadily-nanny/shared-types/schemas/householdHoliday.schema';
 import type { PtoLedgerEntry } from '@steadily-nanny/shared-types/schemas/pto.schema';
 import { PTO_LEDGER_KINDS } from '@steadily-nanny/shared-types/schemas/pto.schema';
 import type {
   TimeEntry,
   WeekEarnings,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
-import { observedHolidayDatesInRange } from '@steadily-nanny/shared-types/usFederalHolidays';
 // Repository MODULE, never the household domain's barrel — importing the
 // barrel here would close an import cycle (the household domain reaches into
 // pay for arrangement gating).
+import { HouseholdCustomHolidayRepository } from '../../household/repositories/householdCustomHolidayRepository';
 import { HouseholdHolidayRepository } from '../../household/repositories/householdHolidayRepository';
+import { HouseholdRepository } from '../../household/repositories/householdRepository';
 import { TimeEntryRepository } from '../../timesheet/repositories/timeEntryRepository';
 import { weekEndExclusive } from '../../timesheet/utils/weekStart';
 import { entryMinutes } from '../../timesheet/utils/workedMinutes';
@@ -116,7 +125,7 @@ export interface WeekEarningsSources {
   /**
    * THIS household's holiday toggles (`household_holidays`, migration 080) —
    * ALL of them, unfiltered, because the rows carry a KEY and not a date and
-   * only `observedHolidayDatesInRange` knows which keys land in this week.
+   * only `observedHolidayDates` knows which keys land in this week.
    *
    * Household-scoped, not carer-scoped: the calendar belongs to the family
    * (spec §4.3, "the list is household-level"). What a worked holiday PAYS is
@@ -127,6 +136,23 @@ export interface WeekEarningsSources {
    * absence is "nothing agreed", never "all of them").
    */
   householdHolidays?: readonly HouseholdHoliday[];
+  /**
+   * ISO-3166 alpha-2 of this household, when the row has it. Optional so
+   * every existing caller and a database that has not had migration 107
+   * applied (`country` reads as undefined) fall through to the US pack at
+   * the resolver rather than crashing a week.
+   */
+  country?: string;
+  /**
+   * THIS household's authored days (`household_custom_holidays`, migration
+   * 107) — ALL of them. Dates are already ISO; the resolver unions them with
+   * pack dates, dedupes (a custom date equal to a pack date is one date),
+   * and clips to the week. The row existing IS the observance.
+   *
+   * Optional so every existing caller and fixture is unaffected; omitted
+   * means no custom days, which is also what an empty table means.
+   */
+  customHolidays?: readonly HouseholdCustomHoliday[];
 }
 
 /**
@@ -322,20 +348,29 @@ export function buildWeekEarningsInput(
     });
   }
 
-  // OBSERVED HOLIDAYS — the household's toggles, resolved into THIS week's
-  // dates. The whole key-to-date rule lives in one call, and this is its only
+  // OBSERVED HOLIDAYS — the household's toggles AND authored custom dates,
+  // resolved into THIS week's dates. The whole key-to-date rule (plus the
+  // custom-date union and dedupe) lives in one call, and this is its only
   // production caller: the engine takes dates because it takes priced facts,
   // not storage (`observed_holidays`'s doc on `ComputeWeekEarningsInput`), and
-  // `observedHolidayDatesInRange` is where "the third Monday in January"
-  // becomes "2027-01-18". A key this build has no rule for resolves to
+  // `observedHolidayDates` is where "the third Monday in January" becomes
+  // "2027-01-18", and where a custom ISO date is admitted if it falls in the
+  // week. A key this build has no rule for in this country's pack resolves to
   // nothing rather than to a guessed date — inventing when a premium is owed
   // is the same class of fabrication as inventing an amount. The helper spans
   // both calendar years for a week that straddles New Year, so a worked Jan 1
-  // in a week that starts in December is not silently unpaid.
-  const observedHolidays = observedHolidayDatesInRange(
+  // in a week that starts in December is not silently unpaid. `country`
+  // missing (pre-107) falls back to the US pack so pricing degrades to
+  // today's behaviour rather than crashing.
+  const customDates = (sources.customHolidays ?? []).flatMap(
+    holiday => holiday.dates
+  );
+  const observedHolidays = observedHolidayDates(
+    sources.country ?? HOLIDAY_COUNTRIES.US,
     (sources.householdHolidays ?? [])
       .filter(holiday => holiday.observed)
       .map(holiday => holiday.holiday_key),
+    customDates,
     sources.weekStart,
     weekEnd
   );
@@ -392,6 +427,26 @@ export interface WeekEarningsHolidayRepository {
   listForHousehold: (householdId: string) => Promise<HouseholdHoliday[]>;
 }
 
+/**
+ * Only the household row this service needs — `country`, so the pack
+ * resolver knows US vs CA. HOUSEHOLD-scoped (`findById` of this household),
+ * with no carer argument. `country` is optional on the row: a database that
+ * has not had migration 107 applied returns undefined, and pricing falls
+ * back to the US pack.
+ */
+export interface WeekEarningsHouseholdRepository {
+  findById: (householdId: string) => Promise<{ country?: string } | null>;
+}
+
+/**
+ * Only the custom-holiday query this service needs. HOUSEHOLD-scoped, with
+ * no carer argument at all — authored days belong to the family, same as the
+ * toggle table. The row existing IS the observance.
+ */
+export interface WeekEarningsCustomHolidayRepository {
+  listForHousehold: (householdId: string) => Promise<HouseholdCustomHoliday[]>;
+}
+
 export interface WeekEarningsComputer {
   computeForWeek: (
     householdId: string,
@@ -406,7 +461,9 @@ export class WeekEarningsService implements WeekEarningsComputer {
     private readonly arrangementRepo: PayArrangementRepository = new PayArrangementRepository(),
     private readonly ptoRepo: WeekEarningsPtoRepository = new PtoLedgerRepository(),
     private readonly expenseRepo: WeekEarningsExpenseRepository = new ExpenseRepository(),
-    private readonly holidayRepo: WeekEarningsHolidayRepository = new HouseholdHolidayRepository()
+    private readonly holidayRepo: WeekEarningsHolidayRepository = new HouseholdHolidayRepository(),
+    private readonly householdRepo: WeekEarningsHouseholdRepository = new HouseholdRepository(),
+    private readonly customHolidayRepo: WeekEarningsCustomHolidayRepository = new HouseholdCustomHolidayRepository()
   ) {}
 
   /**
@@ -461,29 +518,41 @@ export class WeekEarningsService implements WeekEarningsComputer {
     const endYear = Number(weekEnd.slice(0, 4));
     const ptoYears = startYear === endYear ? [startYear] : [startYear, endYear];
 
-    const [entries, ptoLedgerRowsPerYear, expenses, householdHolidays] =
-      await Promise.all([
-        this.timeEntryRepo.listForCarerWeek(
-          householdId,
-          carerId,
-          weekStart,
-          weekEndExclusive(weekStart)
-        ),
-        Promise.all(
-          ptoYears.map(year =>
-            this.ptoRepo.listForCarerYear(householdId, carerId, year)
-          )
-        ),
-        this.expenseRepo.listApprovedForWeek(
-          householdId,
-          weekStart,
-          weekEndExclusive(weekStart)
-        ),
-        // Every toggle, unfiltered: the rows hold KEYS, and only
-        // `buildWeekEarningsInput` knows which keys land in this week. There
-        // are at most eleven of them per household.
-        this.holidayRepo.listForHousehold(householdId),
-      ]);
+    const [
+      entries,
+      ptoLedgerRowsPerYear,
+      expenses,
+      householdHolidays,
+      household,
+      customHolidays,
+    ] = await Promise.all([
+      this.timeEntryRepo.listForCarerWeek(
+        householdId,
+        carerId,
+        weekStart,
+        weekEndExclusive(weekStart)
+      ),
+      Promise.all(
+        ptoYears.map(year =>
+          this.ptoRepo.listForCarerYear(householdId, carerId, year)
+        )
+      ),
+      this.expenseRepo.listApprovedForWeek(
+        householdId,
+        weekStart,
+        weekEndExclusive(weekStart)
+      ),
+      // Every toggle, unfiltered: the rows hold KEYS, and only
+      // `buildWeekEarningsInput` knows which keys land in this week. There
+      // are at most eleven of them per household.
+      this.holidayRepo.listForHousehold(householdId),
+      // Country lives on the household row (107). Missing column → undefined
+      // → US pack at the resolver, same as today's behaviour.
+      this.householdRepo.findById(householdId),
+      // Authored days, unfiltered: dates are already ISO, and only
+      // `buildWeekEarningsInput` knows which fall in this week.
+      this.customHolidayRepo.listForHousehold(householdId),
+    ]);
 
     const ptoLedgerRows = ptoLedgerRowsPerYear.flat();
     // `listApprovedForWeek` is household-scoped only — narrowed to this carer
@@ -500,6 +569,8 @@ export class WeekEarningsService implements WeekEarningsComputer {
         ptoLedgerRows,
         approvedExpenses,
         householdHolidays,
+        country: household?.country,
+        customHolidays,
       })
     );
   }

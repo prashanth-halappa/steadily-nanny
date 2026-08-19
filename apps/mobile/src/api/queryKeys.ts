@@ -61,6 +61,8 @@ export const queryKeys = {
       [...queryKeys.household.all, 'invites', householdId] as const,
     holidays: (householdId?: string) =>
       [...queryKeys.household.all, 'holidays', householdId] as const,
+    customHolidays: (householdId?: string) =>
+      [...queryKeys.household.all, 'customHolidays', householdId] as const,
   },
 
   // A household's children

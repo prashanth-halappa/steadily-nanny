@@ -4,8 +4,11 @@
  */
 import { describe, expect, it } from 'bun:test';
 import {
+  HouseholdCustomHolidayListResponseSchema,
+  HouseholdCustomHolidaySchema,
   HouseholdHolidayListResponseSchema,
   HouseholdHolidaySchema,
+  SetHouseholdCustomHolidaysRequestSchema,
   SetHouseholdHolidaysRequestSchema,
 } from '../src/schemas/householdHoliday.schema';
 import { US_FEDERAL_HOLIDAY_KEYS } from '../src/usFederalHolidays';
@@ -96,14 +99,15 @@ describe('SetHouseholdHolidaysRequestSchema', () => {
     expect(parsed.success && parsed.data.holidays).toHaveLength(2);
   });
 
-  it('REFUSES a key this build cannot resolve to a date', () => {
-    // The write side is closed where the read side is open: a stored key with
-    // no rule behind it is a toggle that prices nothing, forever, silently.
+  it('no longer refuses an unknown key — country-validity is the service’s', () => {
+    // Closed-set gate moved to householdCommandService.setHolidays; a wire
+    // schema cannot see the household's country, so a CA key on a US
+    // household (and the reverse) is the service's to refuse.
     expect(
       SetHouseholdHolidaysRequestSchema.safeParse({
         holidays: [{ holiday_key: 'st_swithins_day', observed: true }],
       }).success
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('refuses a duplicate key rather than letting last-write-wins pick one', () => {
@@ -134,5 +138,84 @@ describe('SetHouseholdHolidaysRequestSchema', () => {
         })),
       }).success
     ).toBe(true);
+  });
+});
+
+const validCustomRow = {
+  id: VALID_UUID,
+  household_id: VALID_UUID,
+  name: 'Family Day',
+  dates: ['2026-02-16'],
+  created_at: OFFSET_FORM,
+  updated_at: ZULU_FORM,
+};
+
+describe('HouseholdCustomHolidaySchema', () => {
+  it('parses a row', () => {
+    expect(HouseholdCustomHolidaySchema.safeParse(validCustomRow).success).toBe(
+      true
+    );
+  });
+
+  it('envelopes a list', () => {
+    expect(
+      HouseholdCustomHolidayListResponseSchema.safeParse({
+        household_custom_holidays: [validCustomRow],
+      }).success
+    ).toBe(true);
+  });
+});
+
+describe('SetHouseholdCustomHolidaysRequestSchema', () => {
+  it('ACCEPTS an empty set — that is how the last custom day is deleted', () => {
+    expect(
+      SetHouseholdCustomHolidaysRequestSchema.safeParse({
+        custom_holidays: [],
+      }).success
+    ).toBe(true);
+  });
+
+  it('accepts a named custom day with dates', () => {
+    const parsed = SetHouseholdCustomHolidaysRequestSchema.safeParse({
+      custom_holidays: [{ name: 'Family Day', dates: ['2026-02-16'] }],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('refuses empty dates', () => {
+    expect(
+      SetHouseholdCustomHolidaysRequestSchema.safeParse({
+        custom_holidays: [{ name: 'Family Day', dates: [] }],
+      }).success
+    ).toBe(false);
+  });
+
+  it('refuses duplicate dates', () => {
+    expect(
+      SetHouseholdCustomHolidaysRequestSchema.safeParse({
+        custom_holidays: [
+          { name: 'Family Day', dates: ['2026-02-16', '2026-02-16'] },
+        ],
+      }).success
+    ).toBe(false);
+  });
+
+  it('refuses duplicate names, case-insensitively after trim', () => {
+    expect(
+      SetHouseholdCustomHolidaysRequestSchema.safeParse({
+        custom_holidays: [
+          { name: 'Family Day', dates: ['2026-02-16'] },
+          { name: ' family day ', dates: ['2027-02-15'] },
+        ],
+      }).success
+    ).toBe(false);
+  });
+
+  it('refuses a 61-char name', () => {
+    expect(
+      SetHouseholdCustomHolidaysRequestSchema.safeParse({
+        custom_holidays: [{ name: 'a'.repeat(61), dates: ['2026-02-16'] }],
+      }).success
+    ).toBe(false);
   });
 });

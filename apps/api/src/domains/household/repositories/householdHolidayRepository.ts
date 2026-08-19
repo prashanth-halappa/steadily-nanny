@@ -5,7 +5,7 @@
  *
  * @module domains/household/repositories/householdHolidayRepository
  */
-import { US_FEDERAL_HOLIDAY_KEYS } from '@steadily-nanny/shared-types/usFederalHolidays';
+import { holidayKeysForCountry } from '@steadily-nanny/shared-types/holidayPacks';
 import { supabaseService } from '../../../config/supabase';
 import { DatabaseError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
@@ -53,20 +53,59 @@ export class HouseholdHolidayRepository extends BaseRepository<HouseholdHoliday>
   }
 
   /**
-   * Seed a brand-new household with the federal set, all observed — what makes
-   * the Holidays group read "all on" the first time a parent opens it (080).
-   * Ignores conflicts so a retried creation cannot 23505 AND cannot reset a
-   * toggle somebody has already changed.
+   * Seed a brand-new household with the country's holiday pack, all observed
+   * — what makes the Holidays group read "all on" the first time a parent
+   * opens it (080, generalised past the US federal set in 107). Ignores
+   * conflicts so a retried creation cannot 23505 AND cannot reset a toggle
+   * somebody has already changed.
    */
-  async seedFederalSet(householdId: string): Promise<HouseholdHoliday[]> {
+  async seedCountryPack(
+    householdId: string,
+    country: string
+  ): Promise<HouseholdHoliday[]> {
     return this.upsertRows(
       householdId,
-      US_FEDERAL_HOLIDAY_KEYS.map(holiday_key => ({
+      holidayKeysForCountry(country).map(holiday_key => ({
         holiday_key,
         observed: true,
       })),
       true
     );
+  }
+
+  /**
+   * Drop this household's toggles whose key is not in `keys` — the leftover
+   * rows after a country change, whose pack no longer contains them.
+   *
+   * List, then filter in TypeScript, then delete by id. PostgREST `not.in`
+   * with interpolated keys is a quoting trap; an empty stale set returns
+   * without a second round trip.
+   */
+  async deleteKeysNotIn(
+    householdId: string,
+    keys: readonly string[]
+  ): Promise<void> {
+    const rows = await this.listForHousehold(householdId);
+    const keep = new Set(keys);
+    const staleIds = rows
+      .filter(row => !keep.has(row.holiday_key))
+      .map(row => row.id);
+    if (staleIds.length === 0) {
+      return;
+    }
+
+    const { error } = await supabaseService
+      .from(this.table)
+      .delete()
+      .in('id', staleIds);
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to delete stale household holidays',
+        'DATABASE_ERROR',
+        { details: error.message, householdId, count: staleIds.length }
+      );
+    }
   }
 
   /**

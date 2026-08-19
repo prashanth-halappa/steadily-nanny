@@ -23,11 +23,12 @@
  * day pays a worked-holiday premium without anyone having agreed to it. The
  * date IS the holiday. Pinned by the 'New Year 2028 stays on Saturday' case.
  *
- * ponytail: eleven federal holidays only — no state holidays, no religious
- * observances, no household-authored custom days. Upgrade path is a
- * `custom_holidays` row set alongside `household_holidays`, at which point
- * `holiday_key` stops being drawn from this closed set (which is why the READ
- * schema already treats it as an open string — see `householdHoliday.schema.ts`).
+ * ponytail: this file is the US federal pack plus the shared calendar
+ * arithmetic (`holidayDateFromRule`). Country packs, custom days, and the
+ * observed-date resolver live in `holidayPacks.ts`. The ceiling there: only
+ * 2026 and 2027 are dated for Canada, so in 2028 `good_friday` and
+ * `victoria_day` resolve to nothing. Upgrade path is add 2028 dates, or
+ * implement Easter computus plus a `weekday_before` rule kind.
  *
  * This module is dependency-free and side-effect free on purpose: the engine
  * imports it, and the engine has no I/O, no clock, and no randomness.
@@ -183,7 +184,7 @@ function lastDayOfMonth(year: number, month: number): number {
 }
 
 /** The `YYYY-MM-DD` this rule resolves to in `year`. Pure and total. */
-function usFederalHolidayDate(
+export function holidayDateFromRule(
   rule: UsFederalHolidayRule,
   year: number
 ): string {
@@ -224,38 +225,6 @@ export function usFederalHolidayDates(
 ): readonly UsFederalHolidayDate[] {
   return US_FEDERAL_HOLIDAYS.map(holiday => ({
     key: holiday.key,
-    date: usFederalHolidayDate(holiday.rule, year),
+    date: holidayDateFromRule(holiday.rule, year),
   })).sort((a, b) => a.date.localeCompare(b.date));
-}
-
-/**
- * The observed-holiday DATES in `[weekStart, weekEnd]` — the exact shape the
- * earnings engine takes (`ComputeWeekEarningsInput.observed_holidays`).
- *
- * `observedKeys` is what the household actually toggled on. A week that spans
- * a year boundary (Mon 29 Dec .. Sun 4 Jan) needs BOTH years resolved, which
- * is the same trap `weekEarningsService`'s calendar-year PTO fetch documents;
- * doing it here means no caller has to remember.
- */
-export function observedHolidayDatesInRange(
-  observedKeys: Iterable<string>,
-  startDate: string,
-  endDate: string
-): string[] {
-  const keys = new Set(observedKeys);
-  const startYear = Number(startDate.slice(0, 4));
-  const endYear = Number(endDate.slice(0, 4));
-  const dates = new Set<string>();
-  for (let year = startYear; year <= endYear; year += 1) {
-    for (const entry of usFederalHolidayDates(year)) {
-      if (
-        keys.has(entry.key) &&
-        entry.date >= startDate &&
-        entry.date <= endDate
-      ) {
-        dates.add(entry.date);
-      }
-    }
-  }
-  return [...dates].sort();
 }

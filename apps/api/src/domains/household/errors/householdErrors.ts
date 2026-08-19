@@ -303,6 +303,23 @@ export class HouseholdHasCarerError extends ConflictError {
 }
 
 /**
+ * 400 — a holiday_key in the PUT is not in this household's country pack.
+ * The wire schema cannot see the household's country, so this is the write
+ * gate: refuse the whole request rather than silently drop the bad key.
+ */
+export class UnknownHolidayKeyError extends ValidationError {
+  constructor(householdId: string, holidayKey: string) {
+    super(
+      "This holiday is not in the household's country pack",
+      'UNKNOWN_HOLIDAY_KEY',
+      400,
+      { householdId, holidayKey }
+    );
+    this.name = 'UnknownHolidayKeyError';
+  }
+}
+
+/**
  * 409 — `week_starts_on` cannot change once any timesheet exists for the
  * household. It defines pay-week boundaries (FLSA fixed workweek,
  * 075_household_week_starts_on.sql); moving it after hours have been

@@ -31,6 +31,7 @@ const validHousehold: Household = {
   short_notice_hours: 24,
   cancellation_paid_within_hours: 24,
   currency: 'GBP',
+  country: 'US',
   jurisdiction: null,
   week_starts_on: 1,
   state: HOUSEHOLD_STATES.LIVE,

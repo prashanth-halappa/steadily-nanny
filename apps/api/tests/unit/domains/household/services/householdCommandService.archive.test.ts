@@ -39,6 +39,7 @@ const liveHousehold: Household = {
   currency: 'USD',
   jurisdiction: null,
   week_starts_on: 1,
+  country: 'US',
   state: 'live',
   created_by: PARENT_ID,
   created_at: 't',

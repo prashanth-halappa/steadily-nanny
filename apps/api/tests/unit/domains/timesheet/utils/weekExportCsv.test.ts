@@ -549,6 +549,49 @@ describe('renderWeekExportCsv — paid_holiday label (3-E5)', () => {
   });
 });
 
+/**
+ * A custom holiday's name (`household_custom_holidays.name`, e.g. "Diwali",
+ * "Eid al-Fitr") can disclose a family's religion. `EarningsLineSchema`
+ * carries no holiday field and `LINE_LABELS` names only the line KIND, so
+ * that name cannot reach this file today. Pin it: a payroll CSV leaves the
+ * app, and anyone who later adds a "which holiday" column has to delete a
+ * test that tells them why not.
+ */
+describe('renderWeekExportCsv — holiday names never leave the app', () => {
+  it('labels holiday lines by kind only — a household-authored holiday name never appears', () => {
+    const withHolidayLines: WeekEarningsOk = {
+      ...earnings,
+      lines: [
+        ...earnings.lines.filter(l => l.kind !== 'pto'),
+        {
+          kind: 'paid_holiday',
+          minutes: 480,
+          rate_minor: 1850,
+          multiplier: null,
+          amount_minor: 14_800,
+          from_date: '2026-08-04',
+          to_date: '2026-08-04',
+          arrangement_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        },
+      ],
+    };
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings: withHolidayLines,
+      payments: [],
+    });
+
+    expect(csv).toContain(
+      `${CRLF}2026-08-06,Holiday premium at 1.5x,holiday_premium,480,925,7400,GBP${CRLF}`
+    );
+    expect(csv).toContain(
+      `${CRLF}2026-08-04,Paid holiday,paid_holiday,480,1850,14800,GBP${CRLF}`
+    );
+    expect(csv).not.toContain('Diwali');
+    expect(csv).not.toContain('Eid al-Fitr');
+  });
+});
+
 describe('carerSlug', () => {
   it('lowercases and collapses non-alphanumerics to a single dash', () => {
     expect(carerSlug('Rowe, Nia')).toBe('rowe-nia');

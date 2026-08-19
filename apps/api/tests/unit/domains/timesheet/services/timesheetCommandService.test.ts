@@ -2839,6 +2839,11 @@ function makeRealEarnings(
     // 080's holiday toggles. Empty, and it must be SUPPLIED rather than left
     // to the constructor default — the default is the real repository, which
     // would reach the network from a unit test.
+    { listForHousehold: mock(async () => []) },
+    // 107's household country. A plain US row — same reason as the holiday
+    // repo: the constructor default is the real HouseholdRepository.
+    { findById: mock(async () => ({ country: 'US' })) },
+    // 107's authored custom holidays. Empty — absence is "nothing agreed".
     { listForHousehold: mock(async () => []) }
   );
 }

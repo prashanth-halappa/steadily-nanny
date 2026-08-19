@@ -27,6 +27,10 @@
  * authored in, so nothing already recorded is reinterpreted), but "which
  * week is 'this week'" for any NEW schedule or the Hours screen's default
  * view changes the moment this saves. The copy says exactly that, not more.
+ * Country reuses that same confirm machinery: the server drops holiday
+ * toggles whose key does not exist in the new country's pack and seeds the
+ * new one, so the family's holiday list is replaced — that must be
+ * consented to, not sprung.
  *
  * LEAVING (pay-loop wave): the mirror image of the per-row Remove below — a member
  * taking THEMSELVES out. Offered only when the viewer's own membership is not
@@ -45,6 +49,10 @@
  * is a different feature — "leave household" — not this PATCH).
  */
 
+import {
+  HOLIDAY_COUNTRIES,
+  type HolidayCountry,
+} from '@steadily-nanny/shared-types/holidayPacks';
 import type {
   HouseholdApprovalMode,
   HouseholdApprovalScope,
@@ -96,6 +104,7 @@ import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { getDeviceCurrency } from '@/src/lib/deviceLocale';
 import { showSuccessToast } from '@/src/lib/toast';
 import { useAuthStore } from '@/src/store/auth';
+import { CountryPickerSheet, countryDisplayName } from './CountryPickerSheet';
 import { JurisdictionPickerSheet } from './JurisdictionPickerSheet';
 import { SetupScreenShell } from './SetupScreenShell';
 import { TimezonePickerSheet } from './TimezonePickerSheet';
@@ -120,6 +129,10 @@ function isValidBoundedInt(value: string, max: number): boolean {
 }
 
 const WEEK_START_OPTIONS = [0, 1, 2, 3, 4, 5, 6] as const;
+
+function isHolidayCountry(value: string): value is HolidayCountry {
+  return value === HOLIDAY_COUNTRIES.US || value === HOLIDAY_COUNTRIES.CA;
+}
 
 /** True for a 409 whose `metadata.reason` is the household domain's week-start lock. */
 function isWeekStartLockedError(error: unknown): boolean {
@@ -168,6 +181,7 @@ export function ManageHouseholdScreen() {
   const [addressLine, setAddressLine] = useState('');
   const [timezone, setTimezone] = useState('');
   const [currency, setCurrency] = useState('');
+  const [country, setCountry] = useState<string>(HOLIDAY_COUNTRIES.US);
   const [jurisdiction, setJurisdiction] = useState<string | null>(null);
   const [weekStartsOn, setWeekStartsOn] = useState(1);
   // T1: attempt-and-refuse — the client has no cheap "does a timesheet
@@ -185,6 +199,7 @@ export function ManageHouseholdScreen() {
     useState('0');
   const [isTimezoneSheetOpen, setIsTimezoneSheetOpen] = useState(false);
   const [isTimezoneConfirmOpen, setIsTimezoneConfirmOpen] = useState(false);
+  const [isCountrySheetOpen, setIsCountrySheetOpen] = useState(false);
   const [isJurisdictionSheetOpen, setIsJurisdictionSheetOpen] = useState(false);
 
   // Seed local form state from the server ONCE, the first time the household
@@ -209,6 +224,7 @@ export function ManageHouseholdScreen() {
     // against a fixture/server that predates the field, so seeding never
     // crashes `CurrencySelect` on an empty value.
     setCurrency(household.currency ?? getDeviceCurrency());
+    setCountry(household.country ?? HOLIDAY_COUNTRIES.US);
     setJurisdiction(household.jurisdiction ?? null);
     setWeekStartsOn(household.week_starts_on ?? 1);
     setApprovalMode(household.approval_mode);
@@ -298,9 +314,21 @@ export function ManageHouseholdScreen() {
     if (timezone !== household.timezone) diff.timezone = timezone;
     const householdCurrency = household.currency ?? getDeviceCurrency();
     if (currency !== householdCurrency) diff.currency = currency;
+    const householdCountry = household.country ?? HOLIDAY_COUNTRIES.US;
+    if (country !== householdCountry && isHolidayCountry(country)) {
+      diff.country = country;
+    }
     const householdJurisdiction = household.jurisdiction ?? null;
-    if (jurisdiction !== householdJurisdiction)
+    // `households.jurisdiction` is a US state code. Never send it with a
+    // country change, and never send it when the form country is not US —
+    // a Canadian family must not be able to pick "California" into it.
+    if (
+      !('country' in diff) &&
+      jurisdiction !== householdJurisdiction &&
+      country === HOLIDAY_COUNTRIES.US
+    ) {
       diff.jurisdiction = jurisdiction;
+    }
     const householdWeekStartsOn = household.week_starts_on ?? 1;
     if (weekStartsOn !== householdWeekStartsOn) {
       diff.week_starts_on = weekStartsOn;
@@ -322,6 +350,7 @@ export function ManageHouseholdScreen() {
   }
   const isDirty = Object.keys(diff).length > 0;
   const isTimezoneChanged = 'timezone' in diff;
+  const isCountryChanged = 'country' in diff;
 
   const submitDiff = async () => {
     try {
@@ -393,6 +422,7 @@ export function ManageHouseholdScreen() {
   };
 
   const selectedTimezoneLabel = findTimezoneOption(timezone)?.label ?? timezone;
+  const selectedCountryLabel = countryDisplayName(country);
   const selectedJurisdictionLabel = jurisdiction
     ? (findUsStateOption(jurisdiction)?.label ?? jurisdiction)
     : t('householdSettings.jurisdictionNoneOption');
@@ -402,8 +432,11 @@ export function ManageHouseholdScreen() {
   const handleCta = () => {
     if (saveDisabled) return;
     // Timezone changes get a confirmation step (below) instead of saving
-    // immediately — every other field saves straight away.
-    if (isTimezoneChanged) {
+    // immediately — every other field saves straight away. Country reuses
+    // that same gate: the server drops holiday toggles whose key does not
+    // exist in the new country's pack and seeds the new one, so the family's
+    // holiday list is replaced — that must be consented to, not sprung.
+    if (isTimezoneChanged || isCountryChanged) {
       setIsTimezoneConfirmOpen(true);
       return;
     }
@@ -486,19 +519,39 @@ export function ManageHouseholdScreen() {
       </View>
 
       <View className="gap-2">
-        <FieldLabel>{t('householdSettings.jurisdictionLabel')}</FieldLabel>
+        <FieldLabel>{t('householdSettings.country')}</FieldLabel>
         <AnimatedPressable
-          testID="household-jurisdiction-trigger"
-          onPress={() => setIsJurisdictionSheetOpen(true)}
+          testID="household-country-trigger"
+          onPress={() => setIsCountrySheetOpen(true)}
         >
           <View className="flex-row items-center justify-between rounded-row border border-input bg-background px-4 py-3">
-            <Body>{selectedJurisdictionLabel}</Body>
+            <Body>{selectedCountryLabel}</Body>
             <Small className="text-primary">
               {t('householdSettings.jurisdictionChangeButton')}
             </Small>
           </View>
         </AnimatedPressable>
+        <Small className="text-muted-foreground">
+          {t('householdSettings.countryHint')}
+        </Small>
       </View>
+
+      {country === HOLIDAY_COUNTRIES.US ? (
+        <View className="gap-2">
+          <FieldLabel>{t('householdSettings.jurisdictionLabel')}</FieldLabel>
+          <AnimatedPressable
+            testID="household-jurisdiction-trigger"
+            onPress={() => setIsJurisdictionSheetOpen(true)}
+          >
+            <View className="flex-row items-center justify-between rounded-row border border-input bg-background px-4 py-3">
+              <Body>{selectedJurisdictionLabel}</Body>
+              <Small className="text-primary">
+                {t('householdSettings.jurisdictionChangeButton')}
+              </Small>
+            </View>
+          </AnimatedPressable>
+        </View>
+      ) : null}
 
       <View className="gap-2" testID="household-week-start-section">
         <FieldLabel>{t('householdSettings.weekStartLabel')}</FieldLabel>
@@ -777,7 +830,9 @@ export function ManageHouseholdScreen() {
 
       {/* Controlled, no Trigger — opened programmatically from the shell's
           pinned CTA (`handleCta`) only when the diff includes a timezone
-          change, so every other field still saves on a single tap. */}
+          or country change, so every other field still saves on a single
+          tap. Country copy takes precedence when both are in the diff:
+          replacing the holiday list is the consent that must not be sprung. */}
       <AlertDialog
         open={isTimezoneConfirmOpen}
         onOpenChange={setIsTimezoneConfirmOpen}
@@ -785,26 +840,40 @@ export function ManageHouseholdScreen() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {t('householdSettings.timezoneConfirmTitle', {
-                zone: selectedTimezoneLabel,
-              })}
+              {isCountryChanged
+                ? t('householdSettings.country')
+                : t('householdSettings.timezoneConfirmTitle', {
+                    zone: selectedTimezoneLabel,
+                  })}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {t('householdSettings.timezoneConfirmBody')}
+              {isCountryChanged
+                ? t('householdSettings.countryHint')
+                : t('householdSettings.timezoneConfirmBody')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>
+            <AlertDialogCancel
+              testID={isCountryChanged ? 'household-country-cancel' : undefined}
+            >
               <Text>{t('householdSettings.timezoneConfirmCancel')}</Text>
             </AlertDialogCancel>
             <AlertDialogAction
-              testID="household-timezone-confirm"
+              testID={
+                isCountryChanged
+                  ? 'household-country-confirm'
+                  : 'household-timezone-confirm'
+              }
               onPress={() => {
                 setIsTimezoneConfirmOpen(false);
                 void submitDiff();
               }}
             >
-              <Text>{t('householdSettings.timezoneConfirmConfirm')}</Text>
+              <Text>
+                {isCountryChanged
+                  ? t('householdSettings.saveButton')
+                  : t('householdSettings.timezoneConfirmConfirm')}
+              </Text>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -820,15 +889,27 @@ export function ManageHouseholdScreen() {
         }}
       />
 
-      <JurisdictionPickerSheet
-        visible={isJurisdictionSheetOpen}
-        onDismiss={() => setIsJurisdictionSheetOpen(false)}
-        selectedValue={jurisdiction}
+      <CountryPickerSheet
+        visible={isCountrySheetOpen}
+        onDismiss={() => setIsCountrySheetOpen(false)}
+        selectedValue={country}
         onSelect={value => {
-          setJurisdiction(value);
-          setIsJurisdictionSheetOpen(false);
+          setCountry(value);
+          setIsCountrySheetOpen(false);
         }}
       />
+
+      {country === HOLIDAY_COUNTRIES.US ? (
+        <JurisdictionPickerSheet
+          visible={isJurisdictionSheetOpen}
+          onDismiss={() => setIsJurisdictionSheetOpen(false)}
+          selectedValue={jurisdiction}
+          onSelect={value => {
+            setJurisdiction(value);
+            setIsJurisdictionSheetOpen(false);
+          }}
+        />
+      ) : null}
     </SetupScreenShell>
   );
 }

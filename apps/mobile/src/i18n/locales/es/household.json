@@ -145,6 +145,8 @@
     "timezoneConfirmConfirm": "Cambiar zona horaria",
     "pickerTitle": "Elige una zona horaria",
     "currencyLabel": "Moneda",
+    "country": "País",
+    "countryHint": "Los días festivos públicos de esta familia se toman de la lista de este país.",
     "jurisdictionLabel": "Estado",
     "jurisdictionChangeButton": "Cambiar",
     "jurisdictionNoneOption": "Sin definir",
@@ -220,7 +222,26 @@
       "columbus_day": "Día de Colón",
       "veterans_day": "Día de los Veteranos",
       "thanksgiving_day": "Día de Acción de Gracias",
-      "christmas_day": "Día de Navidad"
+      "christmas_day": "Día de Navidad",
+      "good_friday": "Viernes Santo",
+      "victoria_day": "Día de Victoria",
+      "canada_day": "Día de Canadá",
+      "labour_day": "Día del Trabajo",
+      "truth_and_reconciliation_day": "Día Nacional de la Verdad y la Reconciliación",
+      "remembrance_day": "Día del Recuerdo",
+      "boxing_day": "Boxing Day"
+    },
+    "custom": {
+      "sectionTitle": "Días personalizados",
+      "empty": "Los días que añadas aparecerán aquí.",
+      "addButton": "Añadir un día",
+      "editTitle": "Editar día",
+      "nameLabel": "Nombre",
+      "datesLabel": "Fechas",
+      "addDate": "Añadir una fecha",
+      "removeDate": "Quitar fecha",
+      "deleteDay": "Eliminar día",
+      "datesRequired": "Elige al menos una fecha."
     }
   },
   "careHours": {

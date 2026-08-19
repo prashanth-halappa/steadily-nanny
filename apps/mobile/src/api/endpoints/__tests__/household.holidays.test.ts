@@ -77,10 +77,17 @@ describe('householdApi.setHolidays', () => {
     expect(result[0].id).toBe(validRow.id);
   });
 
-  it('rejects an unknown holiday_key without calling the API', async () => {
+  // Closed-set key validity moved to householdCommandService.setHolidays
+  // (UnknownHolidayKeyError → 400): a wire schema cannot see the
+  // household's country (US vs CA packs), so do not restore a client-side
+  // closed-set refine. Shape is still pre-flighted here.
+  it('rejects a duplicate holiday_key without calling the API', async () => {
     await expect(
       householdApi.setHolidays(HOUSEHOLD_ID, {
-        holidays: [{ holiday_key: 'st_swithins_day', observed: true }],
+        holidays: [
+          { holiday_key: 'labor_day', observed: true },
+          { holiday_key: 'labor_day', observed: false },
+        ],
       })
     ).rejects.toThrow();
     expect(apiClient.put).not.toHaveBeenCalled();

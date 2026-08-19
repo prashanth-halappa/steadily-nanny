@@ -202,6 +202,7 @@ const baseHousehold = {
   longitude: null,
   currency: 'GBP',
   jurisdiction: null,
+  country: 'US',
   week_starts_on: 1,
   approval_mode: 'either',
   approval_scope: 'all',
@@ -212,7 +213,12 @@ const baseHousehold = {
   updated_at: now,
 };
 
-const listMock = mock(() => Promise.resolve([baseHousehold]));
+type TestHousehold = Omit<typeof baseHousehold, 'jurisdiction'> & {
+  jurisdiction: string | null;
+};
+const listMock = mock<() => Promise<TestHousehold[]>>(() =>
+  Promise.resolve([baseHousehold])
+);
 const updateMock = mock((_id: string, input: unknown) =>
   Promise.resolve({ ...baseHousehold, ...(input as object) })
 );
@@ -463,6 +469,115 @@ describe('ManageHouseholdScreen', () => {
         jurisdiction: 'CA',
       })
     );
+  });
+
+  describe('country', () => {
+    it('changes country through the picker, confirms, and sends ONLY that field', async () => {
+      listMock.mockImplementation(() =>
+        Promise.resolve([
+          { ...baseHousehold, country: 'US', jurisdiction: 'NY' },
+        ])
+      );
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <ManageHouseholdScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId('household-name-input').props.value).toBe(
+          'The Smiths'
+        )
+      );
+      expect(getByTestId('household-jurisdiction-trigger')).toBeTruthy();
+      expect(getByTestId('manage-household-screen-cta').props.disabled).toBe(
+        true
+      );
+
+      fireEvent.press(getByTestId('household-country-trigger'));
+      await waitFor(() =>
+        expect(getByTestId('country-picker-sheet-modal').props.visible).toBe(
+          true
+        )
+      );
+      fireEvent.press(getByTestId('country-option-CA'));
+      await waitFor(() =>
+        expect(getByTestId('country-picker-sheet-modal').props.visible).toBe(
+          false
+        )
+      );
+
+      expect(queryByTestId('household-jurisdiction-trigger')).toBeNull();
+
+      fireEvent.press(getByTestId('manage-household-screen-cta'));
+
+      expect(updateMock).not.toHaveBeenCalled();
+      expect(getByTestId('household-country-confirm')).toBeTruthy();
+
+      fireEvent.press(getByTestId('household-country-confirm'));
+
+      await waitFor(() =>
+        expect(updateMock).toHaveBeenCalledWith(HOUSEHOLD_ID, {
+          country: 'CA',
+        })
+      );
+    });
+
+    it('hides the State row when country is CA and shows it when US', async () => {
+      const usScreen = renderWithProviders(<ManageHouseholdScreen />);
+      await waitFor(() =>
+        expect(usScreen.getByTestId('household-name-input').props.value).toBe(
+          'The Smiths'
+        )
+      );
+      expect(
+        usScreen.getByTestId('household-jurisdiction-trigger')
+      ).toBeTruthy();
+      expect(usScreen.getByTestId('household-country-trigger')).toBeTruthy();
+      usScreen.unmount();
+
+      listMock.mockImplementation(() =>
+        Promise.resolve([{ ...baseHousehold, country: 'CA' }])
+      );
+      const caScreen = renderWithProviders(<ManageHouseholdScreen />);
+      await waitFor(() =>
+        expect(caScreen.getByTestId('household-name-input').props.value).toBe(
+          'The Smiths'
+        )
+      );
+      expect(
+        caScreen.queryByTestId('household-jurisdiction-trigger')
+      ).toBeNull();
+      expect(caScreen.getByTestId('household-country-trigger')).toBeTruthy();
+    });
+
+    it('never calls the mutation if the country-change confirm is cancelled', async () => {
+      const { getByTestId } = renderWithProviders(<ManageHouseholdScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('household-name-input').props.value).toBe(
+          'The Smiths'
+        )
+      );
+
+      fireEvent.press(getByTestId('household-country-trigger'));
+      await waitFor(() =>
+        expect(getByTestId('country-picker-sheet-modal').props.visible).toBe(
+          true
+        )
+      );
+      fireEvent.press(getByTestId('country-option-CA'));
+      await waitFor(() =>
+        expect(getByTestId('country-picker-sheet-modal').props.visible).toBe(
+          false
+        )
+      );
+
+      fireEvent.press(getByTestId('manage-household-screen-cta'));
+      expect(getByTestId('household-country-confirm')).toBeTruthy();
+      fireEvent.press(getByTestId('household-country-cancel'));
+
+      expect(updateMock).not.toHaveBeenCalled();
+    });
   });
 
   // `membershipsListMock` (unlike `listMock`) does not consult the auth

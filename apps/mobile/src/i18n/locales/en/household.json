@@ -145,6 +145,8 @@
     "timezoneConfirmConfirm": "Change time zone",
     "pickerTitle": "Choose a time zone",
     "currencyLabel": "Currency",
+    "country": "Country",
+    "countryHint": "Public holidays on this family's list are drawn from this country.",
     "jurisdictionLabel": "State",
     "jurisdictionChangeButton": "Change",
     "jurisdictionNoneOption": "Not set",
@@ -220,7 +222,26 @@
       "columbus_day": "Columbus Day",
       "veterans_day": "Veterans Day",
       "thanksgiving_day": "Thanksgiving Day",
-      "christmas_day": "Christmas Day"
+      "christmas_day": "Christmas Day",
+      "good_friday": "Good Friday",
+      "victoria_day": "Victoria Day",
+      "canada_day": "Canada Day",
+      "labour_day": "Labour Day",
+      "truth_and_reconciliation_day": "National Day for Truth and Reconciliation",
+      "remembrance_day": "Remembrance Day",
+      "boxing_day": "Boxing Day"
+    },
+    "custom": {
+      "sectionTitle": "Custom days",
+      "empty": "Days you add will appear here.",
+      "addButton": "Add a day",
+      "editTitle": "Edit day",
+      "nameLabel": "Name",
+      "datesLabel": "Dates",
+      "addDate": "Add a date",
+      "removeDate": "Remove date",
+      "deleteDay": "Delete day",
+      "datesRequired": "Pick at least one date."
     }
   },
   "careHours": {

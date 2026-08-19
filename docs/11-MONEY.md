@@ -830,22 +830,41 @@ you have widened all three.
 
 ## 12. The worked-holiday premium is an increment, never a re-pricing
 
-Two pieces, two homes (`docs/design/screens-pay-terms.md` §3/§4.3, §5 D-12,
-migration 080):
+Three pieces, three homes (`docs/design/screens-pay-terms.md` §3/§4.3, §5
+D-12, migrations 080 and 107):
 
-- **`household_holidays`** — which federal holidays *this family* observes.
-  One row per `(household_id, holiday_key)`, and it stores a **key, not a
-  date**: six of the eleven federal holidays are rules ("the last Monday in
-  May"), resolved per year by
-  `packages/shared-types/src/usFederalHolidays.ts`. Three states, not two: no
-  row means *nothing agreed* (and so **not** observed), `observed = true`
-  means observed, `observed = false` means explicitly opted out. New
-  households are seeded with the federal set at creation; nothing is
-  backfilled (§5 D-9).
+- **`household_holidays`** — which holidays *this family* observes, drawn
+  from the household's **country pack** (`households.country`; US or CA
+  today), not a US-federal-only set. One row per `(household_id,
+  holiday_key)`, and it stores a **key, not a date**: six of the eleven US
+  federal holidays are rules ("the last Monday in May"), resolved per year
+  by `packages/shared-types/src/holidayPacks.ts` for that country's pack.
+  Three states, not two: no row means *nothing agreed* (and so **not**
+  observed), `observed = true` means observed, `observed = false` means
+  explicitly opted out. New households are seeded with the country pack at
+  creation; nothing is backfilled (§5 D-9).
+- **`household_custom_holidays`** — named days the family adds itself
+  (107). One row per day, carrying a `dates` array, because moving feasts
+  like Eid, Diwali and Lunar New Year land on a different date each year
+  and no recurrence rule tells the truth about them. There is no `observed`
+  flag: the row existing **is** the observance, and deleting it is how a
+  family opts out.
 - **`pay_arrangements.worked_holiday_multiplier`** — what a worked holiday
   pays *this carer*. Null means the normal rate, an explicit "no". It is on
   the arrangement and not the household because a second carer may have
   agreed a different one.
+
+**The pricing seam is unchanged and must stay that way.**
+`earningsService` receives `observed_holidays` as ISO **dates**, never
+keys, and `weekEarningsService` is the single place keys become dates.
+
+**Privacy.** A custom holiday name can disclose religion, so it is
+member-select-only in RLS, written only through the parent-gated API, and
+reaches **no** export — `EarningsLineSchema` carries no holiday field, and
+the week CSV, terms rows and public terms page name only the line kind
+("Holiday premium" / "Paid holiday"). Anyone later adding a "which holiday"
+column to a payroll export would be putting a family's religion into an
+artifact that leaves the app.
 
 **The composition rule.** Hours worked on an observed holiday are **ordinary
 worked time** for every purpose the engine already had: they split into the

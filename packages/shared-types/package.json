@@ -18,6 +18,7 @@
     "./text": "./src/text.ts",
     "./uncoveredCare": "./src/uncoveredCare.ts",
     "./usFederalHolidays": "./src/usFederalHolidays.ts",
+    "./holidayPacks": "./src/holidayPacks.ts",
     "./domain/*": "./src/domain/*.ts",
     "./dto/*": "./src/dto/*.ts",
     "./schemas/*": "./src/schemas/*.ts",

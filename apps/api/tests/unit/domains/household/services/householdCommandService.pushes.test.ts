@@ -397,7 +397,7 @@ describe('HouseholdCommandService.leave — parents are told', () => {
       { endForCarer: mock(async () => []) } as never,
       makePtoRepo() as never,
       { existsForHousehold: mock(async () => false) } as never,
-      { seedFederalSet: mock(async () => []) } as never,
+      { seedCountryPack: mock(async () => []) } as never,
       // F8: `leave` now calls `withdrawOpenForCarer` for a NANNY. Left
       // defaulted this constructs a REAL TermsProposalRepository and the test
       // dies on a network call rather than an assertion — same hazard the PTO
@@ -480,6 +480,7 @@ describe('HouseholdCommandService.redeemInvite — the draft carer arm', () => {
           timezone: 'America/Chicago',
           name: 'The Ahmeds',
           state: 'draft',
+          country: 'US',
         })),
       } as never,
       makeMemberRepo() as never,
@@ -494,7 +495,15 @@ describe('HouseholdCommandService.redeemInvite — the draft carer arm', () => {
           status: 'active',
         })),
       } as never,
-      { ensureProfile: mock(async () => {}) } as never
+      { ensureProfile: mock(async () => {}) } as never,
+      { findRunningInHousehold: mock(async () => null) } as never,
+      { endForCarer: mock(async () => []) } as never,
+      makePtoRepo() as never,
+      { existsForHousehold: mock(async () => false) } as never,
+      {
+        seedCountryPack: mock(async () => []),
+        deleteKeysNotIn: mock(async () => undefined),
+      } as never
     );
   }
 
@@ -581,7 +590,7 @@ describe('HouseholdCommandService.redeemInvite — pay-offer-not-promoted push (
       { endForCarer: mock(async () => []) } as never,
       makePtoRepo() as never,
       { existsForHousehold: mock(async () => false) } as never,
-      { seedFederalSet: mock(async () => []) } as never,
+      { seedCountryPack: mock(async () => []) } as never,
       {
         create: mock(async (row: Record<string, unknown>) => ({
           id: 'p-new',

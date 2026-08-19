@@ -69,13 +69,19 @@ export {
   UpdateHouseholdSchema,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
 export type {
+  HouseholdCustomHoliday,
+  HouseholdCustomHolidayListResponse,
   HouseholdHoliday,
   HouseholdHolidayListResponse,
+  SetHouseholdCustomHolidaysRequest,
   SetHouseholdHolidaysRequest,
 } from '@steadily-nanny/shared-types/schemas/householdHoliday.schema';
 export {
+  HouseholdCustomHolidayListResponseSchema,
+  HouseholdCustomHolidaySchema,
   HouseholdHolidayListResponseSchema,
   HouseholdHolidaySchema,
+  SetHouseholdCustomHolidaysRequestSchema,
   SetHouseholdHolidaysRequestSchema,
 } from '@steadily-nanny/shared-types/schemas/householdHoliday.schema';
 

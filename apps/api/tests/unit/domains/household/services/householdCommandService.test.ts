@@ -44,6 +44,7 @@ const household: Household = {
   currency: 'GBP',
   jurisdiction: null,
   week_starts_on: 1,
+  country: 'US',
   state: 'live',
   created_by: 'u1',
   created_at: 't',
@@ -271,12 +272,12 @@ const stubPtoLedger: any = { listForCarerYear: mock(async () => []) };
 
 /**
  * Same hazard as `stubPtoLedger`, on the create path: `create` seeds the
- * federal holiday set, so a test that reaches it and leaves this defaulted
+ * country's holiday pack, so a test that reaches it and leaves this defaulted
  * constructs a REAL HouseholdHolidayRepository and waits on a supabase call.
  * The seed failure is swallowed by design, so the symptom is a five-second
  * timeout rather than an assertion — which is exactly why it needs a name.
  */
-const stubHolidays: any = { seedFederalSet: mock(async () => []) };
+const stubHolidays: any = { seedCountryPack: mock(async () => []) };
 
 /**
  * Same hazard again, for F8's new write: `removeMember`/`leave` now call

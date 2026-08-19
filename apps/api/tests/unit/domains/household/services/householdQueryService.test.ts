@@ -24,6 +24,7 @@ const household: Household = {
   currency: 'GBP',
   jurisdiction: null,
   week_starts_on: 1,
+  country: 'US',
   state: 'live',
   created_by: 'u1',
   created_at: 't',

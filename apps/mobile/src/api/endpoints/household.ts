@@ -36,8 +36,12 @@ import {
   UpdateHouseholdSchema,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
 import {
+  type HouseholdCustomHoliday,
+  HouseholdCustomHolidayListResponseSchema,
   type HouseholdHoliday,
   HouseholdHolidayListResponseSchema,
+  type SetHouseholdCustomHolidaysRequest,
+  SetHouseholdCustomHolidaysRequestSchema,
   type SetHouseholdHolidaysRequest,
   SetHouseholdHolidaysRequestSchema,
 } from '@steadily-nanny/shared-types/schemas/householdHoliday.schema';
@@ -61,6 +65,8 @@ export const householdEndpoints = {
   redeemInvite: '/v1/households/invites/redeem',
   previewInvite: (code: string) => `/v1/households/invites/${code}/preview`,
   holidays: (householdId: string) => `/v1/households/${householdId}/holidays`,
+  customHolidays: (householdId: string) =>
+    `/v1/households/${householdId}/custom-holidays`,
 } as const;
 
 // --- Zod schemas not (yet) in the shared package ----------------------------
@@ -399,5 +405,49 @@ export const householdApi = {
     );
     if (!parsed.success) throw parsed.error;
     return parsed.data.household_holidays;
+  },
+
+  /**
+   * This household's authored custom days — names and literal dates, not
+   * pack keys. GET /:id/custom-holidays. Member-visible. An empty list
+   * means the family has not added any days of their own.
+   */
+  listCustomHolidays: async (
+    householdId: string
+  ): Promise<HouseholdCustomHoliday[]> => {
+    const response = await apiClient.get(
+      householdEndpoints.customHolidays(householdId)
+    );
+    const parsed = HouseholdCustomHolidayListResponseSchema.safeParse(
+      response.data.data
+    );
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.household_custom_holidays;
+  },
+
+  /**
+   * Replace the household's custom days — PUT /:id/custom-holidays.
+   * Owner/parent only, enforced server-side. Wholesale replace: the
+   * payload is the full set. An empty `custom_holidays` array is VALID
+   * — it is how the last custom day is deleted — so there is no
+   * non-empty guard. Pre-flight validation still catches a too-long
+   * name, a date-less day, or a duplicate name.
+   */
+  setCustomHolidays: async (
+    householdId: string,
+    input: SetHouseholdCustomHolidaysRequest
+  ): Promise<HouseholdCustomHoliday[]> => {
+    const validated = SetHouseholdCustomHolidaysRequestSchema.safeParse(input);
+    if (!validated.success) throw validated.error;
+
+    const response = await apiClient.put(
+      householdEndpoints.customHolidays(householdId),
+      validated.data
+    );
+    const parsed = HouseholdCustomHolidayListResponseSchema.safeParse(
+      response.data.data
+    );
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.household_custom_holidays;
   },
 };

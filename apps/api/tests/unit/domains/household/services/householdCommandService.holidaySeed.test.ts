@@ -10,7 +10,6 @@
  * membership insert right above it, which rolls the household back.
  */
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
-import { US_FEDERAL_HOLIDAY_KEYS } from '@steadily-nanny/shared-types/usFederalHolidays';
 
 let HouseholdCommandService: typeof import('../../../../../src/domains/household/services/householdCommandService').HouseholdCommandService;
 let loggerError: ReturnType<typeof mock>;
@@ -43,6 +42,7 @@ function makeHouseholdRepo(overrides: Record<string, unknown> = {}) {
   return {
     create: mock(async (data: Record<string, unknown>) => ({
       id: 'h-new',
+      country: 'US',
       ...data,
       // Both serialisations across this file's fixtures (GOLDEN-FIXES #25).
       created_at: FIXTURE_TS_OFFSET,
@@ -90,21 +90,29 @@ function makeService(
 }
 
 describe('HouseholdCommandService.create — holiday seed', () => {
-  it('seeds the eleven federal holidays for the new household', async () => {
-    const holidayRepo = { seedFederalSet: mock(async () => []) };
+  it('seeds the country pack for the new household', async () => {
+    const holidayRepo = { seedCountryPack: mock(async () => []) };
     const { svc } = makeService(holidayRepo);
 
     const household = await svc.create('u1', { name: 'The Smiths' });
 
     expect(household.id).toBe('h-new');
-    expect(holidayRepo.seedFederalSet).toHaveBeenCalledWith('h-new');
-    expect(US_FEDERAL_HOLIDAY_KEYS).toHaveLength(11);
+    expect(holidayRepo.seedCountryPack).toHaveBeenCalledWith('h-new', 'US');
+  });
+
+  it('seeds the Canadian pack when the household’s country is CA', async () => {
+    const holidayRepo = { seedCountryPack: mock(async () => []) };
+    const { svc } = makeService(holidayRepo);
+
+    await svc.create('u1', { name: 'The Smiths', country: 'CA' });
+
+    expect(holidayRepo.seedCountryPack).toHaveBeenCalledWith('h-new', 'CA');
   });
 
   it('still returns the household when the seed fails, and logs it', async () => {
     loggerError.mockClear();
     const holidayRepo = {
-      seedFederalSet: mock(async () => {
+      seedCountryPack: mock(async () => {
         throw new Error('database exploded');
       }),
     };
@@ -116,10 +124,11 @@ describe('HouseholdCommandService.create — holiday seed', () => {
     // NOT rolled back — a household with no holiday rows is recoverable.
     expect(householdRepo.delete).not.toHaveBeenCalled();
     expect(loggerError).toHaveBeenCalled();
+    expect(holidayRepo.seedCountryPack).toHaveBeenCalled();
   });
 
   it('never seeds when the owner-membership insert failed and the household was rolled back', async () => {
-    const holidayRepo = { seedFederalSet: mock(async () => []) };
+    const holidayRepo = { seedCountryPack: mock(async () => []) };
     const memberRepo = makeMemberRepo({
       createMembership: mock(async () => {
         throw new Error('membership insert failed');
@@ -131,6 +140,6 @@ describe('HouseholdCommandService.create — holiday seed', () => {
       'membership insert failed'
     );
     expect(householdRepo.delete).toHaveBeenCalledWith('h-new');
-    expect(holidayRepo.seedFederalSet).not.toHaveBeenCalled();
+    expect(holidayRepo.seedCountryPack).not.toHaveBeenCalled();
   });
 });

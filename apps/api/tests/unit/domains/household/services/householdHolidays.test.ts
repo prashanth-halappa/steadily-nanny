@@ -12,6 +12,7 @@ import { US_FEDERAL_HOLIDAY_KEYS } from '@steadily-nanny/shared-types/usFederalH
 import {
   HouseholdNotFoundError,
   NotAHouseholdParentError,
+  UnknownHolidayKeyError,
 } from '../../../../../src/domains/household/errors/householdErrors';
 
 const HOUSEHOLD_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -60,7 +61,17 @@ function makeHolidayRepo(
   return {
     listForHousehold: mock(async () => rows),
     upsertMany: mock(async () => rows),
-    seedFederalSet: mock(async () => rows),
+    seedCountryPack: mock(async () => rows),
+    deleteKeysNotIn: mock(async () => undefined),
+  };
+}
+
+function makeCustomHolidayRepo(
+  rows: Array<{ name: string; dates: string[] }> = []
+) {
+  return {
+    listForHousehold: mock(async () => rows),
+    replaceSet: mock(async () => rows),
   };
 }
 
@@ -123,9 +134,20 @@ describe('HouseholdQueryService.listHolidays', () => {
 });
 
 describe('HouseholdCommandService.setHolidays', () => {
-  function makeService(role: string, holidayRepo = makeHolidayRepo()) {
+  function makeService(
+    role: string,
+    holidayRepo = makeHolidayRepo(),
+    country = 'US',
+    customHolidayRepo = makeCustomHolidayRepo()
+  ) {
+    const householdRepo = {
+      create: mock(),
+      update: mock(),
+      delete: mock(),
+      findById: mock(async () => ({ id: HOUSEHOLD_ID, country })),
+    };
     const svc = new HouseholdCommandService(
-      { create: mock(), update: mock(), delete: mock() } as never,
+      householdRepo as never,
       makeMemberRepo(role) as never,
       {} as never,
       makeQueries(role) as never,
@@ -134,9 +156,11 @@ describe('HouseholdCommandService.setHolidays', () => {
       {} as never,
       {} as never,
       {} as never,
-      holidayRepo as never
+      holidayRepo as never,
+      {} as never,
+      customHolidayRepo as never
     );
-    return { svc, holidayRepo };
+    return { svc, holidayRepo, householdRepo, customHolidayRepo };
   }
 
   it('lets a parent set toggles and returns the FULL post-write list', async () => {
@@ -193,8 +217,13 @@ describe('HouseholdCommandService.setHolidays', () => {
 
   it('404s a non-member before the role gate can leak that the household exists', async () => {
     const holidayRepo = makeHolidayRepo();
-    const svc = new HouseholdCommandService(
-      { create: mock(), update: mock(), delete: mock() } as never,
+    const stranger = new HouseholdCommandService(
+      {
+        create: mock(),
+        update: mock(),
+        delete: mock(),
+        findById: mock(),
+      } as never,
       makeMemberRepo(null) as never,
       {} as never,
       makeQueries(null) as never,
@@ -207,10 +236,52 @@ describe('HouseholdCommandService.setHolidays', () => {
     );
 
     await expect(
-      svc.setHolidays('stranger', HOUSEHOLD_ID, {
+      stranger.setHolidays('stranger', HOUSEHOLD_ID, {
         holidays: [{ holiday_key: 'labor_day', observed: true }],
       })
     ).rejects.toBeInstanceOf(HouseholdNotFoundError);
+    expect(holidayRepo.upsertMany).not.toHaveBeenCalled();
+  });
+
+  it('refuses a key outside the household’s country pack with HTTP 400', async () => {
+    const { svc, holidayRepo } = makeService('parent', makeHolidayRepo(), 'US');
+
+    await expect(
+      svc.setHolidays('parent-1', HOUSEHOLD_ID, {
+        holidays: [{ holiday_key: 'canada_day', observed: true }],
+      })
+    ).rejects.toBeInstanceOf(UnknownHolidayKeyError);
+    await expect(
+      svc.setHolidays('parent-1', HOUSEHOLD_ID, {
+        holidays: [{ holiday_key: 'canada_day', observed: true }],
+      })
+    ).rejects.toMatchObject({ statusCode: 400 });
+    expect(holidayRepo.upsertMany).not.toHaveBeenCalled();
+  });
+
+  it('accepts a key that belongs to the household’s country pack', async () => {
+    const { svc, holidayRepo } = makeService('parent', makeHolidayRepo(), 'CA');
+
+    await svc.setHolidays('parent-1', HOUSEHOLD_ID, {
+      holidays: [{ holiday_key: 'canada_day', observed: true }],
+    });
+
+    expect(holidayRepo.upsertMany).toHaveBeenCalledWith(HOUSEHOLD_ID, [
+      { holiday_key: 'canada_day', observed: true },
+    ]);
+  });
+
+  it('refuses the whole request when any named key is outside the pack', async () => {
+    const { svc, holidayRepo } = makeService('parent', makeHolidayRepo(), 'US');
+
+    await expect(
+      svc.setHolidays('parent-1', HOUSEHOLD_ID, {
+        holidays: [
+          { holiday_key: 'labor_day', observed: true },
+          { holiday_key: 'boxing_day', observed: true },
+        ],
+      })
+    ).rejects.toBeInstanceOf(UnknownHolidayKeyError);
     expect(holidayRepo.upsertMany).not.toHaveBeenCalled();
   });
 
@@ -227,5 +298,105 @@ describe('HouseholdCommandService.setHolidays', () => {
     expect(
       (holidayRepo.upsertMany.mock.calls[0] as unknown[])[1] as unknown[]
     ).toHaveLength(US_FEDERAL_HOLIDAY_KEYS.length);
+  });
+});
+
+describe('HouseholdQueryService.listCustomHolidays', () => {
+  it('lets a nanny read custom days — they are a term of her employment', async () => {
+    const customHolidayRepo = makeCustomHolidayRepo([
+      { name: 'Diwali', dates: ['2026-11-08'] },
+    ]);
+    const svc = new HouseholdQueryService(
+      { findById: mock(async () => ({ id: HOUSEHOLD_ID })) } as never,
+      makeMemberRepo('nanny') as never,
+      {} as never,
+      makeHolidayRepo() as never,
+      {} as never,
+      customHolidayRepo as never
+    );
+
+    const rows = await svc.listCustomHolidays('nanny-1', HOUSEHOLD_ID);
+
+    expect(rows).toHaveLength(1);
+    expect(customHolidayRepo.listForHousehold).toHaveBeenCalledWith(
+      HOUSEHOLD_ID
+    );
+  });
+
+  it('404s a non-member and never reads', async () => {
+    const customHolidayRepo = makeCustomHolidayRepo();
+    const svc = new HouseholdQueryService(
+      { findById: mock(async () => ({ id: HOUSEHOLD_ID })) } as never,
+      makeMemberRepo(null) as never,
+      {} as never,
+      makeHolidayRepo() as never,
+      {} as never,
+      customHolidayRepo as never
+    );
+
+    await expect(
+      svc.listCustomHolidays('stranger', HOUSEHOLD_ID)
+    ).rejects.toBeInstanceOf(HouseholdNotFoundError);
+    expect(customHolidayRepo.listForHousehold).not.toHaveBeenCalled();
+  });
+});
+
+describe('HouseholdCommandService.setCustomHolidays', () => {
+  function makeService(
+    role: string,
+    customHolidayRepo = makeCustomHolidayRepo()
+  ) {
+    const svc = new HouseholdCommandService(
+      {
+        create: mock(),
+        update: mock(),
+        delete: mock(),
+        findById: mock(async () => ({ id: HOUSEHOLD_ID, country: 'US' })),
+      } as never,
+      makeMemberRepo(role) as never,
+      {} as never,
+      makeQueries(role) as never,
+      { ensureProfile: mock(async () => {}) } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      makeHolidayRepo() as never,
+      {} as never,
+      customHolidayRepo as never
+    );
+    return { svc, customHolidayRepo };
+  }
+
+  it('lets a parent replace the custom-day set, including emptying it', async () => {
+    const { svc, customHolidayRepo } = makeService('parent');
+
+    await svc.setCustomHolidays('parent-1', HOUSEHOLD_ID, {
+      custom_holidays: [],
+    });
+
+    expect(customHolidayRepo.replaceSet).toHaveBeenCalledWith(HOUSEHOLD_ID, []);
+  });
+
+  it('refuses a nanny — custom days are parent-configurable', async () => {
+    const { svc, customHolidayRepo } = makeService('nanny');
+
+    await expect(
+      svc.setCustomHolidays('nanny-1', HOUSEHOLD_ID, {
+        custom_holidays: [{ name: 'Diwali', dates: ['2026-11-08'] }],
+      })
+    ).rejects.toBeInstanceOf(NotAHouseholdParentError);
+    expect(customHolidayRepo.replaceSet).not.toHaveBeenCalled();
+  });
+
+  it('refuses a helper', async () => {
+    const { svc, customHolidayRepo } = makeService('helper');
+
+    await expect(
+      svc.setCustomHolidays('helper-1', HOUSEHOLD_ID, {
+        custom_holidays: [{ name: 'Diwali', dates: ['2026-11-08'] }],
+      })
+    ).rejects.toBeInstanceOf(NotAHouseholdParentError);
+    expect(customHolidayRepo.replaceSet).not.toHaveBeenCalled();
   });
 });

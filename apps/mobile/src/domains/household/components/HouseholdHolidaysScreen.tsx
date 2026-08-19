@@ -1,32 +1,52 @@
 /**
  * @module domains/household/components/HouseholdHolidaysScreen
  *
- * Settings -> "Holidays". A parent picks which US federal holidays this
- * family observes; a nanny (or past member) can read the list but not
- * change it — the API is parents-write. ABSENT from the fetched rows
- * means NOT observed (playbook §2.9): never treat a missing key as on.
+ * Settings -> "Holidays". A parent picks which pack holidays this family
+ * observes, plus any household-authored custom days; a nanny (or past
+ * member) can read the list but not change it — the API is parents-write.
+ * ABSENT from the fetched rows means NOT observed (playbook §2.9): never
+ * treat a missing key as on.
  *
- * HYDRATE-ONCE local state, ONE Save of all 11 toggles — not a PUT per
- * flip. Same hydrated-flag effect as `NotificationPrefsScreen`.
+ * Country comes from the household named by `onboarding.householdId`
+ * (`useHouseholdById`) — never a blind `useActiveHousehold()`, which
+ * answers a different question. Unknown country falls back to US.
+ *
+ * Pack dates are optional: Canada only lists Good Friday / Victoria Day
+ * for 2026–2027, so a later year still renders the toggle with no date
+ * line rather than vanishing the row.
+ *
+ * HYDRATE-ONCE local state, ONE Save of both PUTs (toggles + custom set)
+ * — not a PUT per flip. Same hydrated-flag effect as `NotificationPrefsScreen`.
  */
-import { usFederalHolidayDates } from '@steadily-nanny/shared-types/usFederalHolidays';
+import {
+  HOLIDAY_COUNTRIES,
+  holidayDatesInYear,
+} from '@steadily-nanny/shared-types/holidayPacks';
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { BackButton } from '@/src/components/ui/back-button';
+import { Button } from '@/src/components/ui/button';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Switch } from '@/src/components/ui/switch';
+import { Text } from '@/src/components/ui/text';
 import { Body, Small } from '@/src/components/ui/typography';
 import { formatDisplayDateWithYear } from '@/src/domains/pay/utils/payArrangementForm';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
+import { useSetHouseholdCustomHolidays } from '@/src/hooks/mutations/useSetHouseholdCustomHolidays';
 import { useSetHouseholdHolidays } from '@/src/hooks/mutations/useSetHouseholdHolidays';
+import { useHouseholdById } from '@/src/hooks/queries/useHouseholdById';
+import { useHouseholdCustomHolidays } from '@/src/hooks/queries/useHouseholdCustomHolidays';
 import { useHouseholdHolidays } from '@/src/hooks/queries/useHouseholdHolidays';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { showSuccessToast } from '@/src/lib/toast';
+import type { CustomHolidayDraft } from '../utils/customHolidayForm';
+import { sortAndDedupeDates } from '../utils/customHolidayForm';
+import { CustomHolidayEditSheet } from './CustomHolidayEditSheet';
 
 export function HouseholdHolidaysScreen() {
   const router = useRouter();
@@ -35,30 +55,54 @@ export function HouseholdHolidaysScreen() {
   const { t: tErrors } = useTranslation('errors');
   const onboarding = useIsOnboarded();
   const householdId = onboarding.householdId;
+  const householdLookup = useHouseholdById(householdId);
   const holidaysQuery = useHouseholdHolidays(householdId);
+  const customHolidaysQuery = useHouseholdCustomHolidays(householdId);
   const setHolidays = useSetHouseholdHolidays(householdId ?? '');
+  const setCustomHolidays = useSetHouseholdCustomHolidays(householdId ?? '');
 
-  const catalog = usFederalHolidayDates(new Date().getFullYear());
+  const year = new Date().getFullYear();
+  const country = householdLookup.household?.country ?? HOLIDAY_COUNTRIES.US;
+  const catalog = useMemo(
+    () => holidayDatesInYear(country, year),
+    [country, year]
+  );
   const canEdit =
     onboarding.role === SETUP_ROLES.PARENT && !onboarding.isPastMember;
 
   const [observedByKey, setObservedByKey] = useState<Record<string, boolean>>(
     {}
   );
+  const [customDays, setCustomDays] = useState<CustomHolidayDraft[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [sheetVisible, setSheetVisible] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!holidaysQuery.data || hydrated) return;
+    if (householdLookup.isLoading) return;
+    if (!holidaysQuery.data || !customHolidaysQuery.data || hydrated) return;
     const next: Record<string, boolean> = {};
-    for (const entry of usFederalHolidayDates(new Date().getFullYear())) {
+    for (const entry of catalog) {
       const row = holidaysQuery.data.find(
         item => item.holiday_key === entry.key
       );
       next[entry.key] = row?.observed === true;
     }
     setObservedByKey(next);
+    setCustomDays(
+      customHolidaysQuery.data.map(row => ({
+        name: row.name,
+        dates: sortAndDedupeDates(row.dates),
+      }))
+    );
     setHydrated(true);
-  }, [holidaysQuery.data, hydrated]);
+  }, [
+    holidaysQuery.data,
+    customHolidaysQuery.data,
+    hydrated,
+    householdLookup.isLoading,
+    catalog,
+  ]);
 
   const handleToggle = (key: string, next: boolean) => {
     if (!canEdit) return;
@@ -66,7 +110,9 @@ export function HouseholdHolidaysScreen() {
   };
 
   const handleSave = async () => {
-    if (setHolidays.isPending || !canEdit) return;
+    if (setHolidays.isPending || setCustomHolidays.isPending || !canEdit) {
+      return;
+    }
     try {
       await setHolidays.mutateAsync({
         holidays: catalog.map(entry => ({
@@ -74,11 +120,38 @@ export function HouseholdHolidaysScreen() {
           observed: observedByKey[entry.key] === true,
         })),
       });
+      await setCustomHolidays.mutateAsync({
+        custom_holidays: customDays.map(day => ({
+          name: day.name,
+          dates: [...day.dates],
+        })),
+      });
     } catch {
       return;
     }
     showSuccessToast(t('holidays.savedToast'));
     router.back();
+  };
+
+  const editing =
+    editingIndex === null ? null : (customDays[editingIndex] ?? null);
+  const siblings =
+    editingIndex === null
+      ? customDays
+      : customDays.filter((_, index) => index !== editingIndex);
+
+  const handleCustomSave = (draft: CustomHolidayDraft) => {
+    setCustomDays(prev => {
+      if (editingIndex === null) return [...prev, draft];
+      return prev.map((row, index) => (index === editingIndex ? draft : row));
+    });
+    setSheetVisible(false);
+    setEditingIndex(null);
+  };
+
+  const handleCustomDelete = (index: number) => {
+    if (!canEdit) return;
+    setCustomDays(prev => prev.filter((_, i) => i !== index));
   };
 
   const backHeader = (
@@ -89,7 +162,13 @@ export function HouseholdHolidaysScreen() {
     />
   );
 
-  if (onboarding.status === 'loading' || holidaysQuery.isLoading) {
+  const isLoading =
+    onboarding.status === 'loading' ||
+    holidaysQuery.isLoading ||
+    customHolidaysQuery.isLoading ||
+    householdLookup.isLoading;
+
+  if (isLoading) {
     return (
       <View
         testID="household-holidays-screen"
@@ -100,7 +179,7 @@ export function HouseholdHolidaysScreen() {
     );
   }
 
-  if (holidaysQuery.isError) {
+  if (holidaysQuery.isError || customHolidaysQuery.isError) {
     return (
       <View testID="household-holidays-screen" className="flex-1 bg-background">
         <View
@@ -118,7 +197,10 @@ export function HouseholdHolidaysScreen() {
           <InlineRetry
             testID="household-holidays-retry"
             message={tErrors('network')}
-            onRetry={() => void holidaysQuery.refetch()}
+            onRetry={() => {
+              void holidaysQuery.refetch();
+              void customHolidaysQuery.refetch();
+            }}
           />
         </View>
       </View>
@@ -150,9 +232,11 @@ export function HouseholdHolidaysScreen() {
         >
           <View className="flex-1 gap-1">
             <Body weight="medium">{t(`holidays.names.${entry.key}`)}</Body>
-            <Small className="text-muted-foreground">
-              {formatDisplayDateWithYear(entry.date)}
-            </Small>
+            {entry.date ? (
+              <Small className="text-muted-foreground">
+                {formatDisplayDateWithYear(entry.date)}
+              </Small>
+            ) : null}
           </View>
           <Switch
             testID={`holiday-toggle-${entry.key}`}
@@ -162,6 +246,85 @@ export function HouseholdHolidaysScreen() {
           />
         </View>
       ))}
+
+      <View testID="custom-holiday-section" className="mt-4 gap-3">
+        <Body weight="medium">{t('holidays.custom.sectionTitle')}</Body>
+        {customDays.length === 0 ? (
+          <Small
+            testID="custom-holiday-empty"
+            className="text-muted-foreground"
+          >
+            {t('holidays.custom.empty')}
+          </Small>
+        ) : (
+          customDays.map((day, index) => (
+            <View
+              key={day.name}
+              testID={`custom-holiday-row-${index}`}
+              className="flex-row items-center justify-between gap-3"
+            >
+              <View className="flex-1 gap-1">
+                <Body weight="medium">{day.name}</Body>
+                <Small className="text-muted-foreground">
+                  {day.dates
+                    .map(date => formatDisplayDateWithYear(date))
+                    .join(' · ')}
+                </Small>
+              </View>
+              {canEdit ? (
+                <View className="flex-row gap-1">
+                  <Button
+                    testID={`custom-holiday-edit-${index}`}
+                    variant="ghost"
+                    size="sm"
+                    onPress={() => {
+                      setEditingIndex(index);
+                      setSheetVisible(true);
+                    }}
+                    accessibilityLabel={t('holidays.custom.editTitle')}
+                  >
+                    <Text>{t('holidays.custom.editTitle')}</Text>
+                  </Button>
+                  <Button
+                    testID={`custom-holiday-delete-${index}`}
+                    variant="ghost"
+                    size="sm"
+                    onPress={() => handleCustomDelete(index)}
+                    accessibilityLabel={t('holidays.custom.deleteDay')}
+                  >
+                    <Text>{t('holidays.custom.deleteDay')}</Text>
+                  </Button>
+                </View>
+              ) : null}
+            </View>
+          ))
+        )}
+        {canEdit ? (
+          <Button
+            testID="custom-holiday-add"
+            variant="outline"
+            size="sm"
+            onPress={() => {
+              setEditingIndex(null);
+              setSheetVisible(true);
+            }}
+          >
+            <Text>{t('holidays.custom.addButton')}</Text>
+          </Button>
+        ) : null}
+      </View>
+
+      <CustomHolidayEditSheet
+        visible={sheetVisible}
+        onDismiss={() => {
+          setSheetVisible(false);
+          setEditingIndex(null);
+        }}
+        onSave={handleCustomSave}
+        initialName={editing?.name ?? ''}
+        initialDates={editing?.dates ?? []}
+        siblings={siblings}
+      />
     </>
   );
 
@@ -172,7 +335,11 @@ export function HouseholdHolidaysScreen() {
       subtitle={t('holidays.subtitle')}
       ctaLabel={canEdit ? t('holidays.saveButton') : tCommon('done')}
       onCta={canEdit ? () => void handleSave() : () => router.back()}
-      ctaDisabled={canEdit ? setHolidays.isPending : undefined}
+      ctaDisabled={
+        canEdit
+          ? setHolidays.isPending || setCustomHolidays.isPending
+          : undefined
+      }
       onBack={() => router.back()}
       backLabel={tCommon('back')}
     >
