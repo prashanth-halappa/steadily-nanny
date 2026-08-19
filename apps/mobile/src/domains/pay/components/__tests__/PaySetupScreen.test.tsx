@@ -10,7 +10,13 @@ import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, waitFor } from '@testing-library/react-native';
 import { getLocales } from 'expo-localization';
 import { useAuthStore } from '@/src/store/auth';
+import { localDateInZone } from '@/src/lib/localDate';
 import { renderWithProviders } from '@/src/test-utils';
+import {
+  formatDate,
+  maximumDate,
+  parseDate,
+} from '../EffectiveDateField.utils';
 
 let PaySetupScreen: typeof import('../PaySetupScreen').PaySetupScreen;
 
@@ -273,7 +279,9 @@ describe('PaySetupScreen', () => {
     const { getByTestId } = renderWithProviders(<PaySetupScreen />);
 
     await waitFor(() =>
-      expect(getByTestId('pay-setup-date-input').props.value).toBe('2026-07-01')
+      expect(
+        formatDate(getByTestId('pay-setup-date-input').props.value)
+      ).toBe('2026-07-01')
     );
   });
 
@@ -281,37 +289,35 @@ describe('PaySetupScreen', () => {
   // error and backdating hint existed only there. One `EffectiveDateField`
   // now owns both, so the parity gap cannot re-open.
   describe('T10: the date field validates the same on setup as on change', () => {
-    it('refuses a date that is not a real calendar date', async () => {
+    it('uses the native date picker in date mode', async () => {
       const { getByTestId } = renderWithProviders(<PaySetupScreen />);
 
       await waitFor(() =>
         expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
       );
-      fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
-      fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
-      expect(getByTestId('pay-setup-screen-cta').props.disabled).toBe(false);
 
-      fireEvent.changeText(getByTestId('pay-setup-date-input'), '2026-02-30');
-
-      expect(getByTestId('pay-setup-date-error')).toBeTruthy();
-      expect(getByTestId('pay-setup-screen-cta').props.disabled).toBe(true);
+      const picker = getByTestId('pay-setup-date-input');
+      // The invalid-date inline error path (Feb 30) is unreachable through
+      // this UI — the picker cannot emit impossible dates. isValidCalendarDate
+      // is still wired for non-UI writers and covered by payArrangementForm.test.ts.
+      expect(picker.props.mode).toBe('date');
     });
 
-    it('refuses a date beyond the 12-month horizon (D-16)', async () => {
+    it('caps the picker at the 12-month horizon (D-16)', async () => {
       const { getByTestId } = renderWithProviders(<PaySetupScreen />);
 
       await waitFor(() =>
         expect(getByTestId('pay-setup-rate-input')).toBeTruthy()
       );
-      fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
-      fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
 
-      // Household-local today is 2026-08-01 here, so the horizon is
-      // 2027-08-01.
-      fireEvent.changeText(getByTestId('pay-setup-date-input'), '2027-09-01');
-
-      expect(getByTestId('pay-setup-date-horizon-error')).toBeTruthy();
-      expect(getByTestId('pay-setup-screen-cta').props.disabled).toBe(true);
+      const todayISO = localDateInZone('UTC');
+      const picker = getByTestId('pay-setup-date-input');
+      // Beyond-horizon dates are structurally unreachable — maximumDate on the
+      // native picker enforces D-16. The inline horizon error remains for
+      // non-UI writers; isBeyondFutureHorizon is covered in payArrangementForm.test.ts.
+      expect(formatDate(picker.props.maximumDate)).toBe(
+        formatDate(maximumDate(todayISO))
+      );
     });
 
     it('accepts a scheduled future date inside the horizon', async () => {
@@ -324,7 +330,12 @@ describe('PaySetupScreen', () => {
       );
       fireEvent.changeText(getByTestId('pay-setup-rate-input'), '18.50');
       fireEvent.press(getByTestId('pay-setup-cancellation-chip-none'));
-      fireEvent.changeText(getByTestId('pay-setup-date-input'), '2026-09-01');
+      fireEvent(
+        getByTestId('pay-setup-date-input'),
+        'change',
+        {},
+        parseDate('2026-09-01')
+      );
 
       expect(queryByTestId('pay-setup-date-horizon-error')).toBeNull();
       fireEvent.press(getByTestId('pay-setup-screen-cta'));
@@ -435,9 +446,9 @@ describe('PaySetupScreen', () => {
       const { getByTestId } = renderWithProviders(<PaySetupScreen />);
 
       await waitFor(() =>
-        expect(getByTestId('pay-setup-date-input').props.value).toBe(
-          '2026-07-01'
-        )
+        expect(
+          formatDate(getByTestId('pay-setup-date-input').props.value)
+        ).toBe('2026-07-01')
       );
     });
   });
@@ -537,9 +548,9 @@ describe('PaySetupScreen', () => {
       await waitFor(() =>
         expect(getByTestId('pay-setup-rate-input').props.value).toBe('22.00')
       );
-      expect(getByTestId('pay-setup-date-input').props.value).toBe(
-        '2026-07-01'
-      );
+      expect(
+        formatDate(getByTestId('pay-setup-date-input').props.value)
+      ).toBe('2026-07-01');
     });
   });
 

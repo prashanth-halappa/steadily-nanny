@@ -68,8 +68,6 @@
     "currencyLabel": "Currency",
     "rateLabel": "Hourly rate",
     "effectiveLabel": "Takes effect from",
-    "dateInputLabel": "Date",
-    "datePlaceholder": "YYYY-MM-DD",
     "dateInvalid": "Enter a real date, as YYYY-MM-DD.",
     "dateTooFarAhead": "A change can start up to 12 months from today.",
     "backdatingHint": "Weeks that are already approved keep their approved totals.",

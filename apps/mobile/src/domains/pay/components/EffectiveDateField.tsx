@@ -23,12 +23,13 @@
  * Both predicates are the same ones the request builder uses, so the field can
  * never disagree with the button it sits above.
  *
- * SIMPLIFICATION, documented: §7.2 asks for the platform date picker ("it
- * cannot produce an invalid calendar date"). This stays a typed `YYYY-MM-DD`
- * string — the already-accepted simplification from the previous pass, kept
- * because the validation has to exist regardless (the field is not the only
- * writer, and the command service checks server-side anyway). Swapping in
- * `@react-native-community/datetimepicker` is a change to this one file.
+ * **Platform picker, nominal wire format.** §7.2's date picker is now in
+ * place via `@react-native-community/datetimepicker` (`mode="date"`). The
+ * wire format everywhere outside this component stays a nominal `yyyy-mm-dd`
+ * string; `Date` objects exist only transiently in
+ * `EffectiveDateField.utils.ts` for the native boundary. Both inline
+ * validations are retained anyway — this field is not the only writer, and
+ * the command service checks server-side.
  */
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTranslation } from 'react-i18next';
@@ -64,7 +65,8 @@ export function EffectiveDateField({
   const { t } = useTranslation('pay');
   const colors = useThemeColors();
 
-  const malformed = value.length > 0 && !isValidCalendarDate(value);
+  const empty = value.length === 0;
+  const malformed = !empty && !isValidCalendarDate(value);
   const tooFarAhead =
     !malformed && value.length > 0 && isBeyondFutureHorizon(value, todayISO);
   // The spec's ideal is "only when the affected week is already approved";
@@ -87,7 +89,7 @@ export function EffectiveDateField({
       <DateTimePicker
         testID={`${testIDPrefix}-date-input`}
         mode="date"
-        value={parseDate(malformed ? todayISO : value)}
+        value={parseDate(malformed || empty ? todayISO : value)}
         maximumDate={maximumDate(todayISO)}
         onChange={handleChange}
         accentColor={colors.primary}

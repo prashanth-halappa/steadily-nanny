@@ -25,6 +25,11 @@ import enPay from '@/src/i18n/locales/en/pay.json';
 import esPay from '@/src/i18n/locales/es/pay.json';
 import { useAuthStore } from '@/src/store/auth';
 import { offerRequestToArrangementStub } from '../../utils/payArrangementForm';
+import {
+  formatDate,
+  maximumDate,
+  parseDate,
+} from '../EffectiveDateField.utils';
 import { PayChangeSheet } from '../PayChangeSheet';
 
 mock.module('@/lib/animations/useReducedMotion', () => ({
@@ -113,7 +118,9 @@ describe('PayChangeSheet', () => {
   it('pre-fills the single date field with today and submits it untouched', () => {
     const { getByTestId, onSubmit } = renderSheet();
 
-    expect(getByTestId('pay-change-date-input').props.value).toBe(TODAY_ISO);
+    expect(formatDate(getByTestId('pay-change-date-input').props.value)).toBe(
+      TODAY_ISO
+    );
     fireEvent.press(getByTestId('pay-change-submit'));
 
     expect(onSubmit).toHaveBeenCalledWith(
@@ -143,7 +150,12 @@ describe('PayChangeSheet', () => {
   it('submits a SCHEDULED future date (D-16)', () => {
     const { getByTestId, queryByTestId, onSubmit } = renderSheet();
 
-    fireEvent.changeText(getByTestId('pay-change-date-input'), '2026-09-01');
+    fireEvent(
+      getByTestId('pay-change-date-input'),
+      'change',
+      {},
+      parseDate('2026-09-01')
+    );
 
     expect(queryByTestId('pay-change-date-error')).toBeNull();
     expect(queryByTestId('pay-change-date-horizon-error')).toBeNull();
@@ -154,33 +166,32 @@ describe('PayChangeSheet', () => {
     );
   });
 
-  it('refuses a date beyond the 12-month horizon, with its own inline error', () => {
-    const { getByTestId, queryByTestId, onSubmit } = renderSheet();
+  it('caps the picker at the 12-month horizon, with maximumDate', () => {
+    const { getByTestId } = renderSheet();
 
-    // TODAY_ISO is 2026-08-04, so the horizon is 2027-08-04.
-    fireEvent.changeText(getByTestId('pay-change-date-input'), '2027-08-05');
-
-    expect(getByTestId('pay-change-date-horizon-error')).toBeTruthy();
-    expect(queryByTestId('pay-change-date-error')).toBeNull();
-
-    fireEvent.press(getByTestId('pay-change-submit'));
-    expect(onSubmit).not.toHaveBeenCalled();
+    const picker = getByTestId('pay-change-date-input');
+    // Beyond-horizon dates are structurally unreachable — maximumDate on the
+    // native picker enforces D-16. The inline horizon error remains for
+    // non-UI writers; isBeyondFutureHorizon is covered in payArrangementForm.test.ts.
+    expect(formatDate(picker.props.maximumDate)).toBe(
+      formatDate(maximumDate(TODAY_ISO))
+    );
   });
 
-  it('refuses a date that is not a real calendar date', () => {
-    const { getByTestId, onSubmit } = renderSheet();
+  it('uses the native date picker in date mode', () => {
+    const { getByTestId } = renderSheet();
 
-    fireEvent.changeText(getByTestId('pay-change-date-input'), '2026-02-30');
-
-    expect(getByTestId('pay-change-date-error')).toBeTruthy();
-    fireEvent.press(getByTestId('pay-change-submit'));
-    expect(onSubmit).not.toHaveBeenCalled();
+    const picker = getByTestId('pay-change-date-input');
+    // The invalid-date inline error path (Feb 30) is unreachable through this
+    // UI — the picker cannot emit impossible dates. isValidCalendarDate is
+    // still wired for non-UI writers and covered by payArrangementForm.test.ts.
+    expect(picker.props.mode).toBe('date');
   });
 
   it('accepts a past date and shows the backdating hint', () => {
-    const { getByTestId, onSubmit } = renderSheet();
-
-    fireEvent.changeText(getByTestId('pay-change-date-input'), '2026-07-01');
+    const { getByTestId, onSubmit } = renderSheet({
+      initialEffectiveDateISO: '2026-07-01',
+    });
 
     expect(getByTestId('pay-change-backdating-hint')).toBeTruthy();
 
@@ -1038,7 +1049,9 @@ describe('PayChangeSheet mode="offer"', () => {
       defaultCurrency: 'EUR',
     });
 
-    expect(getByTestId('pay-offer-date-input').props.value).toBe(TODAY_ISO);
+    expect(formatDate(getByTestId('pay-offer-date-input').props.value)).toBe(
+      TODAY_ISO
+    );
     expect(getByTestId('pay-offer-currency-prefix').props.children).toBe('€');
     expect(getByTestId('pay-offer-rate-input').props.value).toBe('');
   });
@@ -1081,7 +1094,7 @@ describe('PayChangeSheet mode="offer"', () => {
       initialEffectiveDateISO: '2026-07-28',
     });
 
-    expect(getByTestId('pay-propose-date-input').props.value).toBe(
+    expect(formatDate(getByTestId('pay-propose-date-input').props.value)).toBe(
       '2026-07-28'
     );
     expect(getByTestId('pay-propose-backdating-hint')).toBeTruthy();
@@ -1094,7 +1107,9 @@ describe('PayChangeSheet mode="offer"', () => {
       defaultCurrency: 'USD',
     });
 
-    expect(getByTestId('pay-propose-date-input').props.value).toBe(TODAY_ISO);
+    expect(formatDate(getByTestId('pay-propose-date-input').props.value)).toBe(
+      TODAY_ISO
+    );
   });
 
   it('the seeded past date is what gets submitted, not silently reset to today', () => {
@@ -1163,6 +1178,8 @@ describe('PayChangeSheet mode="offer"', () => {
     });
 
     expect(getByTestId('pay-offer-rate-input').props.value).toBe('18.00');
-    expect(getByTestId('pay-offer-date-input').props.value).toBe('2026-08-10');
+    expect(formatDate(getByTestId('pay-offer-date-input').props.value)).toBe(
+      '2026-08-10'
+    );
   });
 });
