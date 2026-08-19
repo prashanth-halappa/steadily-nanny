@@ -114,7 +114,19 @@ interface TemplateKeyDeclaration {
  * Declaration table for every template-literal `t()` / `tSchedule()` site.
  * A NEW undeclared template fails the suite — that is the permanent gap close.
  */
+const PAY_TERMS_BLOCKERS = [
+  'rate',
+  'effectiveDate',
+  'cancellation',
+  'other',
+] as const;
+
 const TEMPLATE_KEY_DECLARATIONS: readonly TemplateKeyDeclaration[] = [
+  {
+    pattern: /^blocker\.\$\{[^}]+\}$/,
+    values: PAY_TERMS_BLOCKERS,
+    keyPattern: 'blocker.$1',
+  },
   {
     pattern: /^sentTo\.state\.\$\{[^}]+\}$/,
     values: INVITE_STATE_WORDS,

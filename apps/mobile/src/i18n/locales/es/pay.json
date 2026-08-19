@@ -364,5 +364,12 @@
     "reminded": "Recordatorio enviado el {{date}}",
     "remindTooSoon": "Puedes enviar un recordatorio cada dos días."
   },
-  "notAgreedSetBy": "Fijado por {{name}} el {{date}} · no aceptado en Steadily"
+  "notAgreedSetBy": "Fijado por {{name}} el {{date}} · no aceptado en Steadily",
+  "blocker": {
+    "rate": "Añade una tarifa por hora para guardar.",
+    "effectiveDate": "Revisa la fecha de inicio de estas condiciones.",
+    "cancellation": "Elige una condición de cancelación arriba para guardar.",
+    "other": "Una de las condiciones de arriba necesita otra revisión antes de guardar."
+  },
+  "requiredFieldA11y": "{{label}} (obligatorio)"
 }

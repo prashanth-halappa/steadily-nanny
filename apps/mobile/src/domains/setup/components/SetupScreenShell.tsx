@@ -29,7 +29,7 @@ import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';
-import { Body, H1 } from '@/src/components/ui/typography';
+import { Body, H1, Small } from '@/src/components/ui/typography';
 import { SlimProgressBar } from './SlimProgressBar';
 
 const SCREEN_GUTTER = SCREEN_CONTENT_STYLE.padding;
@@ -45,6 +45,9 @@ interface SetupScreenShellProps {
   ctaLabel: string;
   onCta: () => void;
   ctaDisabled?: boolean;
+  /** One line above the CTA saying WHY it is disabled. A greyed-out button
+   * that never names what is missing is the whole defect this exists for. */
+  ctaHint?: string;
   /** Top-left escape — typically `router.back()` or wizard step-back. */
   onBack?: () => void;
   backLabel?: string;
@@ -63,6 +66,7 @@ export function SetupScreenShell({
   ctaLabel,
   onCta,
   ctaDisabled,
+  ctaHint,
   onBack,
   backLabel = 'Back',
   onSkip,
@@ -151,6 +155,14 @@ export function SetupScreenShell({
           className="gap-3 pb-8"
           style={{ paddingHorizontal: SCREEN_GUTTER }}
         >
+          {ctaHint ? (
+            <Small
+              testID={`${testID}-cta-hint`}
+              className="text-center text-muted-foreground"
+            >
+              {ctaHint}
+            </Small>
+          ) : null}
           <Button
             testID={`${testID}-cta`}
             onPress={onCta}

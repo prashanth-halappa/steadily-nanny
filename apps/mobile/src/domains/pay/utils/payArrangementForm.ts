@@ -926,3 +926,38 @@ export function buildMidWeekConsequence(
     newFromLabel: formatWeekdayLong(effectiveDateISO),
   };
 }
+
+/**
+ * WHY Save is disabled, in one word. `buildCreatePayArrangementRequest`
+ * answers "is this submittable" and nothing else, so a form with ~20 refusal
+ * paths had exactly one signal for all of them: a greyed-out button. The
+ * cancellation term is the field that actually catches people — it is the one
+ * question with no blank state and no default, so a form that looks complete
+ * still refuses.
+ *
+ * Deliberately coarse: the three REQUIRED answers get named, everything else
+ * collapses to `'other'` (each optional group already renders its own inline
+ * error). No predicate is re-implemented here — this reuses the builder and
+ * the same three checks it opens with.
+ */
+export type PayTermsBlocker =
+  | 'rate'
+  | 'effectiveDate'
+  | 'cancellation'
+  | 'other';
+
+export function firstPayTermsBlocker(
+  state: PayTermsFormState
+): PayTermsBlocker | null {
+  if (buildCreatePayArrangementRequest(state)) return null;
+  const rateMinor = parseMajorToMinor(state.rateText);
+  if (rateMinor === null || rateMinor <= 0) return 'rate';
+  if (
+    !isValidCalendarDate(state.effectiveDateISO) ||
+    isBeyondFutureHorizon(state.effectiveDateISO, state.todayISO)
+  ) {
+    return 'effectiveDate';
+  }
+  if (state.cancellationChoice === null) return 'cancellation';
+  return 'other';
+}

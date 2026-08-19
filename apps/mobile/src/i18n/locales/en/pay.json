@@ -364,5 +364,12 @@
     "reminded": "Reminded {{date}}",
     "remindTooSoon": "You can send one reminder every two days."
   },
-  "notAgreedSetBy": "Set by {{name}} on {{date}} · not agreed in Steadily"
+  "notAgreedSetBy": "Set by {{name}} on {{date}} · not agreed in Steadily",
+  "blocker": {
+    "rate": "Add an hourly rate to save.",
+    "effectiveDate": "Check the date these terms start from.",
+    "cancellation": "Choose a cancellation term above to save.",
+    "other": "One of the terms above needs another look before this can be saved."
+  },
+  "requiredFieldA11y": "{{label}} (required)"
 }

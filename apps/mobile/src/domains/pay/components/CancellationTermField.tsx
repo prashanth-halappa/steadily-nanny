@@ -49,7 +49,16 @@ export function CancellationTermField({
 
   return (
     <View className="gap-2">
-      <Label>{t('changeSheet.cancellationsFieldLabel')}</Label>
+      {/* The asterisk earns its place here more than anywhere else on this
+          form: it is the one term with no default, so a form that looks
+          finished still refuses to save until a chip is tapped. */}
+      <Label
+        accessibilityLabel={t('requiredFieldA11y', {
+          label: t('changeSheet.cancellationsFieldLabel'),
+        })}
+      >
+        {t('changeSheet.cancellationsFieldLabel')} *
+      </Label>
       <View className="flex-row flex-wrap gap-2">
         <Button
           testID={`${testIDPrefix}-cancellation-chip-window`}

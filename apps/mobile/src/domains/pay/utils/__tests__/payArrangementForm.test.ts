@@ -13,6 +13,7 @@ import {
   buildCreatePayArrangementRequest,
   buildMidWeekConsequence,
   defaultCancellationChoiceFromHouseholdWindow,
+  firstPayTermsBlocker,
   formatDisplayDateWithYear,
   formatShortDate,
   formatWeekdayLong,
@@ -1020,5 +1021,43 @@ describe('buildCreatePayArrangementRequest — the terms jsonb bag', () => {
       duties: 'Care for Mia and Theo.',
       recurring: [{ label: 'Bonus', amount_minor: 50_000, cadence: 'annual' }],
     });
+  });
+});
+
+describe('firstPayTermsBlocker', () => {
+  it('is null when the form is submittable', () => {
+    expect(firstPayTermsBlocker(baseState)).toBeNull();
+  });
+
+  it('names the cancellation term — the one required answer with no default', () => {
+    expect(
+      firstPayTermsBlocker({ ...baseState, cancellationChoice: null })
+    ).toBe('cancellation');
+  });
+
+  it('names the rate before anything else', () => {
+    expect(
+      firstPayTermsBlocker({
+        ...baseState,
+        rateText: '',
+        cancellationChoice: null,
+      })
+    ).toBe('rate');
+  });
+
+  it('names the date when it is past the 12-month horizon', () => {
+    expect(
+      firstPayTermsBlocker({ ...baseState, effectiveDateISO: '2028-01-01' })
+    ).toBe('effectiveDate');
+  });
+
+  it('falls back to "other" for an optional-group refusal', () => {
+    expect(
+      firstPayTermsBlocker({
+        ...baseState,
+        doubletimeThresholdHoursText: '10',
+        doubletimeMultiplierText: '',
+      })
+    ).toBe('other');
   });
 });

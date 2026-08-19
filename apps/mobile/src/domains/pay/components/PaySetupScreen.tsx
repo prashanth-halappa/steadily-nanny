@@ -71,6 +71,7 @@ import { localDateInZone } from '@/src/lib/localDate';
 import {
   blankPayTermsFormState,
   buildCreatePayArrangementRequest,
+  firstPayTermsBlocker,
   offerRequestToArrangementStub,
   type PayTermsFormState,
   seedPayTermsFormState,
@@ -362,6 +363,9 @@ export function PaySetupScreen() {
   }
 
   const request = buildCreatePayArrangementRequest({ ...form, todayISO });
+  // Same reason as the draft terms screen: a disabled Save that never names
+  // the missing answer sends people hunting through every optional group.
+  const blocker = firstPayTermsBlocker({ ...form, todayISO });
 
   /**
    * P1: this SENDS A ROUND. There is no toast and no bounce — the receipt
@@ -391,6 +395,7 @@ export function PaySetupScreen() {
       ctaLabel={t('setup.submitButton', { name: carerName })}
       onCta={() => void handleSubmit()}
       ctaDisabled={!request || proposeTerms.isPending}
+      ctaHint={blocker ? t(`blocker.${blocker}`) : undefined}
       onBack={() => router.back()}
       backLabel={tCommon('back')}
     >

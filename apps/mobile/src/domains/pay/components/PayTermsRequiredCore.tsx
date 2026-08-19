@@ -54,7 +54,13 @@ export function PayTermsRequiredCore({
   return (
     <>
       <View className="gap-2">
-        <Label>{t('changeSheet.currencyLabel')}</Label>
+        <Label
+          accessibilityLabel={t('requiredFieldA11y', {
+            label: t('changeSheet.currencyLabel'),
+          })}
+        >
+          {t('changeSheet.currencyLabel')} *
+        </Label>
         <CurrencySelect
           value={state.currency}
           onChange={currency => onChange({ currency })}
@@ -63,7 +69,13 @@ export function PayTermsRequiredCore({
       </View>
 
       <View className="gap-2">
-        <Label>{t('changeSheet.rateLabel')}</Label>
+        <Label
+          accessibilityLabel={t('requiredFieldA11y', {
+            label: t('changeSheet.rateLabel'),
+          })}
+        >
+          {t('changeSheet.rateLabel')} *
+        </Label>
         <View className="flex-row items-center gap-2">
           <Body
             testID={`${testIDPrefix}-currency-prefix`}
