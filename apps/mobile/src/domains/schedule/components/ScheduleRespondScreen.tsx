@@ -46,6 +46,7 @@ import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { InlineRetry } from '@/src/components/custom/InlineRetry';
+import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
 import { FieldLabel } from '@/src/components/ui/field-label';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -94,6 +95,7 @@ export function ScheduleRespondScreen({
   patternId,
 }: ScheduleRespondScreenProps) {
   const { t } = useTranslation('schedule');
+  const { t: tCommon } = useTranslation('common');
   const elevation = useElevation();
   const router = useRouter();
 
@@ -219,6 +221,11 @@ export function ScheduleRespondScreen({
         className="flex-1"
         contentContainerStyle={SCREEN_CONTENT_STYLE}
       >
+        <BackButton
+          testID="schedule-respond-back"
+          onPress={() => router.back()}
+          label={tCommon('back')}
+        />
         <H1>{t('respond.screenTitle')}</H1>
         <Body className="mt-2 text-muted-foreground">
           {t('respond.subtitle')}
