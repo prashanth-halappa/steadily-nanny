@@ -68,8 +68,6 @@
     "currencyLabel": "Currency",
     "rateLabel": "Hourly rate",
     "effectiveLabel": "Takes effect from",
-    "chipToday": "Today ({{date}})",
-    "chipEarlier": "An earlier date",
     "dateInputLabel": "Date",
     "datePlaceholder": "YYYY-MM-DD",
     "dateInvalid": "Enter a real date, as YYYY-MM-DD.",

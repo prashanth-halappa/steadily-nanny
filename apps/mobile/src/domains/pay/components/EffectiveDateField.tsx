@@ -30,14 +30,21 @@
  * writer, and the command service checks server-side anyway). Swapping in
  * `@react-native-community/datetimepicker` is a change to this one file.
  */
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
-import { Input } from '@/src/components/ui/input';
 import { Label, Small } from '@/src/components/ui/typography';
+import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
 import {
   isBeyondFutureHorizon,
   isValidCalendarDate,
 } from '../utils/payArrangementForm';
+import {
+  formatDate,
+  maximumDate,
+  parseDate,
+  shouldShowBackdatingHint,
+} from './EffectiveDateField.utils';
 
 interface EffectiveDateFieldProps {
   /** `pay-setup` or `pay-change` — the screen's own testID namespace. */
@@ -55,29 +62,37 @@ export function EffectiveDateField({
   todayISO,
 }: EffectiveDateFieldProps) {
   const { t } = useTranslation('pay');
+  const colors = useThemeColors();
 
-  const typed = value.trim();
-  const malformed = typed.length > 0 && !isValidCalendarDate(typed);
+  const malformed = value.length > 0 && !isValidCalendarDate(value);
   const tooFarAhead =
-    !malformed && typed.length > 0 && isBeyondFutureHorizon(typed, todayISO);
+    !malformed && value.length > 0 && isBeyondFutureHorizon(value, todayISO);
   // The spec's ideal is "only when the affected week is already approved";
   // this component has no hook that knows, so it hints on any past date — a
   // wider net, never a wrong one (an unapproved week just recomputes, which
   // makes the hint inapplicable rather than misleading).
-  const showBackdatingHint = !malformed && typed !== '' && typed < todayISO;
+  const showBackdatingHint =
+    !malformed && shouldShowBackdatingHint(value, todayISO);
+
+  // The event param's real type lives in the native module's own
+  // (untranspilable under bun:test) source — only `date` is needed here.
+  const handleChange = (_event: unknown, date?: Date) => {
+    if (!date) return;
+    onChange(formatDate(date));
+  };
 
   return (
     <View className="gap-2">
       <Label>{t('changeSheet.effectiveLabel')}</Label>
-      <Input
+      <DateTimePicker
         testID={`${testIDPrefix}-date-input`}
-        accessibilityLabel={t('changeSheet.dateInputLabel')}
-        value={value}
-        onChangeText={onChange}
-        placeholder={t('changeSheet.datePlaceholder')}
-        keyboardType="numbers-and-punctuation"
-        maxLength={10}
-        error={malformed || tooFarAhead}
+        mode="date"
+        value={parseDate(malformed ? todayISO : value)}
+        maximumDate={maximumDate(todayISO)}
+        onChange={handleChange}
+        accentColor={colors.primary}
+        textColor={colors.foreground}
+        themeVariant="light"
       />
       {malformed ? (
         <Small
