@@ -616,7 +616,9 @@ describe('HoursScreen — no-household empty state (§A)', () => {
     expect(getByText('title').props['aria-level']).toBe('1');
     const noHouseholdEmpty = getByTestId('hours-no-household-empty');
     expect(UNSAFE_getAllByType(Image).length).toBeGreaterThan(0);
-    expect(within(noHouseholdEmpty).getByText('noHousehold.title')).toBeTruthy();
+    expect(
+      within(noHouseholdEmpty).getByText('noHousehold.title')
+    ).toBeTruthy();
     expect(
       within(noHouseholdEmpty).getByText('noHousehold.description')
     ).toBeTruthy();

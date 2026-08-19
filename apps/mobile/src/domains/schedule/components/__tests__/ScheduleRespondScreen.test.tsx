@@ -60,10 +60,10 @@ describe('ScheduleRespondScreen', () => {
     const { getByTestId } = render(
       <ScheduleRespondScreen patternId={PATTERN_ID} />
     );
-    
+
     const backButton = getByTestId('schedule-respond-back');
     expect(backButton).toBeTruthy();
-    
+
     fireEvent.press(backButton);
     expect(mockBack).toHaveBeenCalledTimes(1);
   });

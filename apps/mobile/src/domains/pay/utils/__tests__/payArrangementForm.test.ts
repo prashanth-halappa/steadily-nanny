@@ -5,8 +5,9 @@
  * TIER0-PLAN.md flags for this slice (mid-week rate split, no-future-dates,
  * the household-window-0-maps-to-no-pay rule).
  */
-import { join } from 'node:path';
+
 import { afterEach, beforeAll, describe, expect, it } from 'bun:test';
+import { join } from 'node:path';
 import i18n from '@/src/i18n';
 import {
   buildCreatePayArrangementRequest,
@@ -46,7 +47,10 @@ const baseState: PayTermsFormState = {
   payDayOfMonthText: '',
 };
 
-const payTermsGroupsPath = join(__dirname, '../../components/PayTermsGroups.tsx');
+const payTermsGroupsPath = join(
+  __dirname,
+  '../../components/PayTermsGroups.tsx'
+);
 let payTermsGroupsSource = '';
 
 beforeAll(async () => {

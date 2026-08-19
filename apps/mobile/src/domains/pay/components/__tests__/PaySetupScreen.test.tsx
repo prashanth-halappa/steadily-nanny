@@ -9,8 +9,8 @@
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, waitFor } from '@testing-library/react-native';
 import { getLocales } from 'expo-localization';
-import { useAuthStore } from '@/src/store/auth';
 import { localDateInZone } from '@/src/lib/localDate';
+import { useAuthStore } from '@/src/store/auth';
 import { renderWithProviders } from '@/src/test-utils';
 import {
   formatDate,
@@ -279,9 +279,9 @@ describe('PaySetupScreen', () => {
     const { getByTestId } = renderWithProviders(<PaySetupScreen />);
 
     await waitFor(() =>
-      expect(
-        formatDate(getByTestId('pay-setup-date-input').props.value)
-      ).toBe('2026-07-01')
+      expect(formatDate(getByTestId('pay-setup-date-input').props.value)).toBe(
+        '2026-07-01'
+      )
     );
   });
 
@@ -548,9 +548,9 @@ describe('PaySetupScreen', () => {
       await waitFor(() =>
         expect(getByTestId('pay-setup-rate-input').props.value).toBe('22.00')
       );
-      expect(
-        formatDate(getByTestId('pay-setup-date-input').props.value)
-      ).toBe('2026-07-01');
+      expect(formatDate(getByTestId('pay-setup-date-input').props.value)).toBe(
+        '2026-07-01'
+      );
     });
   });
 
