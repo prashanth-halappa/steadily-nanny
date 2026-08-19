@@ -2,7 +2,13 @@
   "title": "Hours",
   "draftEmpty": {
     "title": "Nothing to track yet",
-    "description": "Hours start when a family accepts your terms."
+    "description": "Hours start when a family accepts your terms. Nothing is agreed until then.",
+    "actionLabel": "Go to your draft"
+  },
+  "noHousehold": {
+    "title": "You're not in a household yet",
+    "description": "Once you join one, the hours worked there and what they add up to live on this tab.",
+    "actionLabel": "Join with an invite code"
   },
   "previousWeek": "Previous week",
   "nextWeek": "Next week",

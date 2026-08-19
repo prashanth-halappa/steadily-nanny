@@ -1,9 +1,11 @@
 {
   "tab": {
-    "emptyTitle": "Aún no hay un hogar",
-    "emptyDescription": "Cuando te añadan a un hogar, su horario aparecerá aquí.",
-    "draftEmptyTitle": "Aún no hay turnos",
-    "draftEmptyDescription": "Todavía no has empezado con una familia."
+    "emptyTitle": "Todavía no estás en un hogar",
+    "emptyDescription": "Introduce el código de invitación que te envió una familia y su horario aparecerá aquí.",
+    "emptyActionLabel": "Unirme con un código de invitación",
+    "draftEmptyTitle": "No habrá turnos hasta que se una una familia",
+    "draftEmptyDescription": "Tu borrador todavía no está compartido con nadie. Envía tus condiciones a una familia desde Hoy: los turnos empiezan cuando las aceptan.",
+    "draftEmptyActionLabel": "Ir a tu borrador"
   },
   "build": {
     "screenTitle": "Construye tu semana habitual",

@@ -12,6 +12,7 @@
  */
 
 import { HOUSEHOLD_STATES } from '@steadily-nanny/shared-types/schemas/household.schema';
+import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
@@ -30,6 +31,7 @@ import { useSchedulePatterns } from '@/src/hooks/queries/useSchedulePatterns';
 
 export default function ScheduleRoute() {
   const { t } = useTranslation('schedule');
+  const router = useRouter();
   const onboarding = useIsOnboarded();
   const activeHousehold = useActiveHousehold();
   // Fetched for every role now, not just parent/helper (for the banner) —
@@ -67,6 +69,8 @@ export default function ScheduleRoute() {
           image={illustrations.emptySchedule}
           title={t('tab.draftEmptyTitle')}
           description={t('tab.draftEmptyDescription')}
+          actionLabel={t('tab.draftEmptyActionLabel')}
+          action={() => router.push('/(private)/(tabs)/home' as Href)}
         />
       </View>
     );
@@ -80,6 +84,10 @@ export default function ScheduleRoute() {
           image={illustrations.emptySchedule}
           title={t('tab.emptyTitle')}
           description={t('tab.emptyDescription')}
+          actionLabel={t('tab.emptyActionLabel')}
+          action={() =>
+            router.push('/(private)/settings/join-household' as Href)
+          }
         />
       </View>
     );

@@ -2,7 +2,13 @@
   "title": "Horas",
   "draftEmpty": {
     "title": "Aún no hay nada que registrar",
-    "description": "Las horas empiezan cuando una familia acepta tus condiciones."
+    "description": "Las horas empiezan cuando una familia acepta tus condiciones. Hasta entonces no hay nada acordado.",
+    "actionLabel": "Ir a tu borrador"
+  },
+  "noHousehold": {
+    "title": "Todavía no estás en un hogar",
+    "description": "Cuando te unas a uno, las horas trabajadas allí y lo que suman estarán en esta pestaña.",
+    "actionLabel": "Unirme con un código de invitación"
   },
   "previousWeek": "Semana anterior",
   "nextWeek": "Semana siguiente",

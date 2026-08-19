@@ -21,6 +21,7 @@ import {
   waitFor,
   within,
 } from '@testing-library/react-native';
+import { Image } from 'react-native';
 import { useAuthStore } from '@/src/store/auth';
 import {
   addWeeks,
@@ -561,6 +562,70 @@ describe('HoursScreen — draft household empty state (D-36)', () => {
     expect(getByTestId('hours-draft-empty')).toBeTruthy();
     expect(queryByTestId('hours-loading')).toBeNull();
     expect(queryByTestId('hours-total')).toBeNull();
+  });
+
+  it('renders illustration, title, body, and draft action; action routes to Today home', () => {
+    mockUseActiveHousehold.mockImplementation(() => ({
+      household: {
+        id: HOUSEHOLD_ID,
+        timezone: TIMEZONE,
+        week_starts_on: 1,
+        state: 'draft',
+      },
+      householdId: HOUSEHOLD_ID,
+      households: [],
+      setActiveHouseholdId: mock(),
+      isLoading: false,
+    }));
+
+    const { getByTestId, getByLabelText, UNSAFE_getAllByType } = render(
+      <HoursScreen />
+    );
+    const routerApi = require('expo-router').router;
+
+    const draftEmpty = getByTestId('hours-draft-empty');
+    expect(UNSAFE_getAllByType(Image).length).toBeGreaterThan(0);
+    expect(within(draftEmpty).getByText('draftEmpty.title')).toBeTruthy();
+    expect(within(draftEmpty).getByText('draftEmpty.description')).toBeTruthy();
+    expect(getByLabelText('draftEmpty.actionLabel')).toBeTruthy();
+
+    fireEvent.press(getByLabelText('draftEmpty.actionLabel'));
+    expect(routerApi.push).toHaveBeenCalledWith('/(private)/(tabs)/home');
+  });
+});
+
+describe('HoursScreen — no-household empty state (§A)', () => {
+  it('keeps the H1 and renders illustration, title, body, join action; action routes to join-household', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'not-onboarded',
+      role: null,
+      householdId: null,
+    }));
+    mockUseActiveHousehold.mockImplementation(() => ({
+      household: null,
+      householdId: null,
+      households: [],
+      setActiveHouseholdId: mock(),
+      isLoading: false,
+    }));
+
+    const { getByTestId, getByText, getByLabelText, UNSAFE_getAllByType } =
+      render(<HoursScreen />);
+    const routerApi = require('expo-router').router;
+
+    expect(getByText('title').props['aria-level']).toBe('1');
+    const noHouseholdEmpty = getByTestId('hours-no-household-empty');
+    expect(UNSAFE_getAllByType(Image).length).toBeGreaterThan(0);
+    expect(within(noHouseholdEmpty).getByText('noHousehold.title')).toBeTruthy();
+    expect(
+      within(noHouseholdEmpty).getByText('noHousehold.description')
+    ).toBeTruthy();
+    expect(getByLabelText('noHousehold.actionLabel')).toBeTruthy();
+
+    fireEvent.press(getByLabelText('noHousehold.actionLabel'));
+    expect(routerApi.push).toHaveBeenCalledWith(
+      '/(private)/settings/join-household'
+    );
   });
 });
 
