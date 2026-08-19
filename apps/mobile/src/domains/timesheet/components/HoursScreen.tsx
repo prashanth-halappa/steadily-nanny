@@ -52,10 +52,16 @@
  */
 
 import { HOUSEHOLD_STATES } from '@steadily-nanny/shared-types/schemas/household.schema';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import {
+  type Href,
+  useFocusEffect,
+  useLocalSearchParams,
+  useRouter,
+} from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, View } from 'react-native';
+import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
@@ -344,8 +350,11 @@ export function HoursScreen() {
           <View testID="hours-draft-empty">
             <EmptyState
               variant="inline"
+              image={illustrations.emptyHours}
               title={t('draftEmpty.title')}
               description={t('draftEmpty.description')}
+              actionLabel={t('draftEmpty.actionLabel')}
+              action={() => router.push('/(private)/(tabs)/home' as Href)}
             />
           </View>
         </ScrollView>
@@ -365,6 +374,18 @@ export function HoursScreen() {
           }}
         >
           <H1>{t('title')}</H1>
+          <View testID="hours-no-household-empty">
+            <EmptyState
+              variant="inline"
+              image={illustrations.emptyHours}
+              title={t('noHousehold.title')}
+              description={t('noHousehold.description')}
+              actionLabel={t('noHousehold.actionLabel')}
+              action={() =>
+                router.push('/(private)/settings/join-household' as Href)
+              }
+            />
+          </View>
         </ScrollView>
       </View>
     );

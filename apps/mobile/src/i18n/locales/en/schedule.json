@@ -1,9 +1,11 @@
 {
   "tab": {
-    "emptyTitle": "No household yet",
-    "emptyDescription": "Once you're added to a household, its schedule will show up here.",
-    "draftEmptyTitle": "No shifts yet",
-    "draftEmptyDescription": "You haven't started with a family."
+    "emptyTitle": "You're not in a household yet",
+    "emptyDescription": "Enter the invite code a family sent you and their schedule shows up here.",
+    "emptyActionLabel": "Join with an invite code",
+    "draftEmptyTitle": "No shifts until a family joins",
+    "draftEmptyDescription": "Your draft isn't shared with anyone yet. Send your terms to a family from Today — shifts start once they accept.",
+    "draftEmptyActionLabel": "Go to your draft"
   },
   "build": {
     "screenTitle": "Build your usual week",

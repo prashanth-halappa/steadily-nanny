@@ -754,6 +754,10 @@ export function TodayScreen() {
               image={illustrations.emptyToday}
               title={t('emptyTitle')}
               description={t('emptyDescription')}
+              actionLabel={t('emptyActionLabel')}
+              action={() =>
+                router.push('/(private)/settings/join-household' as Href)
+              }
             />
           </View>
         )}

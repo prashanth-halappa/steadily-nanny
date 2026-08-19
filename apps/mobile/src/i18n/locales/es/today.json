@@ -144,8 +144,9 @@
     "receiptBodyWithBreak": "{{duration}} registradas · Descanso {{breakDuration}}"
   },
   "screenTitle": "Hoy",
-  "emptyTitle": "Tu semana aparecerá aquí",
-  "emptyDescription": "Cuando añadas un horario, los próximos turnos y novedades se mostrarán en esta pantalla.",
+  "emptyTitle": "Todavía no estás en un hogar",
+  "emptyDescription": "Introduce el código de invitación que te envió una familia y los turnos, las horas y los mensajes de hoy aparecerán aquí.",
+  "emptyActionLabel": "Unirme con un código de invitación",
   "needsAttention": {
     "title": "Requiere atención ({{count}})",
     "body": "Hay pendientes que te esperan."
