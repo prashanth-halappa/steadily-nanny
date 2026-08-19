@@ -20,7 +20,7 @@ import { Pressable, View } from 'react-native';
 import { cn } from '@/lib/utils';
 import { Input } from '@/src/components/ui/input';
 import { Text } from '@/src/components/ui/text';
-import { Small } from '@/src/components/ui/typography';
+import { Label, Small } from '@/src/components/ui/typography';
 
 const FREQUENCIES: readonly PayFrequency[] = [
   PAY_FREQUENCIES.WEEKLY,
@@ -84,9 +84,7 @@ export function PayScheduleFields({
 
   return (
     <View className="gap-2">
-      <Small className="text-muted-foreground">
-        {t('changeSheet.payScheduleFieldLabel')}
-      </Small>
+      <Label>{t('changeSheet.payScheduleFieldLabel')}</Label>
       <View
         testID={`${testIDPrefix}-pay-frequency-row`}
         className="flex-row flex-wrap gap-2"
@@ -114,32 +112,35 @@ export function PayScheduleFields({
       </View>
 
       {showWeekdayPicker ? (
-        <View
-          testID={`${testIDPrefix}-pay-day-of-week-row`}
-          className="flex-row flex-wrap gap-2"
-        >
-          {WEEKDAY_KEYS.map((key, day) => {
-            const selected = payDayOfWeekText === String(day);
-            return (
-              <Pressable
-                key={key}
-                testID={`${testIDPrefix}-pay-day-of-week-${day}`}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                onPress={() =>
-                  onPayDayOfWeekTextChange(selected ? '' : String(day))
-                }
-                className={cn(
-                  'rounded-full border border-input px-3 py-2',
-                  selected && 'border-primary bg-secondary'
-                )}
-              >
-                <Text className={selected ? 'text-primary' : undefined}>
-                  {t(key)}
-                </Text>
-              </Pressable>
-            );
-          })}
+        <View className="gap-2">
+          <Label>{t('changeSheet.payDayOfWeekLabel')}</Label>
+          <View
+            testID={`${testIDPrefix}-pay-day-of-week-row`}
+            className="flex-row flex-wrap gap-2"
+          >
+            {WEEKDAY_KEYS.map((key, day) => {
+              const selected = payDayOfWeekText === String(day);
+              return (
+                <Pressable
+                  key={key}
+                  testID={`${testIDPrefix}-pay-day-of-week-${day}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  onPress={() =>
+                    onPayDayOfWeekTextChange(selected ? '' : String(day))
+                  }
+                  className={cn(
+                    'rounded-full border border-input px-3 py-2',
+                    selected && 'border-primary bg-secondary'
+                  )}
+                >
+                  <Text className={selected ? 'text-primary' : undefined}>
+                    {t(key)}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
       ) : null}
 

@@ -23,7 +23,7 @@
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Input } from '@/src/components/ui/input';
-import { Body, Label } from '@/src/components/ui/typography';
+import { Body, Label, Small } from '@/src/components/ui/typography';
 import { CancellationTermField } from '@/src/domains/pay/components/CancellationTermField';
 import { CurrencySelect } from '@/src/domains/pay/components/CurrencySelect';
 import { EffectiveDateField } from '@/src/domains/pay/components/EffectiveDateField';
@@ -85,6 +85,9 @@ export function PayTermsRequiredCore({
             className="flex-1"
           />
         </View>
+        <Small className="text-muted-foreground">
+          {t('changeSheet.rateHint')}
+        </Small>
       </View>
 
       {/* T10: the SAME date field the change sheet renders, so no caller can

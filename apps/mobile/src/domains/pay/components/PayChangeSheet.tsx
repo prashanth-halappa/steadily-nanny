@@ -329,6 +329,9 @@ export function PayChangeSheet({
               className="flex-1"
             />
           </View>
+          <Small className="text-muted-foreground">
+            {t('changeSheet.rateHint')}
+          </Small>
         </View>
 
         <EffectiveDateField

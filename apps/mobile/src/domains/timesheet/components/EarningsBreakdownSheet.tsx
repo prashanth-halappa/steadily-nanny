@@ -36,11 +36,15 @@
  * format for one sheet — keeps the screen internally consistent; the
  * information conveyed is identical, only the punctuation compresses.
  */
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { useThemeColors } from '@/lib/design-tokens';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { H4, Small } from '@/src/components/ui/typography';
 import { AmountRow } from '@/src/domains/pay/components/AmountRow';
+import type { GlossaryEntryKey } from '@/src/domains/pay/components/TermsGlossarySheet';
+import { TermsGlossarySheet } from '@/src/domains/pay/components/TermsGlossarySheet';
 import { formatMoney } from '@/src/lib/money';
 import type { EarningsLine, WeekEarningsOk } from '../types';
 import { EARNINGS_LINE_KINDS, humanizeEarningsLineKind } from '../types';
@@ -82,6 +86,10 @@ export function EarningsBreakdownSheet({
   testID = 'hours-earnings-breakdown',
 }: EarningsBreakdownSheetProps) {
   const { t } = useTranslation('hours');
+  const colors = useThemeColors();
+  // §11.2/§11.3: which glossary entry the last pressed label named. `null`
+  // keeps `TermsGlossarySheet` closed.
+  const [glossaryKey, setGlossaryKey] = useState<GlossaryEntryKey | null>(null);
 
   // A DENYLIST, not an allowlist: `reimbursements` is the one kind that must
   // not appear here (it renders below the gross, never inside it — see the
@@ -157,6 +165,7 @@ export function EarningsBreakdownSheet({
             testID={`${testID}-line-overtime-${index}`}
             label={t('earningsLineOvertime')}
             value={amount}
+            onLabelPress={() => setGlossaryKey('overtime')}
             // review finding 9a: `multiplier` below is a LOCALE-FORMATTED
             // STRING (comma decimal in Spanish), never the raw JS number —
             // interpolating the number as-is put the period-decimal English
@@ -175,6 +184,7 @@ export function EarningsBreakdownSheet({
             testID={`${testID}-line-doubletime`}
             label={t('earningsLineDoubletime')}
             value={amount}
+            onLabelPress={() => setGlossaryKey('doubleTime')}
             // review finding 9a again: a LOCALE-FORMATTED STRING, never the
             // raw JS number — the premium tiers share the hazard because they
             // share the shape.
@@ -221,6 +231,7 @@ export function EarningsBreakdownSheet({
             testID={`${testID}-line-cancellation`}
             label={t('earningsLineCancellation')}
             value={amount}
+            onLabelPress={() => setGlossaryKey('cancellationPay')}
             subLine={t(cancellationSublineKey, { duration, rate })}
           />
         );
@@ -232,6 +243,7 @@ export function EarningsBreakdownSheet({
             testID={`${testID}-line-pto`}
             label={t('earningsLinePto')}
             value={amount}
+            onLabelPress={() => setGlossaryKey('paidTimeOff')}
             subLine={t('earningsLinePtoSubline', { duration, rate })}
           />
         );
@@ -257,6 +269,7 @@ export function EarningsBreakdownSheet({
               testID={`${testID}-line-topup`}
               label={t('earningsLineTopup')}
               value={amount}
+              onLabelPress={() => setGlossaryKey('topUp')}
               subLine={t('earningsLineTopupSubline', {
                 duration,
                 guaranteed: formatDuration(
@@ -325,7 +338,25 @@ export function EarningsBreakdownSheet({
         </View>
 
         <View className="flex-row items-baseline justify-between gap-3 rounded-cell bg-muted px-4 py-3">
-          <H4>{t('earningsGrossPay')}</H4>
+          {/* §11.2/§11.3: the one label on this row without an AmountRow to
+              carry it — same dotted-underline affordance, applied directly. */}
+          <Pressable
+            testID={`${testID}-total-label`}
+            onPress={() => setGlossaryKey('gross')}
+            accessibilityRole="button"
+            accessibilityHint={t('glossary.labelA11yHint')}
+            hitSlop={8}
+          >
+            <H4
+              style={{
+                textDecorationLine: 'underline',
+                textDecorationStyle: 'dotted',
+                textDecorationColor: colors.mutedForeground,
+              }}
+            >
+              {t('earningsGrossPay')}
+            </H4>
+          </Pressable>
           <H4 testID={`${testID}-total`} tabular>
             {formatMoney(earnings.gross_minor, earnings.currency)}
           </H4>
@@ -344,6 +375,12 @@ export function EarningsBreakdownSheet({
           {t('earningsFooterNote')}
         </Small>
       </View>
+
+      <TermsGlossarySheet
+        visible={glossaryKey !== null}
+        entryKey={glossaryKey}
+        onDismiss={() => setGlossaryKey(null)}
+      />
     </BottomSheetBase>
   );
 }

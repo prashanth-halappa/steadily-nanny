@@ -285,5 +285,59 @@
     "parentNoCarer": "{{hours}} logged this week."
   },
   "entryCorrectedToast": "Correction saved.",
-  "entryRemovedToast": "Entry removed."
+  "entryRemovedToast": "Entry removed.",
+  "glossary": {
+    "sheetTitle": "What this means",
+    "labelA11yHint": "Opens what this term means",
+    "entries": {
+      "overtime": {
+        "term": "Overtime",
+        "definition": "Hours over the weekly threshold in the terms are paid at a higher rate, usually 1.5× the hourly rate. Both the threshold and the multiplier are set in the terms, and the count always runs week by week."
+      },
+      "dailyOvertime": {
+        "term": "Daily overtime",
+        "definition": "Hours over the daily threshold in a single day are paid at the overtime rate. A day can earn overtime on its own, even if the week stays under the weekly threshold."
+      },
+      "doubleTime": {
+        "term": "Double time",
+        "definition": "Hours over the double-time threshold in a single day are paid at the double-time rate, usually 2× the hourly rate. It sits above daily overtime, so one day can be part regular, part overtime and part double time."
+      },
+      "seventhDay": {
+        "term": "Seventh day",
+        "definition": "A seventh day worked in the same week is paid at its own rate from the first hour. If the terms set a second tier, hours past that point in the day move up to the double-time rate."
+      },
+      "guaranteedHours": {
+        "term": "Guaranteed hours",
+        "definition": "The least a week is paid for, even if fewer hours are worked. If the week comes up short, the difference is added as a top-up at the hourly rate."
+      },
+      "topUp": {
+        "term": "Top-up",
+        "definition": "The line that fills the gap between the hours worked and the guaranteed hours. It is added at approval, at the hourly rate, and shows as its own line in the breakdown."
+      },
+      "paidTimeOff": {
+        "term": "Paid time off",
+        "definition": "A pool of paid hours granted each calendar year, sized in the terms. Sick days draw from the same pool and are labeled as sick on the day they are taken."
+      },
+      "cancellationPay": {
+        "term": "Cancellation pay",
+        "definition": "A shift cancelled inside the agreed window is still paid in full. The window is set in the terms as hours before the shift starts; cancel earlier than that and the shift pays nothing."
+      },
+      "mileage": {
+        "term": "Mileage",
+        "definition": "A rate per mile that prices mileage claimed on expenses, not hours. The rate is stamped when the expense is approved, so changing it later does not re-price anything already approved."
+      },
+      "outsideWages": {
+        "term": "Outside wages",
+        "definition": "Recurring payments agreed alongside the hourly wage — a stipend or a bonus, weekly, monthly or annual. They are shown with the terms and are never added to a week's gross."
+      },
+      "gross": {
+        "term": "Gross",
+        "definition": "The week's total before any tax or deduction, and the figure a week is approved at. Expenses and reimbursements are listed separately and are never part of gross."
+      },
+      "workweek": {
+        "term": "Workweek",
+        "definition": "The seven-day stretch overtime is counted in, starting on the day the household sets. It does not move with the pay schedule, so a household that pays monthly still has overtime worked out week by week."
+      }
+    }
+  }
 }

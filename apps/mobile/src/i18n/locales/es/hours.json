@@ -285,5 +285,59 @@
     "parentNoCarer": "{{hours}} registradas esta semana."
   },
   "entryCorrectedToast": "Corrección guardada.",
-  "entryRemovedToast": "Entrada eliminada."
+  "entryRemovedToast": "Entrada eliminada.",
+  "glossary": {
+    "sheetTitle": "Qué significa esto",
+    "labelA11yHint": "Abre qué significa este término",
+    "entries": {
+      "overtime": {
+        "term": "Horas extra",
+        "definition": "Las horas por encima del límite semanal de las condiciones se pagan a una tarifa más alta, normalmente 1,5× la tarifa por hora. Tanto el límite como el multiplicador se fijan en las condiciones, y el recuento siempre va semana a semana."
+      },
+      "dailyOvertime": {
+        "term": "Horas extra diarias",
+        "definition": "Las horas por encima del límite diario en un solo día se pagan a la tarifa de horas extra. Un día puede generar horas extra por sí solo, aunque la semana no llegue al límite semanal."
+      },
+      "doubleTime": {
+        "term": "Pago doble",
+        "definition": "Las horas por encima del límite de pago doble en un solo día se pagan a la tarifa de pago doble, normalmente 2× la tarifa por hora. Va por encima de las horas extra diarias, así que un mismo día puede tener horas normales, horas extra y pago doble."
+      },
+      "seventhDay": {
+        "term": "Séptimo día",
+        "definition": "Un séptimo día trabajado en la misma semana se paga a su propia tarifa desde la primera hora. Si las condiciones fijan un segundo tramo, las horas que pasen de ese punto en el día suben a la tarifa de pago doble."
+      },
+      "guaranteedHours": {
+        "term": "Horas garantizadas",
+        "definition": "Lo mínimo que se paga en una semana, aunque se trabajen menos horas. Si la semana se queda corta, la diferencia se añade como complemento a la tarifa por hora."
+      },
+      "topUp": {
+        "term": "Complemento",
+        "definition": "La línea que cubre la diferencia entre las horas trabajadas y las horas garantizadas. Se añade al aprobar, a la tarifa por hora, y aparece como una línea propia en el desglose."
+      },
+      "paidTimeOff": {
+        "term": "Tiempo libre pagado",
+        "definition": "Una bolsa de horas pagadas que se concede cada año natural y cuyo tamaño se fija en las condiciones. Los días de enfermedad salen de la misma bolsa y se etiquetan como enfermedad el día que se toman."
+      },
+      "cancellationPay": {
+        "term": "Pago por cancelación",
+        "definition": "Un turno cancelado dentro del plazo acordado se paga igual y completo. El plazo se fija en las condiciones como horas antes del inicio del turno; si se cancela antes, el turno no se paga."
+      },
+      "mileage": {
+        "term": "Kilometraje",
+        "definition": "Una tarifa por milla que calcula el kilometraje reclamado en los gastos, no las horas. La tarifa queda fijada al aprobar el gasto, así que cambiarla después no recalcula nada ya aprobado."
+      },
+      "outsideWages": {
+        "term": "Pagos fuera del salario",
+        "definition": "Pagos periódicos acordados aparte del salario por hora: una ayuda o un extra, semanal, mensual o anual. Se muestran junto con las condiciones y nunca se suman al bruto de la semana."
+      },
+      "gross": {
+        "term": "Bruto",
+        "definition": "El total de la semana antes de impuestos o deducciones, y la cifra con la que se aprueba una semana. Los gastos y reembolsos se listan aparte y nunca se incluyen en el bruto."
+      },
+      "workweek": {
+        "term": "Semana laboral",
+        "definition": "El tramo de siete días con el que se cuentan las horas extra; empieza el día que fija el hogar. No cambia con el calendario de pago, así que un hogar que paga cada mes sigue teniendo las horas extra calculadas semana a semana."
+      }
+    }
+  }
 }

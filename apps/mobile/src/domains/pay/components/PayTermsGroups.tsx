@@ -44,6 +44,7 @@ import {
   Sun,
   X,
 } from 'lucide-react-native';
+import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
@@ -64,6 +65,51 @@ import {
 } from '../utils/payArrangementForm';
 import { buildTermRows } from '../utils/termRows';
 import { TermGroup } from './TermGroup';
+import type { GlossaryEntryKey } from './TermsGlossarySheet';
+import { TermsGlossarySheet } from './TermsGlossarySheet';
+
+/**
+ * §11.2's affordance, applied to a term-group field label rather than an
+ * `AmountRow` — this is where "what is overtime after" is actually asked,
+ * at the moment a parent is filling the field in. Same 1px dotted underline
+ * as `AmountRow`'s `onLabelPress`, same `info` a11y hint.
+ */
+function PressableFieldLabel({
+  children,
+  onPress,
+  testID,
+}: {
+  children: ReactNode;
+  onPress: () => void;
+  testID?: string;
+}) {
+  // ALIASED on purpose. `locale-key-resolution.test.ts` keys its bindings map
+  // by the destructured NAME, so a second bare `const { t }` in this file
+  // silently overwrites the outer component's `pay` binding (last one wins)
+  // and every key here would then be resolved against the wrong namespace.
+  const { t: tHours } = useTranslation('hours');
+  const colors = useThemeColors();
+  return (
+    <Pressable
+      testID={testID}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityHint={tHours('glossary.labelA11yHint')}
+      hitSlop={8}
+      className="self-start"
+    >
+      <Label
+        style={{
+          textDecorationLine: 'underline',
+          textDecorationStyle: 'dotted',
+          textDecorationColor: colors.mutedForeground,
+        }}
+      >
+        {children}
+      </Label>
+    </Pressable>
+  );
+}
 
 /** A candidate arrangement needs every non-term column to exist; none of them
  * reach `buildTermRows`' output, so a first-ever setup (no seed) supplies
@@ -263,6 +309,7 @@ export function PayTermsGroups({
 }: PayTermsGroupsProps) {
   const { t } = useTranslation('pay');
   const [presetSheetOpen, setPresetSheetOpen] = useState(false);
+  const [glossaryKey, setGlossaryKey] = useState<GlossaryEntryKey | null>(null);
 
   const summary = summaryValues(state, seed, t);
   const stipends = state.stipends ?? [];
@@ -349,26 +396,36 @@ export function PayTermsGroups({
         testID={`${testIDPrefix}-group-overtime`}
       >
         <View className="gap-2">
-          <Label>{t('changeSheet.overtimeAfterLabel')}</Label>
           <View className="flex-row gap-2">
-            <Input
-              testID={`${testIDPrefix}-overtime-threshold-input`}
-              accessibilityLabel={t('changeSheet.overtimeAfterLabel')}
-              value={state.overtimeThresholdHoursText}
-              onChangeText={text =>
-                onChange({ overtimeThresholdHoursText: text })
-              }
-              keyboardType="decimal-pad"
-              className="flex-1"
-            />
-            <Input
-              testID={`${testIDPrefix}-overtime-multiplier-input`}
-              accessibilityLabel={t('changeSheet.overtimePaidAtLabel')}
-              value={state.overtimeMultiplierText}
-              onChangeText={text => onChange({ overtimeMultiplierText: text })}
-              keyboardType="decimal-pad"
-              className="flex-1"
-            />
+            <View className="flex-1 gap-2">
+              <PressableFieldLabel
+                testID={`${testIDPrefix}-overtime-after-label`}
+                onPress={() => setGlossaryKey('overtime')}
+              >
+                {t('changeSheet.overtimeAfterLabel')}
+              </PressableFieldLabel>
+              <Input
+                testID={`${testIDPrefix}-overtime-threshold-input`}
+                accessibilityLabel={t('changeSheet.overtimeAfterLabel')}
+                value={state.overtimeThresholdHoursText}
+                onChangeText={text =>
+                  onChange({ overtimeThresholdHoursText: text })
+                }
+                keyboardType="decimal-pad"
+              />
+            </View>
+            <View className="flex-1 gap-2">
+              <Label>{t('changeSheet.overtimePaidAtLabel')}</Label>
+              <Input
+                testID={`${testIDPrefix}-overtime-multiplier-input`}
+                accessibilityLabel={t('changeSheet.overtimePaidAtLabel')}
+                value={state.overtimeMultiplierText}
+                onChangeText={text =>
+                  onChange({ overtimeMultiplierText: text })
+                }
+                keyboardType="decimal-pad"
+              />
+            </View>
           </View>
           <Small
             testID={`${testIDPrefix}-overtime-hint`}
@@ -417,7 +474,12 @@ export function PayTermsGroups({
             disagrees. No field here is ever DISABLED — see TermGroup's module
             doc for why enablement is group-level only. */}
         <View className="gap-2">
-          <Label>{t('changeSheet.dailyOvertimeAfterLabel')}</Label>
+          <PressableFieldLabel
+            testID={`${testIDPrefix}-daily-overtime-after-label`}
+            onPress={() => setGlossaryKey('dailyOvertime')}
+          >
+            {t('changeSheet.dailyOvertimeAfterLabel')}
+          </PressableFieldLabel>
           <Input
             testID={`${testIDPrefix}-daily-overtime-threshold-input`}
             accessibilityLabel={t('changeSheet.dailyOvertimeAfterLabel')}
@@ -433,56 +495,76 @@ export function PayTermsGroups({
         </View>
 
         <View className="gap-2">
-          <Label>{t('changeSheet.doubletimeAfterLabel')}</Label>
           <View className="flex-row gap-2">
-            <Input
-              testID={`${testIDPrefix}-doubletime-threshold-input`}
-              accessibilityLabel={t('changeSheet.doubletimeAfterLabel')}
-              value={state.doubletimeThresholdHoursText}
-              onChangeText={text =>
-                onChange({ doubletimeThresholdHoursText: text })
-              }
-              keyboardType="decimal-pad"
-              className="flex-1"
-            />
-            <Input
-              testID={`${testIDPrefix}-doubletime-multiplier-input`}
-              accessibilityLabel={t('changeSheet.doubletimePaidAtLabel')}
-              value={state.doubletimeMultiplierText}
-              onChangeText={text =>
-                onChange({ doubletimeMultiplierText: text })
-              }
-              keyboardType="decimal-pad"
-              className="flex-1"
-            />
+            <View className="flex-1 gap-2">
+              <PressableFieldLabel
+                testID={`${testIDPrefix}-doubletime-after-label`}
+                onPress={() => setGlossaryKey('doubleTime')}
+              >
+                {t('changeSheet.doubletimeAfterLabel')}
+              </PressableFieldLabel>
+              <Input
+                testID={`${testIDPrefix}-doubletime-threshold-input`}
+                accessibilityLabel={t('changeSheet.doubletimeAfterLabel')}
+                value={state.doubletimeThresholdHoursText}
+                onChangeText={text =>
+                  onChange({ doubletimeThresholdHoursText: text })
+                }
+                keyboardType="decimal-pad"
+              />
+            </View>
+            <View className="flex-1 gap-2">
+              <Label>{t('changeSheet.doubletimePaidAtLabel')}</Label>
+              <Input
+                testID={`${testIDPrefix}-doubletime-multiplier-input`}
+                accessibilityLabel={t('changeSheet.doubletimePaidAtLabel')}
+                value={state.doubletimeMultiplierText}
+                onChangeText={text =>
+                  onChange({ doubletimeMultiplierText: text })
+                }
+                keyboardType="decimal-pad"
+              />
+            </View>
           </View>
+          <Small className="text-muted-foreground">
+            {t('changeSheet.doubletimeHint')}
+          </Small>
         </View>
 
         <View className="gap-2">
-          <Label>{t('changeSheet.seventhDayFieldLabel')}</Label>
+          <PressableFieldLabel
+            testID={`${testIDPrefix}-seventh-day-field-label`}
+            onPress={() => setGlossaryKey('seventhDay')}
+          >
+            {t('changeSheet.seventhDayFieldLabel')}
+          </PressableFieldLabel>
           <View className="flex-row gap-2">
-            <Input
-              testID={`${testIDPrefix}-seventh-day-multiplier-input`}
-              accessibilityLabel={t('changeSheet.seventhDayPaidAtLabel')}
-              value={state.seventhDayMultiplierText}
-              onChangeText={text =>
-                onChange({ seventhDayMultiplierText: text })
-              }
-              keyboardType="decimal-pad"
-              className="flex-1"
-            />
-            <Input
-              testID={`${testIDPrefix}-seventh-day-doubletime-after-input`}
-              accessibilityLabel={t(
-                'changeSheet.seventhDayDoubletimeAfterLabel'
-              )}
-              value={state.seventhDayDoubletimeAfterHoursText}
-              onChangeText={text =>
-                onChange({ seventhDayDoubletimeAfterHoursText: text })
-              }
-              keyboardType="decimal-pad"
-              className="flex-1"
-            />
+            <View className="flex-1 gap-2">
+              <Label>{t('changeSheet.seventhDayPaidAtLabel')}</Label>
+              <Input
+                testID={`${testIDPrefix}-seventh-day-multiplier-input`}
+                accessibilityLabel={t('changeSheet.seventhDayPaidAtLabel')}
+                value={state.seventhDayMultiplierText}
+                onChangeText={text =>
+                  onChange({ seventhDayMultiplierText: text })
+                }
+                keyboardType="decimal-pad"
+              />
+            </View>
+            <View className="flex-1 gap-2">
+              <Label>{t('changeSheet.seventhDayDoubletimeAfterLabel')}</Label>
+              <Input
+                testID={`${testIDPrefix}-seventh-day-doubletime-after-input`}
+                accessibilityLabel={t(
+                  'changeSheet.seventhDayDoubletimeAfterLabel'
+                )}
+                value={state.seventhDayDoubletimeAfterHoursText}
+                onChangeText={text =>
+                  onChange({ seventhDayDoubletimeAfterHoursText: text })
+                }
+                keyboardType="decimal-pad"
+              />
+            </View>
           </View>
           <Small className="text-muted-foreground">
             {t('changeSheet.seventhDayHint')}
@@ -519,7 +601,12 @@ export function PayTermsGroups({
         testID={`${testIDPrefix}-group-guaranteed-hours`}
       >
         <View className="gap-2">
-          <Label>{t('changeSheet.guaranteedHoursFieldLabel')}</Label>
+          <PressableFieldLabel
+            testID={`${testIDPrefix}-guaranteed-hours-field-label`}
+            onPress={() => setGlossaryKey('guaranteedHours')}
+          >
+            {t('changeSheet.guaranteedHoursFieldLabel')}
+          </PressableFieldLabel>
           <Input
             testID={`${testIDPrefix}-guaranteed-hours-input`}
             accessibilityLabel={t('changeSheet.guaranteedHoursFieldLabel')}
@@ -527,6 +614,9 @@ export function PayTermsGroups({
             onChangeText={text => onChange({ guaranteedHoursText: text })}
             keyboardType="decimal-pad"
           />
+          <Small className="text-muted-foreground">
+            {t('changeSheet.guaranteedHoursHint')}
+          </Small>
           {/* D-6/§10. FORBIDDEN REFACTOR: this is the server's
               `weekly_equivalent_minor`, computed by the engine's own
               day-and-week splitter. Do not "simplify" it to `rate × hours` on
@@ -562,7 +652,12 @@ export function PayTermsGroups({
         testID={`${testIDPrefix}-group-pto`}
       >
         <View className="gap-2">
-          <Label>{t('changeSheet.ptoFieldLabel')}</Label>
+          <PressableFieldLabel
+            testID={`${testIDPrefix}-pto-field-label`}
+            onPress={() => setGlossaryKey('paidTimeOff')}
+          >
+            {t('changeSheet.ptoFieldLabel')}
+          </PressableFieldLabel>
           <Input
             testID={`${testIDPrefix}-pto-hours-input`}
             accessibilityLabel={t('changeSheet.ptoFieldLabel')}
@@ -639,7 +734,12 @@ export function PayTermsGroups({
         testID={`${testIDPrefix}-group-mileage`}
       >
         <View className="gap-2">
-          <Label>{t('changeSheet.mileageFieldLabel')}</Label>
+          <PressableFieldLabel
+            testID={`${testIDPrefix}-mileage-field-label`}
+            onPress={() => setGlossaryKey('mileage')}
+          >
+            {t('changeSheet.mileageFieldLabel')}
+          </PressableFieldLabel>
           <Input
             testID={`${testIDPrefix}-mileage-rate-input`}
             accessibilityLabel={t('changeSheet.mileageFieldLabel')}
@@ -818,6 +918,12 @@ export function PayTermsGroups({
         visible={presetSheetOpen}
         onDismiss={() => setPresetSheetOpen(false)}
         onConfirm={applyPreset}
+      />
+
+      <TermsGlossarySheet
+        visible={glossaryKey !== null}
+        entryKey={glossaryKey}
+        onDismiss={() => setGlossaryKey(null)}
       />
     </View>
   );
