@@ -23,8 +23,11 @@
  * words, both audiences — a second copy would be the thing that later
  * disagrees about what "expired" means.
  */
-import type { HouseholdInvite } from '@steadily-nanny/shared-types/schemas/household.schema';
-import { useRouter } from 'expo-router';
+import {
+  HOUSEHOLD_STATES,
+  type HouseholdInvite,
+} from '@steadily-nanny/shared-types/schemas/household.schema';
+import { type Href, useRouter } from 'expo-router';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Share, View } from 'react-native';
@@ -173,7 +176,16 @@ export function InvitesScreen() {
       title={t('invites.title')}
       subtitle={t('invites.subtitle')}
       ctaLabel={t('invites.newCodeButton')}
-      onCta={() => router.push('/(private)/settings/invite')}
+      // A draft nanny's new code is a different act from a parent's: she
+      // invites a FAMILY and her terms travel with it, so she gets the draft
+      // send screen rather than the parent's role-picker/pay-offer form.
+      onCta={() =>
+        router.push(
+          (household?.state === HOUSEHOLD_STATES.DRAFT
+            ? '/(private)/draft/invite'
+            : '/(private)/settings/invite') as Href
+        )
+      }
     >
       <View className="gap-4">
         {body()}

@@ -86,6 +86,21 @@ export const SETUP_STEP_ROUTES: Record<SetupStep, string> = {
   CALENDAR_PERMISSION: '/onboarding/calendar',
 };
 
+/**
+ * Route overrides for a nanny building her OWN draft. The step ids are shared
+ * with the parent sequences; the screens behind two of them are not.
+ *
+ * INVITE is the whole reason this exists. `/onboarding/invite` is
+ * parent-shaped — it asks which role the code is for and offers to attach a
+ * pay offer, neither of which a nanny inviting a family can answer. It also
+ * lives under `onboarding/_layout`, which bounces any user the server already
+ * calls onboarded, and a nanny holding a draft membership IS onboarded
+ * server-side. Same two reasons TERMS already sits under `(private)/draft`.
+ */
+const NANNY_DRAFT_STEP_ROUTES: Partial<Record<SetupStep, string>> = {
+  INVITE: '/(private)/draft/invite',
+};
+
 const PERMISSION_STEPS = [
   SETUP_STEPS.NOTIFICATIONS_PERMISSION,
   SETUP_STEPS.CALENDAR_PERMISSION,
@@ -144,6 +159,12 @@ export function stepsFor(
         ...prefix,
         SETUP_STEPS.TERMS,
         SETUP_STEPS.AVAILABILITY,
+        // She had no invite step at all. A nanny who created a draft, wrote
+        // her terms and finished the wizard was never once offered a way to
+        // send them to a family — the only door was a card on the draft home
+        // she had to find on her own. The parent-create sequence has had this
+        // step since D-33; hers was simply missing.
+        SETUP_STEPS.INVITE,
         ...PERMISSION_STEPS,
       ]
     : [
@@ -176,8 +197,21 @@ export function entryStepFor(
   return steps[2] ?? steps[steps.length - 1] ?? SETUP_STEPS.ROLE;
 }
 
-/** The route to navigate to for a given step. */
-export function getSetupStepRoute(step: SetupStep): string {
+/**
+ * The route to navigate to for a given step.
+ *
+ * `role`/`path` are optional and default to "the parent-shaped route", so
+ * every existing call site keeps its exact behaviour; pass them wherever the
+ * sequence is known, or a nanny·create user is sent to a parent screen.
+ */
+export function getSetupStepRoute(
+  step: SetupStep,
+  role: SetupRole | null = null,
+  path: SetupPath | null = null
+): string {
+  if (role === SETUP_ROLES.NANNY && path === SETUP_PATHS.CREATE) {
+    return NANNY_DRAFT_STEP_ROUTES[step] ?? SETUP_STEP_ROUTES[step];
+  }
   return SETUP_STEP_ROUTES[step];
 }
 
@@ -202,7 +236,7 @@ export function getUnfinishedSetupResumeRoute(
   const lastStep = (path ?? null) === null ? null : steps[steps.length - 1];
   if (currentStep === lastStep) return null;
   if (!steps.includes(currentStep)) return null;
-  return getSetupStepRoute(currentStep);
+  return getSetupStepRoute(currentStep, role, path);
 }
 
 /** True when `currentStep` is strictly later than CODE in this role x path. */

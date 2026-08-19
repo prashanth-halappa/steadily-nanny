@@ -29,15 +29,13 @@ import {
   type HouseholdInvite,
   HouseholdInviteSchema,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
-import {
-  type TermsProposal,
-  TermsProposalSchema,
-} from '@steadily-nanny/shared-types/schemas/termsProposal.schema';
+import type { TermsProposal } from '@steadily-nanny/shared-types/schemas/termsProposal.schema';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { apiClient } from '@/src/api/client';
+import { termsProposalApi } from '@/src/api/endpoints/termsProposals';
 import { queryKeys } from '@/src/api/queryKeys';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { QUERY_TIMING } from '@/src/hooks/queries/utils';
@@ -48,8 +46,11 @@ import { useAuthStore } from '@/src/store/auth';
 /** Namespaced so a move into `queryKeys.ts` keeps the same shape. */
 export const draftQueryKeys = {
   invites: queryKeys.household.invites,
-  proposal: (householdId?: string) =>
-    ['termsProposal', 'draft', householdId] as const,
+  // The SAME key the rest of the app reads her current round under
+  // (`MyPayScreen`, the pay hub) — one cache entry, so saving terms on one
+  // surface can never leave the other showing "you haven't written your
+  // terms yet".
+  proposal: queryKeys.termsProposal.current,
 };
 
 export function useDraftInvites(householdId: string | undefined) {
@@ -79,21 +80,25 @@ export function useDraftInvites(householdId: string | undefined) {
  */
 export function useDraftProposal(householdId: string | undefined) {
   const session = useAuthStore(s => s.session);
+  // Her own id: a nanny's draft round is always hers, and the carer-scoped
+  // route is the only one the API mounts (`/households/:id/carers/:carerId/
+  // terms-proposals`). This hook used to GET a household-scoped path that
+  // was never registered, so EVERY read 404'd — and a 404 is not "no terms
+  // yet", it is a query stuck in error: the terms card kept saying she had
+  // written nothing, the share CTA stayed disabled on its
+  // couldn't-check-terms branch, and `DraftTermsScreen` had no round to
+  // supersede, so every re-save POSTed a second open round and the server
+  // refused it with a 409 she could not clear by refreshing.
+  const carerId = useAuthStore(s => s.user?.id);
 
   return useQuery<TermsProposal | null>({
-    queryKey: draftQueryKeys.proposal(householdId),
-    queryFn: async () => {
-      const response = await apiClient.get(
-        `/v1/households/${householdId}/terms-proposals`
-      );
-      const parsed = z
-        .object({ terms_proposals: z.array(TermsProposalSchema) })
-        .safeParse(response.data.data);
-      if (!parsed.success) throw parsed.error;
-      return parsed.data.terms_proposals[0] ?? null;
-    },
+    queryKey: draftQueryKeys.proposal(householdId, carerId),
+    queryFn: () =>
+      // `getCurrent` returns null (not a 404) when she has not written her
+      // terms yet — the empty state this screen was always trying to render.
+      termsProposalApi.getCurrent(householdId ?? '', carerId ?? ''),
     staleTime: QUERY_TIMING.STALE_1M,
-    enabled: !!session && !!householdId,
+    enabled: !!session && !!householdId && !!carerId,
   });
 }
 

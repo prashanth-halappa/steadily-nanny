@@ -35,8 +35,16 @@ describe('AvailabilityScreen (wizard)', () => {
     expect(source).toContain('availability-screen');
   });
 
+  it('asks the step machine for the next step rather than naming one', () => {
+    // Naming NOTIFICATIONS_PERMISSION here silently stepped over anything
+    // inserted after AVAILABILITY — and a creating nanny now has an INVITE
+    // step there, the step she never had.
+    expect(source).toContain('getNextSetupStep(role, path');
+  });
+
   it('offers a skip that takes the same step transition Finish does', () => {
-    expect(source).toContain('onSkip={goToNotifications}');
+    expect(source).toContain('onSkip={goToNextStep}');
+    expect(source).toContain('onCta={goToNextStep}');
     expect(source).toContain('availability.skipButton');
     expect(source).toContain('availability.skipReassurance');
   });

@@ -18,14 +18,24 @@
     "weekly": "{{amount}} por semana con {{hours}} horas garantizadas",
     "startsOn": "Comienza el {{date}}",
     "editButton": "Editar",
-    "emptyBody": "Todavía no has escrito tus condiciones.",
-    "emptyButton": "Escribir mis condiciones"
+    "emptyBody": "Nada escrito todavía. Indica tu tarifa y lo que pides — una familia lo ve antes de decir que sí.",
+    "emptyButton": "Escribir mis condiciones",
+    "errorBody": "No pudimos cargar tus condiciones."
   },
   "termsForm": {
     "title": "Tus condiciones",
     "subtitle": "Lo que pides. Nada queda acordado hasta que una familia lo acepte.",
     "submitButton": "Guardar mis condiciones",
-    "savedToast": "Condiciones guardadas"
+    "savedToast": "Condiciones guardadas",
+    "couldntCheckHint": "No pudimos comprobar lo que ya habías escrito. Inténtalo de nuevo antes de guardar.",
+    "conflictError": "Tus condiciones cambiaron en otro sitio. Las hemos recargado — revísalas y guárdalas otra vez."
+  },
+  "inviteStep": {
+    "title": "Envía tus condiciones a una familia",
+    "subtitle": "Recibirán un enlace con tu nombre y tus condiciones. Nada queda acordado hasta que las acepten.",
+    "cta": "Enviar mis condiciones",
+    "skip": "Lo haré más tarde",
+    "offlineHint": "Necesitas conexión para enviar esto."
   },
   "availability": {
     "title": "Tu disponibilidad",
@@ -33,13 +43,6 @@
     "daysSet_other": "{{count}} días indicados",
     "notSet": "Aún sin indicar",
     "editButton": "Editar"
-  },
-  "family": {
-    "title": "Sobre la familia",
-    "body": "Añade su apellido y los nombres de los niños para que vean algo familiar.",
-    "addButton": "Añadir",
-    "expandButton": "Mostrar",
-    "collapseButton": "Ocultar"
   },
   "sentTo": {
     "eyebrow": "Enviado a",

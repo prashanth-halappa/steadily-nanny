@@ -6,6 +6,7 @@
  * while the Inbox that replaced it is visited daily.
  */
 
+import { HOUSEHOLD_STATES } from '@steadily-nanny/shared-types/schemas/household.schema';
 import Constants from 'expo-constants';
 import { type Href, router } from 'expo-router';
 import {
@@ -204,6 +205,12 @@ export default function SettingsScreen() {
   const showIdentitySkeleton = profile.isPending;
   const showIdentity = accountEmail || onboarding.role;
   const member = (members.data ?? []).find(m => m.user_id === user?.id);
+  // Draft = a household she made to hold her own terms; she is its only
+  // member and its author, so invite affordances belong to her here and
+  // nowhere else.
+  const isDraftAuthorNanny =
+    onboarding.role === SETUP_ROLES.NANNY &&
+    onboarding.householdState === HOUSEHOLD_STATES.DRAFT;
   const showHouseholdSection =
     onboarding.role === SETUP_ROLES.PARENT ||
     onboarding.role === SETUP_ROLES.NANNY ||
@@ -402,6 +409,24 @@ export default function SettingsScreen() {
                           }
                         />
                       </>
+                    ) : null}
+                    {/* The nanny who AUTHORED a draft household is its write
+                        authority — the server says so (`assertWriteRoleOrDraft
+                        Author`), the client did not: both invite rows sit in
+                        the parent-only arm above, so the ONE place in the app
+                        she could invite a family was a single button on the
+                        draft home. When that button was disabled she had no
+                        route at all, which is exactly where a real nanny got
+                        stuck. Draft-only: a nanny inside somebody's live
+                        family invites nobody. */}
+                    {isDraftAuthorNanny ? (
+                      <SettingsNavRow
+                        testID="settings-draft-invites"
+                        label={t('household:invites.title')}
+                        icon={UserPlus}
+                        tone="schedule"
+                        onPress={() => router.push('/settings/invites' as Href)}
+                      />
                     ) : null}
                     <SettingsNavRow
                       testID="settings-request-time-off"

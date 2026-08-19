@@ -25,8 +25,9 @@
  * NO CLIENT-SIDE `rate × hours`, ANYWHERE (§17). The weekly line is the
  * server's `weekly_equivalent_minor` or it is not rendered.
  */
+import type { HouseholdInvite } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { type Href, useRouter } from 'expo-router';
-import { CalendarDays, Send, Users, Wallet } from 'lucide-react-native';
+import { CalendarDays, Send, Wallet } from 'lucide-react-native';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Image, ScrollView, View } from 'react-native';
@@ -104,10 +105,11 @@ export function DraftHomeScreen() {
 
   const [shareOpen, setShareOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
-  const [familyOpen, setFamilyOpen] = useState(false);
-  const [lastInvite, setLastInvite] = useState<Awaited<
-    ReturnType<typeof createInvite.mutateAsync>
-  > | null>(null);
+  // WHICH invite the share sheet is showing: the one just minted, or the one
+  // whose row was tapped. It used to hold only the freshly minted one, so
+  // after any reload "Copy code" opened a sheet with no code in it and no
+  // Copy button — her already-sent codes were unrecoverable from the app.
+  const [sheetInvite, setSheetInvite] = useState<HouseholdInvite | null>(null);
 
   const proposal = proposalQuery.data ?? null;
   const invites = invitesQuery.data ?? [];
@@ -141,7 +143,7 @@ export function DraftHomeScreen() {
       ...(input.label === undefined ? {} : { label: input.label }),
       link_expires_in_days: input.linkExpiresInDays,
     });
-    setLastInvite(minted);
+    setSheetInvite(minted);
     return minted;
   };
 
@@ -187,7 +189,11 @@ export function DraftHomeScreen() {
           size={shareIsL1 ? 'lg' : 'default'}
           variant={shareIsL1 ? 'default' : 'outline'}
           disabled={!canShare}
-          onPress={() => setShareOpen(true)}
+          onPress={() => {
+            // A fresh send mints a NEW code — never reopen on an old row.
+            setSheetInvite(null);
+            setShareOpen(true);
+          }}
         >
           <Text>{t('sharePrompt.button')}</Text>
         </Button>
@@ -250,6 +256,21 @@ export function DraftHomeScreen() {
               <Text>{t('terms.editButton')}</Text>
             </Button>
           </>
+        ) : proposalQuery.isError ? (
+          /* C7: a FAILED read is not "she has written nothing". The share
+             card above already checks this first; this branch used to fall
+             straight through to the empty state and tell her she had no
+             terms while `My Pay` was showing them. */
+          <View className="gap-3">
+            <Body className="text-muted-foreground">
+              {t('terms.errorBody')}
+            </Body>
+            <InlineRetry
+              testID="draft-terms-retry"
+              message={tErrors('network')}
+              onRetry={() => proposalQuery.refetch()}
+            />
+          </View>
         ) : (
           <View testID="draft-terms-empty" className="gap-3">
             <Body className="text-muted-foreground">
@@ -364,42 +385,6 @@ export function DraftHomeScreen() {
               </CardContent>
             </Card>
 
-            {/* ---- about the family: optional, collapsed by default ---- */}
-            <Card testID="draft-family-card">
-              <CardContent className="gap-3">
-                <View className="flex-row items-center gap-2">
-                  <IconChip tone="people" icon={Users} />
-                  <H4>{t('family.title')}</H4>
-                  <View className="flex-1" />
-                  <Button
-                    testID="draft-family-toggle"
-                    variant="ghost"
-                    onPress={() => setFamilyOpen(open => !open)}
-                  >
-                    <Text>
-                      {familyOpen
-                        ? t('family.collapseButton')
-                        : t('family.expandButton')}
-                    </Text>
-                  </Button>
-                </View>
-                {familyOpen ? (
-                  <View testID="draft-family-body" className="gap-3">
-                    <Body className="text-muted-foreground">
-                      {t('family.body')}
-                    </Body>
-                    <Button
-                      testID="draft-family-add"
-                      variant="ghost"
-                      onPress={() => router.push(TERMS_ROUTE)}
-                    >
-                      <Text>{t('family.addButton')}</Text>
-                    </Button>
-                  </View>
-                ) : null}
-              </CardContent>
-            </Card>
-
             {/* ---- L4: "Sent to". Absent, not empty-stated, when unsent —
                 but a FAILED read is neither: `invites.length` fell through
                 the same `?? []` a genuinely-empty list does, silently
@@ -429,8 +414,14 @@ export function DraftHomeScreen() {
                         : null
                     }
                     now={now}
-                    onCopyCode={() => setShareOpen(true)}
-                    onShareAgain={() => setShareOpen(true)}
+                    onCopyCode={() => {
+                      setSheetInvite(invite);
+                      setShareOpen(true);
+                    }}
+                    onShareAgain={() => {
+                      setSheetInvite(invite);
+                      setShareOpen(true);
+                    }}
                     onRevoke={() => revokeInvite.mutate(invite.id)}
                     isRevoking={revokeInvite.isPending}
                     isRevokeError={revokeInvite.isError}
@@ -453,7 +444,7 @@ export function DraftHomeScreen() {
       <ShareTermsSheet
         visible={shareOpen}
         onDismiss={() => setShareOpen(false)}
-        invite={lastInvite}
+        invite={sheetInvite}
         isMinting={createInvite.isPending}
         isError={createInvite.isError}
         onCreate={onShareCreate}

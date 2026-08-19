@@ -18,7 +18,13 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, waitFor } from '@testing-library/react-native';
+import {
+  SETUP_PATHS,
+  SETUP_ROLES,
+  SETUP_STEPS,
+} from '@/src/domains/setup/types';
 import { useAuthStore } from '@/src/store/auth';
+import { useSetupProgressStore } from '@/src/store/setupProgress';
 import { renderWithProviders } from '@/src/test-utils';
 import { draftHousehold, draftProposal, NANNY_ID } from './fixtures';
 
@@ -31,6 +37,22 @@ mock.module('@/src/components/ui/loading-indicator', () => {
       }),
   };
 });
+const pushMock = mock((_href: string) => undefined);
+const backMock = mock(() => undefined);
+const replaceMock = mock((_href: string) => undefined);
+mock.module('expo-router', () => ({
+  useRouter: () => ({
+    push: pushMock,
+    back: backMock,
+    replace: replaceMock,
+    navigate: mock(),
+  }),
+  useLocalSearchParams: () => ({}),
+  useSegments: () => [],
+  usePathname: () => '',
+  useFocusEffect: () => undefined,
+}));
+
 mock.module('@/lib/animations/useReducedMotion', () => ({
   useReducedMotion: mock(() => false),
 }));
@@ -58,11 +80,14 @@ mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
     isError: false,
   }),
 }));
+let proposalReadFailed = false;
+const refetchMock = mock(() => Promise.resolve({ data: proposal }));
 mock.module('@/src/domains/draft/hooks/draftQueries', () => ({
   useDraftProposal: () => ({
-    data: proposal,
+    data: proposalReadFailed ? undefined : proposal,
     isPending: false,
-    isError: false,
+    isError: proposalReadFailed,
+    refetch: refetchMock,
   }),
 }));
 
@@ -97,9 +122,23 @@ beforeAll(async () => {
 
 beforeEach(() => {
   proposal = null;
+  proposalReadFailed = false;
   household = draftHousehold;
   proposeAsync.mockClear();
+  proposeAsync.mockImplementation(() => Promise.resolve(draftProposal));
   proposeArgs.length = 0;
+  pushMock.mockClear();
+  backMock.mockClear();
+  replaceMock.mockClear();
+  refetchMock.mockClear();
+  // Not mid-wizard by default — every wizard finish path calls `reset()`,
+  // which puts `currentStep` back on ROLE, so this is what a nanny arriving
+  // from her draft home looks like.
+  useSetupProgressStore.setState({
+    role: SETUP_ROLES.NANNY,
+    path: SETUP_PATHS.CREATE,
+    currentStep: SETUP_STEPS.ROLE,
+  });
   useAuthStore.setState({
     session: { user: { id: NANNY_ID } } as unknown as never,
     user: { id: NANNY_ID } as unknown as never,
@@ -156,6 +195,21 @@ describe('DraftTermsScreen — the screen the draft CTA pushes to', () => {
     expect(input.terms.valid_from).toBe('2026-08-17');
   });
 
+  it('refuses to save when her open round could not be read', () => {
+    // A failed read is not "she has nothing written". Saving on top of it
+    // omits `supersedes_id`, the server refuses the second open round, and
+    // she gets a 409 that refreshing cannot clear (092's partial unique
+    // index) — the exact loop that stranded a real nanny on this screen.
+    proposalReadFailed = true;
+    const { getByTestId } = renderWithProviders(<DraftTermsScreen />);
+
+    fireEvent.changeText(getByTestId('draft-terms-form-rate-input'), '28.00');
+    fireEvent.press(getByTestId('draft-terms-form-cancellation-chip-none'));
+
+    expect(getByTestId('draft-terms-form-cta').props.disabled).toBe(true);
+    expect(getByTestId('draft-terms-form-cta-hint')).toBeTruthy();
+  });
+
   it('cannot propose into nothing when no household has resolved', () => {
     household = null;
     const { getByTestId } = renderWithProviders(<DraftTermsScreen />);
@@ -164,5 +218,100 @@ describe('DraftTermsScreen — the screen the draft CTA pushes to', () => {
     fireEvent.press(getByTestId('draft-terms-form-cancellation-chip-none'));
 
     expect(getByTestId('draft-terms-form-cta').props.disabled).toBe(true);
+  });
+});
+
+describe('DraftTermsScreen — saving mid-wizard ADVANCES the wizard', () => {
+  type Queries = ReturnType<typeof renderWithProviders>;
+  const fillAndSave = (getByTestId: Queries['getByTestId']) => {
+    fireEvent.changeText(getByTestId('draft-terms-form-rate-input'), '28.00');
+    fireEvent.press(getByTestId('draft-terms-form-cancellation-chip-none'));
+    fireEvent.press(getByTestId('draft-terms-form-cta'));
+  };
+
+  it('moves the step machine on and navigates to the next step', async () => {
+    // The trap: this screen used to go BACK on save, leaving `currentStep`
+    // on TERMS forever. `getUnfinishedSetupResumeRoute` then relaunched her
+    // into this same form on every cold start — terms written, no way out.
+    useSetupProgressStore.setState({ currentStep: SETUP_STEPS.TERMS });
+    const { getByTestId } = renderWithProviders(<DraftTermsScreen />);
+
+    fillAndSave(getByTestId);
+
+    await waitFor(() => expect(proposeAsync).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(useSetupProgressStore.getState().currentStep).toBe(
+        SETUP_STEPS.AVAILABILITY
+      )
+    );
+    expect(pushMock).toHaveBeenCalledWith('/onboarding/availability');
+    expect(backMock).not.toHaveBeenCalled();
+  });
+
+  it('shows the wizard progress bar only while she is on the TERMS step', () => {
+    useSetupProgressStore.setState({ currentStep: SETUP_STEPS.TERMS });
+    const inWizard = renderWithProviders(<DraftTermsScreen />);
+    expect(inWizard.queryByTestId('slim-progress-bar')).toBeTruthy();
+  });
+
+  it('still goes back when she reached the form from her draft home', async () => {
+    const { getByTestId } = renderWithProviders(<DraftTermsScreen />);
+
+    fillAndSave(getByTestId);
+
+    await waitFor(() => expect(proposeAsync).toHaveBeenCalled());
+    expect(useSetupProgressStore.getState().currentStep).toBe(SETUP_STEPS.ROLE);
+    expect(pushMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('DraftTermsScreen — a 409 reloads her terms instead of shrugging', () => {
+  const conflict = Object.assign(new Error('conflict'), {
+    response: { status: 409, data: { error: { code: 'CONFLICT' } } },
+  });
+
+  it('refetches the round, re-seeds the form from it, and says so inline', async () => {
+    // `errors:conflict` says "refresh and try again" on a full-screen form
+    // with nothing to refresh WITH — the screen has to do the refreshing.
+    proposal = draftProposal;
+    proposeAsync.mockImplementation(() => Promise.reject(conflict));
+    const { getByTestId, rerender } = renderWithProviders(<DraftTermsScreen />);
+
+    fireEvent.press(getByTestId('draft-terms-form-cta'));
+
+    await waitFor(() => expect(refetchMock).toHaveBeenCalled());
+    const hint = getByTestId('draft-terms-form-cta-hint');
+    expect(hint).toBeTruthy();
+
+    // The seed guard was released, so the round that came back replaces what
+    // is on screen rather than being silently ignored.
+    proposal = {
+      ...draftProposal,
+      id: '55555555-5555-4555-8555-555555555555',
+      terms: { ...draftProposal.terms, rate_minor: 3200 },
+    };
+    rerender(<DraftTermsScreen />);
+    await waitFor(() =>
+      expect(getByTestId('draft-terms-form-rate-input').props.value).toBe(
+        '32.00'
+      )
+    );
+  });
+
+  it('leaves a non-conflict failure alone — no reload, no reseed', async () => {
+    proposal = draftProposal;
+    proposeAsync.mockImplementation(() =>
+      Promise.reject(
+        Object.assign(new Error('boom'), {
+          response: { status: 500 },
+        })
+      )
+    );
+    const { getByTestId } = renderWithProviders(<DraftTermsScreen />);
+
+    fireEvent.press(getByTestId('draft-terms-form-cta'));
+
+    await waitFor(() => expect(proposeAsync).toHaveBeenCalled());
+    expect(refetchMock).not.toHaveBeenCalled();
   });
 });

@@ -83,6 +83,16 @@ describe('SettingsScreen', () => {
     expect(availabilityIdx).toBeGreaterThan(thisFamilyIdx);
   });
 
+  // A nanny who authored a draft household is its write authority
+  // server-side; the client used to keep BOTH invite rows in the parent-only
+  // arm, so the draft home's one share button was her only route to inviting
+  // a family — and when it was disabled she had none.
+  it('gives a draft-author nanny a route to her invite codes', () => {
+    expect(screenSource).toContain('settings-draft-invites');
+    expect(screenSource).toContain('isDraftAuthorNanny');
+    expect(screenSource).toContain('HOUSEHOLD_STATES.DRAFT');
+  });
+
   it('wires Time & calendar settings (D29 display timezone / week start)', () => {
     expect(screenSource).toContain('settings-time');
     expect(screenSource).toContain('/settings/time');

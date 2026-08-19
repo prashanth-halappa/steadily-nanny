@@ -20,6 +20,7 @@ import {
   getNextSetupStep,
   getSetupStepRoute,
   getStepProgress,
+  getUnfinishedSetupResumeRoute,
   isSetupStepAfterCode,
   SETUP_PATHS,
   SETUP_ROLES,
@@ -54,15 +55,29 @@ describe('stepsFor — the four D-33 sequences', () => {
     );
   });
 
-  it('nanny · create: role -> start -> terms -> availability -> notifications -> calendar', () => {
+  it('nanny · create: role -> start -> terms -> availability -> INVITE -> notifications -> calendar', () => {
     expect(stepsFor(SETUP_ROLES.NANNY, SETUP_PATHS.CREATE)).toEqual([
       SETUP_STEPS.ROLE,
       SETUP_STEPS.START,
       SETUP_STEPS.TERMS,
       SETUP_STEPS.AVAILABILITY,
+      SETUP_STEPS.INVITE,
       SETUP_STEPS.NOTIFICATIONS_PERMISSION,
       SETUP_STEPS.CALENDAR_PERMISSION,
     ]);
+  });
+
+  it('gives a creating nanny the invite step a creating parent has always had', () => {
+    // She had none: signed up, made a draft, wrote her terms, and the wizard
+    // never once offered her a way to send them to a family.
+    expect(stepsFor(SETUP_ROLES.NANNY, SETUP_PATHS.CREATE)).toContain(
+      SETUP_STEPS.INVITE
+    );
+    // A JOINING nanny already has a family — there is nobody for her to
+    // invite, so the step stays out of that sequence.
+    expect(stepsFor(SETUP_ROLES.NANNY, SETUP_PATHS.JOIN)).not.toContain(
+      SETUP_STEPS.INVITE
+    );
   });
 
   it('nanny · join: role -> start -> code -> availability -> notifications -> calendar', () => {
@@ -147,6 +162,56 @@ describe('SETUP_STEP_ROUTES', () => {
     );
     expect(SETUP_STEP_ROUTES.CALENDAR_PERMISSION).toBe('/onboarding/calendar');
   });
+
+  it('sends a creating nanny to the DRAFT invite screen, never the parent one', () => {
+    // `/onboarding/invite` asks which role the code grants and offers to
+    // attach a pay offer — neither is a question she can answer — and it sits
+    // under `onboarding/_layout`, which bounces a user the server already
+    // calls onboarded, which she is.
+    expect(
+      getSetupStepRoute(
+        SETUP_STEPS.INVITE,
+        SETUP_ROLES.NANNY,
+        SETUP_PATHS.CREATE
+      )
+    ).toBe('/(private)/draft/invite');
+  });
+
+  it('leaves every other role x path on the parent-shaped invite route', () => {
+    expect(getSetupStepRoute(SETUP_STEPS.INVITE)).toBe('/onboarding/invite');
+    expect(
+      getSetupStepRoute(
+        SETUP_STEPS.INVITE,
+        SETUP_ROLES.PARENT,
+        SETUP_PATHS.CREATE
+      )
+    ).toBe('/onboarding/invite');
+    expect(
+      getSetupStepRoute(SETUP_STEPS.INVITE, SETUP_ROLES.NANNY, SETUP_PATHS.JOIN)
+    ).toBe('/onboarding/invite');
+  });
+
+  it('overrides only the steps that need it — a creating nanny still shares the permission routes', () => {
+    expect(
+      getSetupStepRoute(
+        SETUP_STEPS.NOTIFICATIONS_PERMISSION,
+        SETUP_ROLES.NANNY,
+        SETUP_PATHS.CREATE
+      )
+    ).toBe('/onboarding/notifications');
+  });
+});
+
+describe('getUnfinishedSetupResumeRoute — resuming a creating nanny', () => {
+  it('resumes her INVITE step at the draft screen, not the parent one', () => {
+    expect(
+      getUnfinishedSetupResumeRoute(
+        SETUP_ROLES.NANNY,
+        SETUP_PATHS.CREATE,
+        SETUP_STEPS.INVITE
+      )
+    ).toBe('/(private)/draft/invite');
+  });
 });
 
 describe('getNextSetupStep', () => {
@@ -192,10 +257,15 @@ describe('getNextSetupStep', () => {
     ).toBe(SETUP_STEPS.NOTIFICATIONS_PERMISSION);
   });
 
-  it('an authoring nanny chains terms -> availability', () => {
-    expect(
-      getNextSetupStep(SETUP_ROLES.NANNY, SETUP_PATHS.CREATE, SETUP_STEPS.TERMS)
-    ).toBe(SETUP_STEPS.AVAILABILITY);
+  it('an authoring nanny chains terms -> availability -> invite -> notifications', () => {
+    const next = (step: (typeof SETUP_STEPS)[keyof typeof SETUP_STEPS]) =>
+      getNextSetupStep(SETUP_ROLES.NANNY, SETUP_PATHS.CREATE, step);
+    expect(next(SETUP_STEPS.TERMS)).toBe(SETUP_STEPS.AVAILABILITY);
+    // The link in the chain she did not have. AvailabilityScreen used to
+    // name NOTIFICATIONS_PERMISSION directly, which would have stepped
+    // straight over this.
+    expect(next(SETUP_STEPS.AVAILABILITY)).toBe(SETUP_STEPS.INVITE);
+    expect(next(SETUP_STEPS.INVITE)).toBe(SETUP_STEPS.NOTIFICATIONS_PERMISSION);
   });
 });
 

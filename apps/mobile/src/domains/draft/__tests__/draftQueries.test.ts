@@ -123,3 +123,25 @@ describe('useArchiveDraft', () => {
     expect(replaceMock).toHaveBeenCalledWith('/(private)/(tabs)/home');
   });
 });
+
+/**
+ * Source-level guard for the defect this hook shipped with: it GET'd
+ * `/v1/households/:id/terms-proposals`, a path the API never registered
+ * (`routes/index.ts` mounts the collection under
+ * `/households/:householdId/carers/:carerId/terms-proposals`). Every read
+ * 404'd, which the app could not tell apart from "no terms yet".
+ *
+ * ponytail: pins THIS hook, not the class. A repo-wide "every hand-rolled
+ * /v1 URL matches a registered route" contract test is the real fix if a
+ * second one of these ever appears.
+ */
+describe('useDraftProposal reads a route the API actually mounts', () => {
+  it('goes through termsProposalApi.getCurrent, not a hand-rolled path', async () => {
+    const source = await Bun.file(
+      new URL('../hooks/draftQueries.ts', import.meta.url).pathname
+    ).text();
+
+    expect(source).toContain('termsProposalApi.getCurrent');
+    expect(source).not.toMatch(/households\/\$\{[^}]+\}\/terms-proposals/);
+  });
+});

@@ -10,6 +10,12 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent } from '@testing-library/react-native';
+import {
+  SETUP_PATHS,
+  SETUP_ROLES,
+  SETUP_STEPS,
+} from '@/src/domains/setup/types';
+import { useSetupProgressStore } from '@/src/store/setupProgress';
 import { renderWithProviders } from '@/src/test-utils';
 
 const mutateMock = mock((_input: Record<string, unknown>) => undefined);
@@ -53,6 +59,11 @@ beforeEach(() => {
   rows = [];
   mutateMock.mockClear();
   pushMock.mockClear();
+  useSetupProgressStore.setState({
+    role: SETUP_ROLES.NANNY,
+    path: SETUP_PATHS.JOIN,
+    currentStep: SETUP_STEPS.AVAILABILITY,
+  });
 });
 
 describe('AvailabilityScreen (wizard)', () => {
@@ -81,5 +92,22 @@ describe('AvailabilityScreen (wizard)', () => {
 
     expect(mutateMock).not.toHaveBeenCalled();
     expect(pushMock).toHaveBeenCalledWith('/onboarding/notifications');
+  });
+
+  it('sends a CREATING nanny on to her invite step, not past it', () => {
+    // Her sequence gained an INVITE step between availability and the
+    // permission prompts. This screen used to name NOTIFICATIONS_PERMISSION
+    // outright, which would have walked her straight over the one screen
+    // that lets her send her terms to a family.
+    useSetupProgressStore.setState({ path: SETUP_PATHS.CREATE });
+    rows = [{ weekday: 1, is_available: true }];
+    const { getByTestId } = renderWithProviders(<AvailabilityScreen />);
+
+    fireEvent.press(getByTestId('availability-screen-cta'));
+
+    expect(pushMock).toHaveBeenCalledWith('/(private)/draft/invite');
+    expect(useSetupProgressStore.getState().currentStep).toBe(
+      SETUP_STEPS.INVITE
+    );
   });
 });

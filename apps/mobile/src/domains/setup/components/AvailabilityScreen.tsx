@@ -22,6 +22,7 @@ import { Small } from '@/src/components/ui/typography';
 import { AvailabilityEditor } from '@/src/domains/setup/components/AvailabilityEditor';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import {
+  getNextSetupStep,
   getSetupStepRoute,
   getStepProgress,
   SETUP_STEPS,
@@ -44,11 +45,18 @@ export function AvailabilityScreen() {
   // Skip and Finish take the SAME transition — the only difference is that
   // skipping leaves the availability table empty, which the onboarded
   // predicate does not care about (see the module note).
-  const goToNotifications = () => {
-    setCurrentStep(SETUP_STEPS.NOTIFICATIONS_PERMISSION);
-    router.push(
-      getSetupStepRoute(SETUP_STEPS.NOTIFICATIONS_PERMISSION) as Href
-    );
+  //
+  // ASKS THE MACHINE FOR THE NEXT STEP rather than naming NOTIFICATIONS.
+  // It used to name it, which silently skipped any step inserted after
+  // AVAILABILITY — and one was: a creating nanny now gets an INVITE step
+  // here, the step she never had. `?? NOTIFICATIONS_PERMISSION` only covers
+  // a sequence this screen is not in.
+  const goToNextStep = () => {
+    const next =
+      getNextSetupStep(role, path, SETUP_STEPS.AVAILABILITY) ??
+      SETUP_STEPS.NOTIFICATIONS_PERMISSION;
+    setCurrentStep(next);
+    router.push(getSetupStepRoute(next, role, path) as Href);
   };
 
   return (
@@ -59,8 +67,8 @@ export function AvailabilityScreen() {
       subtitle={t('availability.wizardSubtitle')}
       ctaLabel={t('availability.finishButton')}
       ctaDisabled={selectedDays.length === 0}
-      onCta={goToNotifications}
-      onSkip={goToNotifications}
+      onCta={goToNextStep}
+      onSkip={goToNextStep}
       skipLabel={t('availability.skipButton')}
     >
       <AvailabilityEditor />

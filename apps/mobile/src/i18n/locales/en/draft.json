@@ -18,14 +18,24 @@
     "weekly": "{{amount}} a week at {{hours}} guaranteed hours",
     "startsOn": "Starts {{date}}",
     "editButton": "Edit",
-    "emptyBody": "You haven't written your terms yet.",
-    "emptyButton": "Write my terms"
+    "emptyBody": "Nothing written yet. Set your rate and what you're asking for — a family sees this before they say yes.",
+    "emptyButton": "Write my terms",
+    "errorBody": "We couldn't load your terms."
   },
   "termsForm": {
     "title": "Your terms",
     "subtitle": "What you're asking for. Nothing is agreed until a family accepts it.",
     "submitButton": "Save my terms",
-    "savedToast": "Terms saved"
+    "savedToast": "Terms saved",
+    "couldntCheckHint": "We couldn't check what you've already written. Try again before saving.",
+    "conflictError": "Your terms changed somewhere else. We've reloaded them — check them and save again."
+  },
+  "inviteStep": {
+    "title": "Send your terms to a family",
+    "subtitle": "They get a link with your name and your terms. Nothing is agreed until they accept.",
+    "cta": "Send my terms",
+    "skip": "I'll do this later",
+    "offlineHint": "You'll need a connection to send this."
   },
   "availability": {
     "title": "Your availability",
@@ -33,13 +43,6 @@
     "daysSet_other": "{{count}} days set",
     "notSet": "Not set yet",
     "editButton": "Edit"
-  },
-  "family": {
-    "title": "About the family",
-    "body": "Add their name and the children's names so they see something familiar.",
-    "addButton": "Add",
-    "expandButton": "Show",
-    "collapseButton": "Hide"
   },
   "sentTo": {
     "eyebrow": "Sent to",

@@ -17,6 +17,7 @@ import { draftHousehold } from './fixtures';
 let proposalIsError = false;
 let invitesIsError = false;
 const refetchInvites = mock();
+const refetchProposal = mock();
 
 mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
   useActiveHousehold: () => ({
@@ -51,6 +52,7 @@ mock.module('../hooks/draftQueries', () => ({
     data: undefined,
     isPending: false,
     isError: proposalIsError,
+    refetch: refetchProposal,
   }),
   useArchiveDraft: () => ({ mutate: mock(), isPending: false, isError: false }),
 }));
@@ -73,6 +75,20 @@ describe('DraftHomeScreen — a failed terms read (C7)', () => {
     const { getByTestId } = renderWithProviders(<DraftHomeScreen />);
 
     expect(getByTestId('draft-share-button').props.disabled).toBe(true);
+  });
+
+  it('never tells her she has written nothing when the read is what failed', () => {
+    // The exact lie a real nanny hit: the card said "you haven't written
+    // your terms yet" while My Pay (a different, working endpoint) showed
+    // them. The share card guarded this; the terms card twenty lines below
+    // did not.
+    proposalIsError = true;
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <DraftHomeScreen />
+    );
+
+    expect(queryByTestId('draft-terms-empty')).toBeNull();
+    expect(getByTestId('draft-terms-retry')).toBeTruthy();
   });
 
   it('shows the ordinary "write terms first" hint on genuine (non-error) empty terms', () => {
