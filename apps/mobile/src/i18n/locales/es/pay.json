@@ -79,6 +79,7 @@
     "overtimeAfterLabel": "Horas extra después de",
     "overtimePaidAtLabel": "Se paga a",
     "overtimeHint": "Deja una fila en blanco si no corresponde.",
+    "overtimeFloorCautionLow": "La mayoría de los acuerdos no empiezan las horas extra tan pronto. Son las condiciones de vuestra familia — comprueba que cumplen las normas de vuestra zona.",
     "overtimeFloorCaution": "La mayoría de los acuerdos usan 40 horas a 1,5×. Son las condiciones de vuestra familia — comprueba que cumplen las normas de vuestra zona.",
     "dailyOvertimeAfterLabel": "Horas extra diarias después de (horas en un día)",
     "dailyOvertimeHint": "Se paga a la tarifa de horas extra de arriba.",

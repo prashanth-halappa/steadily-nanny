@@ -73,7 +73,7 @@ const BLANK_ARRANGEMENT: PayArrangement = {
   id: '',
   household_id: '',
   carer_id: '',
-  rate_minor: 0,
+  rate_minor: 1,
   bill_rate_minor: null,
   currency: 'USD',
   overtime_threshold_minutes: null,
@@ -133,7 +133,7 @@ function summaryValues(
   // unanswered cancellation choice must not blank every group's summary.
   const request = buildCreatePayArrangementRequest({
     ...state,
-    rateText: '0',
+    rateText: '1',
     cancellationChoice: 'none',
     effectiveDateISO: state.todayISO,
   });
@@ -387,17 +387,27 @@ export function PayTermsGroups({
             if (!Number.isFinite(threshold) || !Number.isFinite(multiplier)) {
               return null;
             }
-            if (threshold <= 40 && multiplier >= 1.5) {
-              return null;
+            if (threshold < 20) {
+              return (
+                <Small
+                  testID={`${testIDPrefix}-overtime-floor-caution`}
+                  className="text-muted-foreground"
+                >
+                  {t('changeSheet.overtimeFloorCautionLow')}
+                </Small>
+              );
             }
-            return (
-              <Small
-                testID={`${testIDPrefix}-overtime-floor-caution`}
-                className="text-muted-foreground"
-              >
-                {t('changeSheet.overtimeFloorCaution')}
-              </Small>
-            );
+            if (threshold > 40 || multiplier < 1.5) {
+              return (
+                <Small
+                  testID={`${testIDPrefix}-overtime-floor-caution`}
+                  className="text-muted-foreground"
+                >
+                  {t('changeSheet.overtimeFloorCaution')}
+                </Small>
+              );
+            }
+            return null;
           })()}
         </View>
 

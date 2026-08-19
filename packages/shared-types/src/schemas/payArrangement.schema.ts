@@ -131,6 +131,9 @@ export const PayArrangementSchema = z.object({
   // key, same optional/nullable meaning. Declared here because 058 stamps
   // this table too, and an undeclared field is a stripped one.
   household_member_id: z.uuid().nullable().optional(),
+  // READ side stays `min(0)`. Rows written before the create-side floor
+  // existed are still legal history, and a response schema that refuses to
+  // parse them would blank a real arrangement rather than show an old zero.
   rate_minor: z.int().min(0).max(MAX_MONEY_MINOR),
   // Dormant until Tier 2 invoicing — stored now, priced later.
   bill_rate_minor: z.int().min(0).max(MAX_MONEY_MINOR).nullable(),
@@ -302,7 +305,7 @@ export const PayArrangementSchema = z.object({
  * lives in `payArrangementCommandService.create`, not here.
  */
 export const CreatePayArrangementRequestSchema = z.object({
-  rate_minor: z.int().min(0).max(MAX_MONEY_MINOR),
+  rate_minor: z.int().min(1).max(MAX_MONEY_MINOR),
   // No wire default (Phase 1, T4): a household has its own currency now
   // (`household.schema.ts`), and inventing 'GBP' here was a guess with no
   // relationship to where the family lives. Omitted currency is resolved
