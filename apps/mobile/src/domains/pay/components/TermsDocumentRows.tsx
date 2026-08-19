@@ -30,10 +30,33 @@
  */
 import type { PayArrangement } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import type { PtoBalance } from '@steadily-nanny/shared-types/schemas/pto.schema';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { buildTermRows } from '../utils/termRows';
 import { AmountRow } from './AmountRow';
+import type { GlossaryEntryKey } from './TermsGlossarySheet';
+import { TermsGlossarySheet } from './TermsGlossarySheet';
+
+/**
+ * `buildTermRows` key -> glossary entry (spec §11.3). Only rows whose term
+ * has an entry appear here; every other row renders as plain, unpressable
+ * text. This is the read-only document's half of the wiring — the edit form
+ * (`PayTermsGroups`) and the earnings breakdown carry the other two, and
+ * between them every entry but `workweek` has a door. `workweek` names a
+ * concept rather than a field, so nothing here labels it.
+ */
+const GLOSSARY_BY_ROW_KEY: Record<string, GlossaryEntryKey> = {
+  overtime: 'overtime',
+  dailyOvertime: 'dailyOvertime',
+  doubletime: 'doubleTime',
+  seventhDay: 'seventhDay',
+  guaranteedHours: 'guaranteedHours',
+  pto: 'paidTimeOff',
+  cancellations: 'cancellationPay',
+  mileage: 'mileage',
+  outsideWages: 'outsideWages',
+};
 
 export interface TermsDocumentRowsProps {
   arrangement: PayArrangement;
@@ -54,21 +77,35 @@ export function TermsDocumentRows({
   subLineByKey,
 }: TermsDocumentRowsProps) {
   const { t } = useTranslation('pay');
+  const [glossaryKey, setGlossaryKey] = useState<GlossaryEntryKey | null>(null);
 
   return (
     <View className="gap-3">
       {buildTermRows(arrangement, t, balance)
         .filter(row => row.value !== null)
-        .map(row => (
-          <AmountRow
-            key={row.key}
-            testID={`${testIDPrefix}-${row.key}`}
-            label={row.label}
-            value={row.value}
-            valueWhenNull={row.valueWhenNull}
-            subLine={subLineByKey?.[row.key] ?? row.subLine}
-          />
-        ))}
+        .map(row => {
+          const entry = GLOSSARY_BY_ROW_KEY[row.key];
+          return (
+            <AmountRow
+              key={row.key}
+              testID={`${testIDPrefix}-${row.key}`}
+              label={row.label}
+              value={row.value}
+              valueWhenNull={row.valueWhenNull}
+              subLine={subLineByKey?.[row.key] ?? row.subLine}
+              onLabelPress={entry ? () => setGlossaryKey(entry) : undefined}
+            />
+          );
+        })}
+      {/* Mounted only when open — see EarningsBreakdownSheet for why an
+          always-mounted BottomSheetBase is a hazard, not just noise. */}
+      {glossaryKey !== null ? (
+        <TermsGlossarySheet
+          visible
+          entryKey={glossaryKey}
+          onDismiss={() => setGlossaryKey(null)}
+        />
+      ) : null}
     </View>
   );
 }

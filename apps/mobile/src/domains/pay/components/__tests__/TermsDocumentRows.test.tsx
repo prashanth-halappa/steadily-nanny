@@ -103,7 +103,10 @@ function keysRenderedWith(
       typeof testID === 'string' &&
       testID.startsWith(`${testIDPrefix}-`) &&
       !testID.endsWith('-value') &&
-      !testID.endsWith('-subline')
+      !testID.endsWith('-subline') &&
+      // `-label` is AmountRow's pressable-label sub-element (the glossary
+      // affordance), a part of a row rather than a row of its own.
+      !testID.endsWith('-label')
     ) {
       ids.push(testID.slice(testIDPrefix.length + 1));
     }
