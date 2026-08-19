@@ -79,6 +79,7 @@
     "overtimeAfterLabel": "Overtime after",
     "overtimePaidAtLabel": "Paid at",
     "overtimeHint": "Leave a row blank if it doesn't apply.",
+    "overtimeFloorCautionLow": "Most arrangements do not start overtime this early. These are your family's terms to set — check they meet the rules where you live.",
     "overtimeFloorCaution": "Most arrangements use 40 hours at 1.5×. These are your family's terms to set — check they meet the rules where you live.",
     "dailyOvertimeAfterLabel": "Daily overtime after (hours in a day)",
     "dailyOvertimeHint": "Paid at the overtime rate above.",

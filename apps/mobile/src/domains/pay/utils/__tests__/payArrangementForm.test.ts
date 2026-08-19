@@ -5,7 +5,8 @@
  * TIER0-PLAN.md flags for this slice (mid-week rate split, no-future-dates,
  * the household-window-0-maps-to-no-pay rule).
  */
-import { afterEach, describe, expect, it } from 'bun:test';
+import { join } from 'node:path';
+import { afterEach, beforeAll, describe, expect, it } from 'bun:test';
 import i18n from '@/src/i18n';
 import {
   buildCreatePayArrangementRequest,
@@ -44,6 +45,13 @@ const baseState: PayTermsFormState = {
   payDayOfWeekText: '',
   payDayOfMonthText: '',
 };
+
+const payTermsGroupsPath = join(__dirname, '../../components/PayTermsGroups.tsx');
+let payTermsGroupsSource = '';
+
+beforeAll(async () => {
+  payTermsGroupsSource = await Bun.file(payTermsGroupsPath).text();
+});
 
 describe('isValidCalendarDate', () => {
   it('accepts a real date', () => {
@@ -224,6 +232,12 @@ describe('buildCreatePayArrangementRequest', () => {
     ).toBeNull();
   });
 
+  it('rejects a zero hourly rate', () => {
+    expect(
+      buildCreatePayArrangementRequest({ ...baseState, rateText: '0' })
+    ).toBeNull();
+  });
+
   // D-16 reverses the old no-future-dating rule (owner decision 4): a
   // scheduled raise is now the normal case, bounded by a 12-month horizon
   // in the OPPOSITE direction (spec §6).
@@ -399,6 +413,21 @@ describe('buildCreatePayArrangementRequest', () => {
       ).toBeNull();
     });
 
+    it('rejects a daily overtime threshold of 24 hours or more', () => {
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          dailyOvertimeThresholdHoursText: '24',
+        })
+      ).toBeNull();
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          dailyOvertimeThresholdHoursText: '25',
+        })
+      ).toBeNull();
+    });
+
     it('rejects a double-time threshold with no double-time multiplier (078 doubletime_daily_needs_multiplier)', () => {
       expect(
         buildCreatePayArrangementRequest({
@@ -457,6 +486,23 @@ describe('buildCreatePayArrangementRequest', () => {
       });
       expect(result?.doubletime_daily_threshold_minutes).toBe(720);
       expect(result?.overtime_daily_threshold_minutes).toBeNull();
+    });
+
+    it('rejects a double-time threshold of 24 hours or more', () => {
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          doubletimeThresholdHoursText: '24',
+          doubletimeMultiplierText: '2',
+        })
+      ).toBeNull();
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          doubletimeThresholdHoursText: '25',
+          doubletimeMultiplierText: '2',
+        })
+      ).toBeNull();
     });
 
     it('a single-tier seventh day needs only its own multiplier', () => {
@@ -525,6 +571,25 @@ describe('buildCreatePayArrangementRequest', () => {
           seventhDayMultiplierText: '1.5',
           doubletimeMultiplierText: '2',
           seventhDayDoubletimeAfterHoursText: '0',
+        })
+      ).toBeNull();
+    });
+
+    it('rejects a seventh-day second-tier threshold of 24 hours or more', () => {
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          seventhDayMultiplierText: '1.5',
+          doubletimeMultiplierText: '2',
+          seventhDayDoubletimeAfterHoursText: '24',
+        })
+      ).toBeNull();
+      expect(
+        buildCreatePayArrangementRequest({
+          ...baseState,
+          seventhDayMultiplierText: '1.5',
+          doubletimeMultiplierText: '2',
+          seventhDayDoubletimeAfterHoursText: '25',
         })
       ).toBeNull();
     });
@@ -746,6 +811,45 @@ describe('buildCreatePayArrangementRequest', () => {
       expect(result?.pay_day_of_week).toBe(2);
       expect(result?.pay_day_of_month).toBeNull();
     });
+  });
+
+  it('rejects a weekly overtime threshold of 168 hours or more', () => {
+    expect(
+      buildCreatePayArrangementRequest({
+        ...baseState,
+        overtimeThresholdHoursText: '168',
+        overtimeMultiplierText: '1.5',
+      })
+    ).toBeNull();
+    expect(
+      buildCreatePayArrangementRequest({
+        ...baseState,
+        overtimeThresholdHoursText: '169',
+        overtimeMultiplierText: '1.5',
+      })
+    ).toBeNull();
+  });
+
+  it('rejects guaranteed hours of 168 a week or more', () => {
+    expect(
+      buildCreatePayArrangementRequest({
+        ...baseState,
+        guaranteedHoursText: '168',
+      })
+    ).toBeNull();
+    expect(
+      buildCreatePayArrangementRequest({
+        ...baseState,
+        guaranteedHoursText: '169',
+      })
+    ).toBeNull();
+  });
+});
+
+describe('PayTermsGroups overtime caution guard', () => {
+  it('checks both the low and high sides of the weekly overtime threshold', () => {
+    expect(payTermsGroupsSource).toContain('threshold < 20');
+    expect(payTermsGroupsSource).toContain('threshold > 40');
   });
 });
 

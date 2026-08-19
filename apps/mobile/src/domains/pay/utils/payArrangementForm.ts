@@ -31,6 +31,8 @@ import {
 } from '@/src/lib/money';
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MINUTES_PER_DAY = 24 * 60;
+const MINUTES_PER_WEEK = 168 * 60;
 
 /** D-16 (spec §6): how far into the future `valid_from` may be set — a bound,
  * not a refusal, mirroring `payArrangementCommandService`'s server-side
@@ -616,6 +618,7 @@ export function buildCreatePayArrangementRequest(
 ): CreatePayArrangementRequest | null {
   const rateMinor = parseMajorToMinor(state.rateText);
   if (rateMinor === null) return null;
+  if (rateMinor <= 0) return null;
 
   if (!isValidCalendarDate(state.effectiveDateISO)) return null;
   // D-16 (spec §6) reverses the old no-future-dating rule: a scheduled raise
@@ -637,7 +640,9 @@ export function buildCreatePayArrangementRequest(
   const thresholdTrimmed = state.overtimeThresholdHoursText.trim();
   if (thresholdTrimmed !== '') {
     const minutes = parseHoursToMinutes(thresholdTrimmed);
-    if (minutes === null || minutes <= 0) return null;
+    if (minutes === null || minutes <= 0 || minutes >= MINUTES_PER_WEEK) {
+      return null;
+    }
     const multiplier = Number(state.overtimeMultiplierText.trim());
     if (!isValidMultiplier(multiplier)) return null;
     overtimeThresholdMinutes = minutes;
@@ -655,11 +660,23 @@ export function buildCreatePayArrangementRequest(
     state.dailyOvertimeThresholdHoursText
   );
   if (dailyOvertimeThresholdMinutes === undefined) return null;
+  if (
+    dailyOvertimeThresholdMinutes !== null &&
+    dailyOvertimeThresholdMinutes >= MINUTES_PER_DAY
+  ) {
+    return null;
+  }
 
   const doubletimeThresholdMinutes = parseOptionalThresholdMinutes(
     state.doubletimeThresholdHoursText
   );
   if (doubletimeThresholdMinutes === undefined) return null;
+  if (
+    doubletimeThresholdMinutes !== null &&
+    doubletimeThresholdMinutes >= MINUTES_PER_DAY
+  ) {
+    return null;
+  }
 
   const doubletimeMultiplier = parseOptionalMultiplier(
     state.doubletimeMultiplierText
@@ -675,6 +692,12 @@ export function buildCreatePayArrangementRequest(
     state.seventhDayDoubletimeAfterHoursText
   );
   if (seventhDayDoubletimeAfterMinutes === undefined) return null;
+  if (
+    seventhDayDoubletimeAfterMinutes !== null &&
+    seventhDayDoubletimeAfterMinutes >= MINUTES_PER_DAY
+  ) {
+    return null;
+  }
 
   // pay_arrangements_doubletime_daily_needs_multiplier
   if (doubletimeThresholdMinutes !== null && doubletimeMultiplier === null) {
@@ -720,6 +743,7 @@ export function buildCreatePayArrangementRequest(
   if (state.guaranteedHoursText.trim() !== '') {
     const minutes = parseHoursToMinutes(state.guaranteedHoursText);
     if (minutes === null) return null;
+    if (minutes >= MINUTES_PER_WEEK) return null;
     guaranteedMinutesPerWeek = minutes;
   }
 
