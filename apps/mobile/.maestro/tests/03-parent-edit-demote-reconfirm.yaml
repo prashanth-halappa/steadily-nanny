@@ -70,12 +70,14 @@ tags:
 - takeScreenshot: parent-edited-demoted-shift
 
 # --- Nanny: re-confirm demoted shift ---
-# Pop back to a tab root first — logout.yaml's entry guard is the
-# `header-settings` gear, and this screen (a pushed
-# /(private)/schedule/shifts/[id] route outside (tabs)) carries no header
-# chrome, so logout would fail to find its way into Settings and the nanny
-# leg below would run as the still-signed-in parent.
-- back
+# Land on Settings first — this screen is a pushed
+# /(private)/schedule/shifts/[id] route outside (tabs) with no header chrome,
+# and logout.yaml's entry guard is the `header-settings` gear.
+#
+# NOT `- back` (WP-M, 2026-08-18): a no-op on iOS here, same as flows 06/08 —
+# deep-link to Settings directly instead, same recovery reset-to-welcome.yaml
+# itself uses.
+- openLink: steadilynanny:///(private)/settings
 - waitForAnimationToEnd
 - runFlow: ../flows/logout.yaml
 - runFlow: ../flows/login-nanny.yaml

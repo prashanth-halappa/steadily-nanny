@@ -82,6 +82,11 @@ tags:
 - takeScreenshot: nanny-declined-cover-ask
 
 # --- Parent: the declined ask -------------------------------------------
+# Land on Settings first (WP-M, 2026-08-18, same as 03/06/08): this screen is
+# a pushed /(private)/schedule/shifts/[id] route with no header chrome, and
+# logout.yaml's entry guard is the `header-settings` gear.
+- openLink: steadilynanny:///(private)/settings
+- waitForAnimationToEnd
 - runFlow: ../flows/logout.yaml
 - runFlow: ../flows/login.yaml
 - runFlow:

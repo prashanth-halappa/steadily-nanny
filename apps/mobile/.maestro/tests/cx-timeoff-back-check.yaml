@@ -1,0 +1,28 @@
+# One-off hand-verification (CX close-out, WP-N) — TimeOffScreen's back
+# button after WP-C moved Settings out of the tab group (pushed screen behind
+# `header-settings`, with its own `settings-back`). Confirms `time-off-back`
+# (`TimeOffScreen.tsx`'s `router.back()`) actually pops back to Settings
+# rather than stranding the user on Time off.
+appId: com.jetto.steadily.nanny
+tags:
+  - settings
+  - timeoff
+---
+- runFlow: ../flows/login.yaml
+- tapOn:
+    id: 'header-settings'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'settings-screen'
+- tapOn:
+    id: 'settings-request-time-off'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'time-off-screen'
+- hideKeyboard
+- tapOn:
+    id: 'time-off-back'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'settings-screen'
+- takeScreenshot: cx-timeoff-back-ok

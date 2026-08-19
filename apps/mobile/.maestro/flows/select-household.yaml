@@ -82,6 +82,26 @@ appId: com.jetto.steadily.nanny
             - tapOn:
                 text: 'Maybe later'
             - waitForAnimationToEnd
+      # 2026-08-18: the expo-dev-client menu (not the intro card — the
+      # ONBOARDING flag only suppresses that; this is the sheet itself,
+      # opened by whatever late-async trigger dismiss-dev-menu.yaml's own
+      # header already documents) can pop here too, right after the Settings
+      # push, and swallow `settings-back` below the same way it swallows
+      # everything else while it's up. ONE bounded check is not enough —
+      # confirmed live (2026-08-18): a single pass warned "not visible" and
+      # the very next screenshot, under a second later, showed the sheet
+      # fully up, meaning it arrived just after the check. reset-to-welcome.yaml
+      # already documents this and covers it with 3 bounded passes; same fix
+      # here.
+      - repeat:
+          times: 3
+          commands:
+            - extendedWaitUntil:
+                visible:
+                  text: 'Runtime version'
+                timeout: 3000
+                optional: true
+            - runFlow: dismiss-dev-menu.yaml
       - extendedWaitUntil:
           visible:
             id: 'household-switcher-trigger'
@@ -105,6 +125,18 @@ appId: com.jetto.steadily.nanny
       # WP-C: Settings is PUSHED now, so leaving this flow on it would hide
       # the tab bar from every caller whose next step is `tapOn: tab-*`.
       # Pop back to the root the caller was standing on.
-      - tapOn:
-          id: 'settings-back'
-      - waitForAnimationToEnd
+      #
+      # GUARDED, not bare (2026-08-18): confirmed live — actually SWITCHING
+      # to a different household (as opposed to re-selecting the one already
+      # active, a no-op) lands you back on Today itself, not still on
+      # Settings; `settings-back` genuinely doesn't exist then and a bare tap
+      # fails the whole flow. Either way the caller ends on a tab root, which
+      # is this step's actual contract, so skip the pop when already there.
+      - runFlow:
+          when:
+            visible:
+              id: 'settings-back'
+          commands:
+            - tapOn:
+                id: 'settings-back'
+            - waitForAnimationToEnd

@@ -1,9 +1,11 @@
-# Scenario — P1: Today's pinned slot (`PinnedSlot.tsx`) is a static sibling
-# ABOVE the feed's ScrollView, not a floating overlay and not part of the
-# scrolling content — see `TodayScreen.tsx`'s module doc for why (the old
-# layout let the top card fall under the fold; this one reserves its height
-# in normal flow so it can't). This flow proves the header + slot render and
-# that the feed beneath still scrolls independently of them.
+# Scenario — P1: Today's pinned slot (`PinnedSlot.tsx`) is pinned by RANKING,
+# not position — see `TodayScreen.tsx`'s module doc: the whole screen is ONE
+# ScrollView (header, then the slot, then the feed), and the slot is always
+# the FIRST card in it, never a floating overlay. That replaced the old
+# design where the top card could fall under the fold. This flow proves the
+# header + slot render, that the feed scrolls, and that the slot is still the
+# first thing you see on scrolling back to the top — not that it stays fixed
+# on screen while the feed scrolls past it (it doesn't; it scrolls too).
 appId: com.jetto.steadily.nanny
 tags:
   - today
@@ -33,11 +35,22 @@ tags:
     timeout: 10000
 - assertVisible:
     id: 'today-this-week-card'
-# The header/slot region is a sibling ABOVE the ScrollView, so it's still on
-# screen after scrolling the feed beneath it — that's the whole claim.
+- takeScreenshot: today-pinned-slot-after-scroll
+
+# Scroll back to the top: the slot is pinned by RANK, so it must still be the
+# first card there — same claim as before scrolling, not a new one.
+- scrollUntilVisible:
+    element:
+      id: 'today-pinned-slot'
+    direction: UP
+    timeout: 10000
 - assertVisible:
     id: 'today-header'
-- takeScreenshot: today-pinned-slot-after-scroll
+- assertVisible:
+    id: 'today-pinned-slot'
+- assertVisible:
+    id: 'today-coverage'
+- takeScreenshot: today-pinned-slot-back-at-top
 
 # --- Nanny: on an ordinary day the slot's occupant is the clock-in control -
 - runFlow: ../flows/login-nanny.yaml
