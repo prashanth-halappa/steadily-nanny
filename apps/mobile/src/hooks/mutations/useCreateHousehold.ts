@@ -36,6 +36,9 @@ export function useCreateHousehold() {
         old ? [...old, household] : [household]
       );
       queryClient.invalidateQueries({ queryKey: queryKeys.household.all });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.user.memberships(),
+      });
     },
     onError: error => {
       showErrorToast(getLocalizedErrorMessage(error, t));
