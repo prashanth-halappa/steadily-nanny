@@ -43,6 +43,7 @@ async function clearAppState(): Promise<void> {
 // Subscription + last-user id live outside the store to avoid a circular dep.
 let authSubscription: { unsubscribe: () => void } | null = null;
 let previousSignedInUserId: string | null = null;
+let lastSignedInUserId: string | null = null;
 
 interface AuthState {
   session: Session | null;
@@ -379,6 +380,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
             await clearAppState();
           }
           previousSignedInUserId = userId;
+          lastSignedInUserId = userId;
           if (userId) setUserContext({ id: userId });
           else clearUserContext();
           set({ session, user: session?.user ?? null, isInitialized: true });
@@ -396,14 +398,24 @@ export const useAuthStore = createPersistedStore<AuthState>(
           // parent back at the role fork forever, because the (also nulled)
           // cached household id meant InviteScreen's effect never fired. See
           // PROJECT-STATUS / GOLDEN-FIXES for the full writeup.
+          //
+          // `lastSignedInUserId` is NOT cleared on SIGNED_OUT, which is what
+          // makes sign-out -> sign-in-as-someone-else a detectable switch.
+          // Before it existed, `previousSignedInUserId` was nulled at sign-out,
+          // so the new account inherited the previous one's setupProgress and
+          // resumed into the middle of somebody else's onboarding wizard.
+          // ponytail: in-memory only, so the leak survives one shape — sign
+          // out, KILL the app, then register a new account: nothing remembers
+          // who was here before. Persist this id (or stamp setupProgress with
+          // its owner) if that shape ever shows up in the wild.
           const isFreshSignIn =
             !!userId &&
             (previousSignedInUserId === null ||
               userId !== previousSignedInUserId);
           const isAccountSwitch =
             !!userId &&
-            previousSignedInUserId !== null &&
-            userId !== previousSignedInUserId;
+            lastSignedInUserId !== null &&
+            userId !== lastSignedInUserId;
           if (isFreshSignIn) {
             queryClient.clear();
             if (isAccountSwitch) {
@@ -412,6 +424,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
             router.replace('/' as Href);
           }
           previousSignedInUserId = userId;
+          lastSignedInUserId = userId;
           if (userId) setUserContext({ id: userId });
           set({ session, user: session?.user ?? null, isInitialized: true });
         } else if (event === 'TOKEN_REFRESHED') {
