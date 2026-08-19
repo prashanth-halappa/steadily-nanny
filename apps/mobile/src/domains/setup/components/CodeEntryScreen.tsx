@@ -604,20 +604,43 @@ export function CodeEntryScreen({
         </FieldError>
       ) : null}
 
+      {/* A DRAFT invite has no family to preview and the server says so on
+          purpose: `household_name: ''`, no children (they are placeholders
+          the nanny typed while pricing her own week, not this family's
+          kids), and `carer_name` instead. The card read those two empty
+          fields anyway and rendered an empty box above the button — the
+          confirmation step asking "is this the right household?" about a
+          household that does not exist yet. Name HER instead; with no name
+          to show there is nothing to confirm, so no card at all. */}
       {showInvitePreview && invitePreview ? (
-        <Card testID="code-preview-card" className="gap-2 p-5.5">
-          <H3 testID="code-preview-household">
-            {invitePreview.household_name}
-          </H3>
-          {invitePreview.children_first_names.length > 0 ? (
-            <Body
-              testID="code-preview-children"
-              className="text-muted-foreground"
-            >
-              {invitePreview.children_first_names.join(', ')}
-            </Body>
-          ) : null}
-        </Card>
+        invitePreview.household_state === HOUSEHOLD_STATES.DRAFT ? (
+          invitePreview.carer_name ? (
+            <Card testID="code-preview-card" className="gap-2 p-5.5">
+              <H3 testID="code-preview-carer">
+                {t('onboarding.code.previewCarerTitle', {
+                  name: invitePreview.carer_name,
+                })}
+              </H3>
+              <Body className="text-muted-foreground">
+                {t('onboarding.code.previewCarerBody')}
+              </Body>
+            </Card>
+          ) : null
+        ) : invitePreview.household_name.trim() ? (
+          <Card testID="code-preview-card" className="gap-2 p-5.5">
+            <H3 testID="code-preview-household">
+              {invitePreview.household_name}
+            </H3>
+            {invitePreview.children_first_names.length > 0 ? (
+              <Body
+                testID="code-preview-children"
+                className="text-muted-foreground"
+              >
+                {invitePreview.children_first_names.join(', ')}
+              </Body>
+            ) : null}
+          </Card>
+        ) : null
       ) : null}
 
       {redeemInvite.isError ? (

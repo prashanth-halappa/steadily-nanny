@@ -492,6 +492,52 @@ describe('CodeEntryScreen — two entry modes (D-50, §3.4)', () => {
   });
 });
 
+describe('CodeEntryScreen — a draft code has no family to preview', () => {
+  // What the server actually sends for a draft invite (householdQueryService):
+  // no name, no children — those are placeholders the nanny typed while
+  // pricing her own week — and `carer_name` in their place. The card read the
+  // two empty fields anyway and rendered an empty box above the button.
+  const DRAFT_PREVIEW_AS_SERVED = {
+    household_name: '',
+    children_first_names: [],
+    household_state: 'draft',
+    role: 'parent',
+    carer_name: 'Marisol R.',
+  };
+
+  it('names the carer instead of rendering an empty household heading', async () => {
+    previewInviteMock.mockImplementation(() =>
+      Promise.resolve(DRAFT_PREVIEW_AS_SERVED)
+    );
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    fireEvent.changeText(screen.getByTestId('code-input'), 'R4K-92T');
+    fireEvent.press(screen.getByTestId('code-screen-cta'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('code-preview-carer')).toBeTruthy()
+    );
+    expect(screen.queryByTestId('code-preview-household')).toBeNull();
+  });
+
+  it('renders no card at all when there is not even a carer name to show', async () => {
+    previewInviteMock.mockImplementation(() =>
+      Promise.resolve({ ...DRAFT_PREVIEW_AS_SERVED, carer_name: null })
+    );
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    fireEvent.changeText(screen.getByTestId('code-input'), 'R4K-92T');
+    fireEvent.press(screen.getByTestId('code-screen-cta'));
+
+    // Wait for the preview to have LANDED (the CTA turns into Join), so the
+    // absent card is the rendered outcome and not just a slow network.
+    await waitFor(() =>
+      expect(screen.getByText('onboarding.code.joinHousehold')).toBeTruthy()
+    );
+    expect(screen.queryByTestId('code-preview-card')).toBeNull();
+  });
+});
+
 describe('CodeEntryScreen — absorption confirm (§8.2 / D-34)', () => {
   const DRAFT_PREVIEW = {
     household_name: "Marisol's terms",
