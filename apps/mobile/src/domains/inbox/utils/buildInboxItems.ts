@@ -33,6 +33,12 @@
  *    who can unblock a work stoppage could not see it. It is not "pending
  *    work" in the same sense (it waits on somebody else), which is why it
  *    ranks last.
+ *  - terms proposal DECLINED (D66): the author's record that her round was
+ *    refused, shown only while it is the LATEST round for that carer — the
+ *    next round clears it, which is why there is no dismiss state. The
+ *    decline push writes nothing to the database, so without this row a
+ *    denied token or quiet hours means the person who proposed is told
+ *    nothing at all and her own `terms_proposal_sent` row simply vanishes.
  *  - terms ack: nanny-only, active member, live arrangement, ack state
  *    still `none` — surfaces on NeedsAttentionCard, resolves on My pay.
  *
@@ -146,6 +152,10 @@ export type InboxTermsProposalInput = {
    * never "agreed" (§1's vocabulary). Optional so pre-A7 fixtures still
    * type-check; absent reads as never opened. */
   viewed_at?: string | null;
+  /** When the row left `proposed` — the day it was declined, for D66's
+   * record. Optional so older fixtures still type-check; absent falls back
+   * to the day it was sent rather than dating the record by guess. */
+  responded_at?: string | null;
 };
 
 /** One live arrangement the nanny has not acked yet — built in `useInboxItems`. */
@@ -277,6 +287,28 @@ export type InboxItem =
       direction: TermsProposalDirection;
     }
   | {
+      // D66 — the AUTHOR's durable record that her round was refused. The
+      // decline push is fire-and-forget and writes nothing, so without this
+      // row a denied token, a missing one, or quiet hours means the person
+      // who proposed is never told at all.
+      kind: 'terms_proposal_declined';
+      id: string;
+      householdId: string;
+      carerId: string;
+      carerDisplayName: string;
+      personName?: string;
+      personColour?: string;
+      /** The day it was sent — the subtitle dates the ask, the title the
+       * answer. */
+      proposedAt: string;
+      /** The day it was refused (`responded_at`), or the day it was sent
+       * when the row carries no stamp. */
+      declinedAt: string;
+      /** Who WROTE it — always the viewer's own side, and what decides
+       * whether the title names the carer or the family. */
+      direction: TermsProposalDirection;
+    }
+  | {
       kind: 'terms_ack';
       id: string;
       householdId: string;
@@ -315,7 +347,8 @@ export function personOf(item: InboxItem): InboxPerson | undefined {
   switch (item.kind) {
     case 'submitted_week':
     case 'terms_proposal':
-    case 'terms_proposal_sent': {
+    case 'terms_proposal_sent':
+    case 'terms_proposal_declined': {
       const name = item.personName ?? item.carerDisplayName;
       if (!name) return undefined;
       return item.personColour ? { name, colour: item.personColour } : { name };
@@ -563,6 +596,45 @@ export function buildInboxItems(input: {
     });
   }
 
+  // D66 — the author's record of a refusal, the answer to the loop above.
+  // Only the LATEST round for that carer qualifies: sending the next round
+  // IS the acknowledgement, which is why this kind needs no dismiss state,
+  // no table and no migration. Same author gate as `terms_proposal_sent`
+  // (B5: a helper authors nothing; D-21: a nanny sees only her own).
+  //
+  // ponytail: O(n^2) over one carer's chain — a negotiation is a handful of
+  // rows. Index by carer id if a household ever carries hundreds.
+  const proposals = input.termsProposals ?? [];
+  for (const proposal of proposals) {
+    if (proposal.status !== TERMS_PROPOSAL_STATUSES.DECLINED) continue;
+    // ISO 8601 UTC timestamps sort lexically the same as chronologically.
+    const supersededByANewerRound = proposals.some(
+      other =>
+        other.id !== proposal.id &&
+        other.household_id === proposal.household_id &&
+        other.carer_id === proposal.carer_id &&
+        other.created_at > proposal.created_at
+    );
+    if (supersededByANewerRound) continue;
+    if (proposal.direction === 'parent') {
+      if (!isParentEditorRole(input.role)) continue;
+    } else {
+      if (input.role !== SETUP_ROLES.NANNY) continue;
+      if (!me || proposal.carer_id !== me) continue;
+    }
+    items.push({
+      kind: 'terms_proposal_declined',
+      id: proposal.id,
+      householdId: proposal.household_id,
+      carerId: proposal.carer_id,
+      carerDisplayName: proposal.carer_display_name,
+      personName: proposal.carer_display_name,
+      proposedAt: proposal.created_at,
+      declinedAt: proposal.responded_at ?? proposal.created_at,
+      direction: proposal.direction,
+    });
+  }
+
   // §2.2 rank 9 — nanny-only; resolves on My pay, not on Today.
   if (input.role === SETUP_ROLES.NANNY && !input.isPastMember) {
     for (const row of input.termsAcks ?? []) {
@@ -618,6 +690,13 @@ function sortKey(item: InboxItem, nowMs: number): number {
     // nothing about it decays overnight.
     case 'terms_proposal':
       return 4;
+    // D66 — shares rank 4 deliberately. Both are the same stalled contract
+    // waiting on an act from the READER (sign it, or send the next round),
+    // and neither decays overnight, so neither has a claim over the other;
+    // the date tie-break settles it. The two can never collide for one
+    // carer anyway — a declined LATEST round means no live round exists.
+    case 'terms_proposal_declined':
+      return 4;
     // Not in §2.2's table (patterns predate this build) — bucketed with
     // "pending_shift, all others": both are a schedule response waiting on
     // her, neither D-22-deadline-bearing.
@@ -660,6 +739,10 @@ function sortDateFor(item: InboxItem): string | null {
     case 'terms_proposal':
     case 'terms_proposal_sent':
       return item.proposedAt;
+    // The day it was refused — the freshest refusal last, same
+    // oldest-first convention every other kind here uses.
+    case 'terms_proposal_declined':
+      return item.declinedAt;
     case 'terms_ack':
       return item.validFrom;
     // WP-H: the day it was opened — oldest-unanswered-first, same tie-break

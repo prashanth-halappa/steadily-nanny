@@ -66,6 +66,9 @@ export function hrefForItem(item: InboxItem): Href {
     // A7 — the same screen, in view mode: it is where a sent proposal lives
     // too, and there is no second surface for "the thing I sent".
     case 'terms_proposal_sent':
+    // D66 — and the same screen again for a refused round: it is where the
+    // terms she sent still live, and there is no second surface for them.
+    case 'terms_proposal_declined':
       return `/(private)/pay/proposal/${item.id}` as Href;
     case 'terms_ack':
       return '/(private)/settings/my-pay' as Href;
@@ -156,6 +159,18 @@ export function titleForItem(
         carer: item.carerDisplayName,
         date: proposedOn(item.proposedAt, timeZone),
       });
+    // D66 — names the actor who gave the answer, never the reader who got
+    // it. A carer's own name on a row about the FAMILY's refusal would name
+    // the wrong side, which is the trap `titleCountered` avoids above.
+    case 'terms_proposal_declined':
+      return item.direction === 'parent'
+        ? t('items.termsProposalDeclined.title', {
+            carer: item.carerDisplayName,
+            date: proposedOn(item.declinedAt, timeZone),
+          })
+        : t('items.termsProposalDeclined.titleFamily', {
+            date: proposedOn(item.declinedAt, timeZone),
+          });
     case 'terms_ack':
       return item.isFirstTerms
         ? t('items.termsAck.titleFirst')
@@ -248,6 +263,13 @@ export function subtitleForItem(
         : t('items.termsProposalSent.subtitleNotOpened', {
             date: proposedOn(item.proposedAt, timeZone),
           });
+    // Dates the ask the answer was about, and points at the only way
+    // forward. It states what happened; it never grades either side for the
+    // answer they gave.
+    case 'terms_proposal_declined':
+      return t('items.termsProposalDeclined.subtitle', {
+        sentDate: proposedOn(item.proposedAt, timeZone),
+      });
     case 'terms_ack':
       return t('items.termsAck.subtitle');
     case 'reimbursement_owed':
@@ -286,6 +308,8 @@ export function ctaForItem(item: InboxItem, t: InboxItemT): string {
       return t('items.termsProposal.cta');
     case 'terms_proposal_sent':
       return t('items.termsProposalSent.cta');
+    case 'terms_proposal_declined':
+      return t('items.termsProposalDeclined.cta');
     case 'terms_ack':
       return t('items.termsAck.cta');
     case 'reimbursement_owed':
