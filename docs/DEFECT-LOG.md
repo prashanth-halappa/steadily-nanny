@@ -1855,3 +1855,283 @@ Cross-cutting defect where a component runs several queries but gates loading/er
 
 ## D59 — Pattern C: fail-open and fail-closed, inconsistently
 Cross-cutting defect where `useTermsGate` failed open by design, but its outer role gate (`useIsOnboarded`) converted a failed memberships read into `role: null`, making it fail-closed. This caused instances like the clock-in card silently disappearing with no error or retry. Fixed in WP-B1.
+
+## D60 — A parent's own household did not exist for five minutes after they made it
+
+**Status:** FIXED · **Severity:** high — first-run trust
+
+Found in the S1 hand pass. Register as a parent, complete onboarding, land on
+Today: the feed is blank with no empty state, and Schedule says **"No household
+yet"** — seconds after creating one. Background the app and come back and
+everything is correct, which is exactly the shape that reads as a backend fault
+and sends you to the API logs.
+
+`useCreateHousehold` seeded `queryKeys.household.list()` and invalidated
+`queryKeys.household.all`, but never `queryKeys.user.memberships()`. The server
+inserts the owner membership row inside `householdCommandService.create`, and
+`useIsOnboarded` derives `role` **exclusively** from `useMyMemberships`, which
+carries `staleTime: STALE_5M`. So for up to five minutes:
+
+- `useActiveHousehold.household` was correct (seeded and invalidated), but
+- `useIsOnboarded` still returned `{ status: 'not-onboarded', role: null }`.
+
+`schedule.tsx` branches on `onboarding.role === null` and renders
+`tab.emptyTitle`. `TodayScreen`'s `isParentView` is `canViewParentSchedule(null)`
+= false, so every role-keyed card dropped out — and `today-empty` was suppressed
+because `household` *was* truthy, which is why the feed was blank rather than
+empty-stated. There is no query persister, so a cold start refetched and the
+symptom vanished; `refetchOnWindowFocus` could not rescue it inside the
+staleTime.
+
+**Why the nanny side never showed it:** `useRedeemInvite` already invalidated
+`user.memberships()`. So did `useAcceptTerms` and `useLeaveHousehold`.
+`useCreateHousehold` was the only membership-mutating path that didn't.
+
+**Fix:** one invalidate in `apps/mobile/src/hooks/mutations/useCreateHousehold.ts`,
+copied from `useRedeemInvite.ts`. Fixed at the mutation rather than at the
+terminal permission screens deliberately — the screens are one of three callers
+(`HouseholdScreen`, `StartScreen`'s nanny draft, `ChildrenScreen`'s fallback
+auto-create) and patching them would have left the other two broken.
+
+---
+
+## D61 — Four empty states, four different shapes, no action on any of them
+
+**Status:** FIXED · **Severity:** medium — CX consistency
+
+Schedule rendered illustration + title + body and no action. Hours' draft state
+rendered title + body and **no illustration** — `illustrations.emptyHours`
+exists and its only consumer was `MyPayScreen.tsx:411`. Hours' no-household
+branch (`HoursScreen.tsx:356-371`) rendered a bare `<H1>{t('title')}</H1>` and
+nothing else at all. No caller anywhere passed `action`, though `EmptyState`
+has supported `action`/`actionLabel` all along.
+
+The two bugs compounded: the bare-`<H1>` branch is exactly where a parent lands
+during D60's stale window, so the screen that should have explained the gap said
+nothing.
+
+Reported as "the schedule tab has the illustration but no title". It never did —
+`EmptyState.title` is a required prop. What the reporter saw was D60 putting
+them on a *different* branch than they thought.
+
+**Fix:** all five states (Schedule no-role, Schedule draft, Hours draft, Hours
+no-household, Today empty) now carry illustration, title, body and one action.
+Every action is a real route: "Join with an invite code" →
+`settings/join-household`, which every role can reach and which is the only way
+an already-onboarded person redeems a code; the draft states → Today, where
+`DraftHomeScreen` owns the only two moves that exist. **Nothing offers "create a
+household"** — `/onboarding/household` is bounced for a signed-in user, and an
+empty state must not name a door that isn't there. Today's and Schedule's bodies
+also stopped naming the wrong gap: both branches fire when there is no
+*household*, not when a household has no schedule.
+
+---
+
+## D62 — Onboarding never asks for timezone, week-start or currency
+
+**Status:** NOT A DEFECT · recorded so nobody re-investigates
+
+Raised in the S1 pass against `LAUNCH-MANUAL-PASS.md` §4's checklist line
+"Household: name, **timezone**, **week starts on**, currency/jurisdiction".
+
+`HouseholdScreen.tsx:208-220` derives all three from the device —
+`getDeviceTimeZone()`, `getDeviceCurrency()`, and `week_starts_on: 0` only when
+`getDeviceRegion() === 'US'` (D-8; every other region takes the SQL default of
+Monday). This is the documented "seed, never final word" discipline, the same
+one `PaySetupScreen`'s currency chip follows, and all three are correctable in
+Settings → Manage household. `jurisdiction` is deliberately never guessed:
+expo-localization reports a country, never a US state, so there is nothing
+honest to prefill.
+
+The same report questioned currency living on the household at all, since
+currency is a pay term. Both are true and neither is a defect: `households.currency`
+is the **seed** that prefills each arrangement, and the arrangement's own
+`currency` is the authority for money. No model change; the fix was to stop
+`LAUNCH-MANUAL-PASS.md` §4 describing a screen that does not exist.
+
+---
+
+## D63 — The field that decides when money changes was a typed string
+
+**Status:** FIXED · **Severity:** medium — money-adjacent input
+
+"Takes effect from" in the pay terms form was a free-text `YYYY-MM-DD` `Input`
+with `keyboardType="numbers-and-punctuation"`. Its own module doc recorded this
+as an accepted simplification against `screens-pay-terms.md` §7.2, which asks
+for the platform picker.
+
+Nothing had to be built and nothing had to be installed:
+`@react-native-community/datetimepicker@9.1.0` was already a dependency (used by
+`ExtraShiftScreen`, `AdjustSchedulePatternSheet`, `AddMissedHoursCard`,
+`HouseholdClosuresScreen`) and `ExpenseDateField.tsx` was already the worked
+single-calendar-date pattern.
+
+**Fix:** `EffectiveDateField` becomes a `mode="date"` picker. The wire format
+stays a nominal `yyyy-mm-dd` string; `Date` exists only transiently in the new
+`EffectiveDateField.utils.ts`. Both validations are retained — this field is not
+the only writer and the command service checks server-side — but the picker
+makes an impossible calendar date unreachable, and `maximumDate` turns the
+12-month horizon into a structural bound rather than an error after the fact.
+
+**Test note:** the picker package ships raw Flow-typed `.js` that `bun:test`
+cannot parse and `mock.module()` cannot prevent, so the component cannot be
+render-tested (`docs/09-TESTING.md` §5 Pattern A). Real unit tests live on the
+dependency-free `.utils.ts`; the component test is source inspection. The 15
+sibling `PaySetupScreen`/`PayChangeSheet` tests moved with it: value assertions
+read the `Date` back through `formatDate`, and the two that typed a bad date now
+assert the structural guarantee instead.
+
+**Follow-up owed:** `.maestro/tests/07-terms-setup-and-ca-ot-week.yaml:67` taps
+`pay-setup-date-input`, erases and types a backdate. A picker cannot be typed
+into. That flow needs reworking on-device.
+
+---
+
+## D64 — "Overtime after" what? And "1" was a valid answer to everything
+
+**Status:** FIXED (validation) · **Severity:** medium — money correctness
+
+Two halves of one report from the S1 pass: *"Not sure what overtime after is.
+The description is not clear... Don't think this data validation. I entered 1 in
+a field I was still able to send it."*
+
+**The validation half.** `buildCreatePayArrangementRequest` returns `null` for an
+invalid form, which disables Send. It accepted:
+
+- an hourly rate of `0` — client and wire (`z.int().min(0)`). An agreement to
+  pay nothing is not an agreement.
+- a weekly overtime threshold of `1` hour, and any threshold up to infinity.
+  Worse, `overtimeFloorCaution` (`PayTermsGroups.tsx:390`) fired only on
+  `threshold > 40 || multiplier < 1.5`, so "overtime after 1 hour a week at
+  1.5×" drew **no** caution — the guardrail was one-sided.
+
+Fixed: `CreatePayArrangementRequestSchema.rate_minor` becomes `min(1)`;
+thresholds beyond their own unit (168h+ weekly, 24h+ daily/seventh-day, 168h+
+guaranteed) refuse the way every other cross-field rule in that function does;
+the overtime caution is two-sided.
+
+`PayArrangementSchema` — the **read** side — deliberately stays `min(0)`. Rows
+written before the floor existed are legal history, and a response schema that
+refused to parse them would blank a real arrangement rather than show an old
+zero. Migration 041's `>= 0` CHECK is likewise left alone.
+
+**No minimum-wage table**, deliberately: this app holds no wage data for any
+jurisdiction, and a floor that pretended otherwise would be a claim it cannot
+support.
+
+**The clarity half** is tracked separately below.
+
+---
+
+## D65 — "Set the pay terms", offered over terms already on the table
+
+**Status:** FIXED · **Severity:** medium — the card stated a falsehood
+
+Reported as "Nanny 1 was still seeing the set-the-terms card". The card is
+actually the **parent's** `NannyJoinedMomentCard`, and the bug is direction-blind
+gating at `:67`:
+
+```ts
+const parentSent = open?.direction === 'parent' ? open : null;
+```
+
+`parentSent` answered two different questions with one value — "is a round
+live?" and "who wrote it?" So when the **nanny** proposed first, the parent's
+card rendered `moments.nannyJoined.bodyNothingSent` — *"They can clock in once
+you've both agreed the pay terms"* — over a proposal already waiting on his
+answer, with a CTA into the blank setup form at `/settings/pay/setup/{carerId}`.
+
+Not destructive (`PaySetupScreen` catches the open round and offers a review
+link), but the card lied about the state and pointed at the wrong screen.
+
+**Fix:** branch on `open` for the state, on `open.direction` only for the
+wording. Both directions route to the live proposal. Three sibling gates —
+`PaySetupPromptCard`, `PayArrangementScreen`'s empty state, and `SendMyTermsCard`
+— already did exactly this; this was the one that didn't.
+
+---
+
+## D67 — The nanny could not leave the usual-week response screen
+
+**Status:** FIXED · **Severity:** medium — dead end
+
+`app/(private)/_layout.tsx:58` sets `headerShown: false` for the whole private
+subtree, so every screen renders its own in-content back affordance.
+`ScheduleRespondScreen` — where a nanny accepts or declines a proposed usual
+week — was the only screen in `domains/schedule/components/` that rendered none.
+Its root went straight from `<View>` to `<ScrollView>` to `<H1>`.
+
+The only exits were accepting the week, or opening the decline sheet and
+confirming a decline. Reviewing and walking away was not reachable, and the
+screen is entered from three places including a push-notification deep link,
+where iOS edge-swipe has no history to swipe back to.
+
+**Fix:** the shared `BackButton` above the `<H1>`, matching
+`NannyUsualWeekScreen` and `SchedulePendingScreen`.
+
+**Known latent gap, deliberately not fixed here:** `router.back()` on an empty
+history is a no-op, and every sibling screen shares that — `router.canGoBack()`
+appears nowhere in production code. Diverging one screen from the pattern would
+be worse than the gap; fixing it is a cross-cutting change of its own.
+
+---
+
+## D68 — A brand-new account inherited the previous user's onboarding wizard
+
+**Status:** FIXED · **Severity:** high — one person's state rendered under another's account
+
+Found while chasing an S1 report that the start fork ("How are you starting?")
+never appeared for a parent. `.maestro/tests/16` asserts `start-screen`
+immediately after `role-parent` and is green, and `RoleScreen` has no
+conditional — so the fork was not the bug. The persisted wizard was.
+
+`apps/mobile/src/store/auth.ts` tracked `previousSignedInUserId` and reset
+user-scoped local state (`resetUserScopedStores()`, which wipes `setupProgress`
+— role, path, currentStep) only when `isAccountSwitch` was true. But the
+`SIGNED_OUT` handler set `previousSignedInUserId = null`, so:
+
+    user A signs in     -> previousSignedInUserId = A
+    user A signs OUT    -> previousSignedInUserId = null
+    user B registers    -> isAccountSwitch is FALSE, nothing is reset
+
+User B rehydrated user A's `setupProgress` from MMKV and could be resumed by
+`getUnfinishedSetupResumeRoute` straight past the role and start forks into the
+middle of somebody else's wizard.
+
+The naive fix — stop nulling on `SIGNED_OUT` — is wrong: `isFreshSignIn` is
+computed from the same variable and drives `queryClient.clear()` and
+`router.replace('/')`, and the comment in that file records the regression where
+wiping on a same-user re-sign-in stranded a returning onboarded parent at the
+role fork forever.
+
+**Fix:** a second module-level `lastSignedInUserId`, set on every sign-in and
+**never** cleared at sign-out. `isFreshSignIn` keeps reading
+`previousSignedInUserId`; only `isAccountSwitch` reads the new one.
+
+**Remaining ceiling, marked `ponytail:` in the code:** `lastSignedInUserId` is
+in memory only, so one shape survives — sign out, **kill** the app, then
+register a new account. Nothing remembers who was here before. Persisting the id
+(or stamping `setupProgress` with its owner) closes it if that shape ever shows
+up in the wild. Until then, `LAUNCH-MANUAL-PASS.md` §2 says to clear the app
+between identities, which avoids both shapes.
+
+---
+
+## D69 — "Money surfaces unlock on both sides" oversells what acceptance does
+
+**Status:** NOT A DEFECT · recorded so nobody re-investigates
+
+Reported as *"Not sure what you mean by 'Money surfaces unlock on both sides'.
+Nanny is able to clock in now but other than that there has been no change."*
+
+That is the correct behaviour, precisely observed. `termsGateService.assertAgreed`
+has exactly three callers, all in `timesheetCommandService`: clock-in (`:527`),
+add-missed-hours (`:984`), edit-entry (`:1412`). Clock-**out** is deliberately
+ungated. Scheduling, payments, expenses and PTO never import it — payments gate
+on an approved timesheet, which is downstream of already-gated entries.
+
+So terms couple to the rest of the app **through time recording only**. Hours,
+My pay and the earnings breakdown do change — `earningsService` flips its
+`no_arrangement` arm to `ok` — but that is visible once hours exist, not at the
+moment of acceptance. The fix was to `LAUNCH-MANUAL-PASS.md` §4, which promised
+a visible change that the architecture does not make.
