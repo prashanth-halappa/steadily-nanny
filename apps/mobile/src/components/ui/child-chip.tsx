@@ -33,7 +33,7 @@ export function ChildChip({
 }: ChildChipProps) {
   const containerClassName = cn(
     'flex-row items-center gap-1.5 self-start rounded-chip px-3 py-1.5',
-    selected ? 'bg-primary' : 'bg-muted'
+    selected ? 'bg-primary' : 'bg-secondary'
   );
 
   const resolvedColour = colour ? remapChildSwatch(colour) : undefined;

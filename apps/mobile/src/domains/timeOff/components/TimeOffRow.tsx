@@ -70,11 +70,12 @@ export function TimeOffRow({
         label={t(`status.${timeOff.status}`)}
       />
       {timeOff.kind === 'sick' ? (
-        <StatusPill
+        <Small
           testID={`time-off-kind-sick-${timeOff.id}`}
-          variant="short-notice"
-          label={t('kind.sick')}
-        />
+          className="text-muted-foreground"
+        >
+          {t('kind.sick')}
+        </Small>
       ) : null}
       {paidFamilyCount === undefined ? null : (
         <Small
@@ -108,7 +109,9 @@ export function TimeOffRow({
               disabled={isCancelling}
               onPress={() => onCancel(timeOff.id)}
             >
-              <Text className="text-destructive">{t('cancelButton')}</Text>
+              <Text className="text-error-inline-text">
+                {t('cancelButton')}
+              </Text>
             </Button>
           ) : null}
         </View>

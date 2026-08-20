@@ -27,7 +27,7 @@ import { Pressable, View } from 'react-native';
 import { Icon } from '@/lib/icons/iconWithClassName';
 import { cn } from '@/lib/utils';
 import { StatusPill } from '@/src/components/ui/status-pill';
-import { Figure, MetadataLabel, Small } from '@/src/components/ui/typography';
+import { Body, MetadataLabel, Small } from '@/src/components/ui/typography';
 import { localDateInZone } from '@/src/lib/localDate';
 import { AnimatedPressable } from '~/lib/animations';
 import type { TimeEntry } from '../types';
@@ -127,7 +127,7 @@ export function TimeEntryRow({
     >
       <View className="min-w-0 flex-1 gap-1">
         <View className="flex-row flex-wrap items-center gap-2">
-          <Figure
+          <Body
             testID={
               isVoided
                 ? `hours-voided-entry-${entry.id}`
@@ -136,16 +136,17 @@ export function TimeEntryRow({
                   : `hours-entry-time-${entry.id}`
             }
             weight={isZeroDuration ? 'medium' : 'regular'}
+            tabular
             className={cn(
               // T4: a voided entry is a complete record, but it must not
               // compete with a real one for weight.
               isVoided && 'text-muted-foreground line-through',
-              isZeroDuration && 'text-warning'
+              isZeroDuration && 'text-foreground'
             )}
           >
             {timeRange}
             {isVoided ? ` · ${t('voided')}` : null}
-          </Figure>
+          </Body>
           {isZeroDuration ? (
             <StatusPill
               testID={`hours-entry-flag-pill-${entry.id}`}
@@ -173,12 +174,13 @@ export function TimeEntryRow({
       </View>
       <View className="flex-shrink-0 flex-row items-center gap-2">
         {showDuration ? (
-          <Figure
+          <Body
             testID={`hours-entry-duration-${entry.id}`}
+            tabular
             className={isVoided ? 'text-muted-foreground' : undefined}
           >
             {formatDuration(minutes)}
-          </Figure>
+          </Body>
         ) : null}
         {/* The chevron IS the editability signal — same contract as
             SettingsNavRow. Its absence is why the parent's read-only view

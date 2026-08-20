@@ -51,9 +51,7 @@ export function JurisdictionPickerSheet({
           onPress={() => onSelect(null)}
         >
           <View className="flex-row items-center justify-between py-2">
-            <Body
-              className={selectedValue === null ? 'text-primary' : undefined}
-            >
+            <Body weight={selectedValue === null ? 'semibold' : 'regular'}>
               {t('householdSettings.jurisdictionNoneOption')}
             </Body>
             {selectedValue === null ? <Check size={18} /> : null}
@@ -74,7 +72,7 @@ export function JurisdictionPickerSheet({
               onPress={() => onSelect(state.value)}
             >
               <View className="flex-row items-center justify-between py-2">
-                <Body className={isSelected ? 'text-primary' : undefined}>
+                <Body weight={isSelected ? 'semibold' : 'regular'}>
                   {state.label}
                 </Body>
                 {isSelected ? <Check size={18} /> : null}

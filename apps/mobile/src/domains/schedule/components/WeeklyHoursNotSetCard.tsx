@@ -56,7 +56,7 @@ import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { IconChip } from '@/src/components/ui/icon-chip';
 import { Text } from '@/src/components/ui/text';
-import { Body, H4 } from '@/src/components/ui/typography';
+import { H4, Small } from '@/src/components/ui/typography';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { useUncoveredToday } from '@/src/domains/today/hooks/useUncoveredToday';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
@@ -272,10 +272,10 @@ function WeeklyHoursNotSetGroupCard({
             <IconChip tone="schedule" icon={CalendarDays} />
             <H4>{title}</H4>
           </View>
-          <Body className="text-muted-foreground">{body}</Body>
+          <Small className="text-muted-foreground">{body}</Small>
           <Button
             testID="today-weekly-hours-not-set-cta"
-            variant="default"
+            variant="ghost"
             onPress={() => onNavigate(BUILD_HREF)}
           >
             <Text className="text-primary-foreground font-medium">{cta}</Text>
@@ -324,10 +324,10 @@ function WeeklyHoursNotSetGroupCard({
           <IconChip tone="schedule" icon={CalendarDays} />
           <H4>{title}</H4>
         </View>
-        <Body className="text-muted-foreground">{body}</Body>
+        <Small className="text-muted-foreground">{body}</Small>
         <Button
           testID="today-weekly-hours-not-set-cta"
-          variant="default"
+          variant="ghost"
           onPress={() => onNavigate(href)}
         >
           <Text className="text-primary-foreground font-medium">{cta}</Text>

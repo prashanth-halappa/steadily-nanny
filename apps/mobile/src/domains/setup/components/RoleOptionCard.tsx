@@ -9,8 +9,8 @@
  */
 import { View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
-import { cn } from '@/lib/utils';
 import { Body, H4 } from '@/src/components/ui/typography';
+import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
 
 interface RoleOptionCardProps {
   title: string;
@@ -27,6 +27,8 @@ export function RoleOptionCard({
   onPress,
   testID,
 }: RoleOptionCardProps) {
+  const colors = useThemeColors();
+
   return (
     <AnimatedPressable
       testID={testID}
@@ -34,10 +36,13 @@ export function RoleOptionCard({
       accessibilityState={{ selected }}
       scaleIntensity="subtle"
       onPress={onPress}
-      className={cn(
-        'rounded-card border-2 p-4',
-        selected ? 'border-primary bg-primary/5' : 'border-border bg-card'
-      )}
+      style={{
+        borderRadius: 20,
+        borderWidth: 2,
+        padding: 16,
+        borderColor: selected ? colors.primary : colors.border,
+        backgroundColor: selected ? colors.secondary : colors.card,
+      }}
     >
       <View className="gap-1">
         <H4 className={selected ? 'text-primary' : undefined}>{title}</H4>

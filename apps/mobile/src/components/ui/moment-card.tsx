@@ -133,6 +133,7 @@ export function MomentCard({
         </Body>
         {action ? (
           <Button
+            className="w-full"
             size="lg"
             onPress={action.onPress}
             testID={action.testID ?? `${testID}-cta`}

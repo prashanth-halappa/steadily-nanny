@@ -362,7 +362,7 @@ export function ScheduleRespondScreen({
           label={t('respond.decline')}
           reason={closedReason}
           disabled={writeDisabled}
-          variant="ghost"
+          variant="outline"
           destructive
           onPress={() => setDeclineOpen(true)}
         />
@@ -384,7 +384,6 @@ export function ScheduleRespondScreen({
               value={declineMessage}
               onChangeText={setDeclineMessage}
               placeholder={t('respond.declineMessagePlaceholder')}
-              className="min-h-[80px]"
             />
             <View className="gap-2">
               <Button variant="outline" onPress={() => setDeclineOpen(false)}>
