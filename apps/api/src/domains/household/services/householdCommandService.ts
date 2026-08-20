@@ -15,10 +15,12 @@ import {
   isHolidayKeyForCountry,
 } from '@steadily-nanny/shared-types/holidayPacks';
 import {
+  MEMBERSHIP_ENDED_REASONS,
   PAY_OFFER_PROMOTION_OUTCOMES,
   type PayOfferPromotionOutcome,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
+import { SCHEDULE_PATTERN_STATUSES } from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import { TERMS_PROPOSAL_DIRECTIONS } from '@steadily-nanny/shared-types/schemas/termsProposal.schema';
 import { ConflictError } from '../../../errors';
 import { logger } from '../../../middlewares/logger';
@@ -28,6 +30,12 @@ import { notifyHouseholdParents, notifyUser } from '../../notification';
 // would close an import cycle.
 import { PayArrangementRepository } from '../../pay/repositories/payArrangementRepository';
 import { PtoLedgerRepository } from '../../pay/repositories/ptoLedgerRepository';
+// The schedule LEAF modules, never `../../schedule`: the barrel pulls that
+// domain's services, and `schedulePatternCommandService` reaches back here for
+// household membership — the cycle this file's import note at the top warns
+// about.
+import { SchedulePatternRepository } from '../../schedule/repositories/schedulePatternRepository';
+import { scheduleMaterialisationService } from '../../schedule/services/scheduleMaterialisationService';
 // Imported from the repository module directly, NOT the timesheet domain
 // barrel: the barrel pulls in the timesheet services, and one of those reaching
 // back for household membership would close an import cycle.
@@ -218,7 +226,17 @@ export class HouseholdCommandService {
     private readonly customHolidays: Pick<
       HouseholdCustomHolidayRepository,
       'replaceSet'
-    > = new HouseholdCustomHolidayRepository()
+    > = new HouseholdCustomHolidayRepository(),
+    // The removal-side pattern teardown. LAST parameters and defaulted, so
+    // every existing positional construction keeps working.
+    private readonly patterns: Pick<
+      SchedulePatternRepository,
+      'listAcceptedByHouseholdAndCarer' | 'update'
+    > = new SchedulePatternRepository(),
+    private readonly materialisation: Pick<
+      typeof scheduleMaterialisationService,
+      'cancelFutureShiftsForEndedPattern'
+    > = scheduleMaterialisationService
   ) {}
 
   /**
@@ -1477,11 +1495,73 @@ export class HouseholdCommandService {
       localDateOf(now(), householdRow.timezone)
     );
 
+    // The pattern teardown, and it belongs HERE — after the money, before the
+    // CAS — for the same reason `endForCarer` sits where it does. Membership
+    // first would leave a removed carer with an `accepted` pattern if this
+    // throws, and `schedulePatternRepository.listAccepted` (the read
+    // `scheduleHorizonJob` runs over) has NO membership filter: the job would
+    // keep materialising her shifts to the horizon and `reminderJob` would
+    // keep pushing "you have a shift tomorrow" at someone who no longer works
+    // here. This way a throw refuses the whole removal with nothing changed.
+    //
+    // BOTH ids go to the read. She may work for two families, and ending the
+    // pattern she still works under is the one mistake here that would be
+    // unrecoverable.
+    //
+    // ponytail: third copy of this six-line loop (`userService`'s private
+    // `endAcceptedPatterns` and `schedulePatternCommandService`'s private
+    // `endPattern` are the other two). It wants to be one exported method on
+    // `schedulePatternCommandService`, which is outside this task's allowlist.
+    for (const pattern of await this.patterns.listAcceptedByHouseholdAndCarer(
+      householdId,
+      target.user_id
+    )) {
+      await this.patterns.update(pattern.id, {
+        status: SCHEDULE_PATTERN_STATUSES.ENDED,
+      });
+      // The removal's OWN instant, not a fresh clock: it is what draws the
+      // line between a shift already worked (or half-worked today) and the
+      // ones that were never going to happen.
+      await this.materialisation.cancelFutureShiftsForEndedPattern(
+        pattern.id,
+        now()
+      );
+    }
+
     const removed = await this.memberRepo.removeMembership(memberId);
     if (!removed) {
       // CAS matched nothing: already removed, or another parent won the race.
       throw new MemberNotFoundError(memberId);
     }
+
+    // A SECOND write, after the CAS and only for the caller that won it —
+    // stamping a reason onto a row somebody else removed would be a lie.
+    // 110's column is what a reader who missed the push below can still be
+    // told: `status = 'removed'` alone cannot tell "a parent removed me" from
+    // "the family closed the household under me".
+    //
+    // ponytail: one extra UPDATE on a rare path. Fold it into
+    // `removeMembership` as an optional argument when that repository is next
+    // touched.
+    await this.memberRepo.update(memberId, {
+      ended_reason: MEMBERSHIP_ENDED_REASONS.REMOVED_BY_PARENT,
+    });
+
+    // She is told NOTHING otherwise — no push, no inbox item, no card — and
+    // finds out by watching her controls disappear. No figure and no promise
+    // about pay: whether she is owed anything is the payroll record's answer,
+    // and guessing either way is expensive. AFTER the flip, so a push can
+    // never announce a removal that did not happen.
+    notifyUser(target.user_id, {
+      title: `You're no longer with ${householdRow.name ?? 'this family'}`,
+      body: 'Your record of the hours you worked stays here.',
+      data: {
+        type: PUSH_NOTIFICATION_TYPES.MEMBERSHIP_ENDED,
+        householdId,
+        reason: MEMBERSHIP_ENDED_REASONS.REMOVED_BY_PARENT,
+      },
+    });
+
     return removed;
   }
 

@@ -157,6 +157,12 @@ function makeMemberRepo(
     findById: mock(async () => null),
     listActiveByUser: mock(async () => []),
     listActiveByHousehold: mock(async () => []),
+    // 110: `removeMember` stamps `ended_reason` through the generic update
+    // right after the CAS flip.
+    update: mock(async (id: string, patch: Record<string, unknown>) => ({
+      id,
+      ...patch,
+    })),
     removeMembership: mock(async (id: string) => {
       order.push('removeMembership');
       return { ...membership(), id, status: 'removed' };

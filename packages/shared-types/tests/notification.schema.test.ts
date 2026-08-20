@@ -46,6 +46,16 @@ describe('notification.schema push types', () => {
     ).toBe(false);
   });
 
+  // Phase 2: the first push for a membership ENDING. Until it existed a
+  // removed member just watched her controls disappear.
+  it('registers membership_ended, carer-targeted', () => {
+    expect(PUSH_NOTIFICATION_TYPES.MEMBERSHIP_ENDED).toBe('membership_ended');
+    expect(ALL_PUSH_NOTIFICATION_TYPES).toContain('membership_ended');
+    // She is the one who lost the household; the parent who deleted their
+    // account or tapped Remove already knows.
+    expect(PUSH_TYPE_AUDIENCE.membership_ended).toBe('carer');
+  });
+
   // Both types were already emitted by shiftCommandService before they were
   // registered here — the push landed with an unroutable, untoggleable type.
   it('registers the shift-floor emitters running_late and parent_covering', () => {

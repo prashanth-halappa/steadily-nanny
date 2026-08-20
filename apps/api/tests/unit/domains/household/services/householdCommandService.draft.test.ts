@@ -137,6 +137,12 @@ function makeMemberRepo(overrides: Record<string, unknown> = {}): any {
     findById: mock(async () => null),
     listActiveByUser: mock(async () => []),
     listActiveByHousehold: mock(async () => []),
+    // 110: `removeMember` stamps `ended_reason` through the generic update
+    // right after the CAS flip.
+    update: mock(async (id: string, patch: Record<string, unknown>) => ({
+      id,
+      ...patch,
+    })),
     removeMembership: mock(async (id: string) => ({
       ...draftAuthorMembership(),
       id,
@@ -192,6 +198,16 @@ const stubTimesheets: any = { existsForHousehold: mock(async () => false) };
 // above already guards against for its own repository.
 const stubProposals: any = { withdrawOpenForCarer: mock(async () => null) };
 
+// Same hazard, same guard: `removeMember` now ends the carer's accepted
+// patterns, and left defaulted this constructs a REAL SchedulePatternRepository.
+const stubPatterns: any = {
+  listAcceptedByHouseholdAndCarer: mock(async () => []),
+  update: mock(async () => ({ id: 'p1', status: 'ended' })),
+};
+const stubMaterialisation: any = {
+  cancelFutureShiftsForEndedPattern: mock(async () => 0),
+};
+
 /** The whole ctor, so a positional argument is never miscounted below. */
 function makeService(parts: {
   householdRepo?: any;
@@ -211,7 +227,10 @@ function makeService(parts: {
     stubPtoLedger,
     stubTimesheets,
     parts.holidays ?? stubHolidays,
-    stubProposals
+    stubProposals,
+    undefined,
+    stubPatterns,
+    stubMaterialisation
   );
 }
 

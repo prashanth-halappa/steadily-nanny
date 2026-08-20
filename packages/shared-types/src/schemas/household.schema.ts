@@ -142,6 +142,29 @@ export type HouseholdMemberStatus =
  * no trail to keep. Kept as a POSITIVE list so a future status is excluded
  * by construction rather than by somebody remembering to exclude it.
  */
+/**
+ * household_members.ended_reason (migration 110)
+ *
+ * MATCHED PAIR with the CHECK in 110_membership_ended_reason.sql.
+ *
+ * WHY a membership ended, which is a different question from `status` and one
+ * `status` cannot answer: `household_closed` is the last parent deleting their
+ * account out from under a carer nobody removed, `removed_by_parent` is a
+ * decision somebody made about her. The `membership_ended` push carries the
+ * same fact in its payload, but a push is delivered once — this column is what
+ * a reader who missed it can still be told.
+ *
+ * NULL means "we don't know" (every row that predates the column, and every
+ * membership that has not ended). Render the neutral wording for null; never
+ * treat it as `removed_by_parent`.
+ */
+export const MEMBERSHIP_ENDED_REASONS = {
+  HOUSEHOLD_CLOSED: 'household_closed',
+  REMOVED_BY_PARENT: 'removed_by_parent',
+} as const;
+export type MembershipEndedReason =
+  (typeof MEMBERSHIP_ENDED_REASONS)[keyof typeof MEMBERSHIP_ENDED_REASONS];
+
 export const HOUSEHOLD_MEMBERSHIP_STATUSES: readonly HouseholdMemberStatus[] = [
   HOUSEHOLD_MEMBER_STATUSES.ACTIVE,
   HOUSEHOLD_MEMBER_STATUSES.REMOVED,
@@ -377,6 +400,17 @@ export const HouseholdMemberSchema = z.object({
   can_edit: z.boolean(),
   status: z.enum(Object.values(HOUSEHOLD_MEMBER_STATUSES)),
   display_name_override: z.string().nullable(),
+  /**
+   * Why the membership ended (110), or null while it has not — see
+   * `MEMBERSHIP_ENDED_REASONS`. `.optional()` for the same additive reason
+   * `profile_phone` is: it lets every `HouseholdMember` literal that predates
+   * the column keep compiling. A row read back from the database always
+   * carries the key.
+   */
+  ended_reason: z
+    .enum(Object.values(MEMBERSHIP_ENDED_REASONS))
+    .nullable()
+    .optional(),
   // Joined from `user_profiles` by the members-list read only — absent on
   // rows produced by redeem/patch, and null when the profile row is gone.
   // Clients resolve a label as override -> profile_name -> role fallback.

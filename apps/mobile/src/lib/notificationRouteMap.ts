@@ -265,6 +265,11 @@ export const NOTIFICATION_ROUTE_MAP: NotificationRouteMap &
   // Handoff notes render inside Today — no dedicated handoff route.
   [PUSH_NOTIFICATION_TYPES.HANDOFF_NOTE_ADDED]: () => '/(private)/(tabs)/home',
 
+  // Phase 2: Today holds the MembershipEndedCard, which both explains what
+  // happened and offers the way onward. Static, like the other Today
+  // destinations — the card finds the ended membership itself.
+  [PUSH_NOTIFICATION_TYPES.MEMBERSHIP_ENDED]: () => '/(private)/(tabs)/home',
+
   // Today, not shift detail: the parent's question is "is anyone with my
   // kids right now", which NannyLiveStatusCard answers. Shift detail would
   // show them the schedule they already know.

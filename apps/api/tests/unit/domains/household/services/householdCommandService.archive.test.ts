@@ -88,6 +88,12 @@ function makeService(parts: {
 }) {
   const memberRepo: any = parts.memberRepo ?? {
     listActiveByHousehold: mock(async () => []),
+    // 110: `removeMember` stamps `ended_reason` through the generic update
+    // right after the CAS flip.
+    update: mock(async (id: string, patch: Record<string, unknown>) => ({
+      id,
+      ...patch,
+    })),
     removeMembership: mock(async (id: string) => ({
       ...member(),
       id,

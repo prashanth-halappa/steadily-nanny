@@ -247,6 +247,20 @@ export const PUSH_NOTIFICATION_TYPES = {
   // typed the offer and is the only one who can retype it.
   PAY_OFFER_NOT_PROMOTED: 'pay_offer_not_promoted',
 
+  // Phase 2: a membership ENDED — the parent's household closed under her
+  // (the last writer deleted their account) or a parent removed her. There
+  // was no push, inbox item or card for any membership-ending event before
+  // this: she just watched her controls disappear. Carer-targeted, and the
+  // WHY travels in `data.reason` (and, for a reader who missed the push, in
+  // `household_members.ended_reason`) rather than in a second type — one
+  // fact, one type, two arms of copy, the same shape INVITE_REDEEMED uses.
+  //
+  // NOT quiet-hours exempt: that list is D-28's closed child-safety set and
+  // this can wait until 7am. No figure in the body (A8) — a lock screen is a
+  // public surface, and we say nothing about whether she will be paid,
+  // because we cannot know and both answers are expensive lies.
+  MEMBERSHIP_ENDED: 'membership_ended',
+
   // J1-b (S2 audit closeout): `jobHealthJob`'s own alert, fired when a
   // registered cron job's latest success is stale/missing or something
   // failed/partial in the last 24h. NOT a household-scoped fact — it goes
@@ -364,6 +378,9 @@ export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
   // WP-G — the author is whichever side wrote the round, so the side being
   // nudged is whichever side did not. 'both', same shape as the decline.
   [PUSH_NOTIFICATION_TYPES.TERMS_PROPOSAL_REMINDER]: 'both',
+  // Phase 2 — she is the one who lost the household. The parent who deleted
+  // their account or tapped Remove already knows.
+  [PUSH_NOTIFICATION_TYPES.MEMBERSHIP_ENDED]: 'carer',
   // Only the family can answer "when do you need her" — `reminderJob` sends
   // it through `listParentUserIds`, so 'parent' by the header's rule.
   [PUSH_NOTIFICATION_TYPES.SCHEDULE_NOT_SET]: 'parent',

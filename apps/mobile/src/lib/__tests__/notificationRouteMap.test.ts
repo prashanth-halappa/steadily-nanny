@@ -380,6 +380,19 @@ describe('NOTIFICATION_ROUTE_MAP resolvers', () => {
     ).toBe('/(private)/schedule/build?householdId=hh-1');
   });
 
+  // Phase 2: Today holds the MembershipEndedCard, which both explains what
+  // happened and offers the way onward. Nothing household-scoped to pass —
+  // the card resolves the ended membership itself, same static shape as the
+  // other Today destinations.
+  it('routes membership_ended to Today', () => {
+    expect(
+      resolve(PUSH_NOTIFICATION_TYPES.MEMBERSHIP_ENDED, {
+        householdId: 'hh-1',
+        reason: 'household_closed',
+      })
+    ).toBe('/(private)/(tabs)/home');
+  });
+
   it('is usable as the injected NotificationRouteMap type', () => {
     const map: NotificationRouteMap = NOTIFICATION_ROUTE_MAP;
     expect(Object.keys(map).length).toBe(ALL_PUSH_NOTIFICATION_TYPES.length);

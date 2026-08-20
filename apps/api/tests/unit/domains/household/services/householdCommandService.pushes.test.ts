@@ -77,6 +77,12 @@ function makeMemberRepo(overrides: Record<string, unknown> = {}) {
       can_edit: false,
       status: 'active',
     })),
+    // 110: `removeMember` stamps `ended_reason` through the generic update
+    // right after the CAS flip.
+    update: mock(async (id: string, patch: Record<string, unknown>) => ({
+      id,
+      ...patch,
+    })),
     removeMembership: mock(async (id: string) => ({
       id,
       role: 'nanny',
@@ -701,5 +707,114 @@ describe('HouseholdCommandService.redeemInvite — pay-offer-not-promoted push (
     await expect(
       svc.redeemInvite('u2', { code: 'ABC-234' })
     ).resolves.toMatchObject({ role: 'nanny' });
+  });
+});
+
+describe('HouseholdCommandService.removeMember — membership_ended', () => {
+  /**
+   * Until Phase 2 a removed member was told NOTHING: no push, no inbox item,
+   * no card. She opened the app and watched her controls disappear.
+   */
+  function makeSvcForRemoval(
+    memberRepoOverrides: Record<string, unknown> = {}
+  ) {
+    const memberRepo = makeMemberRepo({
+      findById: mock(async () => ({
+        id: 'm-target',
+        household_id: 'h1',
+        user_id: 'u-nanny',
+        role: 'nanny',
+        can_edit: false,
+        status: 'active',
+      })),
+      update: mock(async (id: string, patch: Record<string, unknown>) => ({
+        id,
+        ...patch,
+      })),
+      removeMembership: mock(async (id: string) => ({
+        id,
+        role: 'nanny',
+        household_id: 'h1',
+        user_id: 'u-nanny',
+        can_edit: false,
+        status: 'removed',
+      })),
+      ...memberRepoOverrides,
+    });
+    const householdRepo = {
+      ...makeHouseholdRepo(),
+      findById: mock(async () => ({
+        id: 'h1',
+        name: 'The Okonkwos',
+        timezone: 'Europe/London',
+        state: 'live',
+      })),
+    };
+    const svc = new HouseholdCommandService(
+      householdRepo as never,
+      memberRepo as never,
+      makeInviteRepo() as never,
+      {
+        getMembership: mock(async () => ({
+          id: 'm-caller',
+          household_id: 'h1',
+          user_id: 'u1',
+          role: 'parent',
+          status: 'active',
+        })),
+      } as never,
+      { ensureProfile: mock(), getProfileById: mock() } as never,
+      { findRunningInHousehold: mock(async () => null) } as never,
+      { endForCarer: mock(async () => []) } as never,
+      makePtoRepo() as never,
+      undefined,
+      undefined,
+      { withdrawOpenForCarer: mock(async () => null) } as never,
+      undefined,
+      // Removal now ends her accepted patterns; left defaulted this builds a
+      // REAL SchedulePatternRepository and the test dies on a network call.
+      {
+        listAcceptedByHouseholdAndCarer: mock(async () => []),
+        update: mock(async () => ({ id: 'p1', status: 'ended' })),
+      } as never,
+      { cancelFutureShiftsForEndedPattern: mock(async () => 0) } as never
+    );
+    return { svc, memberRepo };
+  }
+
+  it('tells the removed member, naming the family and nothing about money', async () => {
+    const { svc } = makeSvcForRemoval();
+
+    await svc.removeMember('u1', 'h1', 'm-target');
+
+    expect(notifyUser).toHaveBeenCalledWith('u-nanny', {
+      title: "You're no longer with The Okonkwos",
+      body: 'Your record of the hours you worked stays here.',
+      data: {
+        type: PUSH_NOTIFICATION_TYPES.MEMBERSHIP_ENDED,
+        householdId: 'h1',
+        reason: 'removed_by_parent',
+      },
+    });
+  });
+
+  it('stamps WHY it ended, so a reader who missed the push still learns which', async () => {
+    const { svc, memberRepo } = makeSvcForRemoval();
+
+    await svc.removeMember('u1', 'h1', 'm-target');
+
+    expect(memberRepo.update).toHaveBeenCalledWith('m-target', {
+      ended_reason: 'removed_by_parent',
+    });
+  });
+
+  it('says nothing when the CAS found nothing to remove', async () => {
+    const { svc } = makeSvcForRemoval({
+      removeMembership: mock(async () => null),
+    });
+
+    await expect(svc.removeMember('u1', 'h1', 'm-target')).rejects.toThrow();
+
+    expect(notifyUser).not.toHaveBeenCalled();
   });
 });
