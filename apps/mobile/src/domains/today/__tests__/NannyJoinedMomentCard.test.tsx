@@ -203,10 +203,28 @@ describe('NannyJoinedMomentCard — four bodies, one celebration', () => {
         onPress: () => void;
       };
       expect(action.label).toBe('moments.nannyJoined.cta({"name":"Andrea"})');
-      expect(lastMomentProps?.title).toBe(
-        'moments.nannyJoined.title({"name":"Andrea","family":"Okafor family"})'
-      );
     }
+  });
+
+  it('uses titleJoining when no pay arrangement exists', () => {
+    renderCard();
+
+    expect(lastMomentProps?.title).toBe(
+      'moments.nannyJoined.titleJoining({"name":"Andrea","family":"Okafor family"})'
+    );
+  });
+
+  it('uses title when a pay arrangement exists', () => {
+    mockArrangement.mockImplementation(() =>
+      settled({ id: 'arr-1', valid_from: '2026-08-01' })
+    );
+    mockPatterns.mockImplementation(() => settled([pattern()]));
+
+    renderCard();
+
+    expect(lastMomentProps?.title).toBe(
+      'moments.nannyJoined.title({"name":"Andrea","family":"Okafor family"})'
+    );
   });
 
   // A moment card that guesses is worse than one that waits a tick: the

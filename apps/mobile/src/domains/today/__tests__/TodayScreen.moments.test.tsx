@@ -139,12 +139,12 @@ let TodayScreen: typeof import('../components/TodayScreen').TodayScreen;
 
 function memberJoined(
   daysAgo: number,
-  opts: { userId?: string; role?: string } = {}
+  opts: { userId?: string; role?: string; status?: string } = {}
 ) {
   return {
     user_id: opts.userId ?? VIEWER_ID,
     role: opts.role ?? 'nanny',
-    status: 'active',
+    status: opts.status ?? 'active',
     joined_at: new Date(
       Date.now() - daysAgo * 24 * 60 * 60 * 1000
     ).toISOString(),
@@ -323,6 +323,20 @@ describe('TodayScreen — milestone moments', () => {
 
   it('parent view does not show it for a nanny who joined 8 days ago', () => {
     mockMembers = [memberJoined(8, { userId: NANNY_USER_ID, role: 'nanny' })];
+
+    const { all } = renderScreen('parent');
+
+    expect(all).not.toContain('nanny-joined');
+  });
+
+  it('parent view does not show the joined moment for a candidate nanny member', () => {
+    mockMembers = [
+      memberJoined(1, {
+        userId: NANNY_USER_ID,
+        role: 'nanny',
+        status: 'candidate',
+      }),
+    ];
 
     const { all } = renderScreen('parent');
 

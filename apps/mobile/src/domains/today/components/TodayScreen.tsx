@@ -353,6 +353,7 @@ export function TodayScreen() {
   const timesheets = useHouseholdTimesheets(household?.id);
   const recentNannyMember = [...(householdMembers.data ?? [])]
     .filter(m => m.role === 'nanny')
+    .filter(m => m.status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE)
     .filter(
       m => Date.now() - new Date(m.joined_at).getTime() < JOINED_CARD_MAX_AGE_MS
     )

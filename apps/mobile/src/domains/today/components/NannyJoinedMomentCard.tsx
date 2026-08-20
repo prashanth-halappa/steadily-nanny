@@ -21,6 +21,12 @@
  * card is for; outstanding pay terms change the follow-up sentence and the
  * secondary action, never the beat itself.
  *
+ * THE TITLE IS NOT (D70). "{name} has joined {family}" is a claim about a
+ * settled arrangement, and this card fires the instant the invite code is
+ * redeemed — a parent read it as "she agreed the terms" while she was still
+ * in the accept sheet. Until an arrangement exists the title says she is
+ * joining; the beat is the same, the tense is honest.
+ *
  * It renders NOTHING until both reads settle. A moment card is spent once —
  * guessing either revokes a clock she has or promises one she has not, and
  * both are worse than a card that appears a tick later.
@@ -110,11 +116,19 @@ export function NannyJoinedMomentCard({
             router.push(`/(private)/settings/pay/setup/${carerId}` as Href),
         };
 
+  // D70: "has joined" is a claim about a settled arrangement, and the card
+  // fires the moment the code is redeemed — the parent read it as "she agreed
+  // the terms" while she was still in the accept sheet. Same predicate as the
+  // body, same literal-`t()`-per-branch rule.
+  const title = arrangement.data
+    ? t('moments.nannyJoined.title', { name, family })
+    : t('moments.nannyJoined.titleJoining', { name, family });
+
   return (
     <MomentCard
       testID="today-nanny-joined-moment"
       illustration="welcomeHero"
-      title={t('moments.nannyJoined.title', { name, family })}
+      title={title}
       body={body}
       momentKey={momentKey}
       action={{

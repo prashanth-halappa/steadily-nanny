@@ -261,6 +261,7 @@
   "moments": {
     "nannyJoined": {
       "title": "{{name}} has joined {{family}}",
+      "titleJoining": "{{name}} is joining {{family}}",
       "bodyAgreed": "{{name}} can see the week now. They can clock in from their first shift.",
       "bodyNothingSent": "{{name}} can see the week now. They can clock in once you've both agreed the pay terms.",
       "bodyYouSent": "{{name}} can see the week now. They can clock in as soon as they agree to the terms you sent.",
