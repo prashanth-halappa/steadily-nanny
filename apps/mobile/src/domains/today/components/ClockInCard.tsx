@@ -636,14 +636,14 @@ export function ClockInCard({
           </View>
           <Timer testID="today-live-timer">{elapsed}</Timer>
           {entry.clock_in_at ? (
-            <Small className="text-muted-foreground">
+            <Small className="text-muted-strong">
               {t('since', {
                 time: formatClockTime(entry.clock_in_at, timeZone),
               })}
             </Small>
           ) : null}
           {isMultiHousehold && runningEntryHouseholdName ? (
-            <Small className="text-muted-foreground">
+            <Small className="text-muted-strong">
               {t('clockedIntoHousehold', {
                 household: runningEntryHouseholdName,
               })}
@@ -678,7 +678,7 @@ export function ClockInCard({
               size="default"
               onPress={handleDiscardPress}
             >
-              <Text className="text-destructive">{t('discard.cta')}</Text>
+              <Text className="text-error-inline-text">{t('discard.cta')}</Text>
             </Button>
           ) : null}
         </>
@@ -691,7 +691,7 @@ export function ClockInCard({
                   time: formatClockTime(receiptEntry.clock_out_at, timeZone),
                 })}
               </H3>
-              <Small className="text-muted-foreground">
+              <Small className="text-muted-strong">
                 {receiptEntry.break_minutes > 0
                   ? t('liveActivity.receiptBodyWithBreak', {
                       duration: formatDuration(

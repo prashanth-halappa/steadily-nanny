@@ -109,7 +109,7 @@ export function HouseholdDecisionSheet({
             disabled={isBusy}
             onPress={onJoinAndClose}
           >
-            <Text>
+            <Text className="text-error-inline-text">
               {t('decision.joinAndCloseButton', { otherName, existingName })}
             </Text>
           </Button>
