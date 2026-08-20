@@ -1,18 +1,9 @@
 /**
- * @module domains/schedule/__tests__/ExtraShiftScreen.clash.test
+ * @module domains/schedule/__tests__/ExtraShiftScreen.past.test
  *
- * Pre-submit busy-block clash warning before creating a one-off extra shift.
+ * Past-start one-off shift requires confirm before create.
  */
-import {
-  afterAll,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  mock,
-  setSystemTime,
-} from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { mockAlertDialogPrimitive } from './mockAlertDialog';
 
@@ -37,18 +28,7 @@ let mockGetBusyBlocks: ReturnType<typeof mock>;
 let mockShiftRange: ReturnType<typeof mock>;
 let mockRouterBack: ReturnType<typeof mock>;
 
-const CONFLICT_BLOCK = {
-  starts_at: '2026-08-10T14:00:00.000Z',
-  ends_at: '2026-08-10T18:00:00.000Z',
-  kind: 'other_commitment' as const,
-};
-
 beforeAll(async () => {
-  // D73 added a past-start guard, and this suite's fixture date is fixed. Pin
-  // the clock ahead of it so 2026-08-10 stays in the future forever — without
-  // this the suite silently starts exercising the past-shift dialog instead of
-  // the busy-block one it is about.
-  setSystemTime(new Date('2026-08-09T08:00:00.000Z'));
   mockRouterBack = mock();
   mockCreateMutateAsync = mock(() =>
     Promise.resolve({ status: 'created', adopted: false, warnings: [] })
@@ -59,7 +39,7 @@ beforeAll(async () => {
   mock.module('expo-router', () => ({
     useRouter: () => ({ back: mockRouterBack, push: mock() }),
     useLocalSearchParams: () => ({
-      date: '2026-08-10',
+      date: '2020-01-01',
       start: '09:00',
       end: '17:00',
       carerId: CARER_ID,
@@ -112,6 +92,10 @@ beforeAll(async () => {
     shiftApi: { range: mockShiftRange },
     shiftEndpoints: {},
   }));
+  mock.module('@/src/lib/toast', () => ({
+    showErrorToast: mock(),
+    showSuccessToast: mock(),
+  }));
 
   const mod = await import('../components/ExtraShiftScreen');
   ExtraShiftScreen = mod.ExtraShiftScreen;
@@ -120,31 +104,14 @@ beforeAll(async () => {
 beforeEach(() => {
   mockCreateMutateAsync.mockClear();
   mockGetBusyBlocks.mockClear();
+  mockShiftRange.mockClear();
   mockRouterBack.mockClear();
   mockGetBusyBlocks.mockImplementation(() => Promise.resolve([]));
-  mockShiftRange.mockClear();
   mockShiftRange.mockImplementation(() => Promise.resolve([]));
 });
 
-afterAll(() => {
-  setSystemTime();
-});
-
-describe('ExtraShiftScreen — busy clash pre-check', () => {
-  it('creates directly when there are no conflicting busy blocks', async () => {
-    const { getByTestId } = render(<ExtraShiftScreen />);
-
-    fireEvent.press(getByTestId('schedule-extra-submit'));
-
-    await waitFor(() => expect(mockCreateMutateAsync).toHaveBeenCalledTimes(1));
-    expect(mockGetBusyBlocks).toHaveBeenCalledTimes(1);
-  });
-
+describe('ExtraShiftScreen — past start pre-check', () => {
   it('shows a confirm dialog and does not create until confirmed', async () => {
-    mockGetBusyBlocks.mockImplementation(() =>
-      Promise.resolve([CONFLICT_BLOCK])
-    );
-
     const { getByTestId, queryByTestId } = render(<ExtraShiftScreen />);
 
     fireEvent.press(getByTestId('schedule-extra-submit'));
@@ -155,11 +122,7 @@ describe('ExtraShiftScreen — busy clash pre-check', () => {
     expect(mockCreateMutateAsync).not.toHaveBeenCalled();
   });
 
-  it('creates after the parent confirms the clash dialog', async () => {
-    mockGetBusyBlocks.mockImplementation(() =>
-      Promise.resolve([CONFLICT_BLOCK])
-    );
-
+  it('creates after the parent confirms the past-start dialog', async () => {
     const { getByTestId } = render(<ExtraShiftScreen />);
 
     fireEvent.press(getByTestId('schedule-extra-submit'));
@@ -171,17 +134,5 @@ describe('ExtraShiftScreen — busy clash pre-check', () => {
 
     await waitFor(() => expect(mockCreateMutateAsync).toHaveBeenCalledTimes(1));
     expect(mockRouterBack).toHaveBeenCalledTimes(1);
-  });
-
-  it('creates directly when the busy lookup fails', async () => {
-    mockGetBusyBlocks.mockImplementation(() =>
-      Promise.reject(new Error('network'))
-    );
-
-    const { getByTestId } = render(<ExtraShiftScreen />);
-
-    fireEvent.press(getByTestId('schedule-extra-submit'));
-
-    await waitFor(() => expect(mockCreateMutateAsync).toHaveBeenCalledTimes(1));
   });
 });

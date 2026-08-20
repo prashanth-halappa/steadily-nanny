@@ -35,9 +35,22 @@ describe('ExtraShiftScreen', () => {
 
   it('warns before create when the carer has a conflicting busy block', () => {
     expect(source).toContain('availabilityApi.getBusyBlocks');
-    expect(source).toContain('findConflictingBusyBlocks');
+    // D73/D74: the busy-block filter moved behind `collectExtraShiftWarnings`,
+    // which now runs all three pre-submit checks (past start, another carer's
+    // overlapping shift, cross-household busy) through one helper.
+    expect(source).toContain('collectExtraShiftWarnings');
     expect(source).toContain('schedule-extra-clash-confirm');
     expect(source).toContain("t('shifts.extraClashTitle'");
+  });
+
+  it('confirms a past start and another carer overlap, but refuses the same carer twice', () => {
+    // Same carer against herself is a 409 the DB raises (shifts_carer_window_excl),
+    // so it must NOT be offered as "Create anyway" — it gets a readable message.
+    expect(source).toContain('shiftApi.range');
+    expect(source).toContain("t('shifts.extraPastTitle')");
+    expect(source).toContain("t('shifts.extraHouseholdOverlapTitle'");
+    expect(source).toContain("t('shifts.extraSameCarerConflict'");
+    expect(source).toContain('sameCarerConflict');
   });
 
   it('lets the parent pick carer and children', () => {

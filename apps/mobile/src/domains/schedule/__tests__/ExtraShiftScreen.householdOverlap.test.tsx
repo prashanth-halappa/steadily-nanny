@@ -1,20 +1,11 @@
 /**
- * @module domains/schedule/__tests__/ExtraShiftScreen.closedHousehold
+ * @module domains/schedule/__tests__/ExtraShiftScreen.householdOverlap.test
  *
- * The employing parent's household can close (member row flips to
- * `removed`) after this form is already mid-fill. The submit CTA must go
- * disabled-with-a-reason, never hidden, never a silent 403 on submit.
+ * Same-carer overlap is a hard block; other-carer overlap confirms first.
  */
-import {
-  afterAll,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  mock,
-  setSystemTime,
-} from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import { SHIFT_STATUSES } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { mockAlertDialogPrimitive } from './mockAlertDialog';
 
@@ -32,27 +23,52 @@ mock.module('@/src/components/ui/loading-indicator', () => {
 
 const HOUSEHOLD_ID = '11111111-1111-4111-8111-111111111111';
 const CARER_ID = '55555555-5555-4555-8555-555555555555';
+const OTHER_CARER_ID = '66666666-6666-4666-8666-666666666666';
 
 let ExtraShiftScreen: typeof import('../components/ExtraShiftScreen').ExtraShiftScreen;
 let mockCreateMutateAsync: ReturnType<typeof mock>;
 let mockGetBusyBlocks: ReturnType<typeof mock>;
+let mockShiftRange: ReturnType<typeof mock>;
+let mockShowErrorToast: ReturnType<typeof mock>;
 let mockRouterBack: ReturnType<typeof mock>;
-const useCanWriteHouseholdMock = mock(() => ({
-  canWrite: true,
-  isPastMember: false,
-  isLoading: false,
-}));
+
+function makeExistingShift(overrides: Partial<Shift> = {}): Shift {
+  return {
+    id: 'existing-shift',
+    household_id: HOUSEHOLD_ID,
+    carer_id: CARER_ID,
+    starts_at: '2026-08-10T09:00:00.000Z',
+    ends_at: '2026-08-10T17:00:00.000Z',
+    timezone: 'UTC',
+    local_date: '2026-08-10',
+    kind: 'recurring',
+    status: SHIFT_STATUSES.CONFIRMED,
+    source_pattern_id: null,
+    origin: 'system_generated',
+    is_short_notice: false,
+    note: null,
+    reason: null,
+    cancelled_at: null,
+    cancelled_by: null,
+    cancellation_paid: false,
+    cancellation_message: null,
+    ical_uid: 'existing@steadily',
+    sequence: 0,
+    created_by: null,
+    created_at: '2026-08-01T00:00:00.000Z',
+    updated_at: '2026-08-01T00:00:00.000Z',
+    ...overrides,
+  } as Shift;
+}
 
 beforeAll(async () => {
-  // D73 added a past-start guard and this suite's fixture date is fixed —
-  // pin the clock ahead of it so the submit under test stays a plain create
-  // rather than the past-shift confirmation.
-  setSystemTime(new Date('2026-08-09T08:00:00.000Z'));
   mockRouterBack = mock();
+  mockShowErrorToast = mock();
   mockCreateMutateAsync = mock(() =>
     Promise.resolve({ status: 'created', adopted: false, warnings: [] })
   );
   mockGetBusyBlocks = mock(() => Promise.resolve([]));
+  mockShiftRange = mock(() => Promise.resolve([]));
 
   mock.module('expo-router', () => ({
     useRouter: () => ({ back: mockRouterBack, push: mock() }),
@@ -74,7 +90,11 @@ beforeAll(async () => {
     }),
   }));
   mock.module('@/src/hooks/queries/useCanWriteHousehold', () => ({
-    useCanWriteHousehold: useCanWriteHouseholdMock,
+    useCanWriteHousehold: () => ({
+      canWrite: true,
+      isPastMember: false,
+      isLoading: false,
+    }),
   }));
   mock.module('@/src/domains/schedule/hooks/useHouseholdCarers', () => ({
     useHouseholdCarers: () => ({
@@ -82,6 +102,12 @@ beforeAll(async () => {
         {
           user_id: CARER_ID,
           display_name_override: 'Maria',
+          profile_name: null,
+          role: 'nanny',
+        },
+        {
+          user_id: OTHER_CARER_ID,
+          display_name_override: 'Alex',
           profile_name: null,
           role: 'nanny',
         },
@@ -103,8 +129,12 @@ beforeAll(async () => {
     availabilityEndpoints: {},
   }));
   mock.module('@/src/api/endpoints/shifts', () => ({
-    shiftApi: { range: mock(() => Promise.resolve([])) },
+    shiftApi: { range: mockShiftRange },
     shiftEndpoints: {},
+  }));
+  mock.module('@/src/lib/toast', () => ({
+    showErrorToast: mockShowErrorToast,
+    showSuccessToast: mock(),
   }));
 
   const mod = await import('../components/ExtraShiftScreen');
@@ -114,78 +144,45 @@ beforeAll(async () => {
 beforeEach(() => {
   mockCreateMutateAsync.mockClear();
   mockGetBusyBlocks.mockClear();
+  mockShiftRange.mockClear();
+  mockShowErrorToast.mockClear();
   mockRouterBack.mockClear();
   mockGetBusyBlocks.mockImplementation(() => Promise.resolve([]));
-  useCanWriteHouseholdMock.mockReset();
-  useCanWriteHouseholdMock.mockReturnValue({
-    canWrite: true,
-    isPastMember: false,
-    isLoading: false,
-  });
+  mockShiftRange.mockImplementation(() => Promise.resolve([]));
 });
 
-describe('ExtraShiftScreen — closed household', () => {
-  it('stays visible but disabled, with the closed reason, when the household has closed', () => {
-    useCanWriteHouseholdMock.mockReturnValue({
-      canWrite: false,
-      isPastMember: true,
-      isLoading: false,
-    });
-
-    const { getByTestId } = render(<ExtraShiftScreen />);
-
-    const submit = getByTestId('schedule-extra-submit');
-    expect(submit).toBeTruthy();
-    expect(submit.props.disabled).toBe(true);
-    expect(getByTestId('schedule-extra-submit-reason').props.children).toBe(
-      'householdClosedReason'
+describe('ExtraShiftScreen — household overlap pre-check', () => {
+  it('shows a confirm dialog when another carer is already booked', async () => {
+    mockShiftRange.mockImplementation(() =>
+      Promise.resolve([
+        makeExistingShift({
+          id: 'other-carer-shift',
+          carer_id: OTHER_CARER_ID,
+        }),
+      ])
     );
-  });
 
-  it('does not create a shift when pressed while closed', () => {
-    useCanWriteHouseholdMock.mockReturnValue({
-      canWrite: false,
-      isPastMember: true,
-      isLoading: false,
-    });
+    const { getByTestId, queryByTestId } = render(<ExtraShiftScreen />);
 
-    const { getByTestId } = render(<ExtraShiftScreen />);
     fireEvent.press(getByTestId('schedule-extra-submit'));
 
+    await waitFor(() =>
+      expect(queryByTestId('schedule-extra-clash-confirm')).toBeTruthy()
+    );
     expect(mockCreateMutateAsync).not.toHaveBeenCalled();
   });
 
-  it('behaves normally — enabled, no reason — when the household is open', async () => {
-    const { getByTestId, queryByTestId } = render(<ExtraShiftScreen />);
-
-    const submit = getByTestId('schedule-extra-submit');
-    expect(submit.props.disabled).toBe(false);
-    expect(queryByTestId('schedule-extra-submit-reason')).toBeNull();
-
-    fireEvent.press(submit);
-    // `waitFor`, not a fixed number of microtask ticks: the pre-submit
-    // advisory checks (busy blocks + the household's shifts for that day,
-    // D73/D74) are awaited together, so counting hops here breaks whenever
-    // that lookup changes shape.
-    await waitFor(() => expect(mockCreateMutateAsync).toHaveBeenCalledTimes(1));
-  });
-
-  it('disables submit (no reason yet) while the membership read is still unresolved', () => {
-    useCanWriteHouseholdMock.mockReturnValue({
-      canWrite: false,
-      isPastMember: false,
-      isLoading: true,
-    });
+  it('blocks same-carer overlap with a toast and never opens the dialog', async () => {
+    mockShiftRange.mockImplementation(() =>
+      Promise.resolve([makeExistingShift({ id: 'same-carer-shift' })])
+    );
 
     const { getByTestId, queryByTestId } = render(<ExtraShiftScreen />);
 
-    const submit = getByTestId('schedule-extra-submit');
-    expect(submit.props.disabled).toBe(true);
-    // Unknown must not announce a closure it hasn't confirmed.
-    expect(queryByTestId('schedule-extra-submit-reason')).toBeNull();
-  });
-});
+    fireEvent.press(getByTestId('schedule-extra-submit'));
 
-afterAll(() => {
-  setSystemTime();
+    await waitFor(() => expect(mockShowErrorToast).toHaveBeenCalledTimes(1));
+    expect(queryByTestId('schedule-extra-clash-confirm')).toBeNull();
+    expect(mockCreateMutateAsync).not.toHaveBeenCalled();
+  });
 });

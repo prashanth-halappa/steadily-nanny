@@ -12,6 +12,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { availabilityApi } from '@/src/api/endpoints/availability';
 import type { CreateExtraShiftInput } from '@/src/api/endpoints/changeRequests';
+import { shiftApi } from '@/src/api/endpoints/shifts';
 import { RestrictedActionButton } from '@/src/components/custom/RestrictedActionButton';
 import {
   AlertDialog,
@@ -32,19 +33,24 @@ import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
 import { H1, Small } from '@/src/components/ui/typography';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
 import { isExtraShiftFormValid } from '@/src/domains/schedule/utils/extraShiftForm';
+import {
+  collectExtraShiftWarnings,
+  type ExtraShiftWarning,
+  findHouseholdOverlapShift,
+  primaryExtraShiftWarning,
+} from '@/src/domains/schedule/utils/extraShiftWarnings';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import {
   formatDate,
   parseDate,
 } from '@/src/domains/timeOff/components/TimeOffDateRangePicker.utils';
-import { findConflictingBusyBlocks } from '@/src/domains/timeOff/utils/busyConflict';
 import { useCreateExtraShift } from '@/src/hooks/mutations/useCreateExtraShift';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
-import { localDateInZone } from '@/src/lib/localDate';
+import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { showErrorToast } from '@/src/lib/toast';
 import { wallClockToUtcIso } from '@/src/lib/wallClock';
 
@@ -96,6 +102,12 @@ export function ExtraShiftScreen() {
       : []
   );
   const [clashOpen, setClashOpen] = useState(false);
+  const [clashReason, setClashReason] = useState<ExtraShiftWarning | null>(
+    null
+  );
+  const [clashHouseholdCarerId, setClashHouseholdCarerId] = useState<
+    string | null
+  >(null);
   const [pendingPayload, setPendingPayload] =
     useState<CreateExtraShiftInput | null>(null);
 
@@ -145,6 +157,34 @@ export function ExtraShiftScreen() {
     [carers.data, carerId]
   );
 
+  const carerFallback = t('shifts.extraClashCarerFallback');
+
+  const clashDialogTitle = useMemo(() => {
+    if (clashReason === 'past') {
+      return t('shifts.extraPastTitle');
+    }
+    if (clashReason === 'householdOverlap') {
+      const member = (carers.data ?? []).find(
+        m => m.user_id === clashHouseholdCarerId
+      );
+      const name = member
+        ? resolveCarerName(member, carerFallback)
+        : carerFallback;
+      return t('shifts.extraHouseholdOverlapTitle', { name });
+    }
+    const name = selectedCarer
+      ? resolveCarerName(selectedCarer, carerFallback)
+      : carerFallback;
+    return t('shifts.extraClashTitle', { name });
+  }, [
+    clashReason,
+    carers.data,
+    clashHouseholdCarerId,
+    selectedCarer,
+    carerFallback,
+    t,
+  ]);
+
   const submitPayload = async (payload: CreateExtraShiftInput) => {
     try {
       await createExtra.mutateAsync(payload);
@@ -165,6 +205,8 @@ export function ExtraShiftScreen() {
     const payload = pendingPayload;
     if (!payload) return;
     setClashOpen(false);
+    setClashReason(null);
+    setClashHouseholdCarerId(null);
     setPendingPayload(null);
     void submitPayload(payload);
   };
@@ -180,17 +222,55 @@ export function ExtraShiftScreen() {
     };
 
     try {
-      const busyBlocks = await availabilityApi.getBusyBlocks(
+      const dayFrom = wallClockToUtcIso(date, '00:00', timeZone);
+      const dayTo = wallClockToUtcIso(addLocalDays(date, 1), '00:00', timeZone);
+      let busyBlocks: Awaited<
+        ReturnType<typeof availabilityApi.getBusyBlocks>
+      > = [];
+      let shifts: Awaited<ReturnType<typeof shiftApi.range>> = [];
+
+      await Promise.all([
+        availabilityApi
+          .getBusyBlocks(carerId, payload.starts_at, payload.ends_at)
+          .then(result => {
+            busyBlocks = result;
+          })
+          .catch(() => {}),
+        shiftApi
+          .range(active.householdId, dayFrom, dayTo)
+          .then(result => {
+            shifts = result;
+          })
+          .catch(() => {}),
+      ]);
+
+      const { sameCarerConflict, warnings } = collectExtraShiftWarnings({
+        startsAt: payload.starts_at,
+        endsAt: payload.ends_at,
+        nowIso: new Date().toISOString(),
         carerId,
-        payload.starts_at,
-        payload.ends_at
-      );
-      const conflicts = findConflictingBusyBlocks(
-        payload.starts_at,
-        payload.ends_at,
-        busyBlocks
-      );
-      if (conflicts.length > 0) {
+        shifts,
+        busyBlocks,
+      });
+
+      if (sameCarerConflict) {
+        const name = selectedCarer
+          ? resolveCarerName(selectedCarer, t('shifts.extraClashCarerFallback'))
+          : t('shifts.extraClashCarerFallback');
+        showErrorToast(t('shifts.extraSameCarerConflict', { name }));
+        return;
+      }
+
+      const reason = primaryExtraShiftWarning(warnings);
+      if (reason) {
+        const overlap = findHouseholdOverlapShift(
+          payload.starts_at,
+          payload.ends_at,
+          carerId,
+          shifts
+        );
+        setClashHouseholdCarerId(overlap?.carer_id ?? null);
+        setClashReason(reason);
         setPendingPayload(payload);
         setClashOpen(true);
         return;
@@ -339,16 +419,7 @@ export function ExtraShiftScreen() {
       <AlertDialog open={clashOpen} onOpenChange={setClashOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t('shifts.extraClashTitle', {
-                name: selectedCarer
-                  ? resolveCarerName(
-                      selectedCarer,
-                      t('shifts.extraClashCarerFallback')
-                    )
-                  : t('shifts.extraClashCarerFallback'),
-              })}
-            </AlertDialogTitle>
+            <AlertDialogTitle>{clashDialogTitle}</AlertDialogTitle>
             <AlertDialogDescription>
               {t('shifts.extraClashDescription')}
             </AlertDialogDescription>
