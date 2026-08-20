@@ -89,7 +89,7 @@ export function TermGroup({
         onPress={() => setOpen(o => !o)}
         className="min-h-14 flex-row items-center gap-3 px-4 py-3"
       >
-        <IconChip tone="hours" icon={icon} />
+        <IconChip tone="hours" icon={icon} size="sm" />
         <Body weight="medium" className="flex-1 text-foreground">
           {label}
         </Body>

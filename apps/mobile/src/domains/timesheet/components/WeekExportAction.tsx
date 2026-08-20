@@ -190,11 +190,11 @@ export function WeekExportAction({
     <>
       <Button
         testID={`${testID}-button`}
-        variant="outline"
+        variant="link"
         className="mt-4"
         onPress={() => setIsSheetVisible(true)}
       >
-        <Text className="text-foreground">{t('export.button')}</Text>
+        <Text>{t('export.button')}</Text>
       </Button>
 
       <ExportWeekSheet

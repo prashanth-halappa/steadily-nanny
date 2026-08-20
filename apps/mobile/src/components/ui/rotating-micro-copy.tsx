@@ -14,6 +14,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useReducedMotion } from '@/lib/animations/useReducedMotion';
+import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
 
 const FADE_DURATION_MS = 400;
 const DEFAULT_INTERVAL_MS = 3000;
@@ -60,6 +61,7 @@ export function RotatingMicroCopy({
 }: RotatingMicroCopyProps) {
   const { t } = useTranslation('common');
   const reducedMotion = useReducedMotion();
+  const colors = useThemeColors();
   const opacity = useSharedValue(1);
   const [currentIndex, setCurrentIndex] = useState(0);
 
@@ -127,8 +129,16 @@ export function RotatingMicroCopy({
   return (
     <Animated.Text
       testID={testID}
-      style={animatedStyle}
-      className="text-muted-foreground text-center text-sm"
+      style={[
+        animatedStyle,
+        {
+          color: colors.mutedForeground,
+          textAlign: 'center',
+          fontSize: 14,
+          lineHeight: 21,
+          fontWeight: '400',
+        },
+      ]}
     >
       {messages[currentIndex]}
     </Animated.Text>

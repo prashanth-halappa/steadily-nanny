@@ -13,7 +13,7 @@ import { AnimatedPressable } from '@/lib/animations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { Body, H3, Small } from '@/src/components/ui/typography';
+import { Body, DayGroup, H3, Small } from '@/src/components/ui/typography';
 import {
   listWritableCalendars,
   type WritableCalendar,
@@ -136,7 +136,7 @@ export function CalendarPickerSheet({
             className="gap-1"
             testID={`calendar-source-${group.sourceName}`}
           >
-            <Small className="text-muted-foreground">{group.sourceName}</Small>
+            <DayGroup>{group.sourceName}</DayGroup>
             {group.calendars.map(cal => {
               const selected = cal.id === selectedCalendarId;
               return (

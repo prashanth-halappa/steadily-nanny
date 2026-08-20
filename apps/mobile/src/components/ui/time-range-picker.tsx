@@ -27,7 +27,8 @@
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { DateTimeField } from '@/src/components/ui/date-time-field';
-import { Text } from '@/src/components/ui/text';
+import { FieldError } from '@/src/components/ui/field-error';
+import { Label } from '@/src/components/ui/typography';
 import {
   formatTime,
   isEndAfterStart,
@@ -71,9 +72,7 @@ export function TimeRangePicker({
     <View testID={baseTestID}>
       <View className="flex-row items-center gap-3">
         <View className="flex-1">
-          <Text className="mb-1 font-medium text-muted-foreground text-xs">
-            {t('timeRange.start')}
-          </Text>
+          <Label className="mb-1">{t('timeRange.start')}</Label>
           <DateTimeField
             testID={`${baseTestID}-start`}
             value={parseTime(start)}
@@ -83,9 +82,7 @@ export function TimeRangePicker({
           />
         </View>
         <View className="flex-1">
-          <Text className="mb-1 font-medium text-muted-foreground text-xs">
-            {t('timeRange.end')}
-          </Text>
+          <Label className="mb-1">{t('timeRange.end')}</Label>
           <DateTimeField
             testID={`${baseTestID}-end`}
             value={parseTime(end)}
@@ -96,12 +93,9 @@ export function TimeRangePicker({
         </View>
       </View>
       {rangeError ? (
-        <Text
-          testID={`${baseTestID}-error`}
-          className="mt-2 text-destructive text-xs"
-        >
+        <FieldError testID={`${baseTestID}-error`}>
           {t('timeRange.endAfterStart')}
-        </Text>
+        </FieldError>
       ) : null}
     </View>
   );

@@ -31,6 +31,7 @@ import { Body, Small } from '@/src/components/ui/typography';
 import i18n from '@/src/i18n';
 import { getDeviceCurrency } from '@/src/lib/deviceLocale';
 import { currencySymbol } from '@/src/lib/money';
+import { useElevation } from '~/lib/design-tokens/elevation';
 
 /**
  * The currencies a household employing a nanny plausibly pays in. Alphabetical
@@ -133,6 +134,7 @@ export function CurrencySelect({
   testIDPrefix,
 }: CurrencySelectProps) {
   const { t } = useTranslation('pay');
+  const elevation = useElevation();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const selectedName = currencyName(value);
@@ -170,7 +172,7 @@ export function CurrencySelect({
             return !wasOpen;
           })
         }
-        className="h-12 flex-row items-center justify-between rounded-2xl border border-input bg-background px-4"
+        className="h-12 flex-row items-center justify-between rounded-button border border-input bg-background px-4"
       >
         <Body>
           {selectedName
@@ -193,7 +195,8 @@ export function CurrencySelect({
           />
           <View
             testID={`${testIDPrefix}-currency-list`}
-            className="overflow-hidden rounded-2xl border border-border"
+            className="overflow-hidden rounded-card bg-card"
+            style={elevation.card}
           >
             {filteredOptions.length === 0 ? (
               <Small
