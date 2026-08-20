@@ -35,11 +35,19 @@ import type {
 } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
-import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { Input } from '@/src/components/ui/input';
 import { LoadingButton } from '@/src/components/ui/loading-button';
+import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { Body, H4, Label, Small } from '@/src/components/ui/typography';
 import { localDateInZone } from '@/src/lib/localDate';
@@ -154,6 +162,8 @@ export function PayChangeSheet({
   householdWeekStartsOn,
 }: PayChangeSheetProps) {
   const { t } = useTranslation('pay');
+  const { t: tCommon } = useTranslation('common');
+  const insets = useSafeAreaInsets();
   // The offer's copy lives in `household.json` (the invite-offer card's
   // namespace), never `pay.json` — a household-namespace `t` alongside the
   // pay one, same multi-namespace shape `PaySetupScreen` already uses.
@@ -280,148 +290,180 @@ export function PayChangeSheet({
   };
 
   return (
-    <BottomSheetBase
-      sheetId={testIDPrefix}
+    <Modal
       visible={visible}
-      onDismiss={onDismiss}
-      testID={`${testIDPrefix}-sheet`}
-      fitContent
-      showCloseButton
+      animationType="none"
+      presentationStyle="fullScreen"
+      onRequestClose={onDismiss}
+      testID={`${testIDPrefix}-sheet-modal`}
     >
-      <View className="gap-4 px-6 pb-4">
-        <H4>{title}</H4>
-        {proposing ? (
-          <Small testID="pay-propose-subtitle" className="text-muted-strong">
-            {t('proposeSheet.subtitle', { name: counterpartyName ?? '' })}
-          </Small>
-        ) : null}
-
-        <View className="gap-2">
-          <Label>{t('changeSheet.currencyLabel')}</Label>
-          <CurrencySelect
-            value={form.currency}
-            onChange={currency => patch({ currency })}
-            testIDPrefix={testIDPrefix}
-          />
-        </View>
-
-        <View className="gap-2">
-          <Label>{t('changeSheet.rateLabel')}</Label>
-          <View className="flex-row items-center gap-2">
-            <Body
-              testID={`${testIDPrefix}-currency-prefix`}
-              className="text-muted-foreground"
-            >
-              {currencySymbol(form.currency)}
-            </Body>
-            <Input
-              testID={`${testIDPrefix}-rate-input`}
-              accessibilityLabel={t('changeSheet.rateLabel')}
-              value={form.rateText}
-              onChangeText={rateText => patch({ rateText })}
-              onBlur={() => {
-                const minor = parseMajorToMinor(form.rateText);
-                if (minor !== null) {
-                  patch({ rateText: minorToMajorText(minor) });
-                }
-              }}
-              keyboardType="decimal-pad"
-              className="flex-1"
-            />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        className="flex-1 bg-background"
+      >
+        <View
+          testID={`${testIDPrefix}-sheet`}
+          className="flex-1 bg-background"
+          style={{
+            paddingTop: insets.top + 16,
+            paddingBottom: insets.bottom + 16,
+          }}
+        >
+          <View className="flex-row items-center justify-between px-6 pb-4">
+            <H4 className="flex-1">{title}</H4>
+            <Button variant="ghost" size="sm" onPress={onDismiss}>
+              <Text>{tCommon('close')}</Text>
+            </Button>
           </View>
-          <Small className="text-muted-foreground">
-            {t('changeSheet.rateHint')}
-          </Small>
-        </View>
-
-        <EffectiveDateField
-          testIDPrefix={testIDPrefix}
-          value={form.effectiveDateISO}
-          onChange={effectiveDateISO => patch({ effectiveDateISO })}
-          todayISO={todayISO}
-        />
-
-        {/* §7.3: every consequence sentence, stacked and never merged, on a
-            tone="attention" card in mutedStrong (Rule M — mutedForeground
-            fails AA on surfaceAttention). Inline, never a toast (GOLDEN #40). */}
-        {consequences.length > 0 ? (
-          <Card testID={`${testIDPrefix}-consequence-card`} tone="attention">
-            <View className="gap-2 p-4">
-              {consequences.map((consequence, index) => (
+          <ScrollView
+            className="flex-1"
+            contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 24 }}
+            keyboardShouldPersistTaps="handled"
+          >
+            <View className="gap-4">
+              {proposing ? (
                 <Small
-                  key={consequence.key}
-                  testID={`${testIDPrefix}-consequence-${index}`}
+                  testID="pay-propose-subtitle"
                   className="text-muted-strong"
                 >
-                  {t(consequence.key, consequence.params)}
+                  {t('proposeSheet.subtitle', { name: counterpartyName ?? '' })}
                 </Small>
-              ))}
+              ) : null}
+
+              <View className="gap-2">
+                <Label>{t('changeSheet.currencyLabel')}</Label>
+                <CurrencySelect
+                  value={form.currency}
+                  onChange={currency => patch({ currency })}
+                  testIDPrefix={testIDPrefix}
+                />
+              </View>
+
+              <View className="gap-2">
+                <Label>{t('changeSheet.rateLabel')}</Label>
+                <View className="flex-row items-center gap-2">
+                  <Body
+                    testID={`${testIDPrefix}-currency-prefix`}
+                    className="text-muted-foreground"
+                  >
+                    {currencySymbol(form.currency)}
+                  </Body>
+                  <Input
+                    testID={`${testIDPrefix}-rate-input`}
+                    accessibilityLabel={t('changeSheet.rateLabel')}
+                    value={form.rateText}
+                    onChangeText={rateText => patch({ rateText })}
+                    onBlur={() => {
+                      const minor = parseMajorToMinor(form.rateText);
+                      if (minor !== null) {
+                        patch({ rateText: minorToMajorText(minor) });
+                      }
+                    }}
+                    keyboardType="decimal-pad"
+                    className="flex-1"
+                  />
+                </View>
+                <Small className="text-muted-foreground">
+                  {t('changeSheet.rateHint')}
+                </Small>
+              </View>
+
+              <EffectiveDateField
+                testIDPrefix={testIDPrefix}
+                value={form.effectiveDateISO}
+                onChange={effectiveDateISO => patch({ effectiveDateISO })}
+                todayISO={todayISO}
+              />
+
+              {/* §7.3: every consequence sentence, stacked and never merged, on a
+                  tone="attention" card in mutedStrong (Rule M — mutedForeground
+                  fails AA on surfaceAttention). Inline, never a toast (GOLDEN #40). */}
+              {consequences.length > 0 ? (
+                <Card
+                  testID={`${testIDPrefix}-consequence-card`}
+                  tone="attention"
+                >
+                  <View className="gap-2 p-4">
+                    {consequences.map((consequence, index) => (
+                      <Small
+                        key={consequence.key}
+                        testID={`${testIDPrefix}-consequence-${index}`}
+                        className="text-muted-strong"
+                      >
+                        {t(consequence.key, consequence.params)}
+                      </Small>
+                    ))}
+                  </View>
+                </Card>
+              ) : null}
+
+              <CancellationTermField
+                testIDPrefix={testIDPrefix}
+                choice={form.cancellationChoice}
+                hoursText={form.cancellationHoursText}
+                onChoiceChange={cancellationChoice =>
+                  patch({ cancellationChoice })
+                }
+                onHoursChange={cancellationHoursText =>
+                  patch({ cancellationHoursText })
+                }
+              />
+
+              <PayTermsGroups
+                testIDPrefix={testIDPrefix}
+                state={form}
+                onChange={patch}
+                seed={currentArrangement ?? null}
+              />
+
+              {/* 082's pay schedule (D-17, T7 reversal) — presentation only, not
+                  part of PayTermsGroups' D-3 expanders (spec §4.3 lists it as its
+                  own, always-visible block). */}
+              <PayScheduleFields
+                testIDPrefix={testIDPrefix}
+                t={t}
+                payFrequency={form.payFrequency}
+                onPayFrequencyChange={payFrequency => patch({ payFrequency })}
+                payDayOfWeekText={form.payDayOfWeekText}
+                onPayDayOfWeekTextChange={payDayOfWeekText =>
+                  patch({ payDayOfWeekText })
+                }
+                payDayOfMonthText={form.payDayOfMonthText}
+                onPayDayOfMonthTextChange={payDayOfMonthText =>
+                  patch({ payDayOfMonthText })
+                }
+              />
+
+              <View className="gap-2">
+                <Label>{t('changeSheet.noteLabel')}</Label>
+                <Textarea
+                  testID={`${testIDPrefix}-note-input`}
+                  accessibilityLabel={t('changeSheet.noteLabel')}
+                  value={form.note}
+                  onChangeText={note => patch({ note })}
+                  placeholder={t('changeSheet.notePlaceholder')}
+                />
+              </View>
+
+              {submitError ? (
+                <Small
+                  testID={`${testIDPrefix}-submit-error`}
+                  className="text-error-inline-text"
+                >
+                  {submitError}
+                </Small>
+              ) : null}
+              <LoadingButton
+                testID={`${testIDPrefix}-submit`}
+                label={submitLabel}
+                isLoading={isSubmitting}
+                disabled={!request}
+                onPress={handleSubmit}
+              />
             </View>
-          </Card>
-        ) : null}
-
-        <CancellationTermField
-          testIDPrefix={testIDPrefix}
-          choice={form.cancellationChoice}
-          hoursText={form.cancellationHoursText}
-          onChoiceChange={cancellationChoice => patch({ cancellationChoice })}
-          onHoursChange={cancellationHoursText =>
-            patch({ cancellationHoursText })
-          }
-        />
-
-        <PayTermsGroups
-          testIDPrefix={testIDPrefix}
-          state={form}
-          onChange={patch}
-          seed={currentArrangement ?? null}
-        />
-
-        {/* 082's pay schedule (D-17, T7 reversal) — presentation only, not
-            part of PayTermsGroups' D-3 expanders (spec §4.3 lists it as its
-            own, always-visible block). */}
-        <PayScheduleFields
-          testIDPrefix={testIDPrefix}
-          t={t}
-          payFrequency={form.payFrequency}
-          onPayFrequencyChange={payFrequency => patch({ payFrequency })}
-          payDayOfWeekText={form.payDayOfWeekText}
-          onPayDayOfWeekTextChange={payDayOfWeekText =>
-            patch({ payDayOfWeekText })
-          }
-          payDayOfMonthText={form.payDayOfMonthText}
-          onPayDayOfMonthTextChange={payDayOfMonthText =>
-            patch({ payDayOfMonthText })
-          }
-        />
-
-        <View className="gap-2">
-          <Label>{t('changeSheet.noteLabel')}</Label>
-          <Textarea
-            testID={`${testIDPrefix}-note-input`}
-            accessibilityLabel={t('changeSheet.noteLabel')}
-            value={form.note}
-            onChangeText={note => patch({ note })}
-            placeholder={t('changeSheet.notePlaceholder')}
-          />
+          </ScrollView>
         </View>
-
-        {submitError ? (
-          <Small
-            testID={`${testIDPrefix}-submit-error`}
-            className="text-destructive"
-          >
-            {submitError}
-          </Small>
-        ) : null}
-        <LoadingButton
-          testID={`${testIDPrefix}-submit`}
-          label={submitLabel}
-          isLoading={isSubmitting}
-          disabled={!request}
-          onPress={handleSubmit}
-        />
-      </View>
-    </BottomSheetBase>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }

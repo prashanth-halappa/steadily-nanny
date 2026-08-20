@@ -203,14 +203,16 @@ export function ThisFamilyScreen() {
         )}
       </View>
 
-      <Pressable
-        testID="this-family-terms-row"
-        accessibilityRole="button"
-        onPress={() => router.push('/settings/my-pay' as Href)}
-        className="mt-6 flex-row items-center justify-between rounded-row border border-border bg-background px-4 py-3"
-      >
-        <Body>{t('thisFamily.termsRow')}</Body>
-      </Pressable>
+      <Card tone="default" className="mt-6 p-0">
+        <Pressable
+          testID="this-family-terms-row"
+          accessibilityRole="button"
+          onPress={() => router.push('/settings/my-pay' as Href)}
+          className="flex-row items-center justify-between px-4 py-3"
+        >
+          <Body>{t('thisFamily.termsRow')}</Body>
+        </Pressable>
+      </Card>
 
       <View testID="this-family-days-off" className="mt-6 gap-2">
         <H3>{t('thisFamily.daysOffTitle')}</H3>

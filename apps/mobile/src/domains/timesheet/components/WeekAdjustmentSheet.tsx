@@ -160,7 +160,7 @@ export function WeekAdjustmentSheet({
           <View className="flex-row flex-wrap gap-2">
             <Button
               testID={`${testID}-direction-add`}
-              variant={direction === 'add' ? 'default' : 'outline'}
+              variant={direction === 'add' ? 'secondary' : 'outline'}
               onPress={() => setDirection('add')}
             >
               <Text
@@ -173,7 +173,7 @@ export function WeekAdjustmentSheet({
             </Button>
             <Button
               testID={`${testID}-direction-deduct`}
-              variant={direction === 'deduct' ? 'default' : 'outline'}
+              variant={direction === 'deduct' ? 'secondary' : 'outline'}
               onPress={() => setDirection('deduct')}
             >
               <Text
@@ -213,7 +213,7 @@ export function WeekAdjustmentSheet({
           {amountInvalid ? (
             <Small
               testID={`${testID}-amount-error`}
-              className="text-destructive"
+              className="text-error-inline-text"
             >
               {t('adjustment.amountError')}
             </Small>
@@ -221,7 +221,7 @@ export function WeekAdjustmentSheet({
           {exceedsGross ? (
             <Small
               testID={`${testID}-exceeds-error`}
-              className="text-destructive"
+              className="text-error-inline-text"
             >
               {t('adjustment.exceedsGrossError', {
                 gross: formatMoney(computedGrossMinor, currency),
@@ -275,7 +275,7 @@ export function WeekAdjustmentSheet({
             className="self-start"
             onPress={onRemove}
           >
-            <Text className="text-destructive">
+            <Text className="text-error-inline-text">
               {t('adjustment.removeButton')}
             </Text>
           </Button>

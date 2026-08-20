@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { Card, CardContent } from '@/src/components/ui/card';
-import { Small } from '@/src/components/ui/typography';
+import { H4, Small } from '@/src/components/ui/typography';
 import { timesheetPillLabel } from '@/src/domains/timesheet/components/WeekTotal';
 import { formatDuration } from '@/src/domains/timesheet/utils/duration';
 import { formatEarningsDuration } from '@/src/domains/timesheet/utils/earningsFormat';
@@ -112,7 +112,7 @@ export function NannyWeekLine({
 
   if (timesheetStatus === 'queried') {
     return (
-      <Card testID="today-week-line-card" tone="attention">
+      <Card testID="today-week-line-card">
         <CardContent className="py-3">
           <Pressable
             testID="today-week-line-card-press"
@@ -124,7 +124,7 @@ export function NannyWeekLine({
             hitSlop={8}
             onPress={goToHours}
           >
-            <Small className="text-foreground">{lineText}</Small>
+            <H4>{lineText}</H4>
           </Pressable>
         </CardContent>
       </Card>

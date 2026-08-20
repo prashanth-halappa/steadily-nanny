@@ -29,11 +29,13 @@ import { View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
 import { Icon } from '@/lib/icons/iconWithClassName';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
-import { Body, H3, Small } from '@/src/components/ui/typography';
+import { Body, DayGroup, H3, Small } from '@/src/components/ui/typography';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
+import { useElevation } from '~/lib/design-tokens/elevation';
 
 export function HouseholdSwitcher() {
   const { t } = useTranslation('household');
+  const elevation = useElevation();
   const {
     household,
     households,
@@ -92,7 +94,8 @@ export function HouseholdSwitcher() {
       >
         <View
           testID="household-switcher"
-          className="flex-row items-center gap-1 self-start rounded-chip border border-border bg-card px-3 py-1"
+          className="flex-row items-center gap-1 self-start rounded-chip bg-card px-3 py-1"
+          style={elevation.row}
         >
           <Small testID="household-switcher-current-name">
             {household.name}
@@ -130,12 +133,12 @@ export function HouseholdSwitcher() {
               history — and it disappears entirely for the common case. */}
           {pastHouseholds.length > 0 ? (
             <>
-              <Small
+              <DayGroup
                 testID="household-switcher-past-section"
-                className="pt-2 text-muted-foreground"
+                className="pt-2 text-foreground"
               >
                 {t('switcher.pastSectionTitle')}
-              </Small>
+              </DayGroup>
               {pastHouseholds.map(renderOption)}
             </>
           ) : null}

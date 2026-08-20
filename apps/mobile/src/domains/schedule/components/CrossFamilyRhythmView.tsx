@@ -34,6 +34,7 @@ import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import {
   Caption,
+  DayGroup,
   H4,
   MetadataLabel,
   Small,
@@ -236,9 +237,7 @@ export function CrossFamilyRhythmView({
       }}
     >
       {listHeader}
-      <MetadataLabel className="mb-1 text-muted-foreground">
-        {t('crossFamily.header')}
-      </MetadataLabel>
+      <DayGroup className="pb-2 pt-8">{t('crossFamily.header')}</DayGroup>
       {/* The answer before the evidence. */}
       <H4 testID="cross-family-clash-summary" className="mb-1">
         {clashDays === 0

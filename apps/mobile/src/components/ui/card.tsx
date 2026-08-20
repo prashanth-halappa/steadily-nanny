@@ -1,7 +1,8 @@
 import type * as React from 'react';
-import { Text, type TextProps, View, type ViewProps } from 'react-native';
+import { type Text as RNText, type TextProps, View, type ViewProps } from 'react-native';
 import { cn } from '@/lib/utils';
 import { TextClassContext } from '@/src/components/ui/text';
+import { H4, Small } from '@/src/components/ui/typography';
 import { useElevation } from '~/lib/design-tokens/elevation';
 import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
 
@@ -68,7 +69,7 @@ function Card({
         : resolvedTone === 'critical'
           ? colors.surfaceCritical
           : resolvedTone === 'live'
-            ? elevation.liveCardBackground
+            ? colors.surfaceLive
             : undefined;
 
   const toneElevation =
@@ -105,7 +106,7 @@ function CardHeader({
 }) {
   return (
     <View
-      className={cn('flex flex-col space-y-1.5 p-5.5', className)}
+      className={cn('flex flex-col space-y-1.5 p-4', className)}
       {...props}
     />
   );
@@ -115,16 +116,13 @@ function CardTitle({
   className,
   ...props
 }: TextProps & {
-  ref?: React.RefObject<Text>;
+  ref?: React.RefObject<RNText>;
 }) {
   return (
-    <Text
+    <H4
       role="heading"
       aria-level={3}
-      className={cn(
-        'text-2xl text-card-foreground font-semibold leading-none tracking-tight',
-        className
-      )}
+      className={cn('text-foreground tracking-tight', className)}
       {...props}
     />
   );
@@ -134,14 +132,9 @@ function CardDescription({
   className,
   ...props
 }: TextProps & {
-  ref?: React.RefObject<Text>;
+  ref?: React.RefObject<RNText>;
 }) {
-  return (
-    <Text
-      className={cn('text-sm text-muted-foreground', className)}
-      {...props}
-    />
-  );
+  return <Small className={cn('text-muted-strong', className)} {...props} />;
 }
 
 function CardContent({
@@ -151,8 +144,8 @@ function CardContent({
   ref?: React.RefObject<View>;
 }) {
   return (
-    <TextClassContext.Provider value="text-card-foreground">
-      <View className={cn('p-5.5', className)} {...props} />
+    <TextClassContext.Provider value="text-foreground">
+      <View className={cn('p-4', className)} {...props} />
     </TextClassContext.Provider>
   );
 }
@@ -165,7 +158,7 @@ function CardFooter({
 }) {
   return (
     <View
-      className={cn('flex flex-row items-center p-5.5 pt-0', className)}
+      className={cn('flex flex-row items-center p-4 pt-0', className)}
       {...props}
     />
   );

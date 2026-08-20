@@ -46,12 +46,12 @@ function SwitchNative({
   const themeColors = useThemeColors();
   const trackOff = themeColors.input;
   const trackOn = themeColors.primary;
-  const translateX = useDerivedValue(() => (props.checked ? 18 : 0));
+  const translateX = useDerivedValue(() => (props.checked ? 20 : 0));
   const animatedRootStyle = useAnimatedStyle(() => {
     return {
       backgroundColor: interpolateColor(
         translateX.value,
-        [0, 18],
+        [0, 20],
         [trackOff, trackOn]
       ),
     };
@@ -65,8 +65,8 @@ function SwitchNative({
     <Animated.View
       style={[
         {
-          height: 32,
-          width: 46,
+          height: 44,
+          width: 56,
           borderRadius: CHIP_BORDER_RADIUS,
           opacity: props.disabled ? 0.6 : 1,
         },
@@ -75,7 +75,7 @@ function SwitchNative({
     >
       <SwitchPrimitives.Root
         className={cn(
-          'flex-row h-8 w-[46px] shrink-0 items-center rounded-full border-2 border-transparent',
+          'flex-row h-11 w-14 shrink-0 items-center rounded-full border-2 border-transparent',
           props.checked ? 'bg-primary' : 'bg-input',
           className
         )}
@@ -84,7 +84,7 @@ function SwitchNative({
         <Animated.View style={animatedThumbStyle}>
           <SwitchPrimitives.Thumb
             className={
-              'h-7 w-7 rounded-full bg-background border border-border ring-0'
+              'h-7 w-7 rounded-full border border-border bg-background ring-0'
             }
           />
         </Animated.View>

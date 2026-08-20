@@ -163,7 +163,7 @@ function ParentWeekWidgetView(
       modifiers={[
         font({
           size: isMedium ? 34 : 32,
-          weight: 'semibold',
+          weight: 'bold',
           design: 'rounded',
         }),
         foregroundStyle(FG),

@@ -49,6 +49,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
+import { Card, CardContent } from '@/src/components/ui/card';
 import { Input } from '@/src/components/ui/input';
 import { LoadingButton } from '@/src/components/ui/loading-button';
 import { Body, H4, Label, Small } from '@/src/components/ui/typography';
@@ -175,39 +176,38 @@ export function PaymentCorrectionSheet({
           />
 
           {refusal ? (
-            <View
-              testID={`${testID}-refusal`}
-              className="gap-2 rounded-cell bg-destructive/10 px-4 py-3"
-            >
-              <Small className="text-destructive">
-                {refusal.reason === 'exceeds_original'
-                  ? t('correctPaymentSheet.exceedsOriginalTitle')
-                  : t('correctPaymentSheet.notCorrectableTitle')}
-              </Small>
-              {/* Figures ONLY on the arm that has them. A "not correctable"
+            <Card testID={`${testID}-refusal`} tone="critical">
+              <CardContent className="gap-2">
+                <Small className="text-foreground">
+                  {refusal.reason === 'exceeds_original'
+                    ? t('correctPaymentSheet.exceedsOriginalTitle')
+                    : t('correctPaymentSheet.notCorrectableTitle')}
+                </Small>
+                {/* Figures ONLY on the arm that has them. A "not correctable"
                   refusal invents no number to fill the space — a fabricated
                   0.00 on a money surface is worse than silence. */}
-              {refusal.reason === 'exceeds_original' ? (
-                <>
-                  <AmountRow
-                    testID={`${testID}-refusal-original`}
-                    label={t('correctPaymentSheet.originalAmountLabel')}
-                    value={formatMoney(
-                      refusal.originalAmountMinor,
-                      payment.currency
-                    )}
-                  />
-                  <AmountRow
-                    testID={`${testID}-refusal-remaining`}
-                    label={t('correctPaymentSheet.remainingLabel')}
-                    value={formatMoney(
-                      refusal.remainingMinor,
-                      payment.currency
-                    )}
-                  />
-                </>
-              ) : null}
-            </View>
+                {refusal.reason === 'exceeds_original' ? (
+                  <>
+                    <AmountRow
+                      testID={`${testID}-refusal-original`}
+                      label={t('correctPaymentSheet.originalAmountLabel')}
+                      value={formatMoney(
+                        refusal.originalAmountMinor,
+                        payment.currency
+                      )}
+                    />
+                    <AmountRow
+                      testID={`${testID}-refusal-remaining`}
+                      label={t('correctPaymentSheet.remainingLabel')}
+                      value={formatMoney(
+                        refusal.remainingMinor,
+                        payment.currency
+                      )}
+                    />
+                  </>
+                ) : null}
+              </CardContent>
+            </Card>
           ) : null}
 
           <View className="gap-2">
@@ -236,7 +236,7 @@ export function PaymentCorrectionSheet({
             {amountInvalid ? (
               <Small
                 testID={`${testID}-amount-error`}
-                className="text-destructive"
+                className="text-error-inline-text"
               >
                 {exceedsOriginal
                   ? t('correctPaymentSheet.exceedsOriginalError')
