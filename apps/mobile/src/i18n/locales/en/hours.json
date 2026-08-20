@@ -42,7 +42,8 @@
     "flagHint": "Say what looks off. It goes on this week's record with your name and the time. Nothing else changes.",
     "flagPlaceholder": "e.g. Thursday should be 6 hours, not 4",
     "flagSubmit": "Send",
-    "flagPaymentPrefix": "About the {{amount}} paid on {{date}}: "
+    "flagPaymentPrefix": "About the {{amount}} paid on {{date}}: ",
+    "flagExtraHoursPrefix": "About the {{hours}} I logged on {{date}}, after this week was settled: "
   },
   "flaggedCheckEntry": "Check this entry",
   "flaggedTitle": "Unusual entry",
@@ -135,7 +136,8 @@
     "bodyAdjustmentAdded": "For {{range}}, after adding {{adjustment}}. Approving locks both figures — if hours change later, the week reopens and the total is worked out again.",
     "bodyAdjustmentDeducted": "For {{range}}, after taking off {{adjustment}}. Approving locks both figures — if hours change later, the week reopens and the total is worked out again.",
     "cancel": "Not yet",
-    "confirm": "Approve the week"
+    "confirm": "Approve the week",
+    "supersedes": "This replaces the {{amount}} you approved on {{date}}."
   },
   "reopenWeek": "Reopen the week",
   "reopenDialogTitle": "Reopen {{range}}?",
@@ -150,8 +152,23 @@
     "refusedPaid": "You've paid {{amount}} on this week. Adjust it in the next payment."
   },
   "paidWeek": {
-    "hoursAdded": "{{name}} added hours on {{date}}, after this week was paid. The approved total and payments haven't changed. Include them in the next payment.",
-    "hoursAddedNanny": "You added hours after this week was paid. The family can see them."
+    "changedHeadline": "{{name}} logged more hours after this week was paid.",
+    "changedAmountLabel": "{{amount}}",
+    "changedDetail": "{{hours}} on {{date}}, not covered by the approved total. The approved total and the payments on it stay as they are — you can add this when you approve {{name}}'s next week.",
+    "changedDetailUnpriced": "{{name}} logged more hours on {{date}}. We can't work out what they come to for this week, so the approved total was settled without them.",
+    "changedDetailLower": "The approved total was {{approvedAmount}}. This week now comes to {{newAmount}}. The approved total and the payments on it stay as they are.",
+    "changedHeadlineNanny": "You logged {{hours}} on {{date}}, after this week was paid.",
+    "changedHeadlineNannyUnpriced": "You logged more hours on {{date}}, after this week was paid.",
+    "changedDetailNanny": "The approved total was worked out before them, so these hours are still to be settled. {{household}} can see them."
+  },
+  "changedAfterApproval": {
+    "headline": "You approved this week on {{approvedDate}}, then it changed.",
+    "amountLabel": "{{amount}}",
+    "detail": "You approved {{approvedAmount}} for {{approvedHours}}. {{name}} logged {{addedHours}} on {{date}}, so it now comes to {{newAmount}} for {{newHours}} — {{amount}} more. Approving again replaces the total you approved before.",
+    "detailUnpriced": "You approved {{approvedAmount}} for {{approvedHours}}. {{name}} logged more hours on {{date}}, so the week needs approving again.",
+    "detailLower": "You approved {{approvedAmount}} for {{approvedHours}}. It now comes to {{newAmount}} for {{newHours}}.",
+    "headlineNanny": "{{household}} approved this week on {{approvedDate}}, then the hours changed.",
+    "detailNanny": "It's being worked out again — nothing you logged has been removed."
   },
   "widgets": {
     "title": "This week",

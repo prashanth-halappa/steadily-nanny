@@ -9,6 +9,7 @@
  * @module domains/timesheet/repositories/timesheetRepository
  */
 import type {
+  PreviousApproval,
   Timesheet,
   TimesheetStatus,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
@@ -56,6 +57,40 @@ export const CLEARED_EARNINGS_SNAPSHOT: TimesheetEarningsSnapshot = {
   earnings: null,
   earnings_computed_at: null,
 };
+
+/**
+ * The approval a row currently carries, shaped for `previous_approval` (111).
+ *
+ * `null` for anything that is not an approval worth keeping — no row, or a row
+ * that was not `approved` in the first place (a lost race, or a caller that
+ * checked the status against a stale read). Writing `{approved_at: null, ...}`
+ * instead would put an empty receipt on the row that the client would then
+ * have to distinguish from a real one.
+ *
+ * `worked_minutes` is dug out of the frozen `earnings` jsonb rather than taken
+ * from `total_minutes`, and the two are NOT interchangeable: `total_minutes`
+ * counts every entry including `cancellation_paid`, while the snapshot's
+ * `worked_minutes` is the engine's own worked basis. Mixing them produces a
+ * plausible, wrong figure on any week with a paid cancellation. `null` when
+ * the snapshot has no such key (`no_arrangement`, `currency_change`).
+ */
+function previousApprovalOf(row: TimesheetRow | null): PreviousApproval | null {
+  if (row?.status !== 'approved' || !row.approved_at) {
+    return null;
+  }
+  const earnings = row.earnings;
+  const worked =
+    earnings && typeof earnings === 'object' && 'worked_minutes' in earnings
+      ? (earnings as { worked_minutes?: unknown }).worked_minutes
+      : undefined;
+  return {
+    approved_at: row.approved_at,
+    approved_by: row.approved_by,
+    gross_minor: row.gross_minor,
+    currency: row.currency,
+    worked_minutes: typeof worked === 'number' ? worked : null,
+  };
+}
 
 /** Everything the approve write sets besides `status`. */
 export interface ApproveWithEarningsPatch extends TimesheetEarningsSnapshot {
@@ -257,6 +292,13 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
         // that now includes them — the stale-note bug class, in a money-
         // adjacent column (102).
         hours_changed_after_payment_at: null,
+        // Same reason again, one column over (111): `previous_approval` is
+        // the receipt for an approval this week LOST. This write is a new
+        // approval, and it SUPERSEDES the old one — the figures the parent
+        // is signing off now are on the row itself. Leaving the receipt set
+        // would have `ApproveWeekDialog` offering to replace a total that
+        // has already been replaced.
+        previous_approval: null,
         approved_by: patch.approved_by,
         approved_at: patch.approved_at,
         gross_minor: patch.gross_minor,
@@ -430,12 +472,30 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
    * `query_note` is deliberately NOT cleared — an undo-approve says nothing
    * about whether a question is outstanding, and `ParentWeekView` renders
    * that column as an open dispute.
+   *
+   * `previous_approval` IS written (111), from a read taken here. The
+   * clock-out's demote branch gets this for free — `roll_up_timesheet_hours`
+   * reads the OLD values off the right-hand side of its own `SET` — but a
+   * PostgREST update has no `OLD` to reference, so the values have to be read
+   * before the write. That read cannot go stale: the CAS below pins
+   * `updated_at` to `expectedUpdatedAt`, so the write lands only against the
+   * row version the SERVICE read, and any row carrying that version carries
+   * these exact four values. A row that moved underneath us fails the CAS and
+   * writes nothing at all rather than writing a receipt for the wrong figures.
+   * `reopen_reason` alone carries no figures, and the parent's own undo
+   * deserves the same legibility the clock-out's demotion now has.
    */
   async reopenFromApproved(
     timesheetId: string,
     expectedUpdatedAt: string,
     reason: string
   ): Promise<TimesheetRow | null> {
+    // BEST-EFFORT, like the `timesheet_reopened` day-thread append the caller
+    // makes right after this. `previous_approval` is display state; a read
+    // that fails must not turn a parent's undo into a 500. The column is null
+    // on every `approved` row (approve clears it), so writing null here is a
+    // no-op rather than an erasure.
+    const previous = await this.findById(timesheetId).catch(() => null);
     const { data, error } = await supabaseService
       .from(this.table)
       .update({
@@ -443,6 +503,7 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
         approved_by: null,
         approved_at: null,
         reopen_reason: reason,
+        previous_approval: previousApprovalOf(previous),
         ...CLEARED_EARNINGS_SNAPSHOT,
       })
       .eq('id', timesheetId)

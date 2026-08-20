@@ -18,6 +18,13 @@
  * mid-week currency switch; everything else (`no_arrangement`, missing
  * earnings) drops the gross entirely.
  *
+ * D79: a week that was approved once already carries `previous_approval`,
+ * and approving again REPLACES that total. `supersedesLine` says so, above
+ * the figures — without it a parent whose week was silently demoted by a
+ * clock-out signs a second time with no acknowledgement that a first
+ * approval ever existed. Caller-formatted and null-gated, like every other
+ * money string this dialog renders.
+ *
  * D-5 / §11.1.1's fast path: the plain `ok`, no-adjustment body swaps in
  * "Nothing unusual this week" when the server's `nothing_unusual` judgement
  * says so — never claimed alongside a staged adjustment (decided THIS
@@ -70,6 +77,12 @@ interface ApproveWeekDialogProps {
   /** `earningsStructureLine(earnings)` — rendered under the body on `ok`
    * weeks only, so the parent sees the hour arithmetic before locking in. */
   structureLine?: string | null;
+  /** D79 — already-formatted "This replaces the {{amount}} you approved on
+   * {{date}}." Rendered ABOVE the figures, on any week carrying a
+   * `previous_approval` with a stateable total, whichever way that approval
+   * was lost. `null` on a week being approved for the first time, and on one
+   * whose receipt carries no figures to name. */
+  supersedesLine?: string | null;
 }
 
 export function ApproveWeekDialog({
@@ -86,6 +99,7 @@ export function ApproveWeekDialog({
   adjustmentDirection,
   nothingUnusual = null,
   structureLine = null,
+  supersedesLine = null,
 }: ApproveWeekDialogProps) {
   const { t } = useTranslation('hours');
 
@@ -113,6 +127,14 @@ export function ApproveWeekDialog({
           <AlertDialogTitle testID="hours-approve-dialog-title">
             {t('approveDialog.title', { name: carerName, hours: hoursLabel })}
           </AlertDialogTitle>
+          {supersedesLine ? (
+            <Small
+              testID="hours-approve-dialog-supersedes"
+              className="text-muted-foreground"
+            >
+              {supersedesLine}
+            </Small>
+          ) : null}
           {showsGross && grossLabel ? (
             <Figure28 testID="hours-approve-dialog-gross">
               {t('approveDialog.grossFigure', { gross: grossLabel })}

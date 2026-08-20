@@ -379,7 +379,44 @@ export class TimesheetQueryService {
       ...toWireTimesheet(row),
       earnings,
       nothing_unusual: await this.nothingUnusualFor(row, earnings),
+      revised_earnings: await this.revisedEarningsFor(row),
     };
+  }
+
+  /**
+   * D79 — what a PAID week whose hours changed would come to if it were
+   * priced now. See `TimesheetWeekSchema.revised_earnings` for why it exists
+   * and why it must never reach an export.
+   *
+   * The gate is deliberately narrow on BOTH halves. `approved` alone would
+   * recompute every signed week on every read for nothing; the flag alone
+   * cannot occur without it (102 only ever stamps the flag on the branch
+   * that keeps the status). Together they name exactly migration 102's paid
+   * branch: one extra engine call on a rare week, and nothing at all on
+   * every other read of every other week.
+   *
+   * `null`, never a fabricated figure, for a departed carer — there is no
+   * carer to resolve an arrangement against, the same reason
+   * `earningsFor`'s `carer_removed` arm fires first (`docs/11-MONEY.md` §4).
+   */
+  private async revisedEarningsFor(
+    row: TimesheetRow
+  ): Promise<WeekEarningsStateResult | null> {
+    if (
+      row.status !== TIMESHEET_STATUSES.APPROVED ||
+      !row.hours_changed_after_payment_at ||
+      !row.carer_id
+    ) {
+      return null;
+    }
+    // The SAME live branch `earningsFor` serves an unapproved week — one
+    // engine, one answer. Never a second pricing path that could disagree
+    // with the one the parent will actually approve against.
+    return this.earnings.computeForWeek(
+      row.household_id,
+      row.carer_id,
+      row.week_start
+    );
   }
 
   /**

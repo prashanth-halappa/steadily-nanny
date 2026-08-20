@@ -568,3 +568,22 @@ describe('exportWeekCsv — a degraded snapshot refuses rather than lying', () =
     });
   });
 });
+
+// D79. `TimesheetWeekSchema.revised_earnings` puts a LIVE estimate on the week
+// READ for a paid week whose hours changed. This is the assertion that it can
+// never follow the week into a FILE — one that is forwarded, filed and paid
+// against long after any on-screen caveat is gone (docs/11-MONEY.md §11).
+describe('exportWeekCsv — a paid week whose hours changed after payment', () => {
+  it('still serialises the frozen snapshot and calls the engine zero times', async () => {
+    const { service, earnings } = makeService({
+      ...approvedRow,
+      hours_changed_after_payment_at: '2026-08-12T09:00:00.000Z',
+    });
+
+    const { csv } = await service.exportWeekCsv('u1', 'ts-1');
+
+    expect(earnings.computeForWeek).not.toHaveBeenCalled();
+    expect(csv).toContain('74000');
+    expect(csv).not.toContain('revised');
+  });
+});

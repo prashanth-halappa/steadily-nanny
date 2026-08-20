@@ -174,6 +174,42 @@ const snapshotPatch = {
   earnings_computed_at: FIXTURE_SNAPSHOT_AT,
 };
 
+/**
+ * The approved row 111's receipt pre-read finds. `reopenFromApproved` reads
+ * the row before it writes, because a PostgREST update has no `OLD` to
+ * reference the way `roll_up_timesheet_hours` does.
+ */
+const approvedRow = {
+  id: 'ts1',
+  status: 'approved',
+  approved_by: 'parent-1',
+  approved_at: FIXTURE_SNAPSHOT_AT,
+  gross_minor: 14_800,
+  currency: 'GBP',
+  earnings: { status: 'ok', gross_minor: 14_800, worked_minutes: 480 },
+  earnings_computed_at: FIXTURE_SNAPSHOT_AT,
+};
+
+/**
+ * Two chains, in call order: `from()` #1 is the receipt pre-read, #2 is the
+ * conditional update. One shared stub would feed the update's own response
+ * back into the pre-read, which is not a shape the database can produce.
+ */
+function mockReopenChains(
+  readRow: unknown,
+  updateResponse: { data: unknown; error: unknown }
+): any {
+  const updateChain = createMockQueryChain(updateResponse);
+  let call = 0;
+  mockSupabaseService.from.mockImplementation(() => {
+    call += 1;
+    return call === 1
+      ? createMockQueryChain({ data: readRow, error: null })
+      : updateChain;
+  });
+  return updateChain;
+}
+
 /** The `updated_at` of the row the service read BEFORE computing earnings. */
 const READ_VERSION = readVersionInstant
   .toISOString()
@@ -196,6 +232,8 @@ describe('TimesheetRepository.approveSubmittedWithEarnings', () => {
       query_note: null,
       reopen_reason: null,
       hours_changed_after_payment_at: null,
+      // 111: this approval SUPERSEDES the receipt for the one the week lost.
+      previous_approval: null,
       approved_by: 'parent-1',
       approved_at: FIXTURE_SNAPSHOT_AT,
       gross_minor: 14_800,
@@ -470,11 +508,10 @@ describe('TimesheetRepository.withdrawQueryFromQueried', () => {
 
 describe('TimesheetRepository.reopenFromApproved', () => {
   it('clears all four snapshot columns and the approval stamp in the SAME write', async () => {
-    const chain = createMockQueryChain({
+    const chain = mockReopenChains(approvedRow, {
       data: { id: 'ts1', status: 'submitted' },
       error: null,
     });
-    mockSupabaseService.from.mockImplementation(() => chain);
 
     const repo = new TimesheetRepository();
     await repo.reopenFromApproved(
@@ -489,6 +526,15 @@ describe('TimesheetRepository.reopenFromApproved', () => {
       approved_by: null,
       approved_at: null,
       reopen_reason: 'Thursday was wrong',
+      // 111: `reopen_reason` alone carries no figures, so the parent's own
+      // undo keeps the same receipt the clock-out's demotion now keeps.
+      previous_approval: {
+        approved_at: FIXTURE_SNAPSHOT_AT,
+        approved_by: 'parent-1',
+        gross_minor: 14_800,
+        currency: 'GBP',
+        worked_minutes: 480,
+      },
       gross_minor: null,
       currency: null,
       earnings: null,
@@ -496,9 +542,72 @@ describe('TimesheetRepository.reopenFromApproved', () => {
     });
   });
 
+  // 111. The pre-read cannot go stale: the CAS below pins `updated_at` to the
+  // version the SERVICE read, so a row that moved underneath writes nothing
+  // at all rather than a receipt for the wrong figures.
+  it('writes no receipt when the row is not actually approved', async () => {
+    const chain = mockReopenChains(
+      { ...approvedRow, status: 'submitted' },
+      { data: { id: 'ts1' }, error: null }
+    );
+
+    await new TimesheetRepository().reopenFromApproved(
+      'ts1',
+      READ_VERSIONS[0],
+      'missed break'
+    );
+
+    const [patch] = chain.update.mock.calls[0] as [Record<string, unknown>];
+    expect(patch.previous_approval).toBeNull();
+  });
+
+  // `worked_minutes` comes out of the frozen `earnings` jsonb, and is NULL on
+  // a snapshot that has no such key (`no_arrangement`, `currency_change`).
+  // Never `total_minutes`: different basis, plausible, wrong on any week with
+  // a paid cancellation.
+  it('leaves worked_minutes null when the snapshot carries no such key', async () => {
+    const chain = mockReopenChains(
+      {
+        ...approvedRow,
+        earnings: { status: 'no_arrangement', unpriced_dates: [] },
+      },
+      { data: { id: 'ts1' }, error: null }
+    );
+
+    await new TimesheetRepository().reopenFromApproved(
+      'ts1',
+      READ_VERSIONS[0],
+      'missed break'
+    );
+
+    const [patch] = chain.update.mock.calls[0] as [
+      { previous_approval: Record<string, unknown> },
+    ];
+    expect(patch.previous_approval.worked_minutes).toBeNull();
+    expect(patch.previous_approval.gross_minor).toBe(14_800);
+  });
+
+  // Best-effort, like the day-thread append the caller makes right after:
+  // a receipt that cannot be read must not turn a parent's undo into a 500.
+  it('still reopens when the pre-read fails, with no receipt', async () => {
+    // A failed or missing pre-read collapses to a null row either way — no
+    // receipt, and the reopen still lands.
+    mockReopenChains(null, { data: { id: 'ts1' }, error: null });
+
+    const result = await new TimesheetRepository().reopenFromApproved(
+      'ts1',
+      READ_VERSIONS[0],
+      'missed break'
+    );
+
+    expect(result).toEqual({ id: 'ts1' });
+  });
+
   it('leaves query_note alone — an undo-approve is not an open dispute', async () => {
-    const chain = createMockQueryChain({ data: { id: 'ts1' }, error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
+    const chain = mockReopenChains(approvedRow, {
+      data: { id: 'ts1' },
+      error: null,
+    });
 
     const repo = new TimesheetRepository();
     await repo.reopenFromApproved('ts1', READ_VERSIONS[0], 'missed break');
@@ -509,8 +618,10 @@ describe('TimesheetRepository.reopenFromApproved', () => {
 
   for (const version of READ_VERSIONS) {
     it(`constrains the update on the approved status AND the row version (${version})`, async () => {
-      const chain = createMockQueryChain({ data: { id: 'ts1' }, error: null });
-      mockSupabaseService.from.mockImplementation(() => chain);
+      const chain = mockReopenChains(approvedRow, {
+        data: { id: 'ts1' },
+        error: null,
+      });
 
       const repo = new TimesheetRepository();
       await repo.reopenFromApproved('ts1', version, 'missed break');
@@ -518,6 +629,9 @@ describe('TimesheetRepository.reopenFromApproved', () => {
       expect(chain.eq).toHaveBeenCalledWith('id', 'ts1');
       expect(chain.eq).toHaveBeenCalledWith('status', 'approved');
       expect(chain.eq).toHaveBeenCalledWith('updated_at', version);
+      // Still exactly three: 111's receipt pre-read is a SEPARATE `from()`
+      // with its own `.eq('id', ...)`, and it must never be miscounted as a
+      // fourth predicate narrowing the guarded update.
       expect(chain.eq).toHaveBeenCalledTimes(3);
     });
   }
@@ -533,9 +647,9 @@ describe('TimesheetRepository.reopenFromApproved', () => {
   });
 
   it('raises a DatabaseError rather than leaving a half-cleared snapshot unreported', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: { message: 'boom' } })
-    );
+    // First `from(...)` is 111's receipt pre-read; the failure under test is
+    // the UPDATE, which must still surface as this domain's own error.
+    mockReopenChains(approvedRow, { data: null, error: { message: 'boom' } });
     const repo = new TimesheetRepository();
     await expect(
       repo.reopenFromApproved('ts1', READ_VERSIONS[0], 'missed break')

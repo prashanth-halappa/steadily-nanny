@@ -39,11 +39,21 @@ Two independent read-only passes — data model + API, and mobile CX — plus a 
 | **approve** | `gross_minor`, `currency`, `earnings` jsonb, `earnings_computed_at` | nothing money-side |
 | record payment | the row's household/carer/currency, stamped from the **locked** timesheet | paid-to-date (signed sum, per read) |
 | correct | stamped from the **original payment**, not the timesheet | — |
-| reopen | — | all four snapshot columns nulled |
+| reopen | `previous_approval` — the approval the week is losing (111) | all four snapshot columns nulled |
 
 **The freeze is one conditional update** gated on **both** `status = 'submitted'` **and** `updated_at` matching the version read before computing (`timesheetRepository.ts:241-263`). Both arms are load-bearing: a clock-out rolling new minutes onto an already-`submitted` week leaves status untouched, so a status-only guard would freeze a pre-clock-out gross over hours nobody signed off.
 
 **Hours are not frozen — the snapshot is.** New hours reopen the week rather than being refused.
+
+**Since 111 the reopen is no longer lossy.** Both ways out of `approved` on an
+UNPAID week — the clock-out's demotion inside `roll_up_timesheet_hours` and the
+parent's manual `reopenFromApproved` — copy `{approved_at, approved_by,
+gross_minor, currency, worked_minutes}` into `timesheets.previous_approval`
+before nulling the four columns. Display and audit state only: nothing sums it,
+exports it, or prices against it, and the next `approve` clears it. The PAID
+branch never writes it — that week keeps a real approval. D79's finding was
+that without it a demoted week is byte-identical to one nobody ever approved,
+so neither side can see what changed or what it cost.
 
 ### Can an approved figure still move?
 

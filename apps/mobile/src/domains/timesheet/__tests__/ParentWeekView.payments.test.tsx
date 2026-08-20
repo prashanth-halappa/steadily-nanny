@@ -894,43 +894,231 @@ describe('ParentWeekView — recording a payment', () => {
   });
 });
 
-// WP-P1(C). The week keeps `approved`, its approver and its frozen snapshot —
-// the payments stand — so the ONLY signal that the approved total no longer
-// covers every hour worked is this timestamp, and it has to be said out loud.
-describe('ParentWeekView — hours added after the week was paid', () => {
-  function stubHoursChangedAfterPayment(at: string | null) {
+// D79 / WP-P1(C). The week keeps `approved`, its approver and its frozen
+// snapshot — the payments stand — so the only signal that the approved total
+// no longer covers every hour worked is `hours_changed_after_payment_at`,
+// and since D79 it comes with the FIGURE the tail is worth.
+//
+// The four unknowable branches each render a sentence and NO figure. The
+// `hours-week-changed-amount` node is the ONLY slot `formatMoney`'s output can
+// reach (`changedAmountLabel` is a key precisely so that stays true), so its
+// absence IS the assertion that no fabricated `£0.00` reached the screen —
+// note the i18n mock echoes keys, so the sentences carry no digits either way.
+describe('ParentWeekView — the week changed after it was approved', () => {
+  const revisedOk = {
+    ...okEarnings,
+    gross_minor: 30_612,
+    worked_minutes: 2940,
+  };
+
+  function stubPaidWeek(overrides: Record<string, unknown>) {
     getByIdMock.mockImplementation(() =>
       Promise.resolve(
         makeTimesheetWeek({
           status: 'approved',
           approved_at: '2026-08-10T09:00:00.000Z',
           approved_by: PARENT_ID,
-          hours_changed_after_payment_at: at,
+          hours_changed_after_payment_at: '2026-08-12T09:00:00.000Z',
+          ...overrides,
         })
       )
     );
   }
 
-  it('names the carer and the day the hours landed', async () => {
-    stubHoursChangedAfterPayment('2026-08-12T09:00:00.000Z');
+  function textUnder(node: { children?: unknown }): string {
+    const walk = (n: unknown): string => {
+      if (typeof n === 'string') return n;
+      if (Array.isArray(n)) return n.map(walk).join(' ');
+      if (n && typeof n === 'object' && 'props' in n) {
+        return walk((n as { props: { children?: unknown } }).props.children);
+      }
+      return '';
+    };
+    return walk(node.children);
+  }
+
+  it('states the delta as a figure when both totals are priced in one currency', async () => {
+    stubPaidWeek({ revised_earnings: revisedOk });
 
     const { getByTestId } = renderParentView();
 
-    await waitFor(() =>
-      expect(getByTestId('hours-changed-after-payment-note')).toBeTruthy()
+    await waitFor(() => expect(getByTestId('hours-week-changed')).toBeTruthy());
+    expect(getByTestId('hours-week-changed-headline').props.children).toBe(
+      'paidWeek.changedHeadline'
     );
-    expect(getByTestId('hours-changed-after-payment-note').props.children).toBe(
-      'paidWeek.hoursAdded'
+    // £306.12 − £236.12 = £70.00, and 49h − 41h = 8h — both from the SAME
+    // engine field on each side, never `total_minutes`.
+    expect(getByTestId('hours-week-changed-amount')).toBeTruthy();
+    expect(getByTestId('hours-week-changed-detail').props.children).toBe(
+      'paidWeek.changedDetail'
+    );
+  });
+
+  it('renders a sentence and no figure when the server sent no revised total', async () => {
+    stubPaidWeek({});
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-week-changed')).toBeTruthy());
+    expect(queryByTestId('hours-week-changed-amount')).toBeNull();
+    expect(getByTestId('hours-week-changed-detail').props.children).toBe(
+      'paidWeek.changedDetailUnpriced'
+    );
+    expect(textUnder(getByTestId('hours-week-changed').props)).not.toMatch(
+      /[£$€]|0\.00/
+    );
+  });
+
+  it('renders a sentence and no figure when the revised total is not `ok`', async () => {
+    stubPaidWeek({
+      revised_earnings: {
+        status: 'no_arrangement',
+        week_start: WEEK_START,
+        unpriced_dates: [WEEK_START],
+      },
+    });
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-week-changed')).toBeTruthy());
+    expect(queryByTestId('hours-week-changed-amount')).toBeNull();
+    expect(getByTestId('hours-week-changed-detail').props.children).toBe(
+      'paidWeek.changedDetailUnpriced'
+    );
+  });
+
+  it('refuses to subtract across two currencies', async () => {
+    stubPaidWeek({ revised_earnings: { ...revisedOk, currency: 'EUR' } });
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-week-changed')).toBeTruthy());
+    expect(queryByTestId('hours-week-changed-amount')).toBeNull();
+    expect(getByTestId('hours-week-changed-detail').props.children).toBe(
+      'paidWeek.changedDetailUnpriced'
+    );
+  });
+
+  it('states both totals and no "more" when the week shrank', async () => {
+    stubPaidWeek({
+      revised_earnings: {
+        ...okEarnings,
+        gross_minor: 20_000,
+        worked_minutes: 2000,
+      },
+    });
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-week-changed')).toBeTruthy());
+    expect(queryByTestId('hours-week-changed-amount')).toBeNull();
+    expect(getByTestId('hours-week-changed-detail').props.children).toBe(
+      'paidWeek.changedDetailLower'
     );
   });
 
   it('says nothing when the server did not flag it', async () => {
-    stubHoursChangedAfterPayment(null);
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(
+        makeTimesheetWeek({
+          status: 'approved',
+          approved_at: '2026-08-10T09:00:00.000Z',
+          approved_by: PARENT_ID,
+          hours_changed_after_payment_at: null,
+        })
+      )
+    );
 
     const { getByTestId, queryByTestId } = renderParentView();
 
     await waitFor(() => expect(getByTestId('hours-week-total')).toBeTruthy());
-    expect(queryByTestId('hours-changed-after-payment-note')).toBeNull();
+    expect(queryByTestId('hours-week-changed')).toBeNull();
+  });
+});
+
+// D79 shape B — the week was UNPAID, so the roll-up demoted it and copied the
+// approval it destroyed into `previous_approval` (111). Before that column
+// existed this week was byte-identical to one nobody had ever approved.
+describe('ParentWeekView — an approval the roll-up took away', () => {
+  const previousApproval = {
+    approved_at: '2026-08-10T09:00:00.000Z',
+    approved_by: PARENT_ID,
+    gross_minor: 23_612,
+    currency: 'GBP',
+    worked_minutes: 2460,
+  };
+
+  // NOT `makeTimesheetWeek` — that helper pins `earnings` to `okEarnings`
+  // AFTER spreading the overrides, so a live total passed through it is
+  // silently discarded and every delta below reads as zero.
+  function stubDemoted(overrides: Record<string, unknown> = {}) {
+    const live = { ...okEarnings, gross_minor: 30_612, worked_minutes: 2940 };
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve({
+        ...makeTimesheet({
+          status: 'submitted',
+          previous_approval: previousApproval,
+        }),
+        earnings: live,
+        ...overrides,
+      })
+    );
+  }
+
+  it('says an approval existed, when, and what the tail is worth', async () => {
+    stubDemoted();
+
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-week-changed')).toBeTruthy());
+    expect(getByTestId('hours-week-changed-headline').props.children).toBe(
+      'changedAfterApproval.headline'
+    );
+    expect(getByTestId('hours-week-changed-amount')).toBeTruthy();
+    expect(getByTestId('hours-week-changed-detail').props.children).toBe(
+      'changedAfterApproval.detail'
+    );
+  });
+
+  it('states both totals and no figure when the week came out lower', async () => {
+    stubDemoted({
+      earnings: { ...okEarnings, gross_minor: 10_000, worked_minutes: 1000 },
+    });
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-week-changed')).toBeTruthy());
+    expect(queryByTestId('hours-week-changed-amount')).toBeNull();
+    expect(getByTestId('hours-week-changed-detail').props.children).toBe(
+      'changedAfterApproval.detailLower'
+    );
+  });
+
+  it('states only that an approval existed when the receipt carries no figures', async () => {
+    stubDemoted({
+      previous_approval: {
+        ...previousApproval,
+        gross_minor: null,
+        currency: null,
+        worked_minutes: null,
+      },
+    });
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-week-changed')).toBeTruthy());
+    expect(queryByTestId('hours-week-changed-amount')).toBeNull();
+    expect(queryByTestId('hours-week-changed-detail')).toBeNull();
+  });
+
+  it('defers to the manual reopen caption, which was never silent', async () => {
+    stubDemoted({ reopen_reason: 'Wrong day' });
+
+    const { getByTestId, queryByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-week-total')).toBeTruthy());
+    expect(queryByTestId('hours-week-changed')).toBeNull();
+    expect(getByTestId('hours-earnings-line-reopened-note')).toBeTruthy();
   });
 });
 

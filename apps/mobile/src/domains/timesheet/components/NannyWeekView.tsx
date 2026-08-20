@@ -98,7 +98,10 @@ import { useAuthStore } from '@/src/store/auth';
 import { spacing } from '~/lib/design-tokens/spacing';
 import type { TimeEntry } from '../types';
 import { formatDuration, formatOvertimeDelta } from '../utils/duration';
-import { formatEarningsLongDate } from '../utils/earningsFormat';
+import {
+  formatEarningsDuration,
+  formatEarningsLongDate,
+} from '../utils/earningsFormat';
 import { scheduledMinutesFor, sumEntryMinutes } from '../utils/entryMinutes';
 import { derivePaidState, deriveReopenedPaidState } from '../utils/paidState';
 import { useReopenedNotice } from '../utils/reopenedNotice';
@@ -540,6 +543,109 @@ export function NannyWeekView({
       )
     : null;
 
+  // D79 — THE WEEK CHANGED AFTER IT WAS APPROVED, from her side. Same two
+  // shapes as `ParentWeekView` (paid → 102's kept approval; unpaid → 111's
+  // `previous_approval`), same one `WeekTotal` block, her own wording.
+  //
+  // SHE DOES SEE THE FIGURE on the paid shape. The "no figures" rule (A8)
+  // governs the LOCK SCREEN, not her own pay record on her own device —
+  // `docs/design/attention-and-notifications.md` §1.4 applies exactly this
+  // reasoning to `timesheet_queried`'s note. What she must never get is a
+  // fabricated one, which is why every unknowable branch below drops the
+  // amount rather than zeroing it.
+  const previousApproval = timesheet?.previous_approval ?? null;
+  const flaggedAt = timesheet?.hours_changed_after_payment_at ?? null;
+  const isShapePaid = isApproved && !!flaggedAt;
+  // Gated on `!reopen_reason` for the same reason the parent's is: a manual
+  // reopen already renders its own caption, and it was never silent.
+  const isShapeDemoted =
+    !isApproved && !!previousApproval && !timesheet?.reopen_reason;
+  const changedSince = isShapePaid
+    ? flaggedAt
+    : (previousApproval?.approved_at ?? null);
+  // Which day changed — free, and money-less: her own entries, filtered to
+  // those written after the week was settled. Falls back to the settlement
+  // stamp when nothing matches (a void is an update, not an insert).
+  const changedDateLabel = changedSince
+    ? formatEarningsLongDate(
+        // `Date.parse`, not a string comparison: `created_at` arrives from
+        // PostgREST as "+00:00" while `previous_approval.approved_at` is
+        // whatever `jsonb_build_object` produced and the flag column is
+        // whatever wrote it. Same instant, three spellings — comparing the
+        // strings would sort them by suffix.
+        entries
+          .filter(e => Date.parse(e.created_at) > Date.parse(changedSince))
+          .map(e => e.local_date)
+          .sort()
+          .at(-1) ?? localDateInZone(timeZone, new Date(changedSince))
+      )
+    : null;
+  // BOTH OPERANDS COME FROM THE SAME ENGINE FIELD, and the plausible wrong
+  // pair sits right next to the right one: `timesheet.total_minutes` is
+  // `sumWorkedMinutes` over EVERY entry INCLUDING `cancellation_paid`, while
+  // a `WeekEarnings.worked_minutes` is the engine's worked basis. Subtracting
+  // one from the other compiles and is wrong on any week with a paid
+  // cancellation — it would tell her she logged hours she did not. Do NOT
+  // "simplify" either side of this to `total_minutes`.
+  const revised = timesheet?.revised_earnings ?? null;
+  const revisedOk = revised && revised.status === 'ok' ? revised : null;
+  const paidDelta =
+    isShapePaid &&
+    revisedOk &&
+    earningsOk &&
+    revisedOk.currency === earningsOk.currency
+      ? {
+          minor: revisedOk.gross_minor - earningsOk.gross_minor,
+          minutes: revisedOk.worked_minutes - earningsOk.worked_minutes,
+          currency: earningsOk.currency,
+        }
+      : null;
+  const weekChanged = isShapePaid
+    ? {
+        headline:
+          paidDelta && paidDelta.minutes > 0 && changedDateLabel
+            ? t('paidWeek.changedHeadlineNanny', {
+                hours: formatEarningsDuration(paidDelta.minutes),
+                date: changedDateLabel,
+              })
+            : t('paidWeek.changedHeadlineNannyUnpriced', {
+                date: changedDateLabel ?? '',
+              }),
+        amountLabel:
+          paidDelta && paidDelta.minor > 0
+            ? t('paidWeek.changedAmountLabel', {
+                amount: formatMoney(paidDelta.minor, paidDelta.currency),
+              })
+            : null,
+        detail: t('paidWeek.changedDetailNanny', {
+          household: activeHousehold.household?.name ?? '',
+        }),
+      }
+    : isShapeDemoted && previousApproval
+      ? {
+          headline: t('changedAfterApproval.headlineNanny', {
+            household: activeHousehold.household?.name ?? '',
+            approvedDate: formatEarningsLongDate(
+              localDateInZone(timeZone, new Date(previousApproval.approved_at))
+            ),
+          }),
+          // No figure on the unpaid shape: the week is being worked out
+          // again, so there is no settled total to state a tail against.
+          amountLabel: null,
+          detail: t('changedAfterApproval.detailNanny'),
+        }
+      : null;
+  // §3.1's flag link, prefilled on the paid shape only — that is the week
+  // where money is actually stuck. "About", not "I haven't been paid for":
+  // she states a fact and continues in her own words.
+  const flagPrefix =
+    isShapePaid && paidDelta && paidDelta.minutes > 0 && changedDateLabel
+      ? t('thread.flagExtraHoursPrefix', {
+          hours: formatEarningsDuration(paidDelta.minutes),
+          date: changedDateLabel,
+        })
+      : '';
+
   // TIER0-CX-SPEC.md §6.3/§7: the Reimbursements card is approved-only and
   // shares the week's currency — `earningsOk.currency` when a timesheet
   // exists, else her own arrangement's currency, else the house default.
@@ -646,14 +752,7 @@ export function NannyWeekView({
               householdName={activeHousehold.household?.name ?? null}
               earningsReopened={reopened}
               earningsReopenReason={timesheet?.reopen_reason ?? null}
-              // 102: hours she added after the week was paid. Same caption
-              // slot as the parent's, worded from her side — the family can
-              // already see them, and nothing else on this screen says so.
-              hoursChangedAfterPaymentNote={
-                timesheet?.hours_changed_after_payment_at
-                  ? t('paidWeek.hoursAddedNanny')
-                  : null
-              }
+              weekChanged={weekChanged}
             />
             {showWeekClosedReceipt ? (
               <ReceiptCard
@@ -721,7 +820,7 @@ export function NannyWeekView({
               <Pressable
                 testID="hours-flag-link"
                 accessibilityRole="button"
-                onPress={() => setFlagSheet({ prefix: '' })}
+                onPress={() => setFlagSheet({ prefix: flagPrefix })}
                 className="mb-4 self-start py-2"
                 style={{
                   minHeight: spacing.minTouchTarget,

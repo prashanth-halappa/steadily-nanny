@@ -700,34 +700,125 @@ describe('NannyWeekView — opening a payment from the week', () => {
   });
 });
 
-// WP-P1(C). Her side of the same fact the parent is told: the week stays
+// D79 / WP-P1(C). Her side of the same fact the parent is told: the week stays
 // approved and the payments stand, so nothing on this screen would otherwise
-// tell her that the hours she added after payday are visible to anyone.
-describe('NannyWeekView — hours added after the week was paid', () => {
-  it('says the family can see the late hours', async () => {
+// tell her that the hours she logged after payday are visible to anyone — or
+// what they are worth.
+//
+// SHE DOES SEE THE FIGURE. The "no figures" rule governs the LOCK SCREEN, not
+// her own pay record on her own device. What she must never get is a
+// FABRICATED one, so the amount node is absent on every branch where the
+// delta is not derivable.
+describe('NannyWeekView — the week changed after it was paid', () => {
+  const revisedOk = {
+    ...okEarnings,
+    gross_minor: 30_612,
+    worked_minutes: 2940,
+  };
+
+  function stubPaidWeek(overrides: Record<string, unknown>) {
     getWeekMock.mockImplementation(() =>
       Promise.resolve([
         makeTimesheetWeek({
           hours_changed_after_payment_at: '2026-08-12T09:00:00.000Z',
+          ...overrides,
         }),
       ])
     );
+  }
+
+  it('names the hours and states what they come to', async () => {
+    stubPaidWeek({ revised_earnings: revisedOk });
 
     const { getByTestId } = renderNannyView();
 
-    await waitFor(() =>
-      expect(getByTestId('hours-changed-after-payment-note')).toBeTruthy()
+    await waitFor(() => expect(getByTestId('hours-week-changed')).toBeTruthy());
+    expect(getByTestId('hours-week-changed-headline').props.children).toBe(
+      'paidWeek.changedHeadlineNanny'
     );
-    expect(getByTestId('hours-changed-after-payment-note').props.children).toBe(
-      'paidWeek.hoursAddedNanny'
+    expect(getByTestId('hours-week-changed-amount')).toBeTruthy();
+    expect(getByTestId('hours-week-changed-detail').props.children).toBe(
+      'paidWeek.changedDetailNanny'
     );
+  });
+
+  it('drops the figure and the hours when the server sent no revised total', async () => {
+    stubPaidWeek({});
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() => expect(getByTestId('hours-week-changed')).toBeTruthy());
+    expect(getByTestId('hours-week-changed-headline').props.children).toBe(
+      'paidWeek.changedHeadlineNannyUnpriced'
+    );
+    expect(queryByTestId('hours-week-changed-amount')).toBeNull();
+  });
+
+  it('refuses to subtract across two currencies', async () => {
+    stubPaidWeek({ revised_earnings: { ...revisedOk, currency: 'EUR' } });
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() => expect(getByTestId('hours-week-changed')).toBeTruthy());
+    expect(queryByTestId('hours-week-changed-amount')).toBeNull();
+  });
+
+  it('states no "more" when the week shrank', async () => {
+    stubPaidWeek({
+      revised_earnings: {
+        ...okEarnings,
+        gross_minor: 20_000,
+        worked_minutes: 2000,
+      },
+    });
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() => expect(getByTestId('hours-week-changed')).toBeTruthy());
+    expect(queryByTestId('hours-week-changed-amount')).toBeNull();
   });
 
   it('says nothing when the server did not flag it', async () => {
     const { getByTestId, queryByTestId } = renderNannyView();
 
     await waitFor(() => expect(getByTestId('hours-week-total')).toBeTruthy());
-    expect(queryByTestId('hours-changed-after-payment-note')).toBeNull();
+    expect(queryByTestId('hours-week-changed')).toBeNull();
+  });
+});
+
+// D79 shape B, her side. The roll-up took the approval away without anyone
+// deciding to; `previous_approval` is what lets her see that it happened at
+// all. No figure here on purpose — the week is being worked out again, so
+// there is no settled total to state a tail against.
+describe('NannyWeekView — an approval the roll-up took away', () => {
+  it('says the family approved it, when, and that nothing was removed', async () => {
+    getWeekMock.mockImplementation(() =>
+      Promise.resolve([
+        makeTimesheetWeek({
+          status: 'submitted',
+          approved_by: null,
+          approved_at: null,
+          previous_approval: {
+            approved_at: '2026-08-10T09:00:00.000Z',
+            approved_by: 'parent-1',
+            gross_minor: 23_612,
+            currency: 'GBP',
+            worked_minutes: 2460,
+          },
+        }),
+      ])
+    );
+
+    const { getByTestId, queryByTestId } = renderNannyView();
+
+    await waitFor(() => expect(getByTestId('hours-week-changed')).toBeTruthy());
+    expect(getByTestId('hours-week-changed-headline').props.children).toBe(
+      'changedAfterApproval.headlineNanny'
+    );
+    expect(queryByTestId('hours-week-changed-amount')).toBeNull();
+    expect(getByTestId('hours-week-changed-detail').props.children).toBe(
+      'changedAfterApproval.detailNanny'
+    );
   });
 });
 

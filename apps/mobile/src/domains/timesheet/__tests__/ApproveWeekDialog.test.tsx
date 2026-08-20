@@ -683,3 +683,24 @@ describe('ApproveWeekDialog — a staged adjustment', () => {
     );
   });
 });
+
+// D79. A week the roll-up quietly demoted is being approved for the SECOND
+// time, and the parent has to be told that this replaces a total they already
+// agreed. Rendered only when there is a previous total to name.
+describe('ApproveWeekDialog — replacing an earlier approval', () => {
+  it('says what it replaces when the week carries a previous approval', () => {
+    const { getByTestId } = renderDialog({
+      supersedesLine: 'This replaces the £236.12 you approved on 10 August.',
+    });
+
+    expect(getByTestId('hours-approve-dialog-supersedes').props.children).toBe(
+      'This replaces the £236.12 you approved on 10 August.'
+    );
+  });
+
+  it('says nothing on a week being approved for the first time', () => {
+    const { queryByTestId } = renderDialog();
+
+    expect(queryByTestId('hours-approve-dialog-supersedes')).toBeNull();
+  });
+});

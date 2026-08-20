@@ -65,11 +65,26 @@ export type TimeEntryStatus =
  * PRODUCT DECISION (owner, 2026-08-06, audit closeout): there is deliberately
  * NO carer-facing submit step. `rollUpIntoTimesheet` births every timesheet as
  * 'submitted' the moment hours land and re-writes 'submitted' on every entry
- * change (un-approving an approved week and re-notifying the parent). A parent
- * may approve mid-week; later hours auto-reopen. 'open' is therefore a dead
- * value — 017's column default that no code path ever writes — kept only so
- * the DB CHECK and this enum stay aligned with the schema. Do not "fix" the
- * missing submit route; an explicit submit model was considered and declined.
+ * change, re-notifying the parent. 'open' is therefore a dead value — 017's
+ * column default that no code path ever writes — kept only so the DB CHECK and
+ * this enum stay aligned with the schema. Do not "fix" the missing submit
+ * route; an explicit submit model was considered and declined.
+ *
+ * WHAT LATER HOURS DO TO AN APPROVED WEEK IS NOT ONE ANSWER. This comment
+ * used to say "later hours auto-reopen", flat. That stopped being true at
+ * migration 102 and now has three branches, all decided inside
+ * `roll_up_timesheet_hours` under the week's row lock:
+ *
+ * - **The week has payments.** NOT reopened. Status, approver and all four
+ *   snapshot columns are kept (every payment was bounded by that gross), and
+ *   `hours_changed_after_payment_at` is stamped instead.
+ * - **The week has no payments.** Demoted to 'submitted' with the snapshot
+ *   cleared — the original rule, unchanged — and, since migration 111, the
+ *   approval it is losing is copied into `previous_approval` first, so the
+ *   week does not become indistinguishable from one nobody ever approved.
+ * - **A manual reopen** (`POST /timesheets/:id/reopen`) is a third act
+ *   entirely: refused outright when payments exist, and otherwise writes
+ *   `reopen_reason` AND `previous_approval`.
  */
 export const TIMESHEET_STATUSES = {
   OPEN: 'open',
@@ -228,6 +243,39 @@ export type TimeEntryListResponse = z.infer<typeof TimeEntryListResponseSchema>;
 // timesheets
 // =============================================================================
 
+/**
+ * The approval a week USED to carry, kept when it is taken back out of
+ * `approved` on an unpaid week (migration 111 — the roll-up's demote branch
+ * and the parent's manual reopen both write it).
+ *
+ * An approval is a statement between two people: "I looked at 38h 30m, I
+ * agreed £462.00, on 14 August." Later hours create a TAIL; they do not make
+ * that statement wrong. Before this existed the demotion nulled all of it,
+ * and a parent who was not watching the screen when the clock-out landed
+ * opened a week byte-identical to one nobody had ever approved — nothing to
+ * compare the new total against and no figure for what changed.
+ *
+ * DISPLAY AND AUDIT STATE, NOT MONEY THE ENGINE READS. Nothing sums it,
+ * exports it, or prices against it; `timesheets.gross_minor`/`earnings` stay
+ * the only authority for what a week is worth (`docs/11-MONEY.md` §3). It is
+ * cleared by the next approve, which supersedes it.
+ *
+ * `worked_minutes` is NULLABLE and that is load-bearing: a `no_arrangement`
+ * or `currency_change` frozen snapshot carries no such key, and §4's rule is
+ * that a missing figure is omitted, never rendered as a zero one.
+ */
+export const PreviousApprovalSchema = z.object({
+  approved_at: z.iso.datetime({ offset: true }),
+  approved_by: z.uuid().nullable(),
+  gross_minor: z.int().nullable(),
+  currency: z
+    .string()
+    .regex(/^[A-Z]{3}$/)
+    .nullable(),
+  worked_minutes: z.int().nullable(),
+});
+export type PreviousApproval = z.infer<typeof PreviousApprovalSchema>;
+
 /** The persisted entity as returned to clients. */
 export const TimesheetSchema = z.object({
   id: z.uuid(),
@@ -280,6 +328,12 @@ export const TimesheetSchema = z.object({
     .datetime({ offset: true })
     .nullable()
     .optional(),
+  /**
+   * See `PreviousApprovalSchema`. `.nullable().optional()` for the same
+   * backward-compatibility reason `parent_viewed_at` documents: a client
+   * talking to an older API, or a fixture written before 111, still parses.
+   */
+  previous_approval: PreviousApprovalSchema.nullable().optional(),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
 });
@@ -913,6 +967,33 @@ export const TimesheetWeekSchema = TimesheetSchema.extend({
    * parses — same backward-compatibility shape as `adjustment` above.
    */
   nothing_unusual: z.boolean().nullable().optional(),
+  /**
+   * WHAT THIS PAID WEEK WOULD COME TO IF IT WERE PRICED NOW — and nothing
+   * else. Non-null on exactly one kind of week: `status === 'approved'` AND
+   * `hours_changed_after_payment_at !== null`, i.e. migration 102's paid
+   * branch, where hours landed after the money moved and the approval was
+   * deliberately kept. `null` on every other week.
+   *
+   * It exists because on that week the DELTA is otherwise underivable. The
+   * `earnings` field beside it is the FROZEN snapshot (correctly — the
+   * payments were bounded by that gross), so neither side has any figure at
+   * all for what the extra hours come to, and `record_timesheet_payment`
+   * refuses anything above the frozen gross, so there is no in-week path to
+   * pay them either. Both people can see that hours were added and nobody
+   * can see what they cost.
+   *
+   * IT IS AN ESTIMATE, AND IT MUST NEVER REACH AN EXPORT. `exportWeekCsv`
+   * and the year-end tax read go through `frozenEarningsFor` and are
+   * deliberately untouched by this field. A screen can label a live figure
+   * honestly; a downloaded file that is forwarded, filed and paid against
+   * cannot (`docs/11-MONEY.md` §11, and this service's own warning above
+   * `exportWeekCsv`). Do not "reuse" this to save an engine call there.
+   *
+   * Precedent for a live judgement sitting beside a frozen snapshot on this
+   * same schema: `nothing_unusual` above. Same `.nullable().optional()`
+   * backward-compatibility shape, for the same reason.
+   */
+  revised_earnings: WeekEarningsStateSchema.nullable().optional(),
 });
 
 /**

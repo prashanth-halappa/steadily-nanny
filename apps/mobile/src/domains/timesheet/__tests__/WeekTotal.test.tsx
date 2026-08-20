@@ -1043,3 +1043,85 @@ describe('WeekTotal', () => {
     });
   });
 });
+
+// D79. The card's half of the contract: the caller owns every string, and a
+// null `amountLabel` omits the figure ENTIRELY rather than rendering an empty
+// or zeroed one. This is the same discipline the appreciation block's gross
+// line has, and it is what keeps a fabricated `£0.00` off a money screen
+// (`docs/11-MONEY.md` §4).
+describe('WeekTotal — the week changed after it was approved', () => {
+  it('renders the headline, the figure and the detail when all three are given', () => {
+    const { getByTestId } = render(
+      <WeekTotal
+        testID="hours-week-total"
+        timesheetStatus="approved"
+        earningsRole="parent"
+        weekChanged={{
+          headline: 'Amara logged more hours after this week was paid.',
+          amountLabel: '£70.00',
+          detail: '8h 00m on 12 August, not covered by the approved total.',
+        }}
+      />
+    );
+
+    expect(getByTestId('hours-week-changed')).toBeTruthy();
+    expect(getByTestId('hours-week-changed-headline').props.children).toBe(
+      'Amara logged more hours after this week was paid.'
+    );
+    expect(getByTestId('hours-week-changed-amount').props.children).toBe(
+      '£70.00'
+    );
+    expect(getByTestId('hours-week-changed-detail').props.children).toBe(
+      '8h 00m on 12 August, not covered by the approved total.'
+    );
+  });
+
+  it('omits the figure entirely when the caller could not derive one', () => {
+    const { getByTestId, queryByTestId } = render(
+      <WeekTotal
+        testID="hours-week-total"
+        timesheetStatus="approved"
+        earningsRole="parent"
+        weekChanged={{
+          headline: 'Amara logged more hours after this week was paid.',
+          amountLabel: null,
+          detail: "We can't work out what they come to for this week.",
+        }}
+      />
+    );
+
+    expect(getByTestId('hours-week-changed')).toBeTruthy();
+    expect(queryByTestId('hours-week-changed-amount')).toBeNull();
+  });
+
+  it('renders nothing at all when the prop is absent', () => {
+    const { queryByTestId } = render(
+      <WeekTotal
+        testID="hours-week-total"
+        timesheetStatus="approved"
+        earningsRole="parent"
+      />
+    );
+
+    expect(queryByTestId('hours-week-changed')).toBeNull();
+  });
+
+  // The disappear-guard: `weekChanged` alone must keep the card on screen,
+  // exactly as the string prop it replaced did. Without it, a week whose only
+  // thing to say is "this changed" renders no card and says nothing.
+  it('keeps the card on screen when it is the only thing to say', () => {
+    const { getByTestId } = render(
+      <WeekTotal
+        testID="hours-week-total"
+        weekChanged={{
+          headline: 'This week changed.',
+          amountLabel: null,
+          detail: null,
+        }}
+      />
+    );
+
+    expect(getByTestId('hours-week-total')).toBeTruthy();
+    expect(getByTestId('hours-week-changed')).toBeTruthy();
+  });
+});

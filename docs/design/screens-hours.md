@@ -176,6 +176,50 @@ Card tone={weekTotalTone(...)}  p-5.5  gap-3
   4.26:1. Approved sentences are `foreground` on the green ground (13.55:1). The
   ground carries the meaning; the words stay readable.
 
+### 3.0a The week-changed block (D79)
+
+`hours-week-changed` — one block, both shapes of "this week changed after it
+was approved", both roles. It sits directly under the status headline, with
+the **same anatomy as the appreciation line** below (`Body` → `Figure28`
+tabular → `Small` muted), because it answers the same question from the other
+side: what is this week worth, and what does the approved total not cover?
+
+Two shapes reach it, and the fork is whether money had already moved:
+
+| Shape | Row state | Compared against |
+|---|---|---|
+| **paid** | `approved` + `hours_changed_after_payment_at` (102) — the approval and the payments stand | the FROZEN snapshot vs `revised_earnings`, the wire-only live figure the server adds for exactly this week |
+| **unpaid** | demoted to `submitted`, carrying `previous_approval` (111) | the receipt vs the week's ordinary LIVE earnings |
+
+The unpaid shape is gated on `reopen_reason` being null. A **manual** reopen
+also writes `previous_approval`, but it was never silent — the parent did it
+and typed a reason, and `hours-earnings-line-reopened-note` already renders
+that. This block is for the demotion nobody performed. The manual reopen's
+receipt still earns its keep in `ApproveWeekDialog`'s supersedes line.
+
+`WeekTotal` takes it as ONE pre-formatted object (`headline`, `amountLabel`,
+`detail`), so the caller owns every string — the card holds no timezone, no
+currency and no role-specific money copy. **`amountLabel: null` omits the
+`Figure28` entirely**, and it is null on every branch where the delta is not
+derivable: no revised figure (an older API), a non-`ok` earnings state, two
+different currencies, or a week that SHRANK. Those branches state the
+sentence, and where both totals are known they state both — never a `£0.00`
+standing in for "we don't know" (`docs/11-MONEY.md` §4). Same discipline the
+appreciation line's gross has.
+
+The **nanny sees the figure** on the paid shape. The "no figures" rule governs
+the lock screen, not her own pay record on her own device
+(`attention-and-notifications.md` §1.4 applies the same reasoning to
+`timesheet_queried`'s note). On the unpaid shape she gets no figure, because
+the week is being worked out again and there is no settled total to state a
+tail against. Her `hours-flag-link` is prefilled on the paid shape with
+"About the {{hours}} I logged on {{date}}, after this week was settled: " —
+"About", not an accusation; she states a fact and continues in her own words.
+
+`WeekMoneyCard` and `PaidStateSection` are untouched by any of this. "Paid"
+stays true *of the approved total*; this block says what the approved total
+does not cover.
+
 ### 3.1 The appreciation line
 
 `hours-approved-by-note` (`WeekTotal.tsx:392–411`) — "Approved by the Ahmeds on

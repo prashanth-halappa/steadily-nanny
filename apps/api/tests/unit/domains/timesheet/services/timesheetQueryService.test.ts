@@ -1404,3 +1404,98 @@ describe('TimesheetQueryService — the WRITE gates stay ACTIVE-ONLY (F-B3b-3)',
     expect(memberRepo.findMembershipAnyStatus).not.toHaveBeenCalled();
   });
 });
+
+// D79 — the delta figure for a paid week whose hours changed underneath it.
+// The `earnings` field beside it stays the FROZEN snapshot (the payments were
+// bounded by that gross); `revised_earnings` is what the same week would come
+// to now, and it is the only way either side can see what the extra hours are
+// worth. Gated on BOTH halves, because "approved" alone would recompute every
+// signed week on every read for nothing.
+describe('TimesheetQueryService.getWeekWithEarnings — revised_earnings', () => {
+  /** 102's paid branch: approved, priced, and flagged. */
+  const flaggedPaidWeek = {
+    ...approvedTimesheet,
+    hours_changed_after_payment_at: '2026-08-12T09:00:00.000Z',
+  };
+
+  function serviceFor(row: unknown, earnings: any) {
+    return new TimesheetQueryService(
+      makeTimeEntryRepo(),
+      makeTimesheetRepo({ findById: mock(async () => row) }),
+      makeMemberRepo(),
+      makeHouseholdRepo(),
+      earnings,
+      undefined,
+      undefined,
+      undefined,
+      makeNothingUnusualComputer()
+    );
+  }
+
+  it('serves the live total BESIDE the frozen one on a flagged approved week', async () => {
+    const earnings = makeEarnings({
+      computeForWeek: mock(async () => raisedEarnings),
+    });
+
+    const week = await serviceFor(
+      flaggedPaidWeek,
+      earnings
+    ).getWeekWithEarnings('u1', 'ts1');
+
+    // The approved figure is untouched — this is not a re-pricing.
+    expect(week.earnings).toEqual(okEarnings);
+    expect(week.revised_earnings).toEqual(raisedEarnings);
+    // The SAME live branch an unapproved week gets, scoped identically.
+    expect(earnings.computeForWeek).toHaveBeenCalledWith(
+      'h1',
+      'carer-1',
+      '2026-08-03'
+    );
+  });
+
+  it('is null on an approved week that was never flagged, and computes nothing', async () => {
+    const earnings = makeEarnings();
+
+    const week = await serviceFor(
+      approvedTimesheet,
+      earnings
+    ).getWeekWithEarnings('u1', 'ts1');
+
+    expect(week.revised_earnings).toBeNull();
+    expect(earnings.computeForWeek).not.toHaveBeenCalled();
+  });
+
+  it('is null on an unapproved week, whose `earnings` is already live', async () => {
+    const earnings = makeEarnings();
+
+    const week = await serviceFor(
+      {
+        ...timesheet,
+        hours_changed_after_payment_at: '2026-08-12T09:00:00.000Z',
+      },
+      earnings
+    ).getWeekWithEarnings('u1', 'ts1');
+
+    expect(week.revised_earnings).toBeNull();
+    // Exactly ONE call — the ordinary live read, never a second one for a
+    // revised figure that has nothing frozen to be revised against.
+    expect(earnings.computeForWeek).toHaveBeenCalledTimes(1);
+  });
+
+  it('is null for a departed carer rather than a fabricated figure', async () => {
+    const earnings = makeEarnings();
+
+    const week = await serviceFor(
+      { ...flaggedPaidWeek, carer_id: null },
+      earnings
+    ).getWeekWithEarnings('u1', 'ts1');
+
+    expect(week.revised_earnings).toBeNull();
+    expect(earnings.computeForWeek).not.toHaveBeenCalled();
+  });
+
+  // The export is the reason this field is dangerous, and it is covered where
+  // the export harness lives: `timesheetQueryService.export.test.ts` asserts
+  // that a FLAGGED paid week still serialises the frozen snapshot and calls
+  // the engine zero times.
+});

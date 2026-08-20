@@ -47,6 +47,10 @@
  *    `H3` status headline (same slot for both viewers).
  * 2. Nanny-only "Approved by {household} on {date}." + gross `Figure28`.
  * 3. Reopened-reason caption (non-approved, wire/ephemeral reason).
+ * 3a. `weekChanged` (D79) — the week changed after it was approved, whether
+ *    it kept the approval (paid, 102) or lost it (unpaid, 111). Same
+ *    Body/Figure28/Small anatomy as the appreciation block, because it
+ *    answers the same question from the other side. `testID="hours-week-changed"`.
  * 4. Approved-week slot — the reopen button when `onReopenPress` is
  *    supplied, else the lock caption. Same slot, because they answer the
  *    same question: what can you do about an approved week?
@@ -149,12 +153,35 @@ interface WeekTotalProps {
   tertiaryAction?: WeekTotalAction | null;
   /** Muted explainer shown above the actions (e.g. why Approve is disabled). */
   actionsNote?: string | null;
-  /** Already-formatted note for `hours_changed_after_payment_at` (102) —
-   * hours rolled into this week AFTER money was recorded against it. The week
-   * keeps its status, approver and frozen snapshot and the payments stand, so
-   * this caption is the ONLY signal that the approved total no longer covers
-   * every hour worked. Both roles get it; the caller owns the wording. */
-  hoursChangedAfterPaymentNote?: string | null;
+  /**
+   * D79 — THE WEEK CHANGED AFTER IT WAS APPROVED. One block, both shapes,
+   * both roles:
+   *
+   * - the week was PAID, so it kept `approved` and its frozen snapshot and
+   *   wears `hours_changed_after_payment_at` (102); or
+   * - the week was UNPAID, so it was demoted to `submitted` and carries the
+   *   approval it lost in `previous_approval` (111).
+   *
+   * Pre-formatted, because the caller owns every string — the same contract
+   * the plain `hoursChangedAfterPaymentNote` string prop had before it, and
+   * for the same reason: this component holds no timezone, no currency and no
+   * role-specific copy fork about money.
+   *
+   * `amountLabel === null` omits the `Figure28` ENTIRELY. It is null on every
+   * branch where the delta is not derivable — no revised figure, a non-`ok`
+   * earnings state, two different currencies, or a week that shrank — and the
+   * headline/detail carry a sentence with no money instead. Never a `£0.00`
+   * standing in for "we don't know" (`docs/11-MONEY.md` §4). Same discipline
+   * as `showAppreciation`'s gross line directly above.
+   */
+  weekChanged?: {
+    /** `Body`, directly under the headline row. */
+    headline: string;
+    /** `Figure28`, tabular. `null` renders NOTHING. */
+    amountLabel: string | null;
+    /** `Small`, muted. `null` renders nothing. */
+    detail: string | null;
+  } | null;
 }
 
 /** `tone` from status × viewer — see module doc's tone-fork list. */
@@ -228,7 +255,7 @@ export function WeekTotal({
   secondaryAction = null,
   tertiaryAction = null,
   actionsNote = null,
-  hoursChangedAfterPaymentNote = null,
+  weekChanged = null,
 }: WeekTotalProps) {
   const { t } = useTranslation('hours');
   // Locale-key extractor reads the first string literal inside `t(` as the
@@ -268,7 +295,7 @@ export function WeekTotal({
     !showHeadline &&
     !showReopenedNote &&
     !showPayBoundary &&
-    !hoursChangedAfterPaymentNote &&
+    !weekChanged &&
     !showParentViewedNote &&
     !primaryAction &&
     !secondaryAction &&
@@ -356,13 +383,30 @@ export function WeekTotal({
               : t('earningsReopenedNote')}
           </Small>
         ) : null}
-        {hoursChangedAfterPaymentNote ? (
-          <Small
-            testID="hours-changed-after-payment-note"
-            className="text-muted-foreground"
-          >
-            {hoursChangedAfterPaymentNote}
-          </Small>
+        {/* D79. Same anatomy as the appreciation block above — Body,
+            Figure28, Small — because it answers the same question from the
+            other side: what is this week worth, and what does the approved
+            total not cover? The figure is omitted, never fabricated, when
+            the caller could not derive it (docs/11-MONEY.md §4). */}
+        {weekChanged ? (
+          <View testID="hours-week-changed" className="gap-1">
+            <Body testID="hours-week-changed-headline">
+              {weekChanged.headline}
+            </Body>
+            {weekChanged.amountLabel ? (
+              <Figure28 testID="hours-week-changed-amount">
+                {weekChanged.amountLabel}
+              </Figure28>
+            ) : null}
+            {weekChanged.detail ? (
+              <Small
+                testID="hours-week-changed-detail"
+                className="text-muted-foreground"
+              >
+                {weekChanged.detail}
+              </Small>
+            ) : null}
+          </View>
         ) : null}
         {/* P6b: the parent's own read receipt for their own view of the
             week — distinct from `showApprovedViewedNote` above, which is

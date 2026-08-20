@@ -43,6 +43,7 @@ import type {
   CreatePaymentInput,
   Payment,
 } from '@steadily-nanny/shared-types/schemas/payment.schema';
+import type { PreviousApproval } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import * as Crypto from 'expo-crypto';
 import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
@@ -100,6 +101,7 @@ import { localDateInZone } from '@/src/lib/localDate';
 import { formatMoney } from '@/src/lib/money';
 import { showSuccessToast } from '@/src/lib/toast';
 import { useAuthStore } from '@/src/store/auth';
+import type { WeekEarningsOk, WeekEarningsStateResult } from '../types';
 import { TIMESHEET_STATUSES } from '../types';
 import { carerKeyOf } from '../utils/carerKey';
 import { formatDuration, formatOvertimeDelta } from '../utils/duration';
@@ -658,22 +660,85 @@ export function ParentWeekView({
   const approveDialogCarerName =
     carerName ?? timesheet?.carer_display_name ?? tSchedule('detail.someone');
 
-  // 102: hours rolled into this week AFTER money was recorded against it. The
-  // week keeps `approved`, its approver and its frozen snapshot, and the
-  // payments stand — so this caption is the only thing that says the approved
-  // total no longer covers every hour worked. Same zone-aware date shape as
-  // `approvedDateLabel`.
-  const hoursChangedAfterPaymentNote = timesheet?.hours_changed_after_payment_at
-    ? t('paidWeek.hoursAdded', {
-        name: approveDialogCarerName,
-        date: formatEarningsLongDate(
-          localDateInZone(
-            timeZone,
-            new Date(timesheet.hours_changed_after_payment_at)
-          )
-        ),
-      })
+  // D79 — THE WEEK CHANGED AFTER IT WAS APPROVED. Two shapes, one block on
+  // `WeekTotal`, and the fork is whether money had already moved:
+  //
+  //  A. PAID (102). `hours_changed_after_payment_at` set, status still
+  //     `approved`. `earnings` is the FROZEN snapshot the payments were
+  //     bounded by; `revised_earnings` is what the week would come to now.
+  //  B. UNPAID (111). The roll-up demoted it to `submitted` and copied the
+  //     approval it destroyed into `previous_approval`. `earnings` is LIVE.
+  //
+  // Shape B is gated on `!reopen_reason` on purpose: a MANUAL reopen also
+  // writes `previous_approval`, but it was never silent — the parent did it
+  // and typed a reason, and `WeekTotal` already renders that reason. This
+  // block is for the demotion nobody performed. The manual reopen's receipt
+  // still earns its keep in `ApproveWeekDialog`'s supersedes line below.
+  const previousApproval = timesheet?.previous_approval ?? null;
+  const flaggedAt = timesheet?.hours_changed_after_payment_at ?? null;
+  const isShapePaid = isApproved && !!flaggedAt;
+  const isShapeDemoted =
+    !isApproved && !!previousApproval && !timesheet?.reopen_reason;
+  // Which day changed — free, and carries no money. The entries this view
+  // already holds, filtered to those written after the week was settled; the
+  // most recent one is the day to name. Falls back to the settlement stamp
+  // itself when nothing matches (a VOID is an update, not an insert, so it
+  // moves no `created_at`).
+  const changedSince = isShapePaid
+    ? flaggedAt
+    : (previousApproval?.approved_at ?? null);
+  const changedDateLabel = changedSince
+    ? formatEarningsLongDate(
+        // `Date.parse`, not a string comparison: `created_at` arrives from
+        // PostgREST as "+00:00" while `previous_approval.approved_at` is
+        // whatever `jsonb_build_object` produced and the flag column is
+        // whatever wrote it. Same instant, three spellings — comparing the
+        // strings would sort them by suffix.
+        entries
+          .filter(e => Date.parse(e.created_at) > Date.parse(changedSince))
+          .map(e => e.local_date)
+          .sort()
+          .at(-1) ?? localDateInZone(timeZone, new Date(changedSince))
+      )
     : null;
+  const weekChanged = isShapePaid
+    ? buildPaidWeekChanged({
+        t,
+        name: approveDialogCarerName,
+        date: changedDateLabel,
+        frozen: earningsOk,
+        revised: timesheet?.revised_earnings ?? null,
+      })
+    : isShapeDemoted && previousApproval
+      ? buildDemotedWeekChanged({
+          t,
+          name: approveDialogCarerName,
+          date: changedDateLabel,
+          approvedDate: formatEarningsLongDate(
+            localDateInZone(timeZone, new Date(previousApproval.approved_at))
+          ),
+          previous: previousApproval,
+          live: earningsOk,
+        })
+      : null;
+  // The supersedes line renders for BOTH ways an approval was lost, manual
+  // reopen included — approving again replaces a figure that really existed,
+  // and the parent should be told which one.
+  const supersedesLine =
+    !isApproved &&
+    previousApproval &&
+    previousApproval.gross_minor !== null &&
+    previousApproval.currency !== null
+      ? t('approveDialog.supersedes', {
+          amount: formatMoney(
+            previousApproval.gross_minor,
+            previousApproval.currency
+          ),
+          date: formatEarningsLongDate(
+            localDateInZone(timeZone, new Date(previousApproval.approved_at))
+          ),
+        })
+      : null;
 
   // TIER0-CX-SPEC.md §6.3/§7: approved-only, this week's currency.
   // `currency` is deliberately NOT on the wire `Timesheet` (only inside
@@ -1084,7 +1149,7 @@ export function ParentWeekView({
                       onPress: () => setIsWithdrawDialogOpen(true),
                     }
               }
-              hoursChangedAfterPaymentNote={hoursChangedAfterPaymentNote}
+              weekChanged={weekChanged}
               actionsNote={
                 readOnly
                   ? null
@@ -1282,6 +1347,7 @@ export function ParentWeekView({
         adjustmentDirection={adjustmentDirection}
         nothingUnusual={timesheet?.nothing_unusual ?? null}
         structureLine={earningsOk ? earningsStructureLine(earningsOk) : null}
+        supersedesLine={supersedesLine}
       />
 
       <WithdrawQueryDialog
@@ -1386,4 +1452,174 @@ export function ParentWeekView({
       )}
     </>
   );
+}
+
+/** The pre-formatted `WeekTotal.weekChanged` block, or nothing to say. */
+interface WeekChangedBlock {
+  headline: string;
+  amountLabel: string | null;
+  detail: string | null;
+}
+
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+
+/**
+ * THE MINUTES DELTA'S TWO OPERANDS MUST COME FROM THE SAME BASIS, and there
+ * is a plausible wrong pair sitting right next to the right one.
+ *
+ * `timesheet.total_minutes` is `sumWorkedMinutes` over EVERY entry, including
+ * `cancellation_paid`. A `WeekEarnings.worked_minutes` is the engine's own
+ * `worked` + `manual_adjustment` basis. Subtracting one from the other is
+ * plausible, compiles, and is WRONG on any week containing a paid
+ * cancellation — it would tell a nanny she logged hours she did not.
+ *
+ * So both operands here always come from the same engine field, and there is
+ * no third source. Do not "simplify" either of these to `total_minutes`.
+ */
+function addedMinutesBetween(after: number, before: number): number {
+  return after - before;
+}
+
+/**
+ * D79 shape A — the week was PAID, so it kept its approval and its frozen
+ * snapshot (102), and `revised_earnings` says what it would come to now.
+ *
+ * Four branches render a SENTENCE AND NO FIGURE, because on each of them the
+ * delta is not derivable and `£0.00` would be a lie (`docs/11-MONEY.md` §4):
+ * no `revised_earnings` at all (an older API), a non-`ok` revised state, two
+ * different currencies, and a week that shrank rather than grew.
+ */
+function buildPaidWeekChanged({
+  t,
+  name,
+  date,
+  frozen,
+  revised,
+}: {
+  t: Translate;
+  name: string;
+  date: string | null;
+  frozen: WeekEarningsOk | null;
+  revised: WeekEarningsStateResult | null | undefined;
+}): WeekChangedBlock {
+  const headline = t('paidWeek.changedHeadline', { name });
+  const unpriced: WeekChangedBlock = {
+    headline,
+    amountLabel: null,
+    detail: date ? t('paidWeek.changedDetailUnpriced', { name, date }) : null,
+  };
+  const revisedOk = revised && revised.status === 'ok' ? revised : null;
+  if (!revisedOk || !frozen || revisedOk.currency !== frozen.currency) {
+    return unpriced;
+  }
+  const deltaMinor = revisedOk.gross_minor - frozen.gross_minor;
+  const addedMinutes = addedMinutesBetween(
+    revisedOk.worked_minutes,
+    frozen.worked_minutes
+  );
+  if (deltaMinor > 0 && addedMinutes > 0 && date) {
+    return {
+      headline,
+      amountLabel: t('paidWeek.changedAmountLabel', {
+        amount: formatMoney(deltaMinor, frozen.currency),
+      }),
+      detail: t('paidWeek.changedDetail', {
+        hours: formatEarningsDuration(addedMinutes),
+        date,
+        name,
+      }),
+    };
+  }
+  // The week shrank, or the money moved without the hours doing so (a
+  // backdated rate). Both figures, stated; no "more", and no figure in the
+  // amount slot — a negative in `Figure28` reads as money owed back.
+  return {
+    headline,
+    amountLabel: null,
+    detail: t('paidWeek.changedDetailLower', {
+      approvedAmount: formatMoney(frozen.gross_minor, frozen.currency),
+      newAmount: formatMoney(revisedOk.gross_minor, revisedOk.currency),
+    }),
+  };
+}
+
+/**
+ * D79 shape B — the week was UNPAID, so the roll-up demoted it and copied the
+ * approval it destroyed into `previous_approval` (111). `live` is the week's
+ * ordinary live earnings; the comparison is against the receipt.
+ *
+ * Same "sentence, no figure" discipline, plus one branch the paid shape does
+ * not have: a receipt with no `gross_minor`/`worked_minutes` at all (a
+ * `no_arrangement` approval) states only that an approval existed and when.
+ * That fact alone is the thing this defect was destroying.
+ */
+function buildDemotedWeekChanged({
+  t,
+  name,
+  date,
+  approvedDate,
+  previous,
+  live,
+}: {
+  t: Translate;
+  name: string;
+  date: string | null;
+  approvedDate: string;
+  previous: PreviousApproval;
+  live: WeekEarningsOk | null;
+}): WeekChangedBlock {
+  const headline = t('changedAfterApproval.headline', { approvedDate });
+  const prevGross = previous.gross_minor;
+  const prevCurrency = previous.currency;
+  const prevWorked = previous.worked_minutes;
+  if (prevGross === null || prevCurrency === null || prevWorked === null) {
+    return { headline, amountLabel: null, detail: null };
+  }
+  const approvedAmount = formatMoney(prevGross, prevCurrency);
+  const approvedHours = formatEarningsDuration(prevWorked);
+  if (!live || live.currency !== prevCurrency) {
+    return {
+      headline,
+      amountLabel: null,
+      detail: date
+        ? t('changedAfterApproval.detailUnpriced', {
+            approvedAmount,
+            approvedHours,
+            name,
+            date,
+          })
+        : null,
+    };
+  }
+  const deltaMinor = live.gross_minor - prevGross;
+  const addedMinutes = addedMinutesBetween(live.worked_minutes, prevWorked);
+  const newAmount = formatMoney(live.gross_minor, live.currency);
+  const newHours = formatEarningsDuration(live.worked_minutes);
+  if (deltaMinor > 0 && addedMinutes > 0 && date) {
+    const amount = formatMoney(deltaMinor, live.currency);
+    return {
+      headline,
+      amountLabel: t('changedAfterApproval.amountLabel', { amount }),
+      detail: t('changedAfterApproval.detail', {
+        approvedAmount,
+        approvedHours,
+        name,
+        addedHours: formatEarningsDuration(addedMinutes),
+        date,
+        newAmount,
+        newHours,
+        amount,
+      }),
+    };
+  }
+  return {
+    headline,
+    amountLabel: null,
+    detail: t('changedAfterApproval.detailLower', {
+      approvedAmount,
+      approvedHours,
+      newAmount,
+      newHours,
+    }),
+  };
 }

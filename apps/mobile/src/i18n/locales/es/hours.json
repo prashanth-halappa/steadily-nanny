@@ -42,7 +42,8 @@
     "flagHint": "Di qué no cuadra. Queda en el registro de esta semana con tu nombre y la hora. No cambia nada más.",
     "flagPlaceholder": "p. ej. El jueves deberían ser 6 horas, no 4",
     "flagSubmit": "Enviar",
-    "flagPaymentPrefix": "Sobre los {{amount}} pagados el {{date}}: "
+    "flagPaymentPrefix": "Sobre los {{amount}} pagados el {{date}}: ",
+    "flagExtraHoursPrefix": "Sobre las {{hours}} que registré el {{date}}, después de que se liquidara esta semana: "
   },
   "flaggedCheckEntry": "Revisa esta entrada",
   "flaggedTitle": "Entrada inusual",
@@ -135,7 +136,8 @@
     "bodyAdjustmentAdded": "De {{range}}, tras añadir {{adjustment}}. Al aprobar se fijan ambas cifras — si las horas cambian después, la semana se reabre y el total se vuelve a calcular.",
     "bodyAdjustmentDeducted": "De {{range}}, tras descontar {{adjustment}}. Al aprobar se fijan ambas cifras — si las horas cambian después, la semana se reabre y el total se vuelve a calcular.",
     "cancel": "Todavía no",
-    "confirm": "Aprobar la semana"
+    "confirm": "Aprobar la semana",
+    "supersedes": "Esto sustituye los {{amount}} que aprobaste el {{date}}."
   },
   "reopenWeek": "Reabrir la semana",
   "reopenDialogTitle": "¿Reabrir {{range}}?",
@@ -150,8 +152,23 @@
     "refusedPaid": "Has pagado {{amount}} de esta semana. Ajústalo en el próximo pago."
   },
   "paidWeek": {
-    "hoursAdded": "{{name}} añadió horas el {{date}}, después de que se pagara esta semana. El total aprobado y los pagos no han cambiado. Inclúyelas en el próximo pago.",
-    "hoursAddedNanny": "Añadiste horas después de que se pagara esta semana. La familia puede verlas."
+    "changedHeadline": "{{name}} registró más horas después de que se pagara esta semana.",
+    "changedAmountLabel": "{{amount}}",
+    "changedDetail": "{{hours}} el {{date}}, que el total aprobado no cubre. El total aprobado y sus pagos se quedan como están — puedes añadir esto cuando apruebes la próxima semana de {{name}}.",
+    "changedDetailUnpriced": "{{name}} registró más horas el {{date}}. No podemos calcular a cuánto ascienden en esta semana, así que el total aprobado se liquidó sin ellas.",
+    "changedDetailLower": "El total aprobado fue {{approvedAmount}}. Esta semana ahora asciende a {{newAmount}}. El total aprobado y sus pagos se quedan como están.",
+    "changedHeadlineNanny": "Registraste {{hours}} el {{date}}, después de que se pagara esta semana.",
+    "changedHeadlineNannyUnpriced": "Registraste más horas el {{date}}, después de que se pagara esta semana.",
+    "changedDetailNanny": "El total aprobado se calculó antes de ellas, así que estas horas están pendientes de liquidar. {{household}} puede verlas."
+  },
+  "changedAfterApproval": {
+    "headline": "Aprobaste esta semana el {{approvedDate}} y luego cambió.",
+    "amountLabel": "{{amount}}",
+    "detail": "Aprobaste {{approvedAmount}} por {{approvedHours}}. {{name}} registró {{addedHours}} el {{date}}, así que ahora asciende a {{newAmount}} por {{newHours}} — {{amount}} más. Volver a aprobar sustituye el total que aprobaste antes.",
+    "detailUnpriced": "Aprobaste {{approvedAmount}} por {{approvedHours}}. {{name}} registró más horas el {{date}}, así que la semana necesita aprobarse de nuevo.",
+    "detailLower": "Aprobaste {{approvedAmount}} por {{approvedHours}}. Ahora asciende a {{newAmount}} por {{newHours}}.",
+    "headlineNanny": "{{household}} aprobó esta semana el {{approvedDate}} y luego las horas cambiaron.",
+    "detailNanny": "Se está calculando de nuevo — no se ha quitado nada de lo que registraste."
   },
   "widgets": {
     "title": "Esta semana",
