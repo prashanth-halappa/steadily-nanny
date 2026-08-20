@@ -527,7 +527,7 @@ export function ShiftDetailScreen() {
             testID="shift-detail-answer-by"
             className={
               isCoverAskUrgent(coverAskExpiresAt, Date.now())
-                ? 'mt-2 text-destructive'
+                ? 'mt-2 text-error-inline-text'
                 : 'mt-2 text-muted-foreground'
             }
           >

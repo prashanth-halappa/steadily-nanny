@@ -191,10 +191,10 @@ describe('ShiftDetailScreen — cover-ask deadline (§5.3/M21)', () => {
       ? node.props.style.flat()
       : [node.props.style];
     const merged = Object.assign({}, ...layers.filter(Boolean));
-    // text-destructive resolves to a non-muted colour; assert the className
+    // text-error-inline-text resolves to a non-muted colour; assert the className
     // carries the token rather than a resolved hex (avoids coupling to the
     // palette).
-    expect(node.props.className ?? '').toContain('destructive');
+    expect(node.props.className ?? '').toContain('text-error-inline-text');
     void merged;
   });
 

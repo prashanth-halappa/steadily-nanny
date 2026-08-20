@@ -102,12 +102,14 @@ export function InviteCodeCard({
           disabled={isRevoking}
           onPress={onRevoke}
         >
-          <Text className="text-destructive">{t('invite.revokeButton')}</Text>
+          <Text className="text-error-inline-text">
+            {t('invite.revokeButton')}
+          </Text>
         </Button>
       ) : null}
       {isError ? (
         <>
-          <Body className="text-center text-destructive">
+          <Body className="text-center text-error-inline-text">
             {t('invite.errorTitle')}
           </Body>
           <Button

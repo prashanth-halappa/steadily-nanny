@@ -98,7 +98,10 @@ export function QueryNoteSheet({
           placeholder={placeholder}
         />
         {submitError ? (
-          <Small testID="hours-query-note-error" className="text-destructive">
+          <Small
+            testID="hours-query-note-error"
+            className="text-error-inline-text"
+          >
             {submitError}
           </Small>
         ) : null}

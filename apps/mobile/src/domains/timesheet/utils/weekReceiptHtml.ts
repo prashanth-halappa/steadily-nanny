@@ -24,6 +24,8 @@
  * name is worse.
  */
 
+import { palette } from '@/lib/design-tokens/palette';
+
 export interface WeekReceiptLine {
   label: string;
   subLine: string | null;
@@ -68,6 +70,9 @@ function totalRow(total: WeekReceiptTotal): string {
 }
 
 export function buildWeekReceiptHtml(input: WeekReceiptInput): string {
+  const foregroundHex = palette.light.foreground.hex;
+  const mutedForegroundHex = palette.light.mutedForeground.hex;
+  const borderHex = palette.light.border.hex;
   const linesBlock =
     input.lines.length > 0
       ? `<table class="rows">${input.lines.map(lineRow).join('')}</table>`
@@ -80,17 +85,17 @@ export function buildWeekReceiptHtml(input: WeekReceiptInput): string {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <style>
   * { box-sizing: border-box; }
-  body { font-family: -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif; color: #241E20; margin: 0; padding: 40px; }
+  body { font-family: -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif; color: ${foregroundHex}; margin: 0; padding: 40px; }
   h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; }
-  .meta { font-size: 13px; color: #6B6265; margin: 0 0 24px; }
+  .meta { font-size: 13px; color: ${mutedForegroundHex}; margin: 0 0 24px; }
   .meta div { margin-top: 2px; }
   table { width: 100%; border-collapse: collapse; }
   td { padding: 8px 0; vertical-align: top; font-size: 14px; }
   td.amount { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .sub { font-size: 12px; color: #6B6265; margin-top: 2px; }
+  .sub { font-size: 12px; color: ${mutedForegroundHex}; margin-top: 2px; }
   .strong { font-weight: 600; }
-  .totals { margin-top: 12px; border-top: 1px solid #E3DCDE; }
-  .footer { margin-top: 28px; font-size: 11px; color: #6B6265; }
+  .totals { margin-top: 12px; border-top: 1px solid ${borderHex}; }
+  .footer { margin-top: 28px; font-size: 11px; color: ${mutedForegroundHex}; }
 </style>
 </head>
 <body>

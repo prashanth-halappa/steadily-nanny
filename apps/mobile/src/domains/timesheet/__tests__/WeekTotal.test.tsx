@@ -963,7 +963,9 @@ describe('WeekTotal', () => {
 
       const button = getByTestId('hours-query-button');
       expect(button.props.variant).toBe('ghost');
-      expect(getByText('Query').props.className).toContain('text-destructive');
+      expect(getByText('Query').props.className).toContain(
+        'text-error-inline-text'
+      );
     });
 
     it('renders an actionsNote above the actions when supplied', () => {

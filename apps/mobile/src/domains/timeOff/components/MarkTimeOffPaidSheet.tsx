@@ -203,7 +203,7 @@ export function MarkTimeOffPaidSheet({
               {hoursInvalid ? (
                 <Small
                   testID="pto-mark-paid-hours-error"
-                  className="text-destructive"
+                  className="text-error-inline-text"
                 >
                   {t('markPaidSheet.hoursError')}
                 </Small>

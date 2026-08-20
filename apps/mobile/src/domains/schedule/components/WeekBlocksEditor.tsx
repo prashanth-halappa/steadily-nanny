@@ -199,7 +199,7 @@ export function WeekBlocksEditor({
                             label={t('build.outsideHoursWarning')}
                             testID={`${testIDPrefix}-outside-hours-${day}-${i}`}
                           />
-                          <Caption className="text-warning">
+                          <Caption className="text-warning-ink">
                             {t('build.outsideHoursNote')}
                           </Caption>
                         </View>
@@ -227,7 +227,7 @@ export function WeekBlocksEditor({
 
             {!isDayOff && isOverlapping ? (
               <Caption
-                className="text-destructive"
+                className="text-error-inline-text"
                 testID={`${testIDPrefix}-overlap-${day}`}
               >
                 {t('build.slotsOverlapError')}

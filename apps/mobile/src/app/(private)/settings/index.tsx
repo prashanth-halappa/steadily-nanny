@@ -631,7 +631,7 @@ export default function SettingsScreen() {
           className="mt-4"
           onPress={() => setDeleteOpen(true)}
         >
-          <Text className="text-destructive">
+          <Text className="text-error-inline-text">
             {t('settings:deleteAccount')}
           </Text>
         </Button>

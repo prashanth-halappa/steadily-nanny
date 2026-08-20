@@ -178,7 +178,10 @@ export function WeekQueryThread({
               placeholder={t('thread.composerPlaceholder')}
             />
             {sendError ? (
-              <Small testID={`${testID}-error`} className="text-destructive">
+              <Small
+                testID={`${testID}-error`}
+                className="text-error-inline-text"
+              >
                 {sendError}
               </Small>
             ) : null}

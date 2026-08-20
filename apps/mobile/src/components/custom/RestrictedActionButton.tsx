@@ -63,7 +63,7 @@ export function RestrictedActionButton({
         accessibilityHint={reason ?? undefined}
         onPress={onPress}
       >
-        <Text className={destructive ? 'text-destructive' : undefined}>
+        <Text className={destructive ? 'text-error-inline-text' : undefined}>
           {label}
         </Text>
       </Button>
