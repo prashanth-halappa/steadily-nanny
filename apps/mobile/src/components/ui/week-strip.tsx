@@ -110,6 +110,7 @@ export function WeekStrip({
             className={cn(
               'h-touch w-touch items-center justify-center gap-0.5 rounded-cell',
               isSelected && 'bg-primary',
+              isSelected && 'rounded-chip',
               isDisabled && 'opacity-40'
             )}
           >

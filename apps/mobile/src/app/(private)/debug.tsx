@@ -55,7 +55,7 @@ function DebugRow({
     <Card>
       <CardContent className="gap-2 py-4">
         <H4>{title}</H4>
-        <Small className="text-muted-foreground">VERIFY: {assertion}</Small>
+        <Small className="text-muted-foreground">Verify: {assertion}</Small>
         {children}
       </CardContent>
     </Card>

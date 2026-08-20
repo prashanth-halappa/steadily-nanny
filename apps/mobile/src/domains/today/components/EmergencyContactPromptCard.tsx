@@ -26,7 +26,7 @@ import { FieldLabel } from '@/src/components/ui/field-label';
 import { InlineError } from '@/src/components/ui/inline-error';
 import { Input } from '@/src/components/ui/input';
 import { Text } from '@/src/components/ui/text';
-import { Body, H3 } from '@/src/components/ui/typography';
+import { Body, H4 } from '@/src/components/ui/typography';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useUpdateHousehold } from '@/src/hooks/mutations/useUpdateHousehold';
@@ -102,7 +102,7 @@ export function EmergencyContactPromptCard() {
   return (
     <Card testID="emergency-contact-prompt-card" tone="default">
       <CardContent className="gap-3">
-        <H3>{t('emergencyContactPrompt.title', { name: household.name })}</H3>
+        <H4>{t('emergencyContactPrompt.title', { name: household.name })}</H4>
         <Body className="text-muted-foreground">
           {t('emergencyContactPrompt.body', { name: carerName })}
         </Body>
@@ -135,9 +135,9 @@ export function EmergencyContactPromptCard() {
           fitContent
         >
           <View className="gap-4">
-            <H3>
+            <H4>
               {t('emergencyContactPrompt.title', { name: household.name })}
-            </H3>
+            </H4>
 
             <View className="gap-2">
               <FieldLabel>{t('emergencyContactPrompt.nameLabel')}</FieldLabel>

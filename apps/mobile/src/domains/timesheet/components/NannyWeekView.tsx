@@ -52,13 +52,14 @@ import type { Href } from 'expo-router';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
+import { Button } from '@/src/components/ui/button';
 import { ReceiptCard } from '@/src/components/ui/receipt-card';
-import { Body } from '@/src/components/ui/typography';
+import { Text } from '@/src/components/ui/text';
 import { ExpenseAddSheet } from '@/src/domains/expenses/components/ExpenseAddSheet';
 import { ExpensesListCard } from '@/src/domains/expenses/components/ExpensesListCard';
 import { ReimbursementsCard } from '@/src/domains/expenses/components/ReimbursementsCard';
@@ -95,7 +96,6 @@ import { useIsOnline } from '@/src/lib/network';
 import { showSuccessToast } from '@/src/lib/toast';
 import { wallClockToUtcIso } from '@/src/lib/wallClock';
 import { useAuthStore } from '@/src/store/auth';
-import { spacing } from '~/lib/design-tokens/spacing';
 import type { TimeEntry } from '../types';
 import { formatDuration, formatOvertimeDelta } from '../utils/duration';
 import {
@@ -817,19 +817,15 @@ export function NannyWeekView({
                 week only — a `queried` week already has the composer open,
                 and an `open` week is still hers to correct directly. */}
             {!readOnly && (timesheet?.status === 'submitted' || isApproved) ? (
-              <Pressable
+              <Button
                 testID="hours-flag-link"
-                accessibilityRole="button"
+                variant="ghost"
                 onPress={() => setFlagSheet({ prefix: flagPrefix })}
-                className="mb-4 self-start py-2"
-                style={{
-                  minHeight: spacing.minTouchTarget,
-                  justifyContent: 'center',
-                }}
-                hitSlop={8}
+                size="default"
+                className="mb-4 self-start"
               >
-                <Body className="text-primary">{t('thread.flagLink')}</Body>
-              </Pressable>
+                <Text className="text-foreground">{t('thread.flagLink')}</Text>
+              </Button>
             ) : null}
             {/* §7 fixed order item 3 — after day rows, approved-only,
                 never rendered when the week has no approved claims. */}

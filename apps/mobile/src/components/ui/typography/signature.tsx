@@ -8,7 +8,7 @@ import { typography } from '@/lib/design-tokens/typography';
 import { createTypographyComponent } from './factory';
 
 export const SignatureHeroLight = createTypographyComponent(
-  typography.signature.heroLight,
+  typography.signature.heroBold,
   'SignatureHeroLight'
 );
 

@@ -159,7 +159,7 @@ export function PendingOfferCard({ nowMs = Date.now() }: { nowMs?: number }) {
       </View>
       <Body
         testID="today-pending-offer-subtitle"
-        className="text-muted-foreground"
+        className={blocking ? 'text-muted-strong' : 'text-muted-foreground'}
       >
         {subtitle}
       </Body>
@@ -168,7 +168,7 @@ export function PendingOfferCard({ nowMs = Date.now() }: { nowMs?: number }) {
       {blocking ? (
         <Caption
           testID="today-pending-offer-hours"
-          className="text-muted-foreground"
+          className="text-muted-strong"
         >
           {t('pendingOfferCard.scheduledToday', {
             carer: offer.carerDisplayName,
@@ -179,6 +179,8 @@ export function PendingOfferCard({ nowMs = Date.now() }: { nowMs?: number }) {
       <View className="gap-2">
         <Button
           testID="today-pending-offer-cta"
+          variant={blocking ? 'default' : 'ghost'}
+          size={blocking ? 'lg' : 'default'}
           className="w-full"
           onPress={() =>
             router.push(`/(private)/pay/proposal/${offer.id}` as Href)
@@ -186,7 +188,11 @@ export function PendingOfferCard({ nowMs = Date.now() }: { nowMs?: number }) {
         >
           <Text
             testID="today-pending-offer-cta-label"
-            className="text-primary-foreground font-medium"
+            className={
+              blocking
+                ? 'text-primary-foreground font-medium'
+                : 'text-foreground font-medium'
+            }
           >
             {changeIt
               ? t('pendingOfferCard.ctaChange')
