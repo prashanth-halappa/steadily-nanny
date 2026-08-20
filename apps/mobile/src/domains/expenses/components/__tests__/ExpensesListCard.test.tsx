@@ -131,4 +131,23 @@ describe('ExpensesListCard', () => {
       expect(queryByTestId('expenses-add')).toBeNull();
     });
   });
+
+  // 01-LAWS 5.B Rhythm: siblings within a section are 12px (gap-3).
+  it('stacks CardContent siblings at gap-3', () => {
+    const { getByTestId } = render(
+      <ExpensesListCard testID="expenses-list" expenses={[makeExpense()]} />
+    );
+
+    const card = getByTestId('expenses-list');
+    const content = Array.isArray(card.children)
+      ? card.children[0]
+      : card.children;
+    expect(content).toBeTruthy();
+    expect(
+      (content as { props: { className?: string } }).props.className
+    ).toContain('gap-3');
+    expect(
+      (content as { props: { className?: string } }).props.className
+    ).not.toContain('gap-2');
+  });
 });

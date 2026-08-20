@@ -492,7 +492,7 @@ describe('MyPayScreen', () => {
 
       await waitFor(() =>
         expect(
-          getByTestId(`my-pay-ack-state-${HOUSEHOLD_A}`).props.children
+          getByTestId(`my-pay-ack-state-${HOUSEHOLD_A}-label`).props.children
         ).toBe('ack.seenBy')
       );
       expect(ackMock).not.toHaveBeenCalled();
@@ -520,7 +520,7 @@ describe('MyPayScreen', () => {
 
       await waitFor(() =>
         expect(
-          getByTestId(`my-pay-ack-state-${HOUSEHOLD_A}`).props.children
+          getByTestId(`my-pay-ack-state-${HOUSEHOLD_A}-label`).props.children
         ).toBe('ack.seenBy')
       );
       expect(

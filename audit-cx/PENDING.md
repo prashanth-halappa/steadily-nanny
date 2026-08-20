@@ -98,51 +98,51 @@ Domain buckets import these. Disjoint *files* are not disjoint *APIs*.
 | `typography/signature.tsx`-1 | **STALE** — `SignatureHeroLight` already maps to `typography.signature.heroBold` |
 | `status-pill.tsx` ×2 | **CONFLICT** → see the register |
 
-## Bucket 1 — Pay screens — 12 fixes, 3 files
+## Bucket 1 — Pay screens — 12 fixes, 3 files — ✅ DONE
 
 Typography / colour / elevation / heading-order have **zero test surface** on these files — safe
 to change, and equally, nothing will catch a regression. Read the diff.
 
 ### `domains/pay/components/MyPayScreen.tsx`
 
-- [ ] **2 — CONFIRMED.** L443 `<H1 tabular>`. §9 specifies `SignatureHeroBold` 40/48/700 tabular
+- [x] **2 — CONFIRMED.** L443 `<H1 tabular>`. §9 specifies `SignatureHeroBold` 40/48/700 tabular
       for the rate. Already exported from `components/ui/typography/signature.tsx:15`.
-- [ ] **3 — CONFIRMED.** L449 `<Body className="text-muted-foreground">/hr</Body>`. §9 asks for
+- [x] **3 — CONFIRMED.** L449 `<Body className="text-muted-foreground">/hr</Body>`. §9 asks for
       `Body mutedStrong`. Driven by the spec, not by contrast — this sits on plain card, where
       Rule M would leave `mutedForeground` alone.
-- [ ] **4 — CONFIRMED.** L456-460 renders "In effect since" as `<Small
+- [x] **4 — CONFIRMED.** L456-460 renders "In effect since" as `<Small
       className="text-muted-foreground">`. §9 asks for `StatusPill` confirmed. Reference
       implementation already exists in the sibling parent screen:
       `PayArrangementScreen.tsx:489-500`.
-- [ ] **5 — CONFIRMED.** L482-487 the ack state is a plain `<Small>`. §9 asks for `StatusPill`
+- [x] **5 — CONFIRMED.** L482-487 the ack state is a plain `<Small>`. §9 asks for `StatusPill`
       confirmed. Reference: `pay-ack-pill`, `PayArrangementScreen.tsx:495`.
-- [ ] **8 — CONFIRMED.** L600-601 `className="gap-1 rounded-row bg-card px-4 py-3"` +
+- [x] **8 — CONFIRMED.** L600-601 `className="gap-1 rounded-row bg-card px-4 py-3"` +
       `style={elevation.row}`. `01-LAWS.md` §1's L4 row: "never per-row `elevation.row`".
       Migrate to `ListGroup`. `PayArrangementScreen.tsx:570` is the already-migrated half of the
       same pair. **Note this contradicts `screens-pay-terms.md` §8.5, which draws it the banned
       way — 01-LAWS wins by its own text (Rule D says §8.5 is one of the specs it was promoted
       from). The doc is being amended in the same wave.**
-- [ ] **9 — CONFIRMED.** L809-811 `<Small className="mt-1 text-muted-foreground">`. §9 asks for
+- [x] **9 — CONFIRMED.** L809-811 `<Small className="mt-1 text-muted-foreground">`. §9 asks for
       `Body mutedStrong`. **Keep the string verbatim** — the spec marks it "← keep verbatim".
-- [ ] **10 — CONFIRMED (cosmetic).** L499-506 `className="text-muted-strong"` inside
+- [x] **10 — CONFIRMED (cosmetic).** L499-506 `className="text-muted-strong"` inside
       `<Card><CardContent>`. Rule M: "On plain `card` and plain `background`, `mutedForeground`
       stays." **Do not sweep up `preset-applied-note` or `PayTermsGroups`' `weekly-equivalent`
       while in here** — those are `Body`, and §5.2/§10 specify `Body mutedStrong` deliberately.
 
 ### `domains/pay/components/PayArrangementScreen.tsx`
 
-- [ ] **11 — CONFIRMED (partially stale).** The history list is already migrated (L570
+- [x] **11 — CONFIRMED (partially stale).** The history list is already migrated (L570
       `<ListGroup testID="pay-history-list">`). Still violating: the **carer picker** at
       L130-132, `className="… rounded-row bg-card px-4 py-3"` + `style={elevation.row}`, rendered
       once per nanny at L822-832 — a genuine run of separately-lifted rows. **Leave
       `pay-open-proposal-row` (L399-402) alone** — one row is not a run.
-- [ ] **13 — CONFIRMED.** L512-517 `<Button testID="pay-change-terms-button">` with no `variant`
+- [x] **13 — CONFIRMED.** L512-517 `<Button testID="pay-change-terms-button">` with no `variant`
       → filled `default`, inside `pay-current-terms-card` with no `tone` → L3. §1's L3 row:
       action is "`ghost` or none". **Keep the testID** — `PayArrangementScreen.test.tsx:595`
       keys on it.
-- [ ] **14 — CONFIRMED.** L521-523 renders `appendOnlyNote` *above* `historyHeading`. §8.5 orders
+- [x] **14 — CONFIRMED.** L521-523 renders `appendOnlyNote` *above* `historyHeading`. §8.5 orders
       them the other way: the "History" label leads, then the note. No test asserts ordering.
-- [ ] **15 — CONFIRMED.** The History heading (L523) carries no spacing classes and inherits a
+- [x] **15 — CONFIRMED.** The History heading (L523) carries no spacing classes and inherits a
       flat `mt-4 gap-4` from L380 — 16px above, 16px below, a 1:1 rhythm where Rule B wants 4:1
       (32 above / 8 below). **Precedent to copy: `ShiftDetailScreen.tsx:1007`
       `<H2 className="mt-8">`.** (A verification pass claimed `pt-8` appears nowhere in the repo;
@@ -150,7 +150,7 @@ to change, and equally, nothing will catch a regression. Read the diff.
 
 ### `domains/pay/components/PayTermsGroups.tsx`
 
-- [ ] **2 — CONFIRMED.** L635-649 renders the `Body mutedStrong` weekly-equivalent line and
+- [x] **2 — CONFIRMED.** L635-649 renders the `Body mutedStrong` weekly-equivalent line and
       stops. §10 requires a following `Small mutedForeground` caveat **when daily OT is set**.
       **~6 lines.** The string is already translated in both locales
       (`en/pay.json:311` `evenSpreadCaveat`); the working reference implementation is
@@ -182,9 +182,9 @@ to change, and equally, nothing will catch a regression. Read the diff.
 - **`PayArrangementScreen`-2 (§8.5 `MetadataLabel` vs Rule A)** → doc amendment, not code.
 - **`TermsGlossarySheet`-1** — NOT A DEFECT. `mutedStrong` on a plain ground passes at 7.17:1.
 
-## Bucket 2 — Hours, payments & expenses — 4 fixes, 3 files
+## Bucket 2 — Hours, payments & expenses — 4 fixes, 3 files — ✅ DONE
 
-- [ ] **`domains/timesheet/components/WeekTotal.tsx` ×2 — CONFIRMED.** L290 already computes
+- [x] **`domains/timesheet/components/WeekTotal.tsx` ×2 — CONFIRMED.** L290 already computes
       `smallToneClass = tone === 'default' ? 'text-muted-foreground' : 'text-muted-strong'` —
       Rule M is *half*-implemented. Two sites still hardcode `text-muted-foreground` inside the
       same tone-computed `<Card>` (opened L311): the `showReopenedNote` `Small` at **L376**, and
@@ -192,11 +192,11 @@ to change, and equally, nothing will catch a regression. Read the diff.
       **inside** the card). **Thread the existing variable** — L571 takes it as a prop. This is
       exactly the blind spot `rule-m.test.ts` documents: it returns `'skip'` for computed
       `tone={expr}`.
-- [ ] **`domains/timesheet/components/PaymentDetailSheet.tsx`-10 — CONFIRMED.** L274-281
+- [x] **`domains/timesheet/components/PaymentDetailSheet.tsx`-10 — CONFIRMED.** L274-281
       `<Pressable testID="…-flag"><Body className="text-primary">{t('thread.flagLink')}</Body></Pressable>`.
       Flagging writes data; §5.G reserves `text-primary` for "navigates away to read more;
       changes nothing".
-- [ ] **`domains/expenses/components/ExpensesListCard.tsx`-5 — CONFIRMED.** L58
+- [x] **`domains/expenses/components/ExpensesListCard.tsx`-5 — CONFIRMED.** L58
       `<CardContent className="gap-2">` → `gap-3`. Rule B: "Siblings within a section: 12px".
 
 **Closed:**

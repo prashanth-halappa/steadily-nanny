@@ -271,14 +271,15 @@ export function PaymentDetailSheet({
           ) : null}
 
           {onFlagPress ? (
-            <Pressable
+            <Button
               testID={`${testID}-flag`}
-              accessibilityRole="button"
+              variant="ghost"
+              size="sm"
+              className="self-start"
               onPress={() => onFlagPress(payment)}
-              className="self-start py-2"
             >
-              <Body className="text-primary">{t('thread.flagLink')}</Body>
-            </Pressable>
+              {t('thread.flagLink')}
+            </Button>
           ) : null}
         </View>
       ) : null}

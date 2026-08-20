@@ -315,6 +315,7 @@ export function WeekTotal({
             parentViewedDateLabel={parentViewedDateLabel}
             householdName={householdName}
             reopenReason={earningsReopenReason}
+            toneClass={smallToneClass}
           />
         ) : null}
         {showHeadline ? (
@@ -373,7 +374,7 @@ export function WeekTotal({
         {showReopenedNote ? (
           <Small
             testID="hours-earnings-line-reopened-note"
-            className="text-muted-foreground"
+            className={smallToneClass}
           >
             {earningsReopenReason
               ? t(
@@ -506,10 +507,12 @@ function WeekStatusTimeline({
   parentViewedDateLabel,
   householdName,
   reopenReason,
+  toneClass,
 }: {
   parentViewedDateLabel?: string | null;
   householdName?: string | null;
   reopenReason?: string | null;
+  toneClass: string;
 }) {
   const { t } = useTranslation('hours');
   const colors = useThemeColors();
@@ -521,12 +524,14 @@ function WeekStatusTimeline({
           testID="hours-timeline-reopened"
           color={colors.warning}
           label={t('timeline.reopened', { reason: reopenReason })}
+          toneClass={toneClass}
         />
       ) : null}
       <TimelineStep
         testID="hours-timeline-logged"
         color={colors.success}
         label={t('timeline.logged')}
+        toneClass={toneClass}
       />
       <TimelineStep
         testID="hours-timeline-opened"
@@ -539,11 +544,13 @@ function WeekStatusTimeline({
               })
             : t('timeline.notOpened', { household: householdName })
         }
+        toneClass={toneClass}
       />
       <TimelineStep
         testID="hours-timeline-waiting"
         color={colors.border}
         label={t('timeline.waiting')}
+        toneClass={toneClass}
       />
     </View>
   );
@@ -553,10 +560,12 @@ function TimelineStep({
   testID,
   color,
   label,
+  toneClass,
 }: {
   testID: string;
   color: string;
   label: string;
+  toneClass: string;
 }) {
   return (
     <View testID={testID} className="flex-row items-center gap-2">
@@ -568,7 +577,7 @@ function TimelineStep({
           backgroundColor: color,
         }}
       />
-      <Small className="text-muted-foreground">{label}</Small>
+      <Small className={toneClass}>{label}</Small>
     </View>
   );
 }

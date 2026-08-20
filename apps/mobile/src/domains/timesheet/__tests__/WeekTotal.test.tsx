@@ -14,6 +14,8 @@
  * (see `HoursScreens.test.ts`'s source-inspection rationale).
  */
 import { describe, expect, it, mock } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { render } from '@testing-library/react-native';
 import { palette } from '~/lib/design-tokens/palette';
 import { WeekTotal } from '../components/WeekTotal';
@@ -1125,5 +1127,92 @@ describe('WeekTotal — the week changed after it was approved', () => {
 
     expect(getByTestId('hours-week-total')).toBeTruthy();
     expect(getByTestId('hours-week-changed')).toBeTruthy();
+  });
+});
+
+// Rule M (docs/design/01-LAWS.md §4): on tinted Card grounds use
+// `text-muted-strong`; on plain `default` keep `text-muted-foreground`.
+// `smallToneClass` already computes the fork — these nodes must consume it.
+describe('WeekTotal — Rule M smallToneClass on tinted vs default grounds', () => {
+  it('uses muted-strong on the reopened note when the card is tinted (parent submitted → attention)', () => {
+    const { getByTestId } = render(
+      <WeekTotal
+        testID="hours-week-total"
+        timesheetStatus="submitted"
+        earningsRole="parent"
+        earningsReopenReason="Thursday hours were wrong"
+      />
+    );
+
+    const note = getByTestId('hours-earnings-line-reopened-note');
+    expect(note.props.className).toContain('text-muted-strong');
+    expect(note.props.className).not.toContain('text-muted-foreground');
+  });
+
+  it('keeps muted-foreground on the reopened note on a plain default card (nanny submitted)', () => {
+    const { getByTestId } = render(
+      <WeekTotal
+        testID="hours-week-total"
+        timesheetStatus="submitted"
+        earningsRole="nanny"
+        earningsReopenReason="Thursday hours were wrong"
+      />
+    );
+
+    const note = getByTestId('hours-earnings-line-reopened-note');
+    expect(note.props.className).toContain('text-muted-foreground');
+    expect(note.props.className).not.toContain('text-muted-strong');
+  });
+
+  it('uses muted-strong on the reopened note when queried (attention)', () => {
+    const { getByTestId } = render(
+      <WeekTotal
+        testID="hours-week-total"
+        timesheetStatus="queried"
+        earningsRole="nanny"
+        earningsReopenReason="Thursday hours were wrong"
+      />
+    );
+
+    const note = getByTestId('hours-earnings-line-reopened-note');
+    expect(note.props.className).toContain('text-muted-strong');
+    expect(note.props.className).not.toContain('text-muted-foreground');
+  });
+
+  it('threads smallToneClass into TimelineStep labels (no hardcoded muted-foreground)', () => {
+    const src = readFileSync(
+      join(import.meta.dir, '../components/WeekTotal.tsx'),
+      'utf8'
+    );
+    const flat = src.replace(/\s+/g, ' ');
+
+    // Parent passes the one computed class; helpers must not recompute.
+    expect(flat).toContain('toneClass={smallToneClass}');
+    expect(flat).toContain('className={toneClass}');
+    // TimelineStep must not keep a literal muted-foreground of its own.
+    const timelineStepIdx = flat.indexOf('function TimelineStep(');
+    expect(timelineStepIdx).toBeGreaterThan(-1);
+    const timelineStepSlice = flat.slice(
+      timelineStepIdx,
+      timelineStepIdx + 500
+    );
+    expect(timelineStepSlice).not.toContain('text-muted-foreground');
+    expect(timelineStepSlice).toContain('className={toneClass}');
+  });
+
+  it('binds the reopened note to smallToneClass, not a muted-foreground literal', () => {
+    const src = readFileSync(
+      join(import.meta.dir, '../components/WeekTotal.tsx'),
+      'utf8'
+    );
+    const flat = src.replace(/\s+/g, ' ');
+    // Prefer the JSX site over the Maestro comment that also names the testID.
+    const noteIdx = flat.indexOf(
+      'testID="hours-earnings-line-reopened-note" className='
+    );
+    expect(noteIdx).toBeGreaterThan(-1);
+    const noteWindow = flat.slice(noteIdx, noteIdx + 80);
+    expect(noteWindow).toContain('className={smallToneClass}');
+    expect(noteWindow).not.toContain('className="text-muted-foreground"');
   });
 });

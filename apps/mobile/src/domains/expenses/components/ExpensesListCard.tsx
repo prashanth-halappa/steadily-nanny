@@ -55,7 +55,7 @@ export function ExpensesListCard({
 
   return (
     <View testID={testID} className="mt-4 rounded-card bg-muted">
-      <CardContent className="gap-2">
+      <CardContent className="gap-3">
         <MetadataLabel>{t('list.title')}</MetadataLabel>
         {expenses.map(expense => (
           <ExpenseRow

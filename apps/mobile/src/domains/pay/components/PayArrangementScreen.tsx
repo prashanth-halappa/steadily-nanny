@@ -8,8 +8,8 @@
  * because the branching the spec describes ("one carer -> inline, two or
  * more -> a picker") only makes sense evaluated in one place.
  *
- * The append-only note lives in `Small` muted copy directly above the
- * History heading. D-16 re-opened future-dated terms, so §6's scheduled-
+ * The append-only note lives in `Small` muted copy directly below the
+ * History heading (S8.5). D-16 re-opened future-dated terms, so §6's scheduled-
  * change card is back: a `valid_from` after the household's today is a
  * promise that has not landed yet, and the parent needs both a way to see it
  * and a way to call it off (which is itself an APPEND, never a delete).
@@ -50,7 +50,7 @@ import { ListGroup } from '@/src/components/ui/list-group';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
-import { Body, H1, H4, Small } from '@/src/components/ui/typography';
+import { Body, DayGroup, H1, H4, Small } from '@/src/components/ui/typography';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import { DEFAULT_WEEK_STARTS_ON } from '@/src/domains/timesheet/utils/week';
@@ -110,7 +110,6 @@ function CarerPickerRow({
   roleFallbackLabel: string;
   onPress: () => void;
 }) {
-  const elevation = useElevation();
   const current = useCurrentPayArrangement(householdId, carer.user_id);
   const { t } = useTranslation('pay');
   const name = resolveCarerName(
@@ -127,10 +126,7 @@ function CarerPickerRow({
       hitSlop={8}
       onPress={onPress}
     >
-      <View
-        className="flex-row items-center justify-between gap-3 rounded-row bg-card px-4 py-3"
-        style={elevation.row}
-      >
+      <View className="flex-row items-center justify-between gap-3 px-4 py-3">
         <Body className="flex-1 text-primary">{name}</Body>
         {/* While the rate query is pending, render nothing rather than a
          * misleading "Not set" (review finding 7) — the PaySetupPromptCard's
@@ -511,6 +507,7 @@ function CarerPayDetail({
               />
               <Button
                 testID="pay-change-terms-button"
+                variant="ghost"
                 onPress={() => setSheetOpen(true)}
               >
                 <Text>{t('changeTermsButton')}</Text>
@@ -518,9 +515,9 @@ function CarerPayDetail({
             </CardContent>
           </Card>
 
-          <Small className="text-muted-foreground">{t('appendOnlyNote')}</Small>
+          <DayGroup className="mt-8 pb-2">{t('historyHeading')}</DayGroup>
 
-          <H4>{t('historyHeading')}</H4>
+          <Small className="text-muted-foreground">{t('appendOnlyNote')}</Small>
 
           {/* F17/F20 — closed negotiation rounds. `proposals` already carries
               every status for this (household, carer) pair (`useTermsProposals`'s
@@ -819,7 +816,7 @@ export function PayArrangementScreen() {
             />
           </View>
         ) : (
-          <View className="mt-4 gap-2" testID="pay-carer-picker">
+          <ListGroup testID="pay-carer-picker" className="mt-4">
             {nannies.map(member => (
               <CarerPickerRow
                 key={member.id}
@@ -829,7 +826,7 @@ export function PayArrangementScreen() {
                 onPress={() => router.push(`/settings/pay/${member.user_id}`)}
               />
             ))}
-          </View>
+          </ListGroup>
         )
       ) : (
         <CarerPayDetail

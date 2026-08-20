@@ -56,6 +56,7 @@ import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { InlineError } from '@/src/components/ui/inline-error';
+import { ListGroup } from '@/src/components/ui/list-group';
 import { LoadingButton } from '@/src/components/ui/loading-button';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { StatusPill } from '@/src/components/ui/status-pill';
@@ -66,6 +67,7 @@ import {
   H1,
   H4,
   MetadataLabel,
+  SignatureHeroBold,
   Small,
 } from '@/src/components/ui/typography';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
@@ -90,7 +92,6 @@ import { localDateInZone } from '@/src/lib/localDate';
 import { formatMoney } from '@/src/lib/money';
 import { proposalReviewHref } from '@/src/lib/notificationRouteMap';
 import { useAuthStore } from '@/src/store/auth';
-import { useElevation } from '~/lib/design-tokens/elevation';
 import { hasSeenAck, resolveAckState, seenAckAt } from '../utils/ackState';
 import { formatDisplayDateWithYear } from '../utils/payArrangementForm';
 import {
@@ -206,7 +207,6 @@ function MyPayHouseholdCard({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [dissentOpen, setDissentOpen] = useState(false);
   const [proposeOpen, setProposeOpen] = useState(false);
-  const elevation = useElevation();
 
   // This household's own local year — each card is per-family, so the
   // year the balance covers is THAT family's calendar, not the device's.
@@ -440,24 +440,25 @@ function MyPayHouseholdCard({
                     </Small>
                   ) : null}
                   <View className="flex-row items-baseline gap-1">
-                    <H1 tabular>
+                    <SignatureHeroBold tabular>
                       {formatMoney(
                         arrangement.rate_minor,
                         arrangement.currency
                       )}
-                    </H1>
-                    <Body className="text-muted-foreground">/hr</Body>
+                    </SignatureHeroBold>
+                    <Body className="text-muted-strong">/hr</Body>
                   </View>
                   <TermsDocumentRows
                     arrangement={arrangement}
                     balance={balance.data}
                     testIDPrefix={`my-pay-term-${household.id}`}
                   />
-                  <Small className="text-muted-foreground">
-                    {t('inEffectSince', {
+                  <StatusPill
+                    variant="confirmed"
+                    label={t('inEffectSince', {
                       date: formatDisplayDateWithYear(arrangement.valid_from),
                     })}
-                  </Small>
+                  />
                   {/* F18 — read-only: no `onEdit`/`onCancel`, `canManage={false}`.
                     A nanny sees the raise coming; only the parent who owns the
                     arrangement can edit or call it off. */}
@@ -479,12 +480,11 @@ function MyPayHouseholdCard({
                     />
                   ) : (
                     <>
-                      <Small
+                      <StatusPill
+                        variant="confirmed"
+                        label={ackStateWord}
                         testID={`my-pay-ack-state-${household.id}`}
-                        className="text-muted-foreground"
-                      >
-                        {ackStateWord}
-                      </Small>
+                      />
                       {/* Its own line, never a replacement for the one above:
                         both are true at once, and hiding either is the
                         contradiction a nanny read as the app losing her tap. */}
@@ -499,7 +499,7 @@ function MyPayHouseholdCard({
                       {dissentTerms.isSuccess ? (
                         <Small
                           testID={`my-pay-dissent-recorded-${household.id}`}
-                          className="text-muted-strong"
+                          className="text-muted-foreground"
                         >
                           {t('dissent.recordedNow')}
                         </Small>
@@ -588,49 +588,52 @@ function MyPayHouseholdCard({
                             />
                           </View>
                         ))}
-                      {(history.data ?? []).map((row, index) => {
-                        // §8.5: what CHANGED, not just the rate. The oldest row
-                        // has no predecessor and says so rather than diffing
-                        // nothing.
-                        const older = (history.data ?? [])[index + 1] ?? null;
-                        return (
-                          <View
-                            key={row.id}
-                            testID={`my-pay-history-row-${row.id}`}
-                            className="gap-1 rounded-row bg-card px-4 py-3"
-                            style={elevation.row}
-                          >
-                            <Body weight="medium">
-                              {t('historyFrom', {
-                                date: formatDisplayDateWithYear(row.valid_from),
-                              })}
-                            </Body>
-                            <Small
-                              testID={`my-pay-history-diff-${row.id}`}
-                              className="text-muted-foreground"
+                      <ListGroup testID={`my-pay-history-list-${household.id}`}>
+                        {(history.data ?? []).map((row, index) => {
+                          // §8.5: what CHANGED, not just the rate. The oldest row
+                          // has no predecessor and says so rather than diffing
+                          // nothing.
+                          const older = (history.data ?? [])[index + 1] ?? null;
+                          return (
+                            <View
+                              key={row.id}
+                              testID={`my-pay-history-row-${row.id}`}
+                              className="gap-1 px-4 py-3"
                             >
-                              {older
-                                ? summarizeTermsDiff(
-                                    buildTermsDiff(older, row, t)
-                                  )
-                                : t('history.firstTermsSet')}
-                            </Small>
-                            {row.id === arrangement.id && seenDate ? (
+                              <Body weight="medium">
+                                {t('historyFrom', {
+                                  date: formatDisplayDateWithYear(
+                                    row.valid_from
+                                  ),
+                                })}
+                              </Body>
                               <Small
-                                testID={`my-pay-history-seen-${row.id}`}
+                                testID={`my-pay-history-diff-${row.id}`}
                                 className="text-muted-foreground"
                               >
-                                {t('ack.historySeen', { date: seenDate })}
+                                {older
+                                  ? summarizeTermsDiff(
+                                      buildTermsDiff(older, row, t)
+                                    )
+                                  : t('history.firstTermsSet')}
                               </Small>
-                            ) : null}
-                            {row.note ? (
-                              <Small className="text-muted-foreground">
-                                {row.note}
-                              </Small>
-                            ) : null}
-                          </View>
-                        );
-                      })}
+                              {row.id === arrangement.id && seenDate ? (
+                                <Small
+                                  testID={`my-pay-history-seen-${row.id}`}
+                                  className="text-muted-foreground"
+                                >
+                                  {t('ack.historySeen', { date: seenDate })}
+                                </Small>
+                              ) : null}
+                              {row.note ? (
+                                <Small className="text-muted-foreground">
+                                  {row.note}
+                                </Small>
+                              ) : null}
+                            </View>
+                          );
+                        })}
+                      </ListGroup>
                     </View>
                   ) : null}
                   <DissentSheet
@@ -806,9 +809,7 @@ export function MyPayScreen() {
         label={tCommon('back')}
       />
       <H1 className="mt-1">{t('myPay.title')}</H1>
-      <Small className="mt-1 text-muted-foreground">
-        {t('myPay.subtitle')}
-      </Small>
+      <Body className="mt-1 text-muted-strong">{t('myPay.subtitle')}</Body>
 
       {households.isPending ? (
         <LoadingIndicator testID="my-pay-loading" />

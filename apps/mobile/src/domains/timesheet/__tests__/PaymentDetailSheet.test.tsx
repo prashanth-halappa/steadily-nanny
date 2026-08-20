@@ -13,6 +13,8 @@
  * `t` echoes its key and drops interpolation params (`bun.setup.ts`).
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Payment } from '@steadily-nanny/shared-types/schemas/payment.schema';
 import { fireEvent, render } from '@testing-library/react-native';
 import type React from 'react';
@@ -279,5 +281,44 @@ describe('PaymentDetailSheet — visibility', () => {
     const { queryByTestId } = renderSheet({ visible: false });
 
     expect(queryByTestId('payments-detail')).toBeNull();
+  });
+});
+
+// Flagging WRITES DATA (attention spec §3.1). 01-LAWS 5.G reserves
+// `text-primary` for navigation that changes nothing; ghost is the right
+// control for an optional reversible write. bun.setup stubs buttonVariants,
+// so variant/size are pinned by source inspection, not render props.
+describe('PaymentDetailSheet — flag is a ghost Button, not a text-primary link', () => {
+  it('hands the payment back when the flag action is pressed', () => {
+    const onFlagPress = mock((_payment: Payment) => {});
+    const payment = makePayment();
+    const { getByTestId } = renderSheet({ payment, onFlagPress });
+
+    fireEvent.press(getByTestId('payments-detail-flag'));
+
+    expect(onFlagPress).toHaveBeenCalledWith(payment);
+  });
+
+  it('omits the flag control when onFlagPress is not passed', () => {
+    const { queryByTestId } = renderSheet();
+
+    expect(queryByTestId('payments-detail-flag')).toBeNull();
+  });
+
+  it('renders the flag as Button variant="ghost" size="sm" (source)', () => {
+    const src = readFileSync(
+      join(import.meta.dir, '../components/PaymentDetailSheet.tsx'),
+      'utf8'
+    );
+    const flat = src.replace(/\s+/g, ' ');
+    const flagIdx = flat.indexOf('testID={`${testID}-flag`}');
+    expect(flagIdx).toBeGreaterThan(-1);
+    // Window around the flag control — not DetailRow's navigation link.
+    const flagWindow = flat.slice(Math.max(0, flagIdx - 80), flagIdx + 200);
+    expect(flagWindow).toContain('<Button');
+    expect(flagWindow).toContain('variant="ghost"');
+    expect(flagWindow).toContain('size="sm"');
+    expect(flagWindow).not.toContain('<Pressable');
+    expect(flagWindow).not.toContain('text-primary');
   });
 });

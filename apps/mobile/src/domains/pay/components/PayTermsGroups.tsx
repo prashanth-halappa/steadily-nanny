@@ -647,6 +647,21 @@ export function PayTermsGroups({
               })}
             </Body>
           ) : null}
+          {/* §10's even-spread caveat: the weekly figure assumes the guarantee
+              is spread evenly, and daily overtime makes longer days cost more
+              than the line says. Gate on daily OT separately from the weekly
+              line — PayChangeSheet fixtures assert the weekly line with no
+              daily OT. */}
+          {seed?.weekly_equivalent_minor != null &&
+          seed.guaranteed_minutes_per_week != null &&
+          seed.overtime_daily_threshold_minutes != null ? (
+            <Small
+              testID={`${testIDPrefix}-weekly-even-spread-caveat`}
+              className="text-muted-foreground"
+            >
+              {t('proposal.evenSpreadCaveat')}
+            </Small>
+          ) : null}
         </View>
       </TermGroup>
 
