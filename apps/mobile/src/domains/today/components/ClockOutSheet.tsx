@@ -367,7 +367,7 @@ export function ClockOutSheet({
         </Body>
 
         {showOverdueHint ? (
-          <Body testID="clockout-overdue-hint" className="text-warning">
+          <Body testID="clockout-overdue-hint" className="text-warning-ink">
             {t('overdueClockOutHint')}
           </Body>
         ) : null}
@@ -413,7 +413,10 @@ export function ClockOutSheet({
         ) : null}
 
         {clockInAt && !timesAreValid ? (
-          <Small testID="clockout-time-error" className="text-destructive">
+          <Small
+            testID="clockout-time-error"
+            className="text-error-inline-text"
+          >
             {t('invalidTime')}
           </Small>
         ) : null}
@@ -421,7 +424,7 @@ export function ClockOutSheet({
         {clockInAt && timesAreValid && isZeroLength ? (
           <Small
             testID="clockout-zero-length-error"
-            className="text-destructive"
+            className="text-error-inline-text"
           >
             {/* A running entry at zero elapsed is not a typo to correct — she
                 has just clocked in by mistake, and "type a later finish" is
@@ -434,7 +437,10 @@ export function ClockOutSheet({
         ) : null}
 
         {clockInAt && timesAreValid && !isZeroLength && isTooLong ? (
-          <Small testID="clockout-too-long-error" className="text-destructive">
+          <Small
+            testID="clockout-too-long-error"
+            className="text-error-inline-text"
+          >
             {t('tooLongFinishError', {
               total: formatDuration(Math.round(spanMs / 60_000)),
               maxHours: MAX_SESSION_SPAN_MS / 3_600_000,
@@ -449,7 +455,7 @@ export function ClockOutSheet({
         isFutureFinish ? (
           <Small
             testID="clockout-future-finish-error"
-            className="text-destructive"
+            className="text-error-inline-text"
           >
             {t('futureFinishError')}
           </Small>
@@ -457,7 +463,10 @@ export function ClockOutSheet({
 
         {submitError ? (
           <View className="gap-1">
-            <Small testID="clockout-submit-error" className="text-destructive">
+            <Small
+              testID="clockout-submit-error"
+              className="text-error-inline-text"
+            >
               {submitError}
             </Small>
             {submitErrorAction ? (
@@ -483,7 +492,7 @@ export function ClockOutSheet({
               <Button
                 key={minutes}
                 testID={`clockout-break-${minutes}`}
-                variant={breakMinutes === minutes ? 'default' : 'outline'}
+                variant={breakMinutes === minutes ? 'secondary' : 'outline'}
                 // Daylight audit #39 — the small button size is 36px tall,
                 // under the 44pt minimum touch target, and these are tapped
                 // one-handed at the door. The default size (native:h-12)
@@ -572,7 +581,7 @@ export function ClockOutSheet({
             size="default"
             onPress={onVoidPress}
           >
-            <Text className="text-destructive">{voidLabel}</Text>
+            <Text className="text-error-inline-text">{voidLabel}</Text>
           </Button>
         ) : null}
       </View>

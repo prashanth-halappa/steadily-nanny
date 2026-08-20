@@ -12,9 +12,12 @@
  * only as the single occupant of Today's `PinnedSlot`.
  */
 import { useRouter } from 'expo-router';
+import { FileText } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
+import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
+import { IconChip } from '@/src/components/ui/icon-chip';
 import { Text } from '@/src/components/ui/text';
 import { Body, H3 } from '@/src/components/ui/typography';
 import { useInboxItems } from '@/src/domains/inbox/hooks/useInboxItems';
@@ -56,7 +59,10 @@ export function TermsProposalCard() {
       tone={tone}
       className="gap-3 p-5.5"
     >
-      <H3>{titleForItem(proposal, t, timeZone)}</H3>
+      <View className="flex-row items-center gap-3">
+        <IconChip tone="brand" icon={FileText} />
+        <H3 className="flex-1">{titleForItem(proposal, t, timeZone)}</H3>
+      </View>
       <Body className="text-muted-foreground">
         {subtitleForItem(proposal, t, timeZone)}
       </Body>

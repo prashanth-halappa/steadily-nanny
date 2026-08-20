@@ -36,7 +36,7 @@ import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { BackButton } from '@/src/components/ui/back-button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { H1, MetadataLabel, Small } from '@/src/components/ui/typography';
+import { Body, H1, Small } from '@/src/components/ui/typography';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useCancelTimeOff } from '@/src/hooks/mutations/useCancelTimeOff';
 import { useUpdateTimeOff } from '@/src/hooks/mutations/useUpdateTimeOff';
@@ -230,9 +230,9 @@ export function TimeOffScreen() {
               <TimeOffRequestForm />
             )}
             <View testID="time-off-status-filters" className="mt-4 gap-2">
-              <MetadataLabel className="text-muted-foreground">
+              <Body weight="medium" className="text-foreground">
                 {t('filterLabel')}
-              </MetadataLabel>
+              </Body>
               <View className="flex-row flex-wrap gap-2">
                 {FILTERS.map(filter => (
                   <Pressable
@@ -247,11 +247,12 @@ export function TimeOffScreen() {
                     onPress={() => setStatusFilter(filter)}
                   >
                     <Small
+                      weight={statusFilter === filter ? 'semibold' : undefined}
                       className={cn(
-                        'rounded-chip border px-3 py-2',
+                        'rounded-chip px-3 py-2',
                         statusFilter === filter
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-border text-foreground'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-secondary text-foreground'
                       )}
                     >
                       {filter === 'all'

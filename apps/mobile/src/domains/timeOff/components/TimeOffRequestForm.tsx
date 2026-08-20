@@ -216,7 +216,7 @@ export function TimeOffRequestForm({
         <View className="flex-row gap-2">
           <Button
             testID="time-off-edit-cancel"
-            variant="outline"
+            variant="ghost"
             disabled={activeMutation?.isPending ?? false}
             onPress={() => onEditDismiss?.()}
           >

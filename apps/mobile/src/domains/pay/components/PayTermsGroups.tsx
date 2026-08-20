@@ -55,7 +55,13 @@ import { Button } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
-import { Body, H4, Label, Small } from '@/src/components/ui/typography';
+import {
+  Body,
+  H4,
+  Label,
+  MetadataLabel,
+  Small,
+} from '@/src/components/ui/typography';
 import { currencySymbol, formatMoney } from '@/src/lib/money';
 import { useAuthStore } from '@/src/store/auth';
 import {
@@ -378,9 +384,9 @@ export function PayTermsGroups({
 
   return (
     <View className="gap-2">
-      <Small className="px-1 text-muted-foreground">
+      <MetadataLabel className="px-1 text-muted-foreground">
         {t('termGroups.heading')}
-      </Small>
+      </MetadataLabel>
 
       <TermGroup
         icon={Clock}
