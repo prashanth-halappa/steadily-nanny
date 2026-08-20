@@ -29,12 +29,11 @@ import { HOUSEHOLD_STATES } from '@steadily-nanny/shared-types/schemas/household
 import { SCHEDULE_PATTERN_STATUSES } from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import { SCHEDULED_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
 import { type Href, useRouter } from 'expo-router';
-import { CalendarClock } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
-import { IconChip } from '@/src/components/ui/icon-chip';
+import { CardArt } from '@/src/components/ui/card-art';
 import { Text } from '@/src/components/ui/text';
 import { H4, Small } from '@/src/components/ui/typography';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
@@ -154,7 +153,11 @@ export function NoWeekYetCard() {
     <Card testID="today-no-week-yet-card" tone="default">
       <CardContent className="gap-3">
         <View className="flex-row items-center gap-2">
-          <IconChip tone="schedule" icon={CalendarClock} />
+          <CardArt
+            illustration="weekEmpty"
+            size="sm"
+            testID="today-no-week-yet-card-art"
+          />
           <H4>
             {t(
               state.afterDecline

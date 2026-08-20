@@ -14,6 +14,7 @@
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { fireEvent, render } from '@testing-library/react-native';
+import { mockIllustrationsModule } from '~/lib/test/mockIllustrations';
 
 const DRAFT_HOUSEHOLD_ID = 'draft-hh-1';
 const LIVE_HOUSEHOLD_ID = 'live-hh-1';
@@ -96,6 +97,7 @@ function setActiveHousehold(opts: {
 }
 
 beforeAll(async () => {
+  mockIllustrationsModule();
   mock.module('react-i18next', () => ({
     useTranslation: () => ({
       t: (key: string, opts?: Record<string, unknown>) =>
@@ -208,6 +210,11 @@ describe('SendMyTermsCard — render conditions', () => {
   it('renders when every condition holds', () => {
     const { getByTestId } = render(<SendMyTermsCard />);
     expect(getByTestId('send-my-terms-card')).toBeTruthy();
+  });
+
+  it('renders CardArt for the send-my-terms illustration', () => {
+    const { getByTestId } = render(<SendMyTermsCard />);
+    expect(getByTestId('send-my-terms-card-art')).toBeTruthy();
   });
 
   it('renders nothing when she has no draft household', () => {

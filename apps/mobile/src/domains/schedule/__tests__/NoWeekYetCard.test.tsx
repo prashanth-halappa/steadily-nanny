@@ -122,4 +122,9 @@ describe('NoWeekYetCard', () => {
     expect(classes).not.toContain('flex-row');
     expect(hide).toBeTruthy();
   });
+
+  it('renders the week-empty card art', () => {
+    const { getByTestId } = render(<NoWeekYetCard />);
+    expect(getByTestId('today-no-week-yet-card-art')).toBeTruthy();
+  });
 });

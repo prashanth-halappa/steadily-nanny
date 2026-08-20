@@ -150,6 +150,14 @@ describe('TermsProposalCard', () => {
     expect(getByText('items.termsProposal.cta')).toBeTruthy();
   });
 
+  it('renders CardArt for the terms proposal illustration', () => {
+    setItems([TERMS_PROPOSAL]);
+
+    const { getByTestId } = render(<TermsProposalCard />);
+
+    expect(getByTestId('today-terms-proposal-card-art')).toBeTruthy();
+  });
+
   it('deep-links the CTA to the proposal review screen — never resolves in place', () => {
     setItems([TERMS_PROPOSAL]);
 

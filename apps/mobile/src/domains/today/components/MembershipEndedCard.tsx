@@ -29,6 +29,7 @@ import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
+import { CardArt } from '@/src/components/ui/card-art';
 import { Text } from '@/src/components/ui/text';
 import { Body, H3, Small } from '@/src/components/ui/typography';
 
@@ -74,6 +75,11 @@ export function MembershipEndedCard({
       tone="default"
       className="gap-3 p-5.5"
     >
+      <CardArt
+        illustration="membershipEnded"
+        size="md"
+        testID="today-membership-ended-card-art"
+      />
       <H3 testID="today-membership-ended-title">{title}</H3>
       <Body
         testID="today-membership-ended-body"

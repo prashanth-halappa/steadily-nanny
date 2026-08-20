@@ -46,7 +46,6 @@ import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/house
 import { HOUSEHOLD_STATES } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { useQueries } from '@tanstack/react-query';
 import { type Href, useRouter } from 'expo-router';
-import { CalendarDays } from 'lucide-react-native';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
@@ -54,7 +53,7 @@ import { payArrangementApi } from '@/src/api/endpoints/payArrangements';
 import { queryKeys } from '@/src/api/queryKeys';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
-import { IconChip } from '@/src/components/ui/icon-chip';
+import { CardArt } from '@/src/components/ui/card-art';
 import { Text } from '@/src/components/ui/text';
 import { H4, Small } from '@/src/components/ui/typography';
 import { isParentEditorRole } from '@/src/domains/setup/types';
@@ -274,7 +273,11 @@ export function WeeklyHoursNotSetGroupCard({
       <Card tone="default" testID="today-weekly-hours-not-set-card">
         <CardContent className="gap-3">
           <View className="flex-row items-center gap-2">
-            <IconChip tone="schedule" icon={CalendarDays} />
+            <CardArt
+              illustration="hoursNotSet"
+              size="sm"
+              testID="today-weekly-hours-not-set-card-art"
+            />
             <H4>{title}</H4>
           </View>
           <Small className="text-muted-foreground">{body}</Small>
@@ -326,7 +329,11 @@ export function WeeklyHoursNotSetGroupCard({
     <Card tone="default" testID="today-weekly-hours-not-set-card">
       <CardContent className="gap-3">
         <View className="flex-row items-center gap-2">
-          <IconChip tone="schedule" icon={CalendarDays} />
+          <CardArt
+            illustration="hoursNotSet"
+            size="sm"
+            testID="today-weekly-hours-not-set-card-art"
+          />
           <H4>{title}</H4>
         </View>
         <Small className="text-muted-foreground">{body}</Small>

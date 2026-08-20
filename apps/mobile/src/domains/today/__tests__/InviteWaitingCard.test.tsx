@@ -83,6 +83,7 @@ describe('InviteWaitingCard', () => {
       />
     );
     expect(getByTestId('today-invite-waiting')).toBeTruthy();
+    expect(getByTestId('today-invite-waiting-art')).toBeTruthy();
     expect(getByTestId('today-invite-waiting-code')).toBeTruthy();
   });
 

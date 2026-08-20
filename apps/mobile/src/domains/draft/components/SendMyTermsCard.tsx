@@ -22,13 +22,12 @@
  * have a proposal fired at them on her behalf.
  */
 import { HOUSEHOLD_STATES } from '@steadily-nanny/shared-types/schemas/household.schema';
-import { Send } from 'lucide-react-native';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
-import { IconChip } from '@/src/components/ui/icon-chip';
+import { CardArt } from '@/src/components/ui/card-art';
 import { Text } from '@/src/components/ui/text';
 import { H4, Small } from '@/src/components/ui/typography';
 import { PayChangeSheet } from '@/src/domains/pay/components/PayChangeSheet';
@@ -121,7 +120,11 @@ export function SendMyTermsCard() {
     <Card testID="send-my-terms-card" tone="default">
       <CardContent className="gap-3">
         <View className="flex-row items-center gap-2">
-          <IconChip tone="hours" icon={Send} />
+          <CardArt
+            illustration="termsSend"
+            size="sm"
+            testID="send-my-terms-card-art"
+          />
           <H4>
             {isCounter ? t('sendTerms.counterTitle') : t('sendTerms.title')}
           </H4>

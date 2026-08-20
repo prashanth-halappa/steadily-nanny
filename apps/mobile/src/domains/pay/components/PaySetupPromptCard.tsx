@@ -23,6 +23,7 @@ import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
+import { CardArt } from '@/src/components/ui/card-art';
 import { Text } from '@/src/components/ui/text';
 import { Body, Small } from '@/src/components/ui/typography';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
@@ -66,6 +67,11 @@ export function PaySetupPromptCard({
   return (
     <Card testID={`pay-setup-prompt-${carerId}`} className="mb-3">
       <CardContent className="gap-3">
+        <CardArt
+          illustration="paySetup"
+          size="md"
+          testID={`pay-setup-prompt-${carerId}-art`}
+        />
         <Body weight="medium">
           {t('promptCard.title', { name: carerName })}
         </Body>

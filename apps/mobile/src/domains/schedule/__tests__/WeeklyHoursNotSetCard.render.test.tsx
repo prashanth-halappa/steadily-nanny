@@ -60,6 +60,7 @@ describe('WeeklyHoursNotSetGroupCard', () => {
 
     expect(getByTestId('today-weekly-hours-not-set-card')).toBeTruthy();
     expect(getByTestId('today-weekly-hours-not-set-cta')).toBeTruthy();
+    expect(getByTestId('today-weekly-hours-not-set-card-art')).toBeTruthy();
     // The second answer to "when does she work?" — days booked as they come.
     expect(getByTestId('today-weekly-hours-not-set-adhoc')).toBeTruthy();
   });
@@ -69,6 +70,7 @@ describe('WeeklyHoursNotSetGroupCard', () => {
 
     expect(getByTestId('today-weekly-hours-not-set-card')).toBeTruthy();
     expect(getByTestId('today-weekly-hours-not-set-cta')).toBeTruthy();
+    expect(getByTestId('today-weekly-hours-not-set-card-art')).toBeTruthy();
     expect(queryByTestId('today-weekly-hours-not-set-adhoc')).toBeNull();
   });
 });

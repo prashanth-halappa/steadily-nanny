@@ -31,6 +31,7 @@ import { useTranslation } from 'react-i18next';
 import { Pressable, Share, View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
+import { CardArt } from '@/src/components/ui/card-art';
 import { Text } from '@/src/components/ui/text';
 import { Display, H4, Small } from '@/src/components/ui/typography';
 import { useHouseholdInvites } from '@/src/hooks/queries/useHouseholdInvites';
@@ -95,6 +96,11 @@ export function InviteWaitingCard({
   return (
     <Card testID="today-invite-waiting" provisional>
       <CardContent className="gap-3">
+        <CardArt
+          illustration="inviteWaiting"
+          size="md"
+          testID="today-invite-waiting-art"
+        />
         <H4>{t('waitingOnNanny.title')}</H4>
         <Small className="text-muted-foreground">
           {t('waitingOnNanny.body')}

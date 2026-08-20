@@ -83,6 +83,14 @@ describe('MembershipEndedCard', () => {
     // not offer a second competing primary action beside "clock out".
     expect(queryByTestId('today-membership-ended-hours')).toBeNull();
   });
+
+  it('renders the membership-ended card art', () => {
+    const { getByTestId } = renderWithProviders(
+      <MembershipEndedCard familyName="the Okonkwo family" />
+    );
+
+    expect(getByTestId('today-membership-ended-card-art')).toBeTruthy();
+  });
 });
 
 function fireEventPress(element: { props: { onPress?: () => void } }) {

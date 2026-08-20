@@ -119,4 +119,16 @@ describe('PaySetupPromptCard', () => {
     expect(getByTestId(`pay-setup-prompt-${CARER_ID}`)).toBeTruthy();
     expect(getByTestId(`pay-setup-prompt-${CARER_ID}-cta`)).toBeTruthy();
   });
+
+  it('renders CardArt when there is no proposal and no arrangement', () => {
+    const { getByTestId } = render(
+      <PaySetupPromptCard
+        householdId={HOUSEHOLD_ID}
+        carerId={CARER_ID}
+        carerName="Priya"
+      />
+    );
+
+    expect(getByTestId(`pay-setup-prompt-${CARER_ID}-art`)).toBeTruthy();
+  });
 });
