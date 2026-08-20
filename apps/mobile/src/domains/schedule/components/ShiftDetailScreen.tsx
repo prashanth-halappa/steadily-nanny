@@ -791,13 +791,31 @@ export function ShiftDetailScreen() {
             <H2>{t('detail.changesTitle')}</H2>
             {(changeRequests.data ?? []).map(req => {
               // The requester's own pending request: she withdraws it, she
-              // does not accept/decline it. Same guard `awaitingNannyConfirm`
-              // already uses just above — `requested_by !== null` first so a
+              // does not accept/decline it. Same guard the awaiting line
+              // below uses — `requested_by !== null` first so a
               // system-authored row (null) never reads as "mine" just because
               // `currentUserId` also happens to be null in an unauthenticated
               // render.
               const isOwnRequest =
                 req.requested_by !== null && req.requested_by === currentUserId;
+              // D75 — who the requester is actually waiting ON. Server truth
+              // (`shiftChangeRequestCommandService.respond`): a parent's
+              // request is answered by the assigned carer, a nanny's
+              // counter-offer by a parent. The line below renders only for
+              // her OWN request, so the roster row and the reader's own
+              // resolved role describe the same person — hence the fallback.
+              // Neither resolved (null) → no line at all; it is a supporting
+              // sentence, not a gate.
+              const requesterRole =
+                (req.requested_by
+                  ? membersByUserId.get(req.requested_by)?.role
+                  : undefined) ?? readerHouseholdRole;
+              const awaitingKey =
+                requesterRole === 'nanny'
+                  ? 'detail.awaitingFamilyConfirm'
+                  : requesterRole
+                    ? 'detail.awaitingCarerConfirm'
+                    : null;
               return (
                 <View
                   key={req.id}
@@ -814,6 +832,29 @@ export function ShiftDetailScreen() {
                       defaultValue: req.status,
                     })}
                   </Small>
+                  {/* D76 — the time being ACCEPTED. It outranks its muted
+                      siblings: without it the row's only clock reading was
+                      `created_at`, and Accept was pressed on a proposal the
+                      reader had never seen. Absent for kinds that carry no
+                      proposed instants (`cancel`). */}
+                  {req.proposed_starts_at && req.proposed_ends_at ? (
+                    <Body
+                      testID={`shift-change-proposed-${req.id}`}
+                      weight="medium"
+                      tabular
+                    >
+                      {t('detail.proposedWindow', {
+                        start: formatClockTime(
+                          req.proposed_starts_at,
+                          shift.timezone
+                        ),
+                        end: formatClockTime(
+                          req.proposed_ends_at,
+                          shift.timezone
+                        ),
+                      })}
+                    </Body>
+                  ) : null}
                   <Small
                     testID={`shift-change-raised-by-${req.id}`}
                     className="text-muted-foreground"
@@ -825,14 +866,19 @@ export function ShiftDetailScreen() {
                     className="text-muted-foreground"
                     tabular
                   >
-                    {formatInstantDisplay(req.created_at, shift.timezone)}
+                    {t('detail.raisedAt', {
+                      time: formatInstantDisplay(
+                        req.created_at,
+                        shift.timezone
+                      ),
+                    })}
                   </Small>
-                  {req.status === 'pending' && isOwnRequest ? (
+                  {req.status === 'pending' && isOwnRequest && awaitingKey ? (
                     <Small
                       testID={`shift-change-awaiting-${req.id}`}
                       className="text-muted-foreground"
                     >
-                      {t('detail.awaitingNannyConfirm')}
+                      {t(awaitingKey, { name: nameFor(shift.carer_id) })}
                     </Small>
                   ) : null}
                   {req.kind === 'cancel' &&

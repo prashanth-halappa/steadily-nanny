@@ -63,7 +63,35 @@ describe('ShiftDetailScreen source', () => {
     expect(source).toContain('STATUS_TO_VARIANT');
     expect(source).toContain('shift-detail-status');
     expect(source).toContain('shift-detail-short-notice-hint');
-    expect(source).toContain('detail.awaitingNannyConfirm');
+  });
+
+  // D75: the old single key ("Waiting for the nanny to confirm") rendered for
+  // ANY pending request the reader raised, so a nanny's counter-offer — the
+  // only kind she can raise — pointed back at herself. Forked to mirror the
+  // server: a parent waits on the assigned carer, the nanny waits on the family.
+  it('D75: the awaiting line names who actually has to answer, never the requester herself', () => {
+    expect(source).not.toContain('detail.awaitingNannyConfirm');
+    expect(source).toContain('detail.awaitingCarerConfirm');
+    expect(source).toContain('detail.awaitingFamilyConfirm');
+    // Forked on the REQUESTER's role, not the reader's raw `isNanny`.
+    expect(source).toContain("requesterRole === 'nanny'");
+    // Neither source resolved → no line, rather than a guessed one.
+    expect(source).toContain('isOwnRequest && awaitingKey');
+  });
+
+  // D76: the row rendered `created_at` and nothing else clock-shaped, so
+  // Accept was pressed on a counter-offer whose proposed times were never
+  // shown. Both instants are already on the wire.
+  it('D76: a change request shows the time it proposes, and labels the raised-at stamp', () => {
+    expect(source).toContain('detail.proposedWindow');
+    expect(source).toContain('req.proposed_starts_at && req.proposed_ends_at');
+    expect(source).toContain('shift-change-proposed-');
+    // Household zone, same as every other time on this screen.
+    expect(source).toMatch(
+      /formatClockTime\(\s*req\.proposed_starts_at,\s*shift\.timezone/
+    );
+    // The bare timestamp is labelled so it cannot read as the proposed time.
+    expect(source).toContain('detail.raisedAt');
   });
 
   // §6.1 (D21): the arrangement's window is the ONLY cancellation window.
