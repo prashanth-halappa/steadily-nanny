@@ -10,12 +10,14 @@ const screenPath = join(__dirname, '../components/InboxScreen.tsx');
 const hookPath = join(__dirname, '../hooks/useInboxItems.ts');
 const buildPath = join(__dirname, '../utils/buildInboxItems.ts');
 const copyPath = join(__dirname, '../utils/inboxItemCopy.ts');
+const rowPath = join(__dirname, '../components/InboxRow.tsx');
 const routePath = join(__dirname, '../../../app/(private)/(tabs)/inbox.tsx');
 
 let screenSource: string;
 let hookSource: string;
 let buildSource: string;
 let copySource: string;
+let rowSource: string;
 let routeSource: string;
 
 beforeAll(async () => {
@@ -23,6 +25,7 @@ beforeAll(async () => {
   hookSource = await Bun.file(hookPath).text();
   buildSource = await Bun.file(buildPath).text();
   copySource = await Bun.file(copyPath).text();
+  rowSource = await Bun.file(rowPath).text();
   routeSource = await Bun.file(routePath).text();
 });
 
@@ -51,13 +54,17 @@ describe('InboxScreen source', () => {
   });
 
   it('shares title/subtitle/href copy with NeedsAttentionCard via inboxItemCopy', () => {
-    expect(screenSource).toContain('inboxItemCopy');
-    expect(screenSource).toContain('titleForItem');
-    expect(screenSource).toContain('subtitleForItem');
+    // The row owns per-item copy and the screen owns the destination, so the
+    // guarantee spans both files — what matters is that neither hand-rolls
+    // copy that `NeedsAttentionCard` reads from the same shared module.
+    const surface = screenSource + rowSource;
+    expect(surface).toContain('inboxItemCopy');
+    expect(surface).toContain('titleForItem');
+    expect(surface).toContain('subtitleForItem');
     expect(screenSource).toContain('hrefForItem');
     // The functions themselves must live in the shared module, not here.
-    expect(screenSource).not.toContain('function titleForItem');
-    expect(screenSource).not.toContain('function subtitleForItem');
+    expect(surface).not.toContain('function titleForItem');
+    expect(surface).not.toContain('function subtitleForItem');
     expect(screenSource).not.toContain('function hrefForItem');
   });
 

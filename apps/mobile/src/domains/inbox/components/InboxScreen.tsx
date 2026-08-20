@@ -9,7 +9,7 @@
  */
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { Pressable, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
@@ -18,21 +18,14 @@ import { ErrorState } from '@/src/components/custom/ErrorState';
 import { Card } from '@/src/components/ui/card';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
-import { PersonAvatar } from '@/src/components/ui/person-avatar';
 import { ScreenHeader } from '@/src/components/ui/screen-header';
 import { SettingsHeaderButton } from '@/src/components/ui/settings-header-button';
-import { Body, MetadataLabel, Small } from '@/src/components/ui/typography';
+import { Body } from '@/src/components/ui/typography';
 import { useInboxItems } from '@/src/domains/inbox/hooks/useInboxItems';
-import {
-  householdIdOf,
-  personOf,
-} from '@/src/domains/inbox/utils/buildInboxItems';
-import {
-  hrefForItem,
-  subtitleForItem,
-  titleForItem,
-} from '@/src/domains/inbox/utils/inboxItemCopy';
+import { householdIdOf } from '@/src/domains/inbox/utils/buildInboxItems';
+import { hrefForItem } from '@/src/domains/inbox/utils/inboxItemCopy';
 import { useHouseholdLookup } from '@/src/hooks/queries/useHouseholdById';
+import { InboxRow } from './InboxRow';
 
 // `ScreenHeader` owns the band's own top+horizontal padding (Rule H), so the
 // ScrollView's contentContainerStyle can't also carry SCREEN_CONTENT_STYLE's
@@ -109,49 +102,18 @@ export function InboxScreen() {
             {/* The group card owns the lift via Card's internal useElevation;
                 rows stay flat inside it per Rule D. */}
             <Card className="overflow-hidden p-0">
-              {items.map((item, index) => {
-                const person = personOf(item);
-                // Deliberately cross-household (module doc) — each row
-                // formats in ITS OWN household's zone, never a single one
-                // applied to the whole list.
-                const itemTimeZone = timeZoneFor(householdIdOf(item));
-                return (
-                  <Pressable
-                    key={`${item.kind}-${item.id}`}
-                    testID={`inbox-item-${item.kind}-${item.id}`}
-                    accessibilityRole="button"
-                    onPress={() => router.push(hrefForItem(item))}
-                    className={
-                      index === 0
-                        ? 'flex-row items-center gap-3 p-4'
-                        : 'border-border border-t flex-row items-center gap-3 p-4'
-                    }
-                  >
-                    {person ? (
-                      <PersonAvatar
-                        testID={`inbox-item-avatar-${item.id}`}
-                        name={person.name}
-                        colour={person.colour}
-                        size="sm"
-                      />
-                    ) : null}
-                    <View className="min-w-0 flex-1 gap-1">
-                      <MetadataLabel
-                        testID={`inbox-item-kind-${item.kind}`}
-                        className="text-muted-foreground"
-                      >
-                        {t(`kinds.${item.kind}`)}
-                      </MetadataLabel>
-                      <Body weight="semibold">
-                        {titleForItem(item, t, itemTimeZone)}
-                      </Body>
-                      <Small className="text-muted-foreground">
-                        {subtitleForItem(item, t, itemTimeZone)}
-                      </Small>
-                    </View>
-                  </Pressable>
-                );
-              })}
+              {items.map((item, index) => (
+                <InboxRow
+                  key={`${item.kind}-${item.id}`}
+                  item={item}
+                  isFirst={index === 0}
+                  // Deliberately cross-household (module doc) — each row
+                  // formats in ITS OWN household's zone, never a single one
+                  // applied to the whole list.
+                  timeZone={timeZoneFor(householdIdOf(item))}
+                  onPress={() => router.push(hrefForItem(item))}
+                />
+              ))}
             </Card>
           </View>
         )}
