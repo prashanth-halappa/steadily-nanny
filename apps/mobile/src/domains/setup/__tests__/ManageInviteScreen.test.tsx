@@ -7,14 +7,69 @@
  * code on mount — visiting it repeatedly must not silently mint unused
  * invite codes — the parent explicitly taps "generate".
  */
-import { beforeAll, describe, expect, it } from 'bun:test';
+import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { join } from 'node:path';
+import { fireEvent, render } from '@testing-library/react-native';
+import { Button } from '@/src/components/ui/button';
+import {
+  resetNavigationMocks,
+  setupNavigationMock,
+} from '@/src/test-utils/mocks/navigation';
 
 const componentPath = join(__dirname, '../components/ManageInviteScreen.tsx');
 let source: string;
 
+const createInviteMutate = mock();
+
+setupNavigationMock();
+
+mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
+  useIsOnboarded: () => ({
+    householdId: 'household-1',
+    role: 'parent',
+    status: 'onboarded',
+  }),
+}));
+
+mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
+  useActiveHousehold: () => ({
+    household: {
+      id: 'household-1',
+      currency: 'USD',
+      timezone: 'UTC',
+      cancellation_paid_within_hours: 24,
+      week_starts_on: 0,
+    },
+  }),
+}));
+
+mock.module('@/src/hooks/mutations/useCreateInvite', () => ({
+  useCreateInvite: () => ({
+    mutate: createInviteMutate,
+    isPending: false,
+    data: null,
+    isError: false,
+    reset: mock(),
+  }),
+}));
+
+mock.module('@/src/hooks/mutations/useRevokeInvite', () => ({
+  useRevokeInvite: () => ({
+    mutate: mock(),
+    isPending: false,
+  }),
+}));
+
+let ManageInviteScreen: typeof import('../components/ManageInviteScreen').ManageInviteScreen;
+
 beforeAll(async () => {
   source = await Bun.file(componentPath).text();
+  ({ ManageInviteScreen } = await import('../components/ManageInviteScreen'));
+});
+
+beforeEach(() => {
+  createInviteMutate.mockClear();
+  resetNavigationMocks();
 });
 
 describe('ManageInviteScreen', () => {
@@ -27,7 +82,8 @@ describe('ManageInviteScreen', () => {
   });
 
   it('requires an explicit tap to generate a code — no auto-fire on mount', () => {
-    expect(source).toContain('invite-generate-button');
+    expect(source).not.toContain('invite-generate-button');
+    expect(source).toContain("t('invite.generateButton')");
     expect(source).not.toContain('useEffect');
   });
 
@@ -96,6 +152,34 @@ describe('ManageInviteScreen', () => {
       expect(source).toMatch(
         /hasStarted && invite \?[\s\S]{0,400}invite-offer-edit-replaces-code/
       );
+    });
+  });
+
+  describe('pre-mint CTA (WP1)', () => {
+    it('renders exactly one primary button before a code is minted, and the shell CTA calls createInvite', () => {
+      const { getByTestId, queryByTestId, UNSAFE_getAllByType } = render(
+        <ManageInviteScreen />
+      );
+
+      expect(queryByTestId('invite-generate-button')).toBeNull();
+
+      // The pre-mint defect was two filled primaries — a body Generate plus the
+      // shell Done. Count only those screen-level CTAs, not sheet internals
+      // (PayChangeSheet mounts behind the same mocked Button type).
+      const screenPrimaryIds = UNSAFE_getAllByType(Button)
+        .filter(
+          btn =>
+            (btn.props.variant ?? 'default') === 'default' &&
+            (btn.props.testID === 'manage-invite-screen-cta' ||
+              btn.props.testID === 'invite-generate-button')
+        )
+        .map(btn => btn.props.testID);
+      expect(screenPrimaryIds).toEqual(['manage-invite-screen-cta']);
+
+      fireEvent.press(getByTestId('manage-invite-screen-cta'));
+
+      expect(createInviteMutate).toHaveBeenCalledTimes(1);
+      expect(createInviteMutate).toHaveBeenCalledWith({ role: 'nanny' });
     });
   });
 });

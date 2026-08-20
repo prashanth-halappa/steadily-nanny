@@ -193,8 +193,11 @@ export function ManageInviteScreen() {
       testID="manage-invite-screen"
       title={t('invite.manageTitle')}
       subtitle={t('invite.manageSubtitle')}
-      ctaLabel={t('invite.doneButton')}
-      onCta={() => router.back()}
+      ctaLabel={
+        hasStarted ? t('invite.doneButton') : t('invite.generateButton')
+      }
+      onCta={hasStarted ? () => router.back() : onGenerate}
+      ctaDisabled={hasStarted ? undefined : !onboarding.householdId}
       onBack={() => router.back()}
       backLabel={tCommon('back')}
     >
@@ -232,13 +235,6 @@ export function ManageInviteScreen() {
           {/* No Skip control — absence of a drafted offer already reads as
               "no offer" (see InviteScreen). */}
           {selectedRole === HOUSEHOLD_INVITE_ROLES.NANNY ? offerCard : null}
-          <Button
-            testID="invite-generate-button"
-            onPress={onGenerate}
-            disabled={!onboarding.householdId}
-          >
-            <Text>{t('invite.generateButton')}</Text>
-          </Button>
         </>
       )}
 
