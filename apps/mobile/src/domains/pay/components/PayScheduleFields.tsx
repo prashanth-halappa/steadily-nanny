@@ -99,11 +99,15 @@ export function PayScheduleFields({
               accessibilityState={{ selected }}
               onPress={() => onPayFrequencyChange(selected ? '' : frequency)}
               className={cn(
-                'rounded-full border border-input px-3 py-2',
-                selected && 'border-primary bg-secondary'
+                'rounded-chip bg-secondary px-3 py-2',
+                selected && 'bg-primary'
               )}
             >
-              <Text className={selected ? 'text-primary' : undefined}>
+              <Text
+                className={
+                  selected ? 'font-semibold text-primary-foreground' : undefined
+                }
+              >
                 {t(frequencyLabelKey(frequency))}
               </Text>
             </Pressable>
@@ -130,11 +134,17 @@ export function PayScheduleFields({
                     onPayDayOfWeekTextChange(selected ? '' : String(day))
                   }
                   className={cn(
-                    'rounded-full border border-input px-3 py-2',
-                    selected && 'border-primary bg-secondary'
+                    'rounded-chip bg-secondary px-3 py-2',
+                    selected && 'bg-primary'
                   )}
                 >
-                  <Text className={selected ? 'text-primary' : undefined}>
+                  <Text
+                    className={
+                      selected
+                        ? 'font-semibold text-primary-foreground'
+                        : undefined
+                    }
+                  >
                     {t(key)}
                   </Text>
                 </Pressable>

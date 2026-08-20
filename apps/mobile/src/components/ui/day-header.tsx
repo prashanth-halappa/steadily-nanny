@@ -41,7 +41,7 @@ export function DayHeader({
   return (
     <View
       testID={testID}
-      className="flex-row items-center justify-between px-5.5 pt-6 pb-2"
+      className="flex-row items-center justify-between px-5.5 pt-8 pb-2"
     >
       <View className="flex-row items-center gap-2">
         <DayGroup>{label}</DayGroup>

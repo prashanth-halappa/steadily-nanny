@@ -576,10 +576,10 @@ export function ManageHouseholdScreen() {
                 >
                   <Small
                     className={cn(
-                      'rounded-chip border px-3 py-2',
+                      'rounded-chip bg-secondary px-3 py-2',
                       day === weekStartsOn
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-border text-foreground'
+                        ? 'bg-primary font-semibold text-primary-foreground'
+                        : 'text-foreground'
                     )}
                   >
                     {t(`schedule:weekday.${day}`)}
@@ -605,10 +605,10 @@ export function ManageHouseholdScreen() {
             >
               <Small
                 className={cn(
-                  'rounded-chip border px-4 py-2',
+                  'rounded-chip bg-secondary px-4 py-2',
                   mode === approvalMode
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-border text-foreground'
+                    ? 'bg-primary font-semibold text-primary-foreground'
+                    : 'text-foreground'
                 )}
               >
                 {t(`householdSettings.approvalMode.${mode}`)}
@@ -629,10 +629,10 @@ export function ManageHouseholdScreen() {
             >
               <Small
                 className={cn(
-                  'rounded-chip border px-4 py-2',
+                  'rounded-chip bg-secondary px-4 py-2',
                   scope === approvalScope
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-border text-foreground'
+                    ? 'bg-primary font-semibold text-primary-foreground'
+                    : 'text-foreground'
                 )}
               >
                 {t(`householdSettings.approvalScope.${scope}`)}
@@ -720,7 +720,7 @@ export function ManageHouseholdScreen() {
                     )}
                     onPress={() => setMemberToRemove(member)}
                   >
-                    <Small className="text-destructive">
+                    <Small className="text-error-inline-text">
                       {t('householdSettings.removeMemberButton')}
                     </Small>
                   </AnimatedPressable>
@@ -740,7 +740,7 @@ export function ManageHouseholdScreen() {
             onPress={() => setIsLeaveConfirmOpen(true)}
           >
             <View className="rounded-row border border-border bg-background px-4 py-3">
-              <Small className="text-destructive">
+              <Small className="text-error-inline-text">
                 {t('householdSettings.leaveButton')}
               </Small>
             </View>

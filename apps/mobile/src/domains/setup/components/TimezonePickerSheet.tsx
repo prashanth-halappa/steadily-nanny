@@ -56,8 +56,18 @@ export function TimezonePickerSheet({
               accessibilityState={{ selected: isSelected }}
               onPress={() => onSelect(zone.value)}
             >
-              <View className="flex-row items-center justify-between py-2">
-                <Body className={isSelected ? 'text-primary' : undefined}>
+              <View
+                className={
+                  isSelected
+                    ? 'flex-row items-center justify-between rounded-row bg-secondary px-4 py-2'
+                    : 'flex-row items-center justify-between px-4 py-2'
+                }
+              >
+                <Body
+                  className={
+                    isSelected ? 'font-semibold text-foreground' : undefined
+                  }
+                >
                   {zone.label}
                 </Body>
                 {isSelected ? <Check size={18} /> : null}

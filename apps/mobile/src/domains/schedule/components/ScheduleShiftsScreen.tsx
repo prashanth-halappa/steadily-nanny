@@ -484,7 +484,7 @@ export function ScheduleShiftsScreen({
           </Small>
           {/* The week range is not repeated here — `WeekNavHeader` below
               already owns and renders that exact string. */}
-          <Figure28 testID="schedule-week-total">
+          <Figure28 testID="schedule-week-total" weight="semibold">
             {t('shifts.weekTotal', {
               duration: formatDuration(weekTotalMinutes),
             })}

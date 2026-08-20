@@ -77,10 +77,10 @@ function KindChip({
   return (
     <Button
       testID={testID}
-      variant={selected ? 'default' : 'outline'}
+      variant={selected ? 'default' : 'secondary'}
       onPress={onPress}
     >
-      <Text className={cn(selected ? undefined : 'text-foreground')}>
+      <Text className={cn(selected ? 'font-semibold' : 'text-foreground')}>
         {label}
       </Text>
     </Button>
@@ -252,7 +252,7 @@ export function ExpenseAddSheet({
             {amountInvalid ? (
               <Small
                 testID="expense-add-amount-error"
-                className="text-destructive"
+                className="text-error-inline-text"
               >
                 {t('addSheet.amountError')}
               </Small>
@@ -278,7 +278,7 @@ export function ExpenseAddSheet({
             {milesInvalid ? (
               <Small
                 testID="expense-add-miles-error"
-                className="text-destructive"
+                className="text-error-inline-text"
               >
                 {t('addSheet.milesPrecisionError')}
               </Small>

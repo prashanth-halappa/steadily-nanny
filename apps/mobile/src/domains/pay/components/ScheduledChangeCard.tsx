@@ -14,7 +14,7 @@ import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { InlineError } from '@/src/components/ui/inline-error';
 import { Text } from '@/src/components/ui/text';
-import { H4, Small } from '@/src/components/ui/typography';
+import { H3, Small } from '@/src/components/ui/typography';
 import { formatDisplayDateWithYear } from '../utils/payArrangementForm';
 import { buildTermsDiff, summarizeTermsDiff } from '../utils/termsDiff';
 
@@ -53,12 +53,12 @@ export function ScheduledChangeCard({
   return (
     <Card testID="pay-scheduled-change-card" tone="attention">
       <CardContent className="gap-3">
-        <H4>
+        <H3>
           {t('scheduledChange.title', {
             date: formatDisplayDateWithYear(arrangement.valid_from),
           })}
-        </H4>
-        <Small testID="pay-scheduled-diff" className="text-muted-foreground">
+        </H3>
+        <Small testID="pay-scheduled-diff" className="text-muted-strong">
           {summarizeTermsDiff(
             buildTermsDiff(currentArrangement, arrangement, t),
             SCHEDULED_SUMMARY_TERMS

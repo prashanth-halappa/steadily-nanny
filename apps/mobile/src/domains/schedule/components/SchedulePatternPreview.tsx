@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Card } from '@/src/components/ui/card';
 import { ChildChip } from '@/src/components/ui/child-chip';
-import { Body, Small } from '@/src/components/ui/typography';
+import { Small } from '@/src/components/ui/typography';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
 import { getWeekdayOrder } from '@/src/lib/weekdayOrder';
@@ -59,9 +59,9 @@ export function SchedulePatternPreview({
 
   return (
     <Card testID={testID} className="gap-3 p-5.5">
-      <Body testID={`${testID}-hours`} weight="semibold" tabular>
+      <Small testID={`${testID}-hours`} weight="semibold" tabular>
         {t('pending.previewHoursTotal', { hours: totalHours })}
-      </Body>
+      </Small>
       {until ? (
         <Small testID={`${testID}-until`} className="text-muted-foreground">
           {t('pending.untilLine', { end: formatDisplayDate(until) })}
@@ -94,11 +94,11 @@ export function SchedulePatternPreview({
           index === 0 || ordered[index - 1]?.weekday !== day.weekday;
         return (
           <View key={day.id} className="gap-1">
-            <Body weight="medium" tabular>
+            <Small weight="medium" tabular>
               {isFirstOfWeekday ? `${t(`weekday.${day.weekday}`)} · ` : ''}
               {formatWallClockTime(day.start_time)}–
               {formatWallClockTime(day.end_time)}
-            </Body>
+            </Small>
             {day.children.length > 0 ? (
               <View className="flex-row flex-wrap gap-2">
                 {day.children.map(dc => {
