@@ -49,9 +49,13 @@ export function ChildChip({
         style={resolvedColour ? { backgroundColor: resolvedColour } : undefined}
       />
       <Text
+        // 00-FOUNDATIONS.md §8.4 — selection is weight AND fill together, never
+        // fill alone: a colour-only selection state is what 01-LAWS.md §2 bans.
         className={cn(
-          'font-medium text-sm',
-          selected ? 'text-primary-foreground' : 'text-foreground'
+          'text-sm',
+          selected
+            ? 'font-semibold text-primary-foreground'
+            : 'font-medium text-foreground'
         )}
       >
         {name}

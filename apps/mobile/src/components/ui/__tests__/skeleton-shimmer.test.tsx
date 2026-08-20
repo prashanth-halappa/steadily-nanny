@@ -2,7 +2,8 @@
  * SkeletonShimmer Component Tests
  *
  * Tests for the reusable shimmer primitive component.
- * Validates rendering, dimensions, border radius, and dimensionColor behavior.
+ * Validates rendering, dimensions, border radius, and the 00-FOUNDATIONS 8.8
+ * shimmer contract (crossfade base -> highlight, no accent border).
  */
 
 import { describe, expect, it, mock } from 'bun:test';
@@ -21,7 +22,30 @@ mock.module('@/lib/useColorScheme', () => ({
 }));
 
 import { render } from '@testing-library/react-native';
+import { palette } from '@/lib/design-tokens/palette';
 import { SkeletonShimmer } from '../skeleton-shimmer';
+
+const source = await Bun.file(
+  new URL('../skeleton-shimmer.tsx', import.meta.url).pathname
+).text();
+
+// A docblock naming a removed prop is documentation, not a usage -- the repo's
+// own design guards skip comment lines for exactly this reason
+// (`design-guards/mechanical.test.ts`'s `isCommentLine`).
+const code = source
+  .split('\n')
+  .filter(line => {
+    const t = line.trim();
+    return !t.startsWith('*') && !t.startsWith('//') && !t.startsWith('/*');
+  })
+  .join('\n');
+
+function flatStyle(node: { props: { style?: unknown } }) {
+  const style = node.props.style;
+  return Array.isArray(style)
+    ? Object.assign({}, ...style.flat(Number.POSITIVE_INFINITY).filter(Boolean))
+    : ((style ?? {}) as Record<string, unknown>);
+}
 
 describe('SkeletonShimmer', () => {
   describe('Rendering', () => {
@@ -104,35 +128,47 @@ describe('SkeletonShimmer', () => {
     });
   });
 
-  describe('Dimension color', () => {
-    it('should apply dimensionColor as top border when provided', () => {
+  // 01-LAWS.md 6: the ban on card borders and accent bars stands, with Rule D's
+  // inset hairline as the single exception. A 2dp top border on a skeleton is
+  // the accent bar the system removed, and `dimensionColor` had no production
+  // caller -- so the prop is gone rather than restyled.
+  describe('No accent bar (01-LAWS 6)', () => {
+    it('never draws a top border', () => {
       const { getByTestId } = render(
-        <SkeletonShimmer
-          width={100}
-          height={20}
-          dimensionColor="#F5A623"
-          testID="colored-shimmer"
-        />
+        <SkeletonShimmer width={100} height={20} testID="no-accent" />
       );
-      const element = getByTestId('colored-shimmer');
-      const style = element.props.style;
-      const flatStyle = Array.isArray(style)
-        ? Object.assign({}, ...style.flat(Number.POSITIVE_INFINITY))
-        : style;
-      expect(flatStyle.borderTopWidth).toBe(2);
-      expect(flatStyle.borderTopColor).toBe('#F5A62333'); // 20% opacity
+      const flat = flatStyle(getByTestId('no-accent'));
+      expect(flat.borderTopWidth).toBeUndefined();
+      expect(flat.borderTopColor).toBeUndefined();
     });
 
-    it('should not have top border when dimensionColor is not provided', () => {
+    it('exposes no dimensionColor prop', () => {
+      expect(code).not.toContain('dimensionColor');
+      expect(code).not.toContain('borderTopWidth');
+    });
+  });
+
+  // 00-FOUNDATIONS.md 8.8: "skeletonBase #EDE5EA (secondary) ->
+  // skeletonHighlight #FFFFFF. Shimmer period 1200ms, easing.inOut."
+  // Opacity-dimming the base colour is the cold grey pulse that spec replaced.
+  describe('Shimmer crossfades colour (00-FOUNDATIONS 8.8)', () => {
+    it('animates backgroundColor rather than opacity', () => {
       const { getByTestId } = render(
-        <SkeletonShimmer width={100} height={20} testID="no-color-shimmer" />
+        <SkeletonShimmer width={100} height={20} testID="crossfade" />
       );
-      const element = getByTestId('no-color-shimmer');
-      const style = element.props.style;
-      const flatStyle = Array.isArray(style)
-        ? Object.assign({}, ...style.flat(Number.POSITIVE_INFINITY))
-        : style;
-      expect(flatStyle.borderTopWidth).toBeUndefined();
+      const flat = flatStyle(getByTestId('crossfade'));
+      expect(flat.backgroundColor).toBe(palette.light.skeletonBase.hex);
+      expect(flat.opacity).toBeUndefined();
+    });
+
+    // The reanimated mock collapses withTiming to its target and runs the
+    // worklet once, so the period and the highlight target are only observable
+    // in source -- the same reason widgets and weekReceiptHtml are pinned this
+    // way (docs/09-TESTING.md 5, Pattern A).
+    it('crossfades to the highlight token over the 1200ms period', () => {
+      expect(code).toContain('skeleton.highlight');
+      expect(code).toContain('SHIMMER_PERIOD_MS = 1200');
+      expect(code).not.toContain('0.3');
     });
   });
 });

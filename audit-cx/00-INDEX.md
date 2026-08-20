@@ -35,7 +35,12 @@ The model graded 135 of its first 141 findings `S1` and issued no `S0` at all. T
 credible, so severity here is **regraded against observable user impact**, not relayed:
 
 - **S0** — the screen states something false, blocks a needed action, or hides a state the user
-  must see. **Nothing in this audit reached S0.** No money, hours, or access defect was found.
+  must see. **This audit found none — and missed one.** Wave 2's file-by-file read found
+  `PendingScheduleCard.tsx:93` rendering a white label on a white ghost button: an invisible CTA
+  on the only entry to the nanny accept flow, which both blocks a needed action and hides a
+  state. This index reported that file under a different, false claim ("L3 routine card uses a
+  filled primary action button"), so the real defect was never graded. No money or hours defect
+  was found.
 - **S1** — a binding law is broken in a way a user can see: contrast below AA, wrong hierarchy
   rung, colour as the only channel.
 - **S2** — inconsistent with a sibling surface solving the same problem. Real, but nobody is

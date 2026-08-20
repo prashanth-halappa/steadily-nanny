@@ -90,9 +90,11 @@ function PendingPatternRow({
           router.push(`/(private)/schedule/respond/${item.patternId}` as Href)
         }
       >
-        <Text className="text-primary-foreground font-medium">
-          {t('todayCard.pendingCta')}
-        </Text>
+        {/* No colour class here: `buttonTextVariants` already gives a ghost
+            button `text-foreground`, and a hand-written one can only override
+            it. This label shipped white on a white ghost — 1:1, invisible.
+            See GOLDEN-FIXES #56. */}
+        <Text>{t('todayCard.pendingCta')}</Text>
       </Button>
     </Card>
   );

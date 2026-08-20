@@ -465,6 +465,13 @@ matching what anyone computed):
 | `declined` | `bg-pill-destructive` `#EFE0DE` | `text-error-inline-text` `#7A392F` | 6.68:1 |
 | `cancelled` | `bg-secondary` `#EDE5EA` | `text-muted-strong` `#5F5461` | 6.24:1 |
 | `short-notice` / `outside-hours` | `bg-pill-short-notice` `#F4E4DC` | `text-short-notice-ink` `#7E3C1B` | 6.66:1 |
+| `uncovered` | `bg-pill-warning` `#F1E5D5` | `text-warning-ink` `#6E4E1C` | 6.11:1 |
+
+`uncovered` (nobody is booked for a child's hours) was added after this table was first written
+and is **deliberate**, though it stretches "what someone else decided" — nobody decided it, which
+is the point. It shares `pending`'s fill because an uncovered window is unattended rather than
+in progress; the component's own docblock argues the distinction. Pinned by
+`AgendaView.test.ts:68`. Do not remove it: `AgendaView` and `WeekRibbonView` both depend on it.
 
 Geometry: `rounded-chip px-3`, `FILLED_CHIP_PADDING_Y`, `text-xs font-semibold`,
 sentence case, `self-start`, and a `shrink`/`maxWidth`/`numberOfLines` so a
@@ -532,7 +539,10 @@ The illustration sits on a **`chipPlum` circular ground at 1.6× the art's
 width** so a transparent PNG has something to sit on instead of floating on
 grey. Title is `H3`, description `body` `mutedForeground`.
 
-### 8.8 Skeletons — `skeleton-card.tsx`, `skeleton-shimmer.tsx`
+### 8.8 Skeletons — `skeleton-shimmer.tsx`
+
+> **Corrected 2026-08-20:** this heading also named `skeleton-card.tsx`, which has never existed
+> in this repo. `skeleton-shimmer.tsx` is the only skeleton primitive.
 
 `skeletonBase #EDE5EA` (`secondary`) → `skeletonHighlight #FFFFFF`. Shimmer
 period 1200ms, `easing.inOut`. Critically: **a skeleton must match the rung it

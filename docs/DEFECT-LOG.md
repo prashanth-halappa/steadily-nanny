@@ -2711,3 +2711,59 @@ week a claim about the past needs the other party. What is missing is a
 `QueryNoteSheet` thread D79 wired for the extra-hours case would serve, with a
 "I need to add 3h on Thursday" prefix, letting the parent answer with a reopen
 on an unpaid week or an adjustment on a paid one.
+
+## D80 — `text-destructive` on a destructive action — NOT A DEFECT (would red the build)
+
+**Status:** NOT A DEFECT · raised as CX audit finding `HouseholdDecisionSheet`-5
+
+The finding asked that a destructive ghost action "use the `text-destructive`
+color to clearly communicate its intent" (`screens-settings.md` §3).
+
+`HouseholdDecisionSheet.tsx:112` already renders
+`<Text className="text-error-inline-text">`, which is the correct token.
+`text-destructive` is a **fill**, not an ink — `00-FOUNDATIONS.md:124` is
+explicit that `errorInlineText` is its ink partner and that no second
+`destructiveInk` token should be added. The repo enforces the pairing:
+`src/components/ui/__tests__/design-guards/ink-tokens.test.ts` scans every
+non-comment line under `src/` for
+`/\btext-(destructive|warning|success|short-notice)(?!-)/g` and fails.
+
+So applying this finding as written would have turned a correct line into a
+red gate. Recorded because the shape recurs: `GAPS.md` G2 measured 72 uses of a
+fill where an ink was meant against 10 correct ones, and an audit reading the
+*doc* rather than the *token table* will keep reproducing it.
+
+**What not to do:** don't reach for `text-destructive` for text, ever. The ink
+is `text-error-inline-text`. The measured difference is 8.56:1 vs 5.35:1.
+
+## D81 — `mutedStrong` on a plain card — NOT A DEFECT (and the "fix" breaks Rule M)
+
+**Status:** NOT A DEFECT · raised as CX audit finding `DraftHomeScreen`-4
+
+The finding asked that `text-muted-strong` on `DraftHomeScreen.tsx` L163-183
+become `text-muted-foreground`, citing Rule M (`01-LAWS.md` §4).
+
+Two things are wrong with it.
+
+**Rule M does not ban `mutedStrong` on a plain card.** Its own table lists
+`mutedStrong` on card at **7.17:1 — passes**. The rule's text says
+`mutedForeground` "stays" on plain grounds; it does not make `mutedStrong`
+illegal there. The same reasoning already retired the identical claims against
+`TermsGlossarySheet`, `AvailabilityScreen` and `AvailabilityEditor`.
+
+**More importantly, the ground is not fixed.** Those nodes sit inside
+`shareCard`, whose tone is computed: `tone={shareIsL1 ? 'attention' : 'default'}`
+(`DraftHomeScreen.tsx:154`). The *same* JSX renders on `surfaceAttention` in
+the L1 branch, where Rule M **requires** `muted-strong`. Applying the finding
+fixes nothing on the plain branch and breaks the tinted one.
+
+And nothing would have caught it. `design-guards/rule-m.test.ts`'s
+`classifyCardTone` returns `'skip'` for any `tone={expr}`, by design — a static
+scan cannot resolve a computed ground.
+
+**What not to do:** never judge a muted-token call site without resolving the
+ancestor ground, and treat a computed `tone={...}` as *both* grounds at once —
+the class must be conditional or it is wrong on one branch. The same blind spot
+in the opposite direction left two real Rule M defects in `WeekTotal.tsx`
+(L376, L571) in a file that already computes the correct conditional at L290.
+See `audit-cx/GAPS.md` G3 and `RECOMMENDATIONS.md` R1.

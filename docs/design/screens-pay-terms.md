@@ -1040,12 +1040,49 @@ affected-weeks table applies, that renders here as well, with the same figures.
 Its footer:
 
 ```
-  Button size="lg"                "I've seen these terms"
   Button variant="ghost"          "I don't agree with this"
-  Small mutedForeground
-    "This records the date you saw them. It isn't an agreement to them, and
-     it doesn't give anything up."
 ```
+
+> **Amended 2026-08-20 (CX wave 2). The "I've seen these terms" button is deleted, and the
+> reassurance line with it — because the thing they were designed to solve is now solved
+> upstream, better.**
+>
+> This section was written when acknowledgment was a **one-sided** act: a parent wrote an
+> arrangement, and the nanny's only recourse was to confirm she had seen it. That is no longer
+> how terms come into existence.
+>
+> **`pay_arrangements` has exactly one writer — `termsProposalCommandService.accept`.** An
+> arrangement exists *only* because someone tapped Agree on a `terms_proposals` round.
+> `PaySetupScreen.tsx`'s header states the consequence: *"what this screen submits is a
+> `terms_proposals` round the nanny has to agree to — which is what makes 'an arrangement exists'
+> and 'someone tapped Agree' the same fact, and what stops the clock-in gate opening against
+> terms she never saw."* Until then `TermsGateService.assertAgreed` throws and nobody can clock
+> in.
+>
+> That agreement is stronger than the button this section asked for on every axis:
+> it is explicit (`AcceptTermsSheet` — figure, start date, **a liability checkbox**, confirm),
+> it is blocked offline ("an acceptance is a binding write and must never be queued
+> optimistically"), it is **symmetric** (either side proposes; only the counterparty may accept;
+> both get role-appropriate liability copy), and it is recorded as `accepted_by` +
+> `responded_at` + `responsibility_confirmed`. `termsProposal.schema.ts` says so outright:
+> together these make D-31's acknowledgment record literally *"Marisol proposed Aug 10 · The
+> Ahmeds agreed Aug 12"* — **"a better artifact than the one-sided ack D-31 originally
+> described."**
+>
+> What survives from this section is the **dissent** row (§8.3.1), which is unchanged, and a
+> read receipt that is deliberately *not* a consent record: `pay_arrangement_acks kind='seen'`,
+> written automatically when My pay renders, **carer-only by RLS** ("a parent cannot record that
+> the nanny 'saw' terms on her behalf"). Its real job is clearing her own `terms_ack` Inbox row
+> — `buildInboxItems.ts` emits that row only while `resolveAckState(...).kind === 'none'` — which
+> is why it must stay automatic: an explicit tap would leave a task unresolved after she had
+> already read the terms.
+>
+> **Do not restore the button.** Two agreement records of different strength for the same terms
+> is worse than one, and in any dispute the weaker one — the one with no liability checkbox —
+> muddies which act was binding. `MyPayScreen.test.tsx:456-486` enforces this, down to asserting
+> that `seenButton` and `reassurance` do not exist in `en` or `es`.
+>
+> Full reasoning: `audit-cx/APPENDIX-REFUTED.md` Type 6.
 
 ### 8.3.1 The dissent row (Marisol, M3) — **owner decision, extends D-31**
 
@@ -1133,12 +1170,26 @@ know, the pill already told them.
 Replace the rate-only rows (`PayArrangementScreen.tsx:250–289`,
 `MyPayScreen.tsx:117–142`) with L4 rows on the bare ground:
 
+> **Amended 2026-08-20 (CX wave 2).** Two things in the block below were superseded by
+> `01-LAWS.md` and are corrected here.
+>
+> 1. **The header is `DayGroup`, not `MetadataLabel`.** Rule A demoted `MetadataLabel` to
+>    annotation-inside-a-surface: *"it is never a section header again."* The evidence was 42
+>    sites where the 13px header was smaller than its own 16px content.
+> 2. **The rows sit in ONE `ListGroup`, with no per-row `elevation.row`.** Rule D is explicit,
+>    and names this very section as one of the two specs it was *promoted from*:
+>    `card #FFFFFF` on `background #F5F1F2` is **1.12:1** where WCAG 1.4.11 wants 3:1, so 34
+>    call sites carried a boundary that, measured, was not there.
+>
+> `PayArrangementScreen.tsx:570` is already migrated; `MyPayScreen` follows in wave 2.
+
 ```
-MetadataLabel  "History"                          mutedForeground
+DayGroup       "History"                          foreground
 Small mutedForeground
   "Terms are never edited or removed — a change is a new record."
 
-┌ rounded-row  bg-card  px-4 py-3  elevation.row ──────────
+┌ ListGroup — ONE Card tone="default" p-0 overflow-hidden ─
+│  (rows separate by an inset hairline; the card lifts, the rows do not)
 │  Body weight="medium"   "From Aug 10, 2026"
 │  Small mutedForeground  "Rate $28.00 → $30.00 · Guaranteed 45h → 50h"
 │  Small mutedForeground  "Set by David Chen on Aug 10 · Seen Aug 11"

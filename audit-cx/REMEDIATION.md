@@ -1,4 +1,4 @@
-# Remediation — status, 2026-08-20
+# Remediation — status, 2026-08-20 (wave 2 in progress)
 
 Companion to `00-INDEX.md`. What was fixed, what was reverted, and what is deferred.
 
@@ -96,3 +96,65 @@ judgement call about which rung a given card actually is, and cannot be guarded 
 2. Widgets first (16 findings, 4 files, fully untouched, and they render outside the app where
    nothing else checks them). Watch dark-mode ink: that is where the 1.92:1 regression came from.
 3. Then `MyPayScreen` + `PayArrangementScreen` (15), which are the two densest screens left.
+
+
+---
+
+# Wave 2
+
+**Method.** Every one of the 101 still-open items was read against the file it names before any
+code moved. Verdicts recorded in `PENDING.md`; refutations in `APPENDIX-REFUTED.md` (which gained
+three new types for the failure modes wave 2 exposed).
+
+**Result of the read-through, before a single fix:**
+
+| | Count |
+|---|---|
+| CONFIRMED — defect present, current line quoted | **~30** |
+| STALE — already fixed, evidence line survived | 23 |
+| REFUTED — code as quoted, rule does not govern it | 25 |
+| CONFLICT — a test or docblock deliberately pins the opposite | 10 |
+
+**The estimate above was too high.** Wave 1's retro guessed 45–60; the real number is ~30. Both
+guesses were made without reading the files, which is the point.
+
+## What the read-through found that the audit did not
+
+**An S0.** `PendingScheduleCard.tsx:93` puts `text-primary-foreground` (`#FFFFFF`) on a button
+that is *already* `variant="ghost"`, over `card #FFFFFF` — a 1:1 invisible label on the only
+entry to `/(private)/schedule/respond/[patternId]`, "the accept half of 'parent proposes, nanny
+accepts'". No test asserts the label; `PendingScheduleCard.test.tsx:165-168` only fires `onPress`.
+The audit filed this file under a false claim, so following its wording would have walked past a
+broken flow. `README.md` and `00-INDEX.md`'s "0 S0" headline has been corrected.
+
+**Two findings that would have done damage.** `HouseholdDecisionSheet`-5 asks for
+`text-destructive`, which the `ink-tokens` guard reds the build on (the file already has the
+correct ink). `DraftHomeScreen`-4 would break Rule M on the L1 branch of a computed tone that
+`rule-m.test.ts` cannot see. Both recorded as `APPENDIX-REFUTED.md` Type 5.
+
+## Two facts that change how these rules apply
+
+**Dark mode is hard-disabled.** `apps/mobile/lib/useColorScheme.ts` forces light and no-ops the
+setters, so every RN consumer — Tailwind *and* `useThemeColors` — resolves light. **RN components
+cannot regress in dark mode**, and the four render mocks locking colour scheme to `light` are
+accurate rather than blind. The risk lives in exactly one directory, `src/widgets/`, which is
+SwiftUI in the WidgetKit extension, outside `useColorScheme`'s reach, on live `dark ? … : …`
+ternaries. That is precisely why `OnTheClock` — a Live Activity — was the one thing wave 1 broke
+and nothing else was. **Dark-mode caution is a widget rule, not a global one.**
+
+**The widgets are not React Native.** Each is a `'widget'`-directive function serialized to a
+source string and evaluated in bare JavaScriptCore. No NativeWind, no Tailwind, no repo imports.
+Eleven of the 16 widget findings cite systems that cannot reach that surface — recorded as
+Type 4. Wave 1's retro recommended doing widgets *first* on the grounds that nothing else checks
+them; the reason nothing checks them is that most of these rules do not apply. They go last.
+
+## Doc drift found — six more, all the same direction
+
+Added to wave 1's four: `screens-pay-terms.md` §8.3 (a one-sided ack the two-sided proposal flow
+superseded), §8.5 twice (per-row elevation vs Rule D; `MetadataLabel` header vs Rule A),
+`00-FOUNDATIONS.md` §8.2 (no `uncovered` StatusPill row, but the component's docblock and
+`AgendaView.test.ts:68` both pin it), §8.8 (specs a `skeleton-card.tsx` that does not exist), and
+`screens-today.md` §2, **which contradicts itself eight lines apart** on whether child chips live
+in the hero band or the feed. No test pins either placement.
+
+In every case the doc is the stale side, and wave 2 amends the doc rather than inverting a test.

@@ -7,6 +7,13 @@ Companion to `00-INDEX.md` and `GAPS.md`.
 
 ---
 
+> **Status after wave 2: NOT DONE, and the cost is now measurable.** Wave 2 fixed rung and Rule M
+> defects site-by-site — exactly what R1 warns against ("Fixed by hand, they regress; fixed at the
+> component, they cannot"). Two concrete data points from the wave-2 read-through: `WeekTotal.tsx`
+> *already computes* the correct tone-conditional class at L290 and still hardcodes the wrong one
+> at L376 and L571, and `rule-m.test.ts` cannot catch either because it skips computed
+> `tone={expr}`. Decide on R1 before commissioning a wave 3.
+
 ## R1 — Give `Card` its rung, and let the rung set the typography
 
 **Closes:** ~84 findings across 60 files (the largest theme). **Prevents:** the same defect in

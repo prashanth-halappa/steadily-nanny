@@ -171,6 +171,34 @@ describe('PendingScheduleCard', () => {
     );
   });
 
+  // GOLDEN-FIXES #56. This CTA is the ONLY reachable entry to
+  // /(private)/schedule/respond/[patternId] -- "the accept half of 'parent
+  // proposes, nanny accepts'". It shipped with `text-primary-foreground`
+  // (#FFFFFF) on a `variant="ghost"` button over `card #FFFFFF`: a 1:1
+  // invisible label. `buttonTextVariants` already supplies `text-foreground`
+  // for ghost, so a hand-written colour class on the child can only ever
+  // override the variant's own correct choice.
+  // Source inspection, not a render assertion: `bun.setup.ts` stubs
+  // `buttonVariants`/`buttonTextVariants` to '' and renders Button as a host
+  // string, so no render test in this repo can observe a button label's
+  // resolved colour (docs/09-TESTING.md 5, Pattern A).
+  it('lets the button variant own the label colour, so the CTA is legible', async () => {
+    const source = await Bun.file(
+      new URL('../components/PendingScheduleCard.tsx', import.meta.url).pathname
+    ).text();
+    const code = source
+      .split('\n')
+      .filter(line => {
+        const t = line.trim();
+        return (
+          !t.startsWith('*') && !t.startsWith('//') && !t.startsWith('{/*')
+        );
+      })
+      .join('\n');
+
+    expect(code).not.toContain('text-primary-foreground');
+  });
+
   it('falls back to the generic title when the household name cannot be resolved', () => {
     mockUseInboxItems.mockImplementation(() => ({
       items: [pendingPatternItem({ householdId: 'household-unknown' })],

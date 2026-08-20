@@ -63,14 +63,23 @@ every visit now (`ScreenWash kind="brand"`, apricot only while live).
 │                   TodayCoverage at default tone (parent / helper). Empty
 │                   only for a role with neither: a past-member nanny.
 │  L2 slot        — live / clock card
-│  feed           — child chips (parent), then moment cards (nanny-joined /
-│                   joined-household, first clock-in, first week-approved)
-│                   before NeedsAttention, then attention / routine cards.
+│  feed           — moment cards (nanny-joined / joined-household, first
+│                   clock-in, first week-approved) before NeedsAttention,
+│                   then attention / routine cards.
 │                   Moments are never slot occupants.
 │  L3 stack       — routine cards, gap 12
 │  L4 block       — "Next up", bare ground
 └
 ```
+
+> **Corrected 2026-08-20 (CX wave 2).** The `feed` line above used to begin "child chips
+> (parent), then moment cards", which contradicted the HERO BAND box eight lines earlier — the
+> same section placing the chips in two different containers. **The band is correct and is what
+> ships:** `TodayScreen.tsx` renders the chips inside `ScreenHeader`'s `anchor` (L601-614), and
+> the feed does not begin until L640. §1's reference-capture list agrees ("4. Two child chips.",
+> listed after the spot art). Recorded because no test pinned the placement in *either*
+> direction, so an audit acting on the wrong half of this section would have moved working code
+> with nothing to catch it.
 
 The hero band is not a card. It has no ground of its own, no shadow, no radius —
 it is the top of the wash, and the wash is what separates it from the cards

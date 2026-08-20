@@ -12,6 +12,16 @@ was launched, no database was queried. The working tree was byte-identical befor
 
 ---
 
+> **Correction, 2026-08-20 (wave 2).** The "0 S0" figure below was wrong, and the audit's own
+> wording is why. `PendingScheduleCard.tsx:93` renders a white label on a white ghost button —
+> a 1:1 invisible CTA on the **only** entry to the nanny accept flow. The audit reported that
+> file as *"L3 routine card uses a filled primary action button"*, which is false on both counts,
+> so the real defect was never graded. It was found by reading the file, not the finding.
+>
+> The wider correction: reading every still-open finding against its file in wave 2 settled
+> **71 of 101 without a code change**. `EXACT` proves the code exists, never that the finding is
+> correct. See `PENDING.md` and `APPENDIX-REFUTED.md`.
+
 ## The numbers
 
 | | |
@@ -22,7 +32,7 @@ was launched, no database was queried. The working tree was byte-identical befor
 | Evidence-verified | **257** |
 | Refuted / unverifiable | 14 (`APPENDIX-REFUTED.md`) |
 | Mechanical rules swept | 10 (`MECHANICAL.md`) |
-| Reached S0 (false statement, blocked action, hidden state) | **0** |
+| Reached S0 (false statement, blocked action, hidden state) | **1** — found in wave 2, not by the audit (see below) |
 
 ## Files
 
@@ -33,7 +43,9 @@ was launched, no database was queried. The working tree was byte-identical befor
 | `RECOMMENDATIONS.md` | Ranked by leverage, with a sequencing order |
 | `COVERAGE.md` | Ledger of all 305 files → run → finding or clean |
 | `MECHANICAL.md` | The deterministic `ripgrep` sweep, verbatim |
-| `APPENDIX-REFUTED.md` | Findings that failed verification, and why |
+| `APPENDIX-REFUTED.md` | Findings that failed verification, and why — six types |
+| `PENDING.md` | The VERIFIED wave-2 worklist. Added after capture |
+| `REMEDIATION.md` | What each wave actually changed, reverted and refuted. Added after capture |
 | `reports/` | Raw model output, unedited, one file per run |
 | `logs/` | Per-run stderr, the verification table, the quarantined run, the tree baseline |
 

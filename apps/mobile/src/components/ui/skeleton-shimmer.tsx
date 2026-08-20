@@ -2,11 +2,21 @@
  * SkeletonShimmer - Reusable shimmer primitive for skeleton loading states
  *
  * Replaces cold gray pulse animations with a warm, branded shimmer effect.
- * Uses Reanimated opacity animation cycling between 0.4 and 1.0 on the
- * skeleton base color (secondary). Respects reduced motion accessibility settings.
+ * `00-FOUNDATIONS.md` §8.8: the shimmer CROSSFADES `skeletonBase` →
+ * `skeletonHighlight` over a 1200ms period with `easing.inOut` — it does not
+ * dim the base colour with opacity, which is the cold grey pulse this system
+ * replaced. Both tokens come from `useThemeColors()` so the pair stays
+ * theme-resolved rather than hardcoding a literal that would be wrong in one
+ * of them.
  *
- * Optional dimensionColor prop adds a subtle 2dp top border accent at 20% opacity
- * for category-aware skeleton placeholders.
+ * Respects reduced motion: it settles on the base colour rather than freezing
+ * mid-crossfade.
+ *
+ * NO ACCENT BAR. An earlier version took a `dimensionColor` prop and drew a 2dp
+ * top border with it. That is the accent bar `01-LAWS.md` §6 removed — Rule D's
+ * inset hairline inside a group card is the single exception, and a skeleton is
+ * not that. The prop had no production caller, so it was deleted rather than
+ * restyled.
  */
 
 import { useEffect } from 'react';
@@ -22,11 +32,13 @@ import Animated, {
 import { useReducedMotion } from '@/lib/animations/useReducedMotion';
 import { useThemeColors } from '@/lib/design-tokens/useThemeColors';
 
+/** `00-FOUNDATIONS.md` §8.8 — one full base→highlight→base cycle. */
+const SHIMMER_PERIOD_MS = 1200;
+
 interface SkeletonShimmerProps {
   width: number | string;
   height: number;
   borderRadius?: number;
-  dimensionColor?: string;
   testID?: string;
 }
 
@@ -34,31 +46,33 @@ export function SkeletonShimmer({
   width,
   height,
   borderRadius = 4,
-  dimensionColor,
   testID = 'skeleton-shimmer',
 }: SkeletonShimmerProps) {
   const reducedMotion = useReducedMotion();
   const themeColors = useThemeColors();
-  const opacity = useSharedValue(1);
+  const base = themeColors.skeleton.base;
+  const highlight = themeColors.skeleton.highlight;
+  const tint = useSharedValue(base);
 
   useEffect(() => {
     if (reducedMotion) {
-      opacity.value = 1;
+      tint.value = base;
       return;
     }
 
     const shimmerEasing = Easing.inOut(Easing.ease);
-    opacity.value = withRepeat(
+    const halfPeriod = SHIMMER_PERIOD_MS / 2;
+    tint.value = withRepeat(
       withSequence(
-        withTiming(0.3, { duration: 600, easing: shimmerEasing }),
-        withTiming(1.0, { duration: 600, easing: shimmerEasing })
+        withTiming(highlight, { duration: halfPeriod, easing: shimmerEasing }),
+        withTiming(base, { duration: halfPeriod, easing: shimmerEasing })
       ),
       -1 // infinite repeats
     );
-  }, [reducedMotion, opacity]);
+  }, [reducedMotion, tint, base, highlight]);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    opacity: opacity.value,
+    backgroundColor: tint.value,
   }));
 
   const resolvedWidth: DimensionValue =
@@ -74,13 +88,6 @@ export function SkeletonShimmer({
           width: resolvedWidth,
           height,
           borderRadius,
-          backgroundColor: themeColors.skeleton.base,
-          ...(dimensionColor
-            ? {
-                borderTopWidth: 2,
-                borderTopColor: `${dimensionColor}33`, // 20% opacity
-              }
-            : {}),
         },
       ]}
     />

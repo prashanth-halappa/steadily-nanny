@@ -26,6 +26,14 @@ whether a test or config already enforces them:
 | Correct muted token for the ground (Rule M) | **no** | 34 findings, 22 files |
 | Correct ink token for semantic colour | **no** | 72 sites |
 
+**Wave-2 postscript.** Both unguarded rules that got guards in wave 1 (ink tokens, Rule M on
+literal tinted cards) are still at zero — the guards held across a second remediation wave. The
+pattern held in the other direction too: every wave-2 defect that survived a fresh read lives in
+a rule with no guard, and the one S0 the audit missed entirely (`PendingScheduleCard.tsx:93`, a
+white label on a white ghost button) is in a class nothing checks — *button label contrast against
+its own resolved variant*. `bun.setup.ts` stubs `buttonVariants` to `''`, so no render test in
+this repo can observe it.
+
 Every rule with a guard is at zero. Every violation found lives in a rule with no guard. The
 design system is not being ignored — it is being followed exactly as far as it is enforced, and
 no further.
@@ -56,6 +64,15 @@ would deliver 8.56:1 instead of 5.35:1 — better, not required.
 
 ## G3 — Rule M is stated as a contrast table, not as a rule a machine can check
 
+> **Wave-2 evidence, and it cuts both ways.** The guard written in wave 1 skips computed tones —
+> `classifyCardTone` returns `'skip'` for `tone={expr}`. That single blind spot accounts for the
+> two remaining Rule M defects in `WeekTotal.tsx` (L376, L571, inside a `<Card tone={tone}>` whose
+> own file *already* computes the right class at L290 and fails to thread it) **and** for an audit
+> finding that would have broken Rule M in the opposite direction (`DraftHomeScreen`-4, whose
+> nodes render on `surfaceAttention` in the L1 branch of `tone={shareIsL1 ? … : …}`). A rule that
+> cannot see the ground cannot police either direction. This is the strongest argument for R1.
+
+
 `01-LAWS.md §4` gives exact ratios for `mutedForeground` on each tinted ground. But whether a
 given `text-muted-foreground` is legal depends on **the ground it lands on**, which lives in an
 ancestor component — a `<Card tone>`, a wash, a sheet. No rule can be checked at the call site,
@@ -72,7 +89,10 @@ directions: `mutedForeground` on tinted ground, and `mutedStrong` over-applied o
 card knows it is L3 and its title does not. Every screen re-derives the rung by hand, and 60
 files got it wrong somewhere.
 
-## G5 — Specs with no component, components with no spec
+## G5 — Specs with no component, components with no spec — **RESOLVED in wave 2**
+
+> Every reference below was corrected in the wave-2 docs commit. Kept for the record.
+
 
 - `00-FOUNDATIONS.md:535` §8.8 specs `skeleton-card.tsx`. **The file does not exist.**
 - `GOLDEN-FIXES.md:22` offers `ui/progress.tsx` as the worked example of the #2 fix. **Absent.**

@@ -51,6 +51,26 @@ describe('ChildChip', () => {
     );
   });
 
+  // 00-FOUNDATIONS.md 8.4: "Unselected `bg-secondary`, selected `bg-primary` +
+  // `text-primary-foreground` AND `fontWeight: 600` -- selection is weight +
+  // fill together, never fill alone." Fill alone is colour-only signalling,
+  // which 01-LAWS.md 2 bans outright.
+  it('raises the label to weight 600 when selected, not fill alone', () => {
+    const { getByText } = render(
+      <ChildChip name="Wren" selected testID="chip-wren-weight" />
+    );
+    expect(getByText('Wren').props.className).toContain('font-semibold');
+    expect(getByText('Wren').props.className).not.toContain('font-medium');
+  });
+
+  it('leaves an unselected label at medium weight', () => {
+    const { getByText } = render(
+      <ChildChip name="Wren" testID="chip-wren-unweighted" />
+    );
+    expect(getByText('Wren').props.className).toContain('font-medium');
+    expect(getByText('Wren').props.className).not.toContain('font-semibold');
+  });
+
   it('applies a caller-provided colour dot as an inline style', () => {
     const { getByTestId } = render(
       <ChildChip name="Wren" colour="#14B8A6" testID="chip-wren-colour" />

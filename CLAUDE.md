@@ -80,7 +80,7 @@ It is NOT a kitchen sink — cross-cutting pieces live elsewhere, and each has e
 - **Never use a bare React Native `<Modal>` above the navigator.** A bare `animationType="slide"` modal can strand a transparent, touch-blocking window on iOS and freeze the app. Always use `BottomSheetBase` (`apps/mobile/src/components/custom/BottomSheetBase.tsx`). (`GOLDEN-FIXES.md` #1.)
 - **This app has no paywall.** There is no `domains/subscription/`, no RevenueCat dependency, and no entitlement gating. If you add billing, re-read `GOLDEN-FIXES.md` #1 (App Store section) and `REVIEW-CHECKLIST.md` §1 first — the native-crash-on-env-drift trap they describe is real, it just has nothing to bite here yet.
 - **`client.ts`'s auth behavior is injected, not automatic.** `configureAuthHandlers({ refreshToken, onUnauthorized })` (`apps/mobile/src/api/client.ts`) must be called once at app start — the auth store already does this. If you replace it, re-wire the injection point, don't hardcode a dependency back into `client.ts`.
-- **Copy obeys `docs/design/screens-today.md` §7 (Voice).** Acknowledgement is allowed; grading the reader is not. Exclamation marks are allowed only in a `moments.*` title — `apps/mobile/src/i18n/__tests__/voice-guard.test.ts` fails the build on any other.
+- **Copy obeys `docs/design/02-VOICE.md`.** Acknowledgement is allowed; grading the reader is not. Exclamation marks are allowed only in a `moments.*` title — `apps/mobile/src/i18n/__tests__/voice-guard.test.ts` fails the build on any other.
 
 ## Dev-log locations
 
