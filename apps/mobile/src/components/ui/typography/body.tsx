@@ -59,7 +59,7 @@ export function BlockQuote({
       role={Platform.OS === 'web' ? 'blockquote' : undefined}
       style={[tokenToStyle(typography.body), style]}
       className={cn(
-        'mt-6 native:mt-4 border-l-2 border-border pl-6 native:pl-3 text-foreground italic web:select-text',
+        'mt-6 native:mt-4 pl-6 native:pl-3 text-foreground italic web:select-text',
         className
       )}
       {...props}

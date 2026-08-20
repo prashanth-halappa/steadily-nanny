@@ -24,10 +24,9 @@ import { SettingsHeaderButton } from '@/src/components/ui/settings-header-button
 import { SkeletonShimmer } from '@/src/components/ui/skeleton-shimmer';
 import { SplitTrack } from '@/src/components/ui/split-track';
 import {
-  Body,
+  Figure28,
   H1,
   MetadataLabel,
-  SignatureHeroBold,
   Small,
 } from '@/src/components/ui/typography';
 import { WeekBars } from '@/src/components/ui/week-bars';
@@ -90,6 +89,8 @@ export function HoursHeroBand({
     typeof scheduledMinutes === 'number' && scheduledMinutes > 0
       ? scheduledMinutes
       : null;
+  const contextLine =
+    carerName && lead ? `${carerName} · ${lead}` : (carerName ?? lead);
 
   return (
     <View testID={testID} className="mb-4 gap-3">
@@ -110,14 +111,12 @@ export function HoursHeroBand({
         isPreviousDisabled={isPreviousDisabled}
         isNextDisabled={isNextDisabled}
       />
-      {carerName ? (
-        <Body testID="hours-carer-name" weight="semibold" numberOfLines={1}>
-          {carerName}
-        </Body>
-      ) : null}
-      {isLoaded && lead ? (
-        <Small testID="hours-lead" className="text-muted-strong">
-          {lead}
+      {isLoaded && contextLine ? (
+        <Small
+          testID={carerName && !lead ? 'hours-carer-name' : 'hours-lead'}
+          className="text-muted-strong"
+        >
+          {contextLine}
         </Small>
       ) : null}
       <View>
@@ -129,14 +128,15 @@ export function HoursHeroBand({
             borderRadius={8}
           />
         ) : (
-          <SignatureHeroBold
+          <Figure28
             testID="hours-total"
             tabular
+            weight="semibold"
             numberOfLines={1}
             className={isEmptyWeek ? 'text-muted-foreground' : undefined}
           >
             {totalLabel}
-          </SignatureHeroBold>
+          </Figure28>
         )}
         {overtimeLabel ? (
           <MetadataLabel

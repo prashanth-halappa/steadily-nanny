@@ -36,7 +36,7 @@ import { Button } from '@/src/components/ui/button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
-import { Body, MetadataLabel } from '@/src/components/ui/typography';
+import { Body, DayGroup } from '@/src/components/ui/typography';
 import { InviteRow } from '@/src/domains/draft';
 import { useRevokeInvite } from '@/src/hooks/mutations/useRevokeInvite';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
@@ -124,9 +124,7 @@ export function InvitesScreen() {
       <View testID="invites-list" className="gap-6">
         {waiting.length > 0 ? (
           <View className="gap-2">
-            <MetadataLabel className="text-muted-foreground">
-              {t('invites.groupWaiting')}
-            </MetadataLabel>
+            <DayGroup>{t('invites.groupWaiting')}</DayGroup>
             {waiting.map(invite => (
               <InviteRow
                 key={invite.id}
@@ -145,9 +143,7 @@ export function InvitesScreen() {
         ) : null}
         {settled.length > 0 ? (
           <View className="gap-2">
-            <MetadataLabel className="text-muted-foreground">
-              {t('invites.groupSettled')}
-            </MetadataLabel>
+            <DayGroup>{t('invites.groupSettled')}</DayGroup>
             {settled.map(invite => (
               <InviteRow
                 key={invite.id}

@@ -27,7 +27,6 @@ import { Pressable, View } from 'react-native';
 import { Icon } from '@/lib/icons/iconWithClassName';
 import { PersonAvatar } from '@/src/components/ui/person-avatar';
 import { Figure, MetadataLabel, Small } from '@/src/components/ui/typography';
-import { useElevation } from '~/lib/design-tokens/elevation';
 import { CHEVRON_SLOT } from './TimeEntryRow';
 
 /** Same 56pt ledger-row floor as `TimeEntryDayRow`. */
@@ -58,7 +57,6 @@ interface PaymentRowProps {
 }
 
 export function PaymentRow({ row, onPress }: PaymentRowProps) {
-  const elevation = useElevation();
   const testID = `payments-row-${row.id}`;
 
   return (
@@ -67,7 +65,7 @@ export function PaymentRow({ row, onPress }: PaymentRowProps) {
       accessibilityRole="button"
       onPress={onPress}
       className="mb-2 rounded-row bg-card px-4 py-3"
-      style={[elevation.row, { minHeight: ROW_MIN_HEIGHT }]}
+      style={{ minHeight: ROW_MIN_HEIGHT }}
     >
       <View className="flex-row items-center justify-between gap-3">
         {row.person ? (
