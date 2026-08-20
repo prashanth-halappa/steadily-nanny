@@ -309,6 +309,15 @@ export function TodayScreen() {
   // of silently agreeing with nothing.
   const leadLine =
     coverRows.status === 'ready' ? todayLeadText(t, todayLead) : null;
+  const headerDateLine = household
+    ? `${tSchedule(`weekday.${localDateToWeekday(localDateInZone(household.timezone))}`)} ${formatDisplayDate(localDateInZone(household.timezone))}${
+        activeHousehold.households.length +
+          activeHousehold.pastHouseholds.length <=
+          1 && !activeHousehold.isPastHousehold
+          ? ` · ${household.name}`
+          : ''
+      }`
+    : undefined;
   // §8.1 — "You've joined the {family}", once, per household. Nanny-only:
   // she is the one walking into a placement she has never seen. LIVE-only:
   // her OWN draft household is not something she "joined". A `candidate`
@@ -561,52 +570,50 @@ export function TodayScreen() {
           testID="today-header"
           title={t('screenTitle')}
           trailingAction={<SettingsHeaderButton />}
+          contextLine={headerDateLine}
           anchor={
-            <>
-              {/* The date always shows (a screen called Today with no date
-                on it is odd), and the household name joins it on the same
-                line — but only when there's nothing to switch between.
-                Mirrors HouseholdSwitcher's own bail-out; rendering both
-                would print the household twice. `text-muted-strong`, not
-                `text-muted-foreground`: this line sits on the wash, where
-                mutedForeground is 4.28:1 (Rule M). */}
-              {household ? (
-                <Pressable
-                  testID="today-family-link"
-                  disabled={!canOpenThisFamily}
-                  accessibilityRole={canOpenThisFamily ? 'button' : undefined}
-                  onPress={
-                    canOpenThisFamily
-                      ? () =>
-                          router.push('/(private)/settings/this-family' as Href)
-                      : undefined
-                  }
-                >
-                  <Small testID="today-date" className="mt-1 text-muted-strong">
-                    {`${tSchedule(`weekday.${localDateToWeekday(localDateInZone(household.timezone))}`)} ${formatDisplayDate(localDateInZone(household.timezone))}${
-                      activeHousehold.households.length +
-                        activeHousehold.pastHouseholds.length <=
-                        1 && !activeHousehold.isPastHousehold
-                        ? ` · ${household.name}`
-                        : ''
-                    }`}
-                  </Small>
-                </Pressable>
-              ) : null}
-              {leadLine ? (
-                <Body testID="today-lead" className="mt-1 text-muted-strong">
-                  {leadLine}
-                </Body>
-              ) : coverRows.status === 'error' ? (
-                <View className="mt-1">
+            household ? (
+              <View className="gap-2">
+                {canOpenThisFamily ? (
+                  <Pressable
+                    testID="today-family-link"
+                    accessibilityRole="button"
+                    onPress={() =>
+                      router.push('/(private)/settings/this-family' as Href)
+                    }
+                  >
+                    <Small testID="today-date" className="text-primary">
+                      {tSchedule('thisFamily')}
+                    </Small>
+                  </Pressable>
+                ) : null}
+                {leadLine ? (
+                  <Body testID="today-lead" className="text-muted-strong">
+                    {leadLine}
+                  </Body>
+                ) : coverRows.status === 'error' ? (
                   <InlineRetry
                     testID="today-cover-rows-retry"
                     message={tErrors('network')}
                     onRetry={coverRows.retry}
                   />
-                </View>
-              ) : null}
-            </>
+                ) : null}
+                {isParentView ? (
+                  <View
+                    className="flex-row flex-wrap gap-2"
+                    testID="today-children"
+                  >
+                    {(children.data ?? []).map(child => (
+                      <ChildChip
+                        key={child.id}
+                        name={child.name}
+                        colour={child.colour ?? undefined}
+                      />
+                    ))}
+                  </View>
+                ) : null}
+              </View>
+            ) : null
           }
           art={
             // Transparent PNG on purpose — the wash gradient passes under it.
@@ -632,21 +639,6 @@ export function TodayScreen() {
         ) : household ? (
           <View className="gap-4" style={FEED_STYLE}>
             <HouseholdSwitcher />
-
-            {isParentView ? (
-              <View
-                className="flex-row flex-wrap gap-2"
-                testID="today-children"
-              >
-                {(children.data ?? []).map(child => (
-                  <ChildChip
-                    key={child.id}
-                    name={child.name}
-                    colour={child.colour ?? undefined}
-                  />
-                ))}
-              </View>
-            ) : null}
 
             {/* Mid-shift, the pinned slot above holds the RUNNING CLOCK so she
                 can close the entry herself — clock-out is the one write a

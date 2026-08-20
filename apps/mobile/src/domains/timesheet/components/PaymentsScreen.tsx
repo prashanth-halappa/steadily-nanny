@@ -40,6 +40,7 @@ import { ScrollView, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { AnimatedPressable } from '@/lib/animations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { useElevation } from '@/lib/design-tokens/elevation';
 import { spacing } from '@/lib/design-tokens/spacing';
 import { Icon } from '@/lib/icons/iconWithClassName';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
@@ -139,28 +140,38 @@ function isEnteredLate(paidAt: string, createdAtISO: string): boolean {
 /** A skeleton must match the rung it becomes (docs/design/00-FOUNDATIONS.md): one
  * group header, then three bare L4 rows. */
 function PaymentsSkeleton() {
+  const elevation = useElevation();
   return (
     <View testID="payments-loading" className="pt-2">
-      <View className="pt-6 pb-2">
+      <View className="pt-8 pb-2">
         <SkeletonShimmer
           testID="payments-month-skeleton"
           width="45%"
           height={16}
         />
       </View>
-      {SKELETON_ROWS.map(index => (
-        <View
-          key={index}
-          className="mb-2 justify-center rounded-row bg-card px-4 py-3"
-          style={{ minHeight: 56 }}
-        >
-          <SkeletonShimmer
-            testID={`payments-row-skeleton-${index}`}
-            width="55%"
-            height={14}
-          />
-        </View>
-      ))}
+      <View
+        className="overflow-hidden rounded-card bg-card"
+        style={elevation.card}
+      >
+        {SKELETON_ROWS.map(index => (
+          <View
+            key={index}
+            className={
+              index === 0
+                ? 'justify-center px-4 py-3'
+                : 'justify-center border-t border-border px-4 py-3'
+            }
+            style={{ minHeight: 56 }}
+          >
+            <SkeletonShimmer
+              testID={`payments-row-skeleton-${index}`}
+              width="55%"
+              height={14}
+            />
+          </View>
+        ))}
+      </View>
     </View>
   );
 }
@@ -177,7 +188,7 @@ function MonthHeader({
   return (
     <View
       testID={`payments-month-${monthKey}`}
-      className="flex-row items-center justify-between gap-3 pt-6 pb-2"
+      className="flex-row items-center justify-between gap-3 pt-8 pb-2"
     >
       <DayGroup testID={`payments-month-${monthKey}-title`}>
         {formatMonthLabel(monthKey)}
@@ -405,7 +416,7 @@ export function PaymentsScreen() {
           accessibilityRole="button"
           accessibilityLabel={t('payments.exportButton')}
           haptic="light"
-          scaleIntensity="subtle"
+          scaleIntensity="standard"
           onPress={() => setIsExportSheetVisible(true)}
           hitSlop={12}
           style={{

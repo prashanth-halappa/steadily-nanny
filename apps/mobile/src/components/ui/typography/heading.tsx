@@ -10,8 +10,7 @@ import { createTypographyComponent } from './factory';
 export const H1 = createTypographyComponent(typography.h1, 'H1', {
   role: 'heading',
   ariaLevel: '1',
-  defaultClassName:
-    'web:scroll-m-20 text-foreground lg:text-5xl web:select-text',
+  defaultClassName: 'web:scroll-m-20 text-foreground web:select-text',
 });
 
 export const H2 = createTypographyComponent(typography.h2, 'H2', {

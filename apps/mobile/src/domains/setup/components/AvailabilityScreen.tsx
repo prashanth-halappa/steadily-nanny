@@ -72,20 +72,19 @@ export function AvailabilityScreen() {
       skipLabel={t('availability.skipButton')}
     >
       <AvailabilityEditor />
-      {/* Both lines sit at the bottom of the scroll body, directly above the
-          pinned CTA. `text-muted-strong`, not `text-muted-foreground`: this
-          sits on the screen wash, where the lighter token fails contrast. */}
+      {/* Both lines sit on the plain screen body above the pinned CTA, so they
+          use the ordinary muted token rather than the tinted-ground override. */}
       {selectedDays.length === 0 ? (
         <Small
           testID="availability-cta-reason"
-          className="text-center text-muted-strong"
+          className="text-center text-muted-foreground"
         >
           {t('availability.finishBlockedReason')}
         </Small>
       ) : null}
       <Small
         testID="availability-skip-reassurance"
-        className="text-center text-muted-strong"
+        className="text-center text-muted-foreground"
       >
         {t('availability.skipReassurance')}
       </Small>

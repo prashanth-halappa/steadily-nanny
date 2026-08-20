@@ -69,7 +69,7 @@ export function ExpensesListCard({
         {onAddExpense ? (
           <Button
             testID="expenses-add"
-            variant="outline"
+            variant="ghost"
             className="mt-2"
             onPress={onAddExpense}
           >

@@ -29,7 +29,12 @@ import type { HouseholdClosure } from '@steadily-nanny/shared-types/schemas/avai
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { KeyboardAvoidingView, Platform, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
@@ -212,16 +217,16 @@ export function HouseholdClosuresScreen() {
                 ) : null}
                 {isPast ? null : (
                   <View className="mt-2 flex-row">
-                    <Button
+                    <TouchableOpacity
                       testID={`household-closures-delete-${item.id}`}
-                      variant="ghost"
+                      accessibilityRole="button"
                       disabled={deleteClosure.isPending}
                       onPress={() => setPendingDeleteId(item.id)}
                     >
-                      <Text className="text-destructive">
+                      <Text className="text-error-inline-text">
                         {t('closures.deleteButton')}
                       </Text>
-                    </Button>
+                    </TouchableOpacity>
                   </View>
                 )}
               </Card>
@@ -237,7 +242,9 @@ export function HouseholdClosuresScreen() {
                 {t('closures.screenSubtitle')}
               </Small>
               <View testID="household-closures-form" className="mb-6 gap-4">
-                <Body weight="medium">{t('closures.formTitle')}</Body>
+                <View className="pt-8 pb-2">
+                  <Body weight="medium">{t('closures.formTitle')}</Body>
+                </View>
                 <TimeOffDateRangePicker
                   testID="household-closures-dates"
                   start={startDate}
@@ -295,34 +302,36 @@ export function HouseholdClosuresScreen() {
         />
       </KeyboardAvoidingView>
 
-      <AlertDialog
-        open={pendingDeleteId !== null}
-        onOpenChange={open => {
-          if (!open) setPendingDeleteId(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t('closures.deleteConfirmTitle')}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('closures.deleteConfirmDescription')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel testID="household-closures-delete-cancel">
-              <Text>{t('closures.deleteConfirmCancel')}</Text>
-            </AlertDialogCancel>
-            <AlertDialogAction
-              testID="household-closures-delete-confirm"
-              onPress={confirmDelete}
-            >
-              <Text>{t('closures.deleteConfirmConfirm')}</Text>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      {pendingDeleteId !== null ? (
+        <AlertDialog
+          open
+          onOpenChange={open => {
+            if (!open) setPendingDeleteId(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {t('closures.deleteConfirmTitle')}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {t('closures.deleteConfirmDescription')}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel testID="household-closures-delete-cancel">
+                <Text>{t('closures.deleteConfirmCancel')}</Text>
+              </AlertDialogCancel>
+              <AlertDialogAction
+                testID="household-closures-delete-confirm"
+                onPress={confirmDelete}
+              >
+                <Text>{t('closures.deleteConfirmConfirm')}</Text>
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      ) : null}
     </View>
   );
 }

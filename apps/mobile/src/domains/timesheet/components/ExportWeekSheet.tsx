@@ -74,6 +74,7 @@ export function ExportWeekSheet({
           <LoadingButton
             testID={`${testID}-csv`}
             label={t('export.csvOption')}
+            variant="outline"
             isLoading={busyKind === 'csv'}
             disabled={isBusy}
             onPress={onShareCsv}
@@ -88,6 +89,7 @@ export function ExportWeekSheet({
             <LoadingButton
               testID={`${testID}-pdf`}
               label={t('export.pdfOption')}
+              variant="outline"
               isLoading={busyKind === 'pdf'}
               disabled={isBusy}
               onPress={onSharePdf}

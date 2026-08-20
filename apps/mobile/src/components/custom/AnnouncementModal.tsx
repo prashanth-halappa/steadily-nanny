@@ -57,6 +57,8 @@ export function AnnouncementModal() {
         <Body className="text-muted-foreground">{announcement.body}</Body>
         {announcement.ctaLabel && ctaUrl ? (
           <Button
+            variant="link"
+            className="self-start px-0"
             onPress={() => {
               void openExternalUrl(ctaUrl);
               close();
