@@ -76,10 +76,10 @@ const BADGE_COPY_KEY: Record<PaidStatus, string> = {
 /** `secondary` (not `default`) for paid: a settled week is a quiet fact,
  * not a call to action. `outline` for unpaid keeps the destructive red for
  * things that are actually wrong — an unpaid approved week is normal. */
-const BADGE_VARIANT: Record<PaidStatus, 'default' | 'secondary' | 'outline'> = {
+const BADGE_VARIANT: Record<PaidStatus, 'default' | 'secondary'> = {
   paid: 'secondary',
   partial: 'default',
-  unpaid: 'outline',
+  unpaid: 'secondary',
 };
 
 /** Is there any settlement to state at all? See module header. */

@@ -30,7 +30,7 @@ import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { IconChip } from '@/src/components/ui/icon-chip';
 import { Text } from '@/src/components/ui/text';
-import { Body, H4 } from '@/src/components/ui/typography';
+import { H4, Small } from '@/src/components/ui/typography';
 import { PayChangeSheet } from '@/src/domains/pay/components/PayChangeSheet';
 import { arrangementFromProposal } from '@/src/domains/pay/utils/proposalTerms';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
@@ -126,11 +126,11 @@ export function SendMyTermsCard() {
             {isCounter ? t('sendTerms.counterTitle') : t('sendTerms.title')}
           </H4>
         </View>
-        <Body className="text-muted-foreground">
+        <Small className="text-muted-foreground">
           {t(isCounter ? 'sendTerms.counterBody' : 'sendTerms.body', {
             family: liveHousehold.name ?? '',
           })}
-        </Body>
+        </Small>
         <View className="flex-row gap-2">
           <Button
             testID="send-my-terms-cta"

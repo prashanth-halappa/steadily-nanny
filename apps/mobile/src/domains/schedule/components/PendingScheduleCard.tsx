@@ -36,7 +36,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
-import { Body, H4 } from '@/src/components/ui/typography';
+import { H4, Small } from '@/src/components/ui/typography';
 import { useInboxItems } from '@/src/domains/inbox/hooks/useInboxItems';
 import type { InboxItem } from '@/src/domains/inbox/utils/buildInboxItems';
 import { useHouseholdLookup } from '@/src/hooks/queries/useHouseholdById';
@@ -77,14 +77,15 @@ function PendingPatternRow({
           ? t('todayCard.pendingTitleNamed', { family: familyName })
           : t('todayCard.pendingTitle')}
       </H4>
-      <Body className="text-muted-foreground" tabular>
+      <Small className="text-muted-foreground" tabular>
         {t('todayCard.pendingBody', {
           count: distinctDaysCount,
           hours: totalHours,
         })}
-      </Body>
+      </Small>
       <Button
         testID={`today-pending-schedule-cta-${item.patternId}`}
+        variant="ghost"
         onPress={() =>
           router.push(`/(private)/schedule/respond/${item.patternId}` as Href)
         }

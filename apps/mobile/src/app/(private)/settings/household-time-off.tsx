@@ -10,6 +10,7 @@ import { ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { BackButton } from '@/src/components/ui/back-button';
+import { Card } from '@/src/components/ui/card';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { H1, Small } from '@/src/components/ui/typography';
@@ -101,21 +102,27 @@ export default function HouseholdTimeOffScreen() {
           />
         </View>
       ) : (
-        <View className="mt-4 gap-2">
-          {active.householdId
-            ? rows.map(row => (
-                <HouseholdTimeOffRow
-                  key={row.id}
-                  timeOff={row}
-                  householdId={active.householdId as string}
-                  member={memberForCarer(row.user_id)}
-                  carerFallbackLabel={t('role.nanny')}
-                  canMarkPaid={canMarkPaid}
-                  householdTimezone={active.household?.timezone ?? 'UTC'}
-                />
-              ))
-            : null}
-        </View>
+        <Card className="mt-4 overflow-hidden p-0">
+          <View>
+            {active.householdId
+              ? rows.map((row, index) => (
+                  <View key={row.id}>
+                    {index > 0 ? (
+                      <View className="ml-4 border-t-hairline border-border" />
+                    ) : null}
+                    <HouseholdTimeOffRow
+                      timeOff={row}
+                      householdId={active.householdId as string}
+                      member={memberForCarer(row.user_id)}
+                      carerFallbackLabel={t('role.nanny')}
+                      canMarkPaid={canMarkPaid}
+                      householdTimezone={active.household?.timezone ?? 'UTC'}
+                    />
+                  </View>
+                ))
+              : null}
+          </View>
+        </Card>
       )}
     </ScrollView>
   );
