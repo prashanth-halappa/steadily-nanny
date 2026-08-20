@@ -20,6 +20,19 @@ export const illustrations = {
   emptyNoCarer: require('./empty-no-carer.png'),
   emptyChildren: require('./empty-children.png'),
   emptyPending: require('./empty-pending.png'),
+  // Card art — grounded inside an ordinary card by `CardArt`, not an empty
+  // state. See docs/design/03-ART-DIRECTION.md on where illustration is
+  // allowed to appear.
+  termsProposal: require('./terms-proposal.png'),
+  termsSend: require('./terms-send.png'),
+  weekEmpty: require('./week-empty.png'),
+  hoursNotSet: require('./hours-not-set.png'),
+  membershipEnded: require('./membership-ended.png'),
+  inviteWaiting: require('./invite-waiting.png'),
+  reimbursements: require('./reimbursements.png'),
+  paySetup: require('./pay-setup.png'),
+  weekGlance: require('./week-glance.png'),
+  householdHeader: require('./household-header.png'),
 } as const;
 
 export type IllustrationKey = keyof typeof illustrations;

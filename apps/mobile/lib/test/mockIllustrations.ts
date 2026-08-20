@@ -27,6 +27,16 @@ export function mockIllustrationsModule() {
       emptyNoCarer: stubImage,
       emptyChildren: stubImage,
       emptyPending: stubImage,
+      termsProposal: stubImage,
+      termsSend: stubImage,
+      weekEmpty: stubImage,
+      hoursNotSet: stubImage,
+      membershipEnded: stubImage,
+      inviteWaiting: stubImage,
+      reimbursements: stubImage,
+      paySetup: stubImage,
+      weekGlance: stubImage,
+      householdHeader: stubImage,
     },
   }));
 }
