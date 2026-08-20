@@ -40,6 +40,7 @@ import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { Button } from '@/src/components/ui/button';
+import { CardArt } from '@/src/components/ui/card-art';
 import { ListGroup, ListRow } from '@/src/components/ui/list-group';
 import { Text } from '@/src/components/ui/text';
 import { H4, MetadataLabel, Small } from '@/src/components/ui/typography';
@@ -113,9 +114,19 @@ export function ReimbursementsCard({
 
   return (
     <View testID={testID} className="mt-4 gap-2">
-      <MetadataLabel className="text-muted-foreground">
-        {t('reimbursements.title')}
-      </MetadataLabel>
+      {/* Art rides in the section header, never beside the figures. This is a
+          money surface: the subtotal and the state line keep their own lines
+          so nothing competes with the amount for the eye. */}
+      <View className="flex-row items-center gap-3">
+        <CardArt
+          illustration="reimbursements"
+          size="sm"
+          testID={`${testID}-art`}
+        />
+        <MetadataLabel className="flex-1 text-muted-foreground">
+          {t('reimbursements.title')}
+        </MetadataLabel>
+      </View>
       {carerName ? (
         <Small
           testID={`${testID}-carer-name`}

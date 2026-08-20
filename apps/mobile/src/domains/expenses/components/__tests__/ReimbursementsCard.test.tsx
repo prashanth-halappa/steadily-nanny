@@ -55,6 +55,29 @@ function makeExpense(overrides: Partial<Expense> = {}): Expense {
 }
 
 describe('ReimbursementsCard', () => {
+  // Illustration rides in the section header beside the title, never near the
+  // figures. This stays a money surface: the subtotal and the state line must
+  // not have art competing for the same line.
+  it('renders the section art beside the title when it renders at all', () => {
+    const { getByTestId } = render(
+      <ReimbursementsCard
+        approvedExpenses={[makeExpense()]}
+        totalMinor={1200}
+        currency="GBP"
+      />
+    );
+
+    expect(getByTestId('reimbursements-card-art')).toBeTruthy();
+  });
+
+  it('renders no art when the section itself is not rendered', () => {
+    const { queryByTestId } = render(
+      <ReimbursementsCard approvedExpenses={[]} totalMinor={0} currency="GBP" />
+    );
+
+    expect(queryByTestId('reimbursements-card-art')).toBeNull();
+  });
+
   it('renders nothing when there are no approved expenses', () => {
     const { queryByTestId } = render(
       <ReimbursementsCard
