@@ -1,6 +1,6 @@
 /**
  * Daylight inline error — the authored errorInline* tokens, finally consumed.
- * Prefer this over a bare semantic-error small-text line for auth and
+ * Prefer this over a bare `<Small className="text-destructive">` for auth and
  * form failures so the message reads as consequential rather than captions.
  */
 import type { ViewProps } from 'react-native';
@@ -24,6 +24,8 @@ function InlineError({ message, testID, style }: InlineErrorProps) {
       style={[
         {
           backgroundColor: colors.errorInline.bg,
+          borderColor: colors.errorInline.border,
+          borderWidth: 1,
         },
         style,
       ]}

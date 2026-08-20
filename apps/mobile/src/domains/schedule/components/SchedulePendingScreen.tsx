@@ -681,7 +681,7 @@ export function SchedulePendingScreen() {
                 carerName={carerName}
                 canEditSchedule={canEditSchedule}
                 childrenById={childrenById}
-                showCarerLabel
+                showCarerLabel={sections.length > 1}
                 closedReason={closedReason}
                 writeDisabled={canWriteHousehold.isLoading}
               />
@@ -691,7 +691,7 @@ export function SchedulePendingScreen() {
                 carerId={section.carerId}
                 carerName={carerName}
                 canEditSchedule={canEditSchedule}
-                showCarerLabel
+                showCarerLabel={sections.length > 1}
                 closedReason={closedReason}
                 writeDisabled={canWriteHousehold.isLoading}
               />

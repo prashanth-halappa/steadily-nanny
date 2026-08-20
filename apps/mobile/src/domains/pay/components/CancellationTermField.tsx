@@ -62,7 +62,7 @@ export function CancellationTermField({
       <View className="flex-row flex-wrap gap-2">
         <Button
           testID={`${testIDPrefix}-cancellation-chip-window`}
-          variant={choice === 'window' ? 'secondary' : 'outline'}
+          variant={choice === 'window' ? 'default' : 'secondary'}
           size="sm"
           onPress={() => onChoiceChange('window')}
         >
@@ -74,7 +74,7 @@ export function CancellationTermField({
         </Button>
         <Button
           testID={`${testIDPrefix}-cancellation-chip-none`}
-          variant={choice === 'none' ? 'secondary' : 'outline'}
+          variant={choice === 'none' ? 'default' : 'secondary'}
           size="sm"
           onPress={() => onChoiceChange('none')}
         >

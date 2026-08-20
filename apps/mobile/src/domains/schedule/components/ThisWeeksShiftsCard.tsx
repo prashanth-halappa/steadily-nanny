@@ -20,7 +20,6 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { InlineRetry } from '@/src/components/custom/InlineRetry';
-import { ListGroup, ListRow } from '@/src/components/ui/list-group';
 import { Section } from '@/src/components/ui/section';
 import { SkeletonShimmer } from '@/src/components/ui/skeleton-shimmer';
 import {
@@ -41,6 +40,7 @@ import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { formatInstantDisplay, wallClockToUtcIso } from '@/src/lib/wallClock';
 import { useAuthStore } from '@/src/store/auth';
+import { useElevation } from '~/lib/design-tokens/elevation';
 import { spacing } from '~/lib/design-tokens/spacing';
 
 /** "Is this shift real on my schedule" — the card renders a `pending` row
@@ -95,6 +95,7 @@ export function ThisWeeksShiftsCard() {
   const { t } = useTranslation('schedule');
   const { t: tErrors } = useTranslation('errors');
   const router = useRouter();
+  const elevation = useElevation();
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
   const active = useActiveHousehold();
   const timeZone = active.household?.timezone ?? 'UTC';
@@ -208,52 +209,49 @@ export function ThisWeeksShiftsCard() {
         {nextShifts.length === 0 ? (
           <Small className="text-muted-foreground">{emptyLine}</Small>
         ) : (
-          <ListGroup>
-            {nextShifts.map(shift => {
-              const carerName =
-                carers.length > 1 ? firstNameOf(nameFor(shift.carer_id)) : '';
-              return (
-                <ListRow
-                  key={shift.id}
-                  testID={`today-next-up-${shift.id}`}
-                  onPress={() =>
-                    router.push(
-                      `/(private)/schedule/shifts/${shift.id}` as Href
-                    )
-                  }
-                  right={
-                    <View className="flex-row items-center gap-2">
-                      {shift.status !== 'confirmed' ? (
-                        <StatusPill
-                          testID={`today-next-up-status-${shift.id}`}
-                          variant={STATUS_TO_VARIANT[shift.status]}
-                          label={t(STATUS_TO_LABEL_KEY[shift.status])}
-                        />
-                      ) : null}
-                      {carerName ? (
-                        <Small
-                          testID={`today-next-up-carer-${shift.id}`}
-                          className="flex-shrink-0 text-muted-foreground"
-                          style={{ maxWidth: '38%' }}
-                          numberOfLines={1}
-                          ellipsizeMode="tail"
-                        >
-                          {carerName}
-                        </Small>
-                      ) : null}
-                    </View>
-                  }
+          nextShifts.map(shift => {
+            const carerName =
+              carers.length > 1 ? firstNameOf(nameFor(shift.carer_id)) : '';
+            return (
+              <Pressable
+                key={shift.id}
+                testID={`today-next-up-${shift.id}`}
+                accessibilityRole="button"
+                className="flex-row items-center justify-between gap-3 rounded-row bg-card px-3 py-1.5"
+                style={[elevation.row, { minHeight: spacing.minTouchTarget }]}
+                hitSlop={8}
+                onPress={() =>
+                  router.push(`/(private)/schedule/shifts/${shift.id}` as Href)
+                }
+              >
+                <Figure
+                  testID={`today-next-up-line-${shift.id}`}
+                  className="text-foreground"
                 >
-                  <Figure
-                    testID={`today-next-up-line-${shift.id}`}
-                    className="text-foreground"
-                  >
-                    {formatShiftLine(shift, timeZone, t)}
-                  </Figure>
-                </ListRow>
-              );
-            })}
-          </ListGroup>
+                  {formatShiftLine(shift, timeZone, t)}
+                </Figure>
+                <View className="flex-row items-center gap-2">
+                  {shift.status !== 'confirmed' ? (
+                    <StatusPill
+                      testID={`today-next-up-status-${shift.id}`}
+                      variant={STATUS_TO_VARIANT[shift.status]}
+                      label={t(STATUS_TO_LABEL_KEY[shift.status])}
+                    />
+                  ) : null}
+                  {carerName ? (
+                    <Small
+                      testID={`today-next-up-carer-${shift.id}`}
+                      className="max-w-[38%] flex-shrink-0 text-muted-foreground"
+                      numberOfLines={1}
+                      ellipsizeMode="tail"
+                    >
+                      {carerName}
+                    </Small>
+                  ) : null}
+                </View>
+              </Pressable>
+            );
+          })
         )}
         <Pressable
           testID="today-shifts-cta"

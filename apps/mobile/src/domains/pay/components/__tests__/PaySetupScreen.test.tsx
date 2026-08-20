@@ -562,9 +562,9 @@ describe('PaySetupScreen', () => {
     );
     expect(
       getByTestId('pay-setup-cancellation-chip-window').props.variant
-    ).toBe('outline');
+    ).toBe('secondary');
     expect(getByTestId('pay-setup-cancellation-chip-none').props.variant).toBe(
-      'outline'
+      'secondary'
     );
     expect(getByTestId('pay-setup-screen-cta').props.disabled).toBe(true);
 

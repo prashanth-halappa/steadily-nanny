@@ -198,7 +198,7 @@ function OnTheClockView(props: OnTheClockProps) {
   // imported — see this module's header for why that is not optional.
   const BG = '#1B151C'; // background — also the ink on the overdue card
   const FG = '#F1EAF0'; // foreground
-  const MUTED = '#4E4350'; // mutedStrong
+  const MUTED = '#B2A4B3'; // mutedForeground
   const APRICOT = '#F2954B'; // highlight
   const OCHRE = '#E0B061'; // warning
   const GREEN = '#6FB98A'; // success
@@ -227,7 +227,7 @@ function OnTheClockView(props: OnTheClockProps) {
 
   const accent = isReceipt ? GREEN : overdue ? OCHRE : APRICOT;
   // Overdue flips the whole card, so its ink is `warningForeground`, not the
-  // dark-mode foreground. `mutedForeground` is 3.10:1 on amber and never appears there;
+  // dark-mode foreground. `MUTED` is 3.10:1 on amber and never appears there;
   // secondary lines shed size, not colour.
   const INK = overdue && !isReceipt ? BG : FG;
   const SUB = overdue && !isReceipt ? BG : MUTED;
@@ -346,7 +346,7 @@ function OnTheClockView(props: OnTheClockProps) {
       <Text
         modifiers={[
           font({ size: 13 }),
-          foregroundStyle(SUB),
+          foregroundStyle(MUTED),
           monospacedDigit(),
           lineLimit(1),
           minimumScaleFactor(0.85),
@@ -510,7 +510,11 @@ function OnTheClockView(props: OnTheClockProps) {
         />
         {isReceipt ? null : (
           <Text
-            modifiers={[font({ size: 13 }), foregroundStyle(SUB), lineLimit(1)]}
+            modifiers={[
+              font({ size: 13 }),
+              foregroundStyle(MUTED),
+              lineLimit(1),
+            ]}
           >
             {props.household}
           </Text>
@@ -568,7 +572,7 @@ function OnTheClockView(props: OnTheClockProps) {
             <Text
               modifiers={[
                 font({ size: 13 }),
-                foregroundStyle(SUB),
+                foregroundStyle(MUTED),
                 monospacedDigit(),
                 lineLimit(1),
               ]}
@@ -580,7 +584,7 @@ function OnTheClockView(props: OnTheClockProps) {
             <Text
               modifiers={[
                 font({ size: 13 }),
-                foregroundStyle(SUB),
+                foregroundStyle(MUTED),
                 monospacedDigit(),
                 lineLimit(1),
               ]}

@@ -31,6 +31,7 @@ import { buttonVariants } from '@/src/components/ui/button';
 import { Text } from '@/src/components/ui/text';
 import { useRequestTimeOff } from '@/src/hooks/mutations/useRequestTimeOff';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
+import { showSuccessToast } from '@/src/lib/toast';
 import { toAllDayRange, todayISO } from '../utils/timeOffDate';
 
 export function SickTimeOffButton() {
@@ -55,6 +56,7 @@ export function SickTimeOffButton() {
       // onError on the mutation already surfaced a toast.
       return;
     }
+    showSuccessToast(t('sickToast'));
   };
 
   return (

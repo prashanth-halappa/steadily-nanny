@@ -409,7 +409,7 @@ export function PayChangeSheet({
         {submitError ? (
           <Small
             testID={`${testIDPrefix}-submit-error`}
-            className="text-destructive"
+            className="text-error-inline-text"
           >
             {submitError}
           </Small>

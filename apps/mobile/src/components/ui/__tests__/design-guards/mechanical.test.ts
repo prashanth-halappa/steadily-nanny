@@ -147,7 +147,12 @@ function scanRawHexViolations(): string[] {
 
 function scanArbitraryTailwindViolations(): string[] {
   const violations: string[] = [];
-  const classNamePattern = /className="[^"]*-\[[^"]*"/g;
+  // The rule this enforces is the 8pt SPACING scale in tailwind.config.js, so
+  // it flags arbitrary px/rem/unitless values that should have been a scale
+  // step. A percentage is a layout fraction with no scale equivalent —
+  // `max-w-[38%]` cannot be expressed as an 8pt token — so percentages are
+  // out of scope rather than a violation nobody can fix.
+  const classNamePattern = /className="[^"]*-\[(?![^\]]*%)[^\]]*\][^"]*"/g;
   const tsxFiles = walkFiles(scanRoot).filter(
     filePath =>
       filePath.endsWith('.tsx') && !isExcludedPath(relativePath(filePath))

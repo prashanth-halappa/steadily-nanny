@@ -52,6 +52,16 @@ function scanForFillAsTextViolations(): string[] {
       if (line === undefined) {
         continue;
       }
+      // A comment naming the banned class is documentation, not a usage — the
+      // raw-hex guard skips comments for the same reason.
+      const trimmed = line.trim();
+      if (
+        trimmed.startsWith('*') ||
+        trimmed.startsWith('//') ||
+        trimmed.startsWith('/*')
+      ) {
+        continue;
+      }
       FILL_AS_TEXT_PATTERN.lastIndex = 0;
       if (FILL_AS_TEXT_PATTERN.test(line)) {
         violations.push(`${relativePath}:${lineIndex + 1}  ${line.trim()}`);

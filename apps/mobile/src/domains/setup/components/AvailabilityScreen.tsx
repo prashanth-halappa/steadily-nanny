@@ -77,14 +77,14 @@ export function AvailabilityScreen() {
       {selectedDays.length === 0 ? (
         <Small
           testID="availability-cta-reason"
-          className="text-center text-muted-foreground"
+          className="text-center text-muted-strong"
         >
           {t('availability.finishBlockedReason')}
         </Small>
       ) : null}
       <Small
         testID="availability-skip-reassurance"
-        className="text-center text-muted-foreground"
+        className="text-center text-muted-strong"
       >
         {t('availability.skipReassurance')}
       </Small>

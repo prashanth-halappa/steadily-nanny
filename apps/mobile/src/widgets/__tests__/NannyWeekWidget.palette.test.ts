@@ -28,15 +28,17 @@ describe('NannyWeekWidget inlined palette', () => {
     );
   });
 
-  it('GREEN follows palette.{light,dark}.success', () => {
+  // The widget paints TEXT in these colours, so it tracks the ink half of the
+  // fill/ink pair (00-FOUNDATIONS 3.2) — `success`/`shortNotice` are the fills.
+  it('GREEN_INK follows palette.{light,dark}.successInk', () => {
     expect(source).toContain(
-      `const GREEN = dark ? '${palette.dark.success.hex}' : '${palette.light.success.hex}';`
+      `const GREEN_INK = dark ? '${palette.dark.successInk.hex}' : '${palette.light.successInk.hex}';`
     );
   });
 
-  it('TERRACOTTA follows palette.{light,dark}.shortNotice', () => {
+  it('TERRACOTTA_INK follows palette.{light,dark}.shortNoticeInk', () => {
     expect(source).toContain(
-      `const TERRACOTTA = dark ? '${palette.dark.shortNotice.hex}' : '${palette.light.shortNotice.hex}';`
+      `const TERRACOTTA_INK = dark ? '${palette.dark.shortNoticeInk.hex}' : '${palette.light.shortNoticeInk.hex}';`
     );
   });
 

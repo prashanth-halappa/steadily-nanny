@@ -111,7 +111,7 @@ function CardHeader({
 }) {
   return (
     <View
-      className={cn('flex flex-col space-y-1.5 p-4', className)}
+      className={cn('flex flex-col space-y-1.5 p-5.5', className)}
       {...props}
     />
   );
@@ -149,8 +149,8 @@ function CardContent({
   ref?: React.RefObject<View>;
 }) {
   return (
-    <TextClassContext.Provider value="text-foreground">
-      <View className={cn('p-4', className)} {...props} />
+    <TextClassContext.Provider value="text-card-foreground">
+      <View className={cn('p-5.5', className)} {...props} />
     </TextClassContext.Provider>
   );
 }
@@ -163,7 +163,7 @@ function CardFooter({
 }) {
   return (
     <View
-      className={cn('flex flex-row items-center p-4 pt-0', className)}
+      className={cn('flex flex-row items-center p-5.5 pt-0', className)}
       {...props}
     />
   );

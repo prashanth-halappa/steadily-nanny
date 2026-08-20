@@ -337,7 +337,7 @@ export function TodayCoverage({
 
   const planLines = (
     <View className="gap-2">
-      {state.status === 'booked' || state.status === 'gap' ? (
+      {state.status === 'booked' ? (
         <SplitTrack testID="today-coverage-day-bar" segments={dayBarSegments} />
       ) : null}
       {state.plan.map(line => (

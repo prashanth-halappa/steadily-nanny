@@ -13,7 +13,7 @@ describe('FieldError', () => {
     const error = getByText('Date cannot be in the future');
     expect(error.props.accessibilityRole).toBe('alert');
     expect(error.props.className).toContain('mt-2');
-    expect(error.props.className).toContain('text-destructive');
+    expect(error.props.className).toContain('text-error-inline-text');
   });
 
   it('renders nothing when children is empty', () => {

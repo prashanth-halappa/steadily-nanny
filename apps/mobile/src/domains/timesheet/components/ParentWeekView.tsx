@@ -51,6 +51,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { useThemeColors } from '@/lib/design-tokens/useThemeColors';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { cn } from '@/lib/utils';
@@ -196,6 +197,7 @@ export function ParentWeekView({
   // FlashList needs the same real clearance a fixed magic number can't give.
   const tabBarScrollPadding = useTabBarScrollPadding();
   const { refreshing, onRefresh } = usePullToRefresh();
+  const colors = useThemeColors();
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
   // Cache hit, not a second request — `HoursScreen` already resolved this
   // same household via `useActiveHousehold` to get `householdId`. Only read
@@ -1042,6 +1044,15 @@ export function ParentWeekView({
               >
                 {weekCarerIds.map(id => {
                   const isSelected = id === selectedCarerId;
+                  // Unselected + her timesheet is 'submitted' — a nudge that
+                  // another carer's week is waiting on this parent, without
+                  // naming it (a status word here would fight the segmented
+                  // control's one-line label). Never on the selected segment
+                  // — she already sees the full StatusPill on the card below.
+                  const hasPendingApproval =
+                    !isSelected &&
+                    weekTimesheets.find(t => carerKeyOf(t) === id)?.status ===
+                      TIMESHEET_STATUSES.SUBMITTED;
                   return (
                     <Pressable
                       key={id}
@@ -1060,10 +1071,17 @@ export function ParentWeekView({
                             ? 'text-primary-foreground'
                             : 'text-foreground'
                         }
-                        weight={isSelected ? 'semibold' : 'medium'}
+                        weight="medium"
                       >
                         {carerSnapshotName(id).split(' ')[0]}
                       </Caption>
+                      {hasPendingApproval ? (
+                        <View
+                          testID={`hours-carer-tab-${id}-pending-dot`}
+                          className="h-2 w-2 rounded-full"
+                          style={{ backgroundColor: colors.warning }}
+                        />
+                      ) : null}
                     </Pressable>
                   );
                 })}

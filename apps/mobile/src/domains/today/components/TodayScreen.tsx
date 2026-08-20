@@ -583,7 +583,7 @@ export function TodayScreen() {
                     }
                   >
                     <Small testID="today-date" className="text-primary">
-                      {tSchedule('thisFamily')}
+                      {tSchedule('crossFamily.thisFamily')}
                     </Small>
                   </Pressable>
                 ) : null}

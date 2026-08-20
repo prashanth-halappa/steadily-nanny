@@ -23,15 +23,12 @@
  * Renders on the §9.2 path too. It is about JOINING, not about who held the
  * code.
  */
-
-import { Home } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
-import { Card, CardContent } from '@/src/components/ui/card';
-import { IconChip } from '@/src/components/ui/icon-chip';
+import { MomentCard } from '@/src/components/ui/moment-card';
 import { Text } from '@/src/components/ui/text';
-import { Body, H3, Small } from '@/src/components/ui/typography';
+import { Body, Small } from '@/src/components/ui/typography';
 
 export interface JoinedComposition {
   /** First names and ages only — the same fact set `previewInvite` already
@@ -80,40 +77,35 @@ export function JoinedHouseholdCard({
 
   return (
     <View testID="draft-joined-card">
-      <Card testID="draft-joined" tone="attention">
-        <CardContent className="gap-4">
-          <View className="flex-row items-center gap-3">
-            <IconChip tone="brand" icon={Home} />
-            <H3 testID="draft-joined-title" className="flex-1">
-              {t('joined.title', { family: familyName })}
-            </H3>
-          </View>
-          {composition ? (
-            <Body
-              testID="draft-joined-composition"
-              className="text-muted-strong"
-            >
-              {compositionLine(composition, t)}
-            </Body>
-          ) : (
-            <Body testID="draft-joined-waiting" className="text-muted-strong">
-              {t('joined.waiting', { family: familyName })}
-            </Body>
-          )}
-          <Small testID="draft-joined-privacy" className="text-muted-strong">
-            {t('joined.privacy')}
-          </Small>
-          <View>
-            <Button
-              testID="draft-joined-see-terms"
-              size="lg"
-              onPress={onSeeTerms}
-            >
-              <Text>{t('joined.button')}</Text>
-            </Button>
-          </View>
-        </CardContent>
-      </Card>
+      <MomentCard
+        testID="draft-joined"
+        illustration="welcomeHero"
+        title={t('joined.title', { family: familyName })}
+        body=""
+        momentKey={null}
+      >
+        {composition ? (
+          <Body testID="draft-joined-composition" className="text-muted-strong">
+            {compositionLine(composition, t)}
+          </Body>
+        ) : (
+          <Body testID="draft-joined-waiting" className="text-muted-strong">
+            {t('joined.waiting', { family: familyName })}
+          </Body>
+        )}
+        <Small testID="draft-joined-privacy" className="text-muted-strong">
+          {t('joined.privacy')}
+        </Small>
+        <View>
+          <Button
+            testID="draft-joined-see-terms"
+            size="lg"
+            onPress={onSeeTerms}
+          >
+            <Text>{t('joined.button')}</Text>
+          </Button>
+        </View>
+      </MomentCard>
     </View>
   );
 }

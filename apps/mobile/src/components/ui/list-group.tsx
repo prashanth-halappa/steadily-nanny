@@ -100,6 +100,10 @@ function ListRow({
       testID={testID}
       onPress={onPress}
       accessibilityRole="button"
+      // `minHeight` already meets the 44pt target; the hit slop is the
+      // forgiveness margin around it, so a row is still tappable when a
+      // thumb lands just outside the painted bounds.
+      hitSlop={8}
       style={{ minHeight: spacing.minTouchTarget }}
     >
       {content}

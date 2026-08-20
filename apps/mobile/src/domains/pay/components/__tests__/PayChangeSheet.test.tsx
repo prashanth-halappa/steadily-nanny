@@ -206,14 +206,14 @@ describe('PayChangeSheet', () => {
       householdCancellationDefaultHours: 0,
     });
 
-    // Selected chip renders the filled "default" Button variant; the other
-    // stays "outline".
+    // 00-FOUNDATIONS.md 8.4: selection is fill + weight, unselected is
+    // `bg-secondary` — never an outline, which reads as a second equal answer.
     expect(getByTestId('pay-change-cancellation-chip-none').props.variant).toBe(
       'default'
     );
     expect(
       getByTestId('pay-change-cancellation-chip-window').props.variant
-    ).toBe('outline');
+    ).toBe('secondary');
 
     fireEvent.press(getByTestId('pay-change-submit'));
     expect(onSubmit).toHaveBeenCalledWith(
