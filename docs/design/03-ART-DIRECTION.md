@@ -99,6 +99,55 @@ image beside a number someone is paid on is the one place decoration costs
 credibility. On Schedule a hero image pushes the first real row below the fold
 on a screen that exists to be scanned.
 
+### Card art — illustration inside an ordinary card
+
+Illustration is no longer confined to empty states and the four milestone
+`MomentCard`s. A card may carry art via `CardArt`
+(`src/components/ui/card-art.tsx`) when the card is a **moment** rather than a
+number: a one-time setup nudge, an awkward ask, a wait on someone else, or a
+soft landing. It stays out of anything recurring, urgent, or money-critical.
+
+| Card | Placement | Asset |
+|---|---|---|
+| `TermsProposalCard` (Inbox) | Header slot, `sm` | `terms-proposal` |
+| `SendMyTermsCard` | Header slot, `sm` | `terms-send` |
+| `NoWeekYetCard` | Header slot, `sm` | `week-empty` |
+| `WeeklyHoursNotSetCard` | Header slot, `sm`, both branches | `hours-not-set` |
+| `MembershipEndedCard` | Card body, `md` | `membership-ended` |
+| `InviteWaitingCard` | Card body, `md` | `invite-waiting` |
+| `PaySetupPromptCard` | Card body, `md` | `pay-setup` |
+| Reimbursements section (Hours) | Section header, `sm` | `reimbursements` |
+
+**`CardArt` is not `MomentCard`.** `MomentCard` hardcodes
+`useMilestone('moment')`, so it fires a celebration haptic and a confetti
+burst on render. Routing an ordinary card through it would celebrate "set
+your weekly hours". `CardArt` has no milestone tier, no haptic, no confetti
+and no entrance animation — reach for it, not `MomentCard`, unless the card
+really is one of the once-per-relationship moments.
+
+**Where it is still refused, and why.** Three placements were proposed and
+rejected on evidence rather than taste, and should not be re-proposed without
+new evidence:
+
+- **A card on the Settings identity band.** That band is deliberately
+  uncarded — the comment in `app/(private)/settings/index.tsx` records that
+  the one genuinely brand-level block on the screen used to be the only one
+  not in plum, and moving it out of a card fixed that. It also shows the
+  viewer's own identity, not the household.
+- **A "week at a glance" card on Schedule.** The week total is already
+  rendered as `Figure28 testID="schedule-week-total"` in the hero band; a
+  card would duplicate the number, and Rule C's evidence is that this exact
+  header has been over-stacked before.
+- **Splitting the Inbox group card into a loud row plus context rows.** Rule D
+  requires a dense list to sit in ONE card with an inset hairline, on measured
+  evidence (`card` on `background` is 1.12:1 where WCAG 1.4.11 wants 3:1). The
+  Inbox already follows it; `TermsProposalCard` is where that surface gets its
+  illustration instead.
+
+**Reimbursements keeps its art in the section header**, beside the title and
+never beside the figures — the "no image next to a number someone is paid on"
+rule above still holds for the subtotal and the settlement state line.
+
 ---
 
 ## Asset list
