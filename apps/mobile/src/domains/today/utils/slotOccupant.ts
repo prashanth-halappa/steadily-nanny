@@ -23,6 +23,7 @@ import { canViewParentSchedule, SETUP_ROLES } from '@/src/domains/setup/types';
 import type { AttentionOwner } from './attentionOwner';
 
 export type SlotOccupant =
+  | 'membershipEnded'
   | 'blockedClockIn'
   | 'pendingOffer'
   | 'clockIn'
@@ -40,6 +41,15 @@ export function resolveSlotOccupant(inputs: {
   attentionOwner: AttentionOwner;
 }): SlotOccupant {
   const activeNanny = inputs.role === SETUP_ROLES.NANNY && !inputs.isPastMember;
+  const pastNanny = inputs.role === SETUP_ROLES.NANNY && inputs.isPastMember;
+
+  // She may be mid-shift at the moment the household ends. Clock-out is the
+  // one write a removed member keeps (she is completing a record, not taking
+  // on an obligation), so the running timer holds the slot and the
+  // explanation renders beneath it in the feed. Above the ladder for the same
+  // reason the ordinary running clock is: it is the thing happening NOW, and
+  // without it she has no way to close the entry at all.
+  if (pastNanny && inputs.onClock) return 'clockIn';
 
   if (inputs.attentionOwner === 'termsBlocked') return 'blockedClockIn';
   // Ahead of the running-timer check below for the same reason the ladder
@@ -61,6 +71,12 @@ export function resolveSlotOccupant(inputs: {
       // An ordinary day: the nanny's slot is the clock, the parent's is
       // today's cover. Nothing is demanding anything, and the slot still
       // holds the one thing that viewer opened the app to do.
+      // A past-member nanny's slot used to be EMPTY here, which is the
+      // silence this card exists to end: her employer's account is gone and
+      // the one surface that cannot fall under the fold said nothing. Below
+      // every ladder verdict on purpose — a queried week she can still answer
+      // is more urgent than an explanation of a state that is not changing.
+      if (pastNanny) return 'membershipEnded';
       return activeNanny
         ? 'clockIn'
         : canViewParentSchedule(inputs.role)

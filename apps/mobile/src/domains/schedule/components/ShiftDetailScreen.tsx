@@ -84,6 +84,7 @@ import { useDeclineShift } from '@/src/hooks/mutations/useDeclineShift';
 import { useRespondToShiftChangeRequest } from '@/src/hooks/mutations/useRespondToShiftChangeRequest';
 import { useUpdateShift } from '@/src/hooks/mutations/useUpdateShift';
 import { useWithdrawChangeRequest } from '@/src/hooks/mutations/useWithdrawChangeRequest';
+import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
@@ -168,7 +169,7 @@ export function ShiftDetailScreen() {
   // (`inbox:items.pendingShift.deadline`) with `NeedsAttentionCard`'s
   // `deadlineForItem` — "byte-identical string... a deadline that lives
   // only on the card she tapped away from is a deadline she cannot check."
-  const { t } = useTranslation(['schedule', 'today', 'inbox']);
+  const { t } = useTranslation(['schedule', 'today', 'inbox', 'common']);
   const { refreshControl } = usePullToRefresh();
   const elevation = useElevation();
   const router = useRouter();
@@ -200,6 +201,16 @@ export function ShiftDetailScreen() {
     householdId: shiftQuery.data?.household_id,
     action: t('detail.restrictedActionCancelShift'),
   });
+  // Second, orthogonal gate from `useRestrictedAction` above: that hook asks
+  // "does the OWNER_ONLY approval mode restrict THIS member"; this one asks
+  // "is the reader still an active member of the SHIFT's household at all".
+  // A removed member's row keeps its `role`, so `readerRole` below would
+  // otherwise still resolve normally after her household closes.
+  const canWriteHousehold = useCanWriteHousehold(shiftQuery.data?.household_id);
+  const closedReason =
+    !canWriteHousehold.isLoading && !canWriteHousehold.canWrite
+      ? t('common:householdClosedReason')
+      : null;
 
   const shift = shiftQuery.data;
   // Pattern A. The role that decides what this screen offers is the reader's
@@ -577,21 +588,26 @@ export function ShiftDetailScreen() {
               onChangeText={setNote}
               accessibilityLabel={t('detail.noteLabel')}
             />
-            <Button
+            <RestrictedActionButton
               testID="shift-detail-save"
-              disabled={!isRangeValid || updateShift.isPending}
+              size="default"
+              label={t('detail.save')}
+              reason={closedReason}
+              disabled={
+                !isRangeValid ||
+                updateShift.isPending ||
+                canWriteHousehold.isLoading
+              }
               onPress={() => void handleSave()}
-            >
-              <Text>{t('detail.save')}</Text>
-            </Button>
+            />
             {shift.status !== 'cancelled' ? (
               <RestrictedActionButton
                 testID="shift-detail-cancel"
                 variant="outline"
                 size="default"
                 label={t('detail.cancelShift')}
-                reason={cancelReason}
-                disabled={createChange.isPending}
+                reason={cancelReason ?? closedReason}
+                disabled={createChange.isPending || canWriteHousehold.isLoading}
                 onPress={() => setCancelConfirmOpen(true)}
               />
             ) : null}
@@ -668,9 +684,13 @@ export function ShiftDetailScreen() {
                       size="default"
                       label={t('detail.accept')}
                       reason={
-                        isRoleResolving ? t('detail.roleResolving') : null
+                        isRoleResolving
+                          ? t('detail.roleResolving')
+                          : closedReason
                       }
-                      disabled={acceptShift.isPending}
+                      disabled={
+                        acceptShift.isPending || canWriteHousehold.isLoading
+                      }
                       onPress={() =>
                         void acceptShift.mutateAsync({ shiftId: shift.id })
                       }
@@ -684,16 +704,27 @@ export function ShiftDetailScreen() {
                       destructive
                       label={t('today:shiftDetail.declineCta')}
                       reason={
-                        isRoleResolving ? t('detail.roleResolving') : null
+                        isRoleResolving
+                          ? t('detail.roleResolving')
+                          : closedReason
                       }
-                      disabled={declineShift.isPending}
+                      disabled={
+                        declineShift.isPending || canWriteHousehold.isLoading
+                      }
                       onPress={() => setDeclineConfirmOpen(true)}
                     />
                   ) : null}
-                  <Button
+                  <RestrictedActionButton
                     testID="shift-detail-counter"
                     variant={canAcceptPending ? 'outline' : 'default'}
-                    disabled={!isRangeValid || createChange.isPending}
+                    size="default"
+                    label={t('detail.counterOffer')}
+                    reason={closedReason}
+                    disabled={
+                      !isRangeValid ||
+                      createChange.isPending ||
+                      canWriteHousehold.isLoading
+                    }
                     onPress={() => {
                       // Same overnight-aware builder the parent's Save uses —
                       // never two instants off the one `local_date`.
@@ -712,9 +743,7 @@ export function ShiftDetailScreen() {
                         },
                       });
                     }}
-                  >
-                    <Text>{t('detail.counterOffer')}</Text>
-                  </Button>
+                  />
                 </View>
                 <AlertDialog
                   open={declineConfirmOpen}
@@ -837,44 +866,52 @@ export function ShiftDetailScreen() {
                     </Body>
                   ) : null}
                   {req.status === 'pending' && isOwnRequest ? (
-                    <Button
+                    <RestrictedActionButton
                       testID={`shift-change-withdraw-${req.id}`}
                       variant="outline"
-                      disabled={withdrawChange.isPending}
+                      size="default"
+                      destructive
+                      label={t('today:shiftDetail.withdrawCta')}
+                      reason={closedReason}
+                      disabled={
+                        withdrawChange.isPending || canWriteHousehold.isLoading
+                      }
                       onPress={() => setWithdrawConfirmId(req.id)}
-                    >
-                      <Text className="text-destructive">
-                        {t('today:shiftDetail.withdrawCta')}
-                      </Text>
-                    </Button>
+                    />
                   ) : null}
                   {req.status === 'pending' && !isOwnRequest ? (
                     <View className="flex-row gap-2">
-                      <Button
+                      <RestrictedActionButton
                         testID={`shift-change-accept-${req.id}`}
-                        disabled={respondChange.isPending}
+                        size="default"
+                        label={t('detail.acceptChange')}
+                        reason={closedReason}
+                        disabled={
+                          respondChange.isPending || canWriteHousehold.isLoading
+                        }
                         onPress={() =>
                           void respondChange.mutateAsync({
                             changeRequestId: req.id,
                             input: { status: 'accepted' },
                           })
                         }
-                      >
-                        <Text>{t('detail.acceptChange')}</Text>
-                      </Button>
-                      <Button
+                      />
+                      <RestrictedActionButton
                         testID={`shift-change-decline-${req.id}`}
                         variant="outline"
-                        disabled={respondChange.isPending}
+                        size="default"
+                        label={t('detail.declineChange')}
+                        reason={closedReason}
+                        disabled={
+                          respondChange.isPending || canWriteHousehold.isLoading
+                        }
                         onPress={() =>
                           void respondChange.mutateAsync({
                             changeRequestId: req.id,
                             input: { status: 'declined' },
                           })
                         }
-                      >
-                        <Text>{t('detail.declineChange')}</Text>
-                      </Button>
+                      />
                     </View>
                   ) : null}
                   <AlertDialog

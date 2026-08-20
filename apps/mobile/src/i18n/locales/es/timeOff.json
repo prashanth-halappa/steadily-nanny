@@ -22,6 +22,10 @@
   "cancelledToast": "Tiempo libre cancelado",
   "notAvailableTitle": "No disponible",
   "notAvailableDescription": "El tiempo libre lo gestiona la niñera en este hogar.",
+  "pastMember": {
+    "title": "Solo lectura",
+    "description": "Ya no estás en este hogar, así que aquí no puedes solicitar tiempo libre. Tus solicitudes anteriores siguen en tu registro."
+  },
   "conflictTitle": "Esto se solapa con un día reservado",
   "conflictDescription": "Ya tienes un turno u otro compromiso en este periodo. Aun así puedes reservar — la familia no se notifica automáticamente.",
   "conflictCancel": "Volver",

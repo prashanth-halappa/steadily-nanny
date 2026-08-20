@@ -730,6 +730,13 @@ export function PayArrangementScreen() {
     );
   }
 
+  // Two different facts, two different sentences — same split as
+  // TimeOffScreen's isPastMemberNanny and PaySetupScreen's own
+  // isPastMemberParent above. testID stays the SAME in both branches
+  // (PayArrangementScreen.test.tsx asserts on it for both cases) — only
+  // which copy key fills it changes.
+  const isPastMemberParent =
+    isParentEditorRole(onboarding.role) && onboarding.isPastMember;
   if (!isParentEditorRole(onboarding.role) || onboarding.isPastMember) {
     return (
       <View testID="pay-not-available" className="flex-1 bg-background">
@@ -743,11 +750,19 @@ export function PayArrangementScreen() {
             label={tCommon('back')}
           />
           <View className="mt-8">
-            <EmptyState
-              variant="inline"
-              title={t('notAvailableTitle')}
-              description={t('notAvailableDescription')}
-            />
+            {isPastMemberParent ? (
+              <EmptyState
+                variant="inline"
+                title={t('pastMember.title')}
+                description={t('pastMember.description')}
+              />
+            ) : (
+              <EmptyState
+                variant="inline"
+                title={t('notAvailableTitle')}
+                description={t('notAvailableDescription')}
+              />
+            )}
           </View>
         </ScrollView>
       </View>

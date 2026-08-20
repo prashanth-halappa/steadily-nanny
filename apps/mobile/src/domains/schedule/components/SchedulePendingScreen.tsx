@@ -71,6 +71,7 @@ import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
+import { RestrictedActionButton } from '@/src/components/custom/RestrictedActionButton';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -103,6 +104,7 @@ import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useAmendSchedulePattern } from '@/src/hooks/mutations/useAmendSchedulePattern';
 import { useWithdrawSchedulePattern } from '@/src/hooks/mutations/useWithdrawSchedulePattern';
 import { onboardingAsQuery, queryState } from '@/src/hooks/queries/queryState';
+import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
@@ -128,12 +130,20 @@ function SchedulePendingCarerSection({
   canEditSchedule,
   childrenById,
   showCarerLabel,
+  closedReason,
+  writeDisabled,
 }: {
   pattern: SchedulePattern;
   carerName: string;
   canEditSchedule: boolean;
   childrenById: Map<string, ChildSummary>;
   showCarerLabel: boolean;
+  /** Non-null once `useCanWriteHousehold` has confirmed this household is
+   * closed — the shared "closed" sentence, or null while open/unresolved. */
+  closedReason: string | null;
+  /** True while `useCanWriteHousehold` hasn't resolved yet — every write
+   * action stays disabled (no reason text) rather than acting on a guess. */
+  writeDisabled: boolean;
 }) {
   const { t } = useTranslation('schedule');
   const router = useRouter();
@@ -212,18 +222,17 @@ function SchedulePendingCarerSection({
             {t('pending.draftBody')}
           </Body>
           {canEditSchedule ? (
-            <Button
+            <RestrictedActionButton
               testID="schedule-pending-continue-cta"
+              label={t('pending.draftCta')}
+              reason={closedReason}
+              disabled={writeDisabled}
               onPress={() =>
                 router.push(
                   `/(private)/schedule/build?patternId=${pattern.id}` as Href
                 )
               }
-            >
-              <Text className="text-primary-foreground font-medium">
-                {t('pending.draftCta')}
-              </Text>
-            </Button>
+            />
           ) : null}
         </View>
       ) : (
@@ -290,9 +299,23 @@ function SchedulePendingCarerSection({
               <AlertDialogTrigger
                 testID="schedule-pending-withdraw"
                 className={buttonVariants({ variant: 'outline' })}
+                disabled={writeDisabled || closedReason !== null}
+                accessibilityHint={closedReason ?? undefined}
               >
                 <Text>{t('pending.withdraw')}</Text>
               </AlertDialogTrigger>
+              {/* Never hidden (S4/§7): the trigger stays visible and
+                  disabled above, with the same sentence `RestrictedActionButton`
+                  would show beneath a plain Button — the trigger itself isn't
+                  one, so the reason is rendered here alongside it instead. */}
+              {closedReason ? (
+                <Small
+                  testID="schedule-pending-withdraw-reason"
+                  className="text-muted-foreground"
+                >
+                  {closedReason}
+                </Small>
+              ) : null}
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>
@@ -309,7 +332,7 @@ function SchedulePendingCarerSection({
                   <AlertDialogAction
                     testID="schedule-pending-withdraw-confirm"
                     className={buttonVariants({ variant: 'destructive' })}
-                    disabled={withdraw.isPending}
+                    disabled={withdraw.isPending || closedReason !== null}
                     onPress={() => void handleWithdraw()}
                   >
                     <Text className="text-destructive-foreground">
@@ -338,22 +361,24 @@ function SchedulePendingCarerSection({
                 </Text>
               </Button>
               {canEditSchedule ? (
-                <Button
+                <RestrictedActionButton
                   testID="schedule-pending-change-week"
                   variant="outline"
+                  label={t('pending.changeWeek')}
+                  reason={closedReason}
+                  disabled={writeDisabled}
                   onPress={() => router.push(BUILD_HREF)}
-                >
-                  <Text>{t('pending.changeWeek')}</Text>
-                </Button>
+                />
               ) : null}
               {canEditSchedule ? (
-                <Button
+                <RestrictedActionButton
                   testID="schedule-pending-adjust"
                   variant="outline"
+                  label={t('pending.adjust')}
+                  reason={closedReason}
+                  disabled={writeDisabled}
                   onPress={() => setAdjustOpen(true)}
-                >
-                  <Text>{t('pending.adjust')}</Text>
-                </Button>
+                />
               ) : null}
               {canEditSchedule ? (
                 <AdjustSchedulePatternSheet
@@ -371,14 +396,13 @@ function SchedulePendingCarerSection({
 
           {(pattern.status === 'declined' || pattern.status === 'withdrawn') &&
           canEditSchedule ? (
-            <Button
+            <RestrictedActionButton
               testID="schedule-pending-build-cta"
+              label={t('pending.emptyCta')}
+              reason={closedReason}
+              disabled={writeDisabled}
               onPress={() => router.push(BUILD_HREF)}
-            >
-              <Text className="text-primary-foreground font-medium">
-                {t('pending.emptyCta')}
-              </Text>
-            </Button>
+            />
           ) : null}
 
           {/* S9: an ended pattern used to be filtered out before this screen
@@ -387,14 +411,13 @@ function SchedulePendingCarerSection({
               one, and its own CTA copy ("Set a new usual week") rather than
               reusing the declined/withdrawn "Build your week" wording. */}
           {pattern.status === 'ended' && canEditSchedule ? (
-            <Button
+            <RestrictedActionButton
               testID="schedule-pending-build-cta"
+              label={t('pending.setNewWeekCta')}
+              reason={closedReason}
+              disabled={writeDisabled}
               onPress={() => router.push(BUILD_HREF)}
-            >
-              <Text className="text-primary-foreground font-medium">
-                {t('pending.setNewWeekCta')}
-              </Text>
-            </Button>
+            />
           ) : null}
         </View>
       )}
@@ -440,6 +463,16 @@ export function SchedulePendingScreen() {
   );
 
   const canEditSchedule = isParentEditorRole(onboarding.role);
+  // Additional gate, orthogonal to role: the household this pattern belongs
+  // to may have closed (the employing parent deleted their account) since
+  // this reader's own membership row was resolved. `canEditSchedule` still
+  // decides WHO gets offered these actions at all (unchanged); this decides
+  // whether the offered action stays disabled, with a reason, once closed.
+  const canWriteHousehold = useCanWriteHousehold(onboarding.householdId);
+  const closedReason =
+    !canWriteHousehold.isLoading && !canWriteHousehold.canWrite
+      ? tCommon('householdClosedReason')
+      : null;
 
   // S7/S8: one section per carer, each resolved by its OWN precedence
   // (`resolvePerCarerPatterns`) — replaces the household-wide
@@ -550,14 +583,13 @@ export function SchedulePendingScreen() {
             description={t('pending.emptyBody')}
           />
           {canEditSchedule ? (
-            <Button
+            <RestrictedActionButton
               testID="schedule-pending-build-cta"
+              label={t('pending.emptyCta')}
+              reason={closedReason}
+              disabled={canWriteHousehold.isLoading}
               onPress={() => router.push(BUILD_HREF)}
-            >
-              <Text className="text-primary-foreground font-medium">
-                {t('pending.emptyCta')}
-              </Text>
-            </Button>
+            />
           ) : null}
         </View>
       ) : (
@@ -575,6 +607,8 @@ export function SchedulePendingScreen() {
               canEditSchedule={canEditSchedule}
               childrenById={childrenById}
               showCarerLabel={sections.length > 1}
+              closedReason={closedReason}
+              writeDisabled={canWriteHousehold.isLoading}
             />
           ))}
         </View>

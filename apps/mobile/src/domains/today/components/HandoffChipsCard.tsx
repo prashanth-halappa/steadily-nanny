@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { cn } from '@/lib/utils';
+import { RestrictedActionButton } from '@/src/components/custom/RestrictedActionButton';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { IconChip } from '@/src/components/ui/icon-chip';
@@ -37,6 +38,7 @@ import {
 } from '@/src/domains/today/constants/handoffChips';
 import { useCreateHandoffNote } from '@/src/hooks/mutations/useCreateHandoffNote';
 import { useUpdateHandoffNote } from '@/src/hooks/mutations/useUpdateHandoffNote';
+import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useHandoffNotes } from '@/src/hooks/queries/useHandoffNotes';
 import { timeToMinutes } from '@/src/lib/displayTime';
 import { localDateInZone } from '@/src/lib/localDate';
@@ -125,6 +127,7 @@ function HandoffPhaseEditor({
   existingNoteId,
   existingBody,
   sentAt,
+  closedReason,
 }: {
   phase: HandoffPhase;
   householdId: string;
@@ -134,6 +137,10 @@ function HandoffPhaseEditor({
   existingNoteId?: string;
   existingBody?: string | null;
   sentAt?: string | null;
+  /** Non-null when the household has closed — the household's account was
+   * deleted and every remaining member's write access is gone. Disables the
+   * save button with the reason instead of hiding it (S4, `RestrictedActionButton`). */
+  closedReason: string | null;
 }) {
   const { t } = useTranslation('today');
   const suggestions = chipsForPhase(phase);
@@ -239,14 +246,14 @@ function HandoffPhaseEditor({
         </Small>
       ) : null}
       {canSave ? (
-        <Button
+        <RestrictedActionButton
           testID={`handoff-submit-${phase}`}
           size="sm"
+          label={t('common:save')}
+          reason={closedReason}
           onPress={handleSubmit}
           disabled={isPending}
-        >
-          <Text>{t('common:save')}</Text>
-        </Button>
+        />
       ) : (
         <Small
           testID={`handoff-hint-${phase}`}
@@ -267,10 +274,19 @@ export function HandoffChipsCard({
   role,
 }: HandoffChipsCardProps) {
   const { t } = useTranslation('today');
+  const { t: tCommon } = useTranslation('common');
   const localDate = localDateInZone(timeZone);
   const notesQuery = useHandoffNotes(householdId, localDate);
   const updateNote = useUpdateHandoffNote(householdId, localDate);
   const currentUserId = useAuthStore(s => s.user?.id) ?? null;
+  // Applies uniformly to both the parent's and the nanny's editor — this
+  // card has no role gate of its own to compose with (unlike most other
+  // write surfaces in this domain), so it's the FIRST gate here.
+  const canWriteHousehold = useCanWriteHousehold(householdId);
+  const closedReason =
+    !canWriteHousehold.isLoading && !canWriteHousehold.canWrite
+      ? tCommon('householdClosedReason')
+      : null;
   // `null` = no manual override yet, so `expanded` below tracks the derived
   // auto-expand condition; once she taps "Add a note" it wins outright.
   const [manualExpanded, setManualExpanded] = useState<boolean | null>(null);
@@ -359,10 +375,16 @@ export function HandoffChipsCard({
               </Small>
             ))}
           </View>
-          <Button
+          <RestrictedActionButton
             testID="handoff-save-moment"
             variant={eveningNote.moment_saved_at ? 'outline' : 'default'}
             size="sm"
+            label={
+              eveningNote.moment_saved_at
+                ? t('handoff.savedAsMoment')
+                : t('handoff.saveAsMoment')
+            }
+            reason={closedReason}
             onPress={() =>
               updateNote.mutate({
                 handoffNoteId: eveningNote.id,
@@ -370,13 +392,7 @@ export function HandoffChipsCard({
               })
             }
             disabled={updateNote.isPending}
-          >
-            <Text>
-              {eveningNote.moment_saved_at
-                ? t('handoff.savedAsMoment')
-                : t('handoff.saveAsMoment')}
-            </Text>
-          </Button>
+          />
         </View>
       ) : null}
 
@@ -391,6 +407,7 @@ export function HandoffChipsCard({
             existingNoteId={existingNoteId}
             existingBody={myNote?.body}
             sentAt={myNote?.created_at}
+            closedReason={closedReason}
           />
         ) : (
           <View testID="handoff-collapsed" className="gap-1">

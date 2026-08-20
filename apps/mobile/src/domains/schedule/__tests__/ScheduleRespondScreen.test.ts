@@ -143,18 +143,23 @@ describe('ScheduleRespondScreen source', () => {
 
   it('REGRESSION: Accept and the decline-confirm action both disable once responded, and Accept navigates away on success', () => {
     expect(source).toContain('hasResponded');
+    // The two conditions now travel together in `writeDisabled`, which also
+    // refuses while the household's write permission is still resolving. The
+    // double-tap guard is what this test exists for, so assert it is still
+    // IN that expression rather than pinning the literal it used to be —
+    // otherwise the next person to add a third condition breaks a test that
+    // was never about the spelling.
+    expect(source).toMatch(
+      /const writeDisabled =\s*\n?\s*respond\.isPending \|\| hasResponded/
+    );
     const acceptBlockMatch = source.match(
       /testID="schedule-respond-accept"[\s\S]{0,300}?(?:<\/Button>|\/>)/
     );
-    expect(acceptBlockMatch?.[0]).toMatch(
-      /disabled={respond\.isPending \|\| hasResponded}/
-    );
+    expect(acceptBlockMatch?.[0]).toMatch(/disabled={writeDisabled}/);
     const declineConfirmBlockMatch = source.match(
       /testID="schedule-respond-decline-confirm"[\s\S]{0,500}?(?:<\/Button>|\/>)/
     );
-    expect(declineConfirmBlockMatch?.[0]).toMatch(
-      /disabled={respond\.isPending \|\| hasResponded}/
-    );
+    expect(declineConfirmBlockMatch?.[0]).toMatch(/disabled={writeDisabled}/);
     // On success, Accept leaves the screen entirely rather than sitting on
     // the same stale UI — the prior bug's screenshot was literally titled
     // "stuck-after-accept".

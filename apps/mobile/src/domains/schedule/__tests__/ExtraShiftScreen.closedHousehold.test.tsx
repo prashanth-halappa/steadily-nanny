@@ -1,10 +1,12 @@
 /**
- * @module domains/schedule/__tests__/ExtraShiftScreen.clash.test
+ * @module domains/schedule/__tests__/ExtraShiftScreen.closedHousehold
  *
- * Pre-submit busy-block clash warning before creating a one-off extra shift.
+ * The employing parent's household can close (member row flips to
+ * `removed`) after this form is already mid-fill. The submit CTA must go
+ * disabled-with-a-reason, never hidden, never a silent 403 on submit.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import { mockAlertDialogPrimitive } from './mockAlertDialog';
 
 mockAlertDialogPrimitive();
@@ -26,12 +28,11 @@ let ExtraShiftScreen: typeof import('../components/ExtraShiftScreen').ExtraShift
 let mockCreateMutateAsync: ReturnType<typeof mock>;
 let mockGetBusyBlocks: ReturnType<typeof mock>;
 let mockRouterBack: ReturnType<typeof mock>;
-
-const CONFLICT_BLOCK = {
-  starts_at: '2026-08-10T14:00:00.000Z',
-  ends_at: '2026-08-10T18:00:00.000Z',
-  kind: 'other_commitment' as const,
-};
+const useCanWriteHouseholdMock = mock(() => ({
+  canWrite: true,
+  isPastMember: false,
+  isLoading: false,
+}));
 
 beforeAll(async () => {
   mockRouterBack = mock();
@@ -60,11 +61,7 @@ beforeAll(async () => {
     }),
   }));
   mock.module('@/src/hooks/queries/useCanWriteHousehold', () => ({
-    useCanWriteHousehold: () => ({
-      canWrite: true,
-      isPastMember: false,
-      isLoading: false,
-    }),
+    useCanWriteHousehold: useCanWriteHouseholdMock,
   }));
   mock.module('@/src/domains/schedule/hooks/useHouseholdCarers', () => ({
     useHouseholdCarers: () => ({
@@ -102,60 +99,70 @@ beforeEach(() => {
   mockGetBusyBlocks.mockClear();
   mockRouterBack.mockClear();
   mockGetBusyBlocks.mockImplementation(() => Promise.resolve([]));
+  useCanWriteHouseholdMock.mockReset();
+  useCanWriteHouseholdMock.mockReturnValue({
+    canWrite: true,
+    isPastMember: false,
+    isLoading: false,
+  });
 });
 
-describe('ExtraShiftScreen — busy clash pre-check', () => {
-  it('creates directly when there are no conflicting busy blocks', async () => {
+describe('ExtraShiftScreen — closed household', () => {
+  it('stays visible but disabled, with the closed reason, when the household has closed', () => {
+    useCanWriteHouseholdMock.mockReturnValue({
+      canWrite: false,
+      isPastMember: true,
+      isLoading: false,
+    });
+
     const { getByTestId } = render(<ExtraShiftScreen />);
 
-    fireEvent.press(getByTestId('schedule-extra-submit'));
-
-    await waitFor(() => expect(mockCreateMutateAsync).toHaveBeenCalledTimes(1));
-    expect(mockGetBusyBlocks).toHaveBeenCalledTimes(1);
+    const submit = getByTestId('schedule-extra-submit');
+    expect(submit).toBeTruthy();
+    expect(submit.props.disabled).toBe(true);
+    expect(getByTestId('schedule-extra-submit-reason').props.children).toBe(
+      'householdClosedReason'
+    );
   });
 
-  it('shows a confirm dialog and does not create until confirmed', async () => {
-    mockGetBusyBlocks.mockImplementation(() =>
-      Promise.resolve([CONFLICT_BLOCK])
-    );
+  it('does not create a shift when pressed while closed', () => {
+    useCanWriteHouseholdMock.mockReturnValue({
+      canWrite: false,
+      isPastMember: true,
+      isLoading: false,
+    });
 
-    const { getByTestId, queryByTestId } = render(<ExtraShiftScreen />);
-
+    const { getByTestId } = render(<ExtraShiftScreen />);
     fireEvent.press(getByTestId('schedule-extra-submit'));
 
-    await waitFor(() =>
-      expect(queryByTestId('schedule-extra-clash-confirm')).toBeTruthy()
-    );
     expect(mockCreateMutateAsync).not.toHaveBeenCalled();
   });
 
-  it('creates after the parent confirms the clash dialog', async () => {
-    mockGetBusyBlocks.mockImplementation(() =>
-      Promise.resolve([CONFLICT_BLOCK])
-    );
+  it('behaves normally — enabled, no reason — when the household is open', async () => {
+    const { getByTestId, queryByTestId } = render(<ExtraShiftScreen />);
 
-    const { getByTestId } = render(<ExtraShiftScreen />);
+    const submit = getByTestId('schedule-extra-submit');
+    expect(submit.props.disabled).toBe(false);
+    expect(queryByTestId('schedule-extra-submit-reason')).toBeNull();
 
-    fireEvent.press(getByTestId('schedule-extra-submit'));
-
-    await waitFor(() =>
-      expect(getByTestId('schedule-extra-clash-confirm')).toBeTruthy()
-    );
-    fireEvent.press(getByTestId('schedule-extra-clash-confirm'));
-
-    await waitFor(() => expect(mockCreateMutateAsync).toHaveBeenCalledTimes(1));
-    expect(mockRouterBack).toHaveBeenCalledTimes(1);
+    fireEvent.press(submit);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockCreateMutateAsync).toHaveBeenCalledTimes(1);
   });
 
-  it('creates directly when the busy lookup fails', async () => {
-    mockGetBusyBlocks.mockImplementation(() =>
-      Promise.reject(new Error('network'))
-    );
+  it('disables submit (no reason yet) while the membership read is still unresolved', () => {
+    useCanWriteHouseholdMock.mockReturnValue({
+      canWrite: false,
+      isPastMember: false,
+      isLoading: true,
+    });
 
-    const { getByTestId } = render(<ExtraShiftScreen />);
+    const { getByTestId, queryByTestId } = render(<ExtraShiftScreen />);
 
-    fireEvent.press(getByTestId('schedule-extra-submit'));
-
-    await waitFor(() => expect(mockCreateMutateAsync).toHaveBeenCalledTimes(1));
+    const submit = getByTestId('schedule-extra-submit');
+    expect(submit.props.disabled).toBe(true);
+    // Unknown must not announce a closure it hasn't confirmed.
+    expect(queryByTestId('schedule-extra-submit-reason')).toBeNull();
   });
 });

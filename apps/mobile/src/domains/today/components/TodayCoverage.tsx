@@ -43,7 +43,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/src/components/ui/alert-dialog';
-import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { IconChip } from '@/src/components/ui/icon-chip';
 import { InlineError } from '@/src/components/ui/inline-error';
@@ -63,6 +62,7 @@ import {
 import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
 import { useCreateParentCover } from '@/src/hooks/mutations/useCreateParentCover';
 import { useWithdrawCoverAsk } from '@/src/hooks/mutations/useWithdrawCoverAsk';
+import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useDayThread } from '@/src/hooks/queries/useDayThread';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useRestrictedAction } from '@/src/hooks/queries/useRestrictedAction';
@@ -201,6 +201,7 @@ export function TodayCoverage({
   const { t } = useTranslation('today');
   const { t: tSchedule } = useTranslation('schedule');
   const { t: tError } = useTranslation('errors');
+  const { t: tCommon } = useTranslation('common');
   const router = useRouter();
   const colors = useThemeColors();
   const state = useTodayCoverage(householdId, timeZone, weekStartsOn);
@@ -222,6 +223,17 @@ export function TodayCoverage({
     householdId,
     action: tSchedule('cover.restrictedActionWithdrawAsk'),
   });
+  // The household-closed gate — orthogonal to the owner_only restrictions
+  // above (those are about WHO among current members may act; this is
+  // about whether the reader is even still an active member of this
+  // household). Fails toward WAIT: `closedReason` stays null while unknown,
+  // matching `useRestrictedAction`'s own "unknown resolves unrestricted"
+  // stance, so a button never flickers disabled while the read settles.
+  const canWriteHousehold = useCanWriteHousehold(householdId);
+  const closedReason =
+    !canWriteHousehold.isLoading && !canWriteHousehold.canWrite
+      ? tCommon('householdClosedReason')
+      : null;
 
   const localDate = localDateInZone(timeZone);
   const tomorrow = addLocalDays(localDate, 1);
@@ -459,6 +471,8 @@ export function TodayCoverage({
   const showHoursWrongLink = !askState;
   const showAskSomeoneElseSecondary = askState?.state === 'expired';
   const showWithdrawAskLink = askState?.state === 'pending';
+  const withdrawReason = withdrawAskRestriction.reason ?? closedReason;
+  const withdrawDisabled = withdrawReason !== null;
 
   const handleWithdrawConfirm = () => {
     if (askState?.state !== 'pending') return;
@@ -576,7 +590,7 @@ export function TodayCoverage({
               variant="default"
               className="w-full"
               label={primaryAsk.label}
-              reason={askCoverRestriction.reason}
+              reason={askCoverRestriction.reason ?? closedReason}
               onPress={() => router.push(primaryAsk.href as Href)}
             />
             {showAskSomeoneElseSecondary ? (
@@ -585,17 +599,19 @@ export function TodayCoverage({
                 size="sm"
                 variant="outline"
                 label={tSchedule('cover.askSomeoneElse')}
-                reason={askCoverRestriction.reason}
+                reason={askCoverRestriction.reason ?? closedReason}
                 onPress={() => {
                   const href = extraHrefFor(null);
                   if (href) router.push(href);
                 }}
               />
             ) : null}
-            <Button
+            <RestrictedActionButton
               testID="today-coverage-parent-cover"
               size="sm"
               variant="secondary"
+              label={tSchedule('cover.iveGotIt')}
+              reason={closedReason}
               disabled={createCover.isPending}
               onPress={() => {
                 void createCover.mutateAsync({
@@ -605,9 +621,7 @@ export function TodayCoverage({
                   child_id: singleWindow.childId,
                 });
               }}
-            >
-              {tSchedule('cover.iveGotIt')}
-            </Button>
+            />
             {showHoursWrongLink ? (
               <Pressable
                 testID="today-coverage-hours-wrong"
@@ -630,15 +644,15 @@ export function TodayCoverage({
                   testID="today-coverage-withdraw-ask"
                   accessibilityRole="button"
                   accessibilityState={{
-                    disabled: withdrawAskRestriction.disabled,
+                    disabled: withdrawDisabled,
                   }}
-                  accessibilityHint={withdrawAskRestriction.reason ?? undefined}
+                  accessibilityHint={withdrawReason ?? undefined}
                   style={{
                     minHeight: spacing.minTouchTarget,
                     justifyContent: 'center',
                   }}
                   hitSlop={8}
-                  disabled={withdrawAskRestriction.disabled}
+                  disabled={withdrawDisabled}
                   onPress={() => {
                     setWithdrawError(null);
                     setWithdrawConfirmOpen(true);
@@ -646,7 +660,7 @@ export function TodayCoverage({
                 >
                   <Small
                     className={
-                      withdrawAskRestriction.disabled
+                      withdrawDisabled
                         ? 'text-muted-foreground'
                         : 'text-primary'
                     }
@@ -655,12 +669,12 @@ export function TodayCoverage({
                     {tSchedule('cover.withdrawAsk')}
                   </Small>
                 </Pressable>
-                {withdrawAskRestriction.reason ? (
+                {withdrawReason ? (
                   <Small
                     testID="today-coverage-withdraw-ask-reason"
                     className="mt-2 text-muted-foreground"
                   >
-                    {withdrawAskRestriction.reason}
+                    {withdrawReason}
                   </Small>
                 ) : null}
                 <AlertDialog

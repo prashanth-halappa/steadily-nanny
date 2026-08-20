@@ -65,6 +65,7 @@ export function ShiftRow({
   membersByUserId,
   memberLabels,
   showParentCoverUndo,
+  coverUndoDisabledReason,
 }: {
   shift: Shift;
   displayTimeZone?: string | null;
@@ -86,6 +87,11 @@ export function ShiftRow({
     roleFallback: (role: 'owner' | 'parent' | 'nanny' | 'helper') => string;
   };
   showParentCoverUndo?: boolean;
+  /** Set by `AgendaView` from `useCanWriteHousehold` — the closed-household
+   * reason, or null/undefined when the reader may still act. This row is a
+   * compact text-link, not a `Button`, so it doesn't fit `RestrictedActionButton`;
+   * this reproduces that component's disabled+reason-beneath contract by hand. */
+  coverUndoDisabledReason?: string | null;
 }) {
   const { t } = useTranslation('schedule');
   const router = useRouter();
@@ -216,17 +222,43 @@ export function ShiftRow({
       >
         {rowBody}
         {showParentCoverUndo ? (
-          <Pressable
-            testID={`schedule-parent-cover-undo-${shift.id}`}
-            accessibilityRole="button"
-            hitSlop={8}
-            disabled={removeCover.isPending}
-            onPress={() => void removeCover.mutateAsync({ shiftId: shift.id })}
-          >
-            <Small className="text-primary" weight="medium">
-              {t('cover.undoCovering')}
-            </Small>
-          </Pressable>
+          <View>
+            <Pressable
+              testID={`schedule-parent-cover-undo-${shift.id}`}
+              accessibilityRole="button"
+              accessibilityState={{
+                disabled:
+                  removeCover.isPending || Boolean(coverUndoDisabledReason),
+              }}
+              accessibilityHint={coverUndoDisabledReason ?? undefined}
+              hitSlop={8}
+              disabled={
+                removeCover.isPending || Boolean(coverUndoDisabledReason)
+              }
+              onPress={() =>
+                void removeCover.mutateAsync({ shiftId: shift.id })
+              }
+            >
+              <Small
+                className={
+                  coverUndoDisabledReason
+                    ? 'text-muted-foreground'
+                    : 'text-primary'
+                }
+                weight="medium"
+              >
+                {t('cover.undoCovering')}
+              </Small>
+            </Pressable>
+            {coverUndoDisabledReason ? (
+              <Small
+                testID={`schedule-parent-cover-undo-${shift.id}-reason`}
+                className="mt-1 text-muted-foreground"
+              >
+                {coverUndoDisabledReason}
+              </Small>
+            ) : null}
+          </View>
         ) : null}
       </View>
     );

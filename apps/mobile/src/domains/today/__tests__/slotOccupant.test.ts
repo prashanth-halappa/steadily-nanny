@@ -23,8 +23,10 @@ describe('resolveSlotOccupant', () => {
   });
 
   // Every write on a household she was removed from 403s server-side, so a
-  // clock-in button there would only ever fail.
-  it('a past member gets an empty slot', () => {
+  // clock-in button there would only ever fail — but an EMPTY slot was the
+  // silence a real nanny hit: her employer deleted their account and the one
+  // control that can never fall under the fold said nothing at all.
+  it('a past member gets the explanation, not an empty slot', () => {
     expect(
       resolveSlotOccupant({
         role: SETUP_ROLES.NANNY,
@@ -32,7 +34,36 @@ describe('resolveSlotOccupant', () => {
         onClock: false,
         attentionOwner: null,
       })
-    ).toBeNull();
+    ).toBe('membershipEnded');
+  });
+
+  // She may be standing in someone's house holding a child when the account
+  // is deleted. Clock-out is the ONE write a removed member keeps, so the
+  // running timer holds the slot and the explanation renders beneath it —
+  // stamping an end time she did not choose would rewrite the hours she may
+  // later have to prove.
+  it('a past member mid-shift keeps the clock so she can close it herself', () => {
+    expect(
+      resolveSlotOccupant({
+        role: SETUP_ROLES.NANNY,
+        isPastMember: true,
+        onClock: true,
+        attentionOwner: null,
+      })
+    ).toBe('clockIn');
+  });
+
+  // A past-member PARENT keeps the coverage surface (read-only); the
+  // explanation is a carer-side card, not a second thing in his slot.
+  it('a past-member parent still gets coverage, never the ended card', () => {
+    expect(
+      resolveSlotOccupant({
+        role: SETUP_ROLES.PARENT,
+        isPastMember: true,
+        onClock: false,
+        attentionOwner: null,
+      })
+    ).toBe('coverage');
   });
 
   // Hers is the clock; his is today's cover. An ordinary day is still a day
@@ -167,7 +198,7 @@ describe('resolveSlotOccupant', () => {
         onClock: true,
         attentionOwner: null,
       })
-    ).toBeNull();
+    ).toBe('clockIn');
   });
 
   // A7 — the parent's pending offer, and only while it is BLOCKING. A stale

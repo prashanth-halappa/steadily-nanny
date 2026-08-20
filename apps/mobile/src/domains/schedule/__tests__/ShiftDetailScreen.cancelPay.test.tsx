@@ -109,6 +109,13 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useRestrictedAction', () => ({
     useRestrictedAction: () => restriction,
   }));
+  mock.module('@/src/hooks/queries/useCanWriteHousehold', () => ({
+    useCanWriteHousehold: () => ({
+      canWrite: true,
+      isPastMember: false,
+      isLoading: false,
+    }),
+  }));
   mock.module('@/src/hooks/queries/useHouseholds', () => ({
     useHouseholds: () => ({
       data: [

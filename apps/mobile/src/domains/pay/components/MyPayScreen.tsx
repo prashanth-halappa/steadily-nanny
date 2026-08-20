@@ -295,11 +295,17 @@ function MyPayHouseholdCard({
    */
   const recordedRef = useRef<string | null>(null);
   useEffect(() => {
+    // §9.1's canWrite gate: an ack is a statement that she agrees to see
+    // these terms, sent on her behalf. A household she was removed from
+    // gets no writes at all — sending one there is wrong even when 109's
+    // RLS fix now refuses it server-side; the wrongness is in asking, not
+    // just in whether it succeeds.
+    if (!canWrite) return;
     if (!arrangement || !acks.isSuccess || hasSeenAck(acks.data)) return;
     if (recordedRef.current === arrangement.id) return;
     recordedRef.current = arrangement.id;
     ackTerms.mutate(arrangement.id);
-  }, [arrangement, acks.isSuccess, acks.data, ackTerms.mutate]);
+  }, [canWrite, arrangement, acks.isSuccess, acks.data, ackTerms.mutate]);
 
   // 1.3: ONE state line, in ONE slot, for both roles (T16). The parent's
   // copy of this sentence sits in the same place on `PayArrangementScreen`,
@@ -489,8 +495,22 @@ function MyPayHouseholdCard({
                     {/* Survives ONLY on a grandfathered row. On terms she
                         agreed it would contradict the line at the top of this
                         card, and "I haven't agreed to these" would be false
-                        on its face. */}
-                    {agreement?.kind === 'notAgreedInSteadily' ? (
+                        on its face.
+                        HIDDEN, not disabled, on a household she was removed
+                        from (canWrite false). Every OTHER restriction in this
+                        app is "disabled with a reason" on purpose — the
+                        reader needs to know who CAN still do it. That reason
+                        does not apply here: dissent is a statement about pay
+                        terms for a job she no longer holds, at a family she
+                        no longer works for, and nobody else's turn is coming
+                        — there is no "wait for X" to explain. A greyed-out
+                        button next to that explanation reads as "you lost a
+                        right you still have"; the honest fact is that this
+                        particular action ended when the working relationship
+                        did, the same way `settings/index.tsx` drops (not
+                        disables) Availability/Request-time-off for a past
+                        member rather than showing them unusable. */}
+                    {agreement?.kind === 'notAgreedInSteadily' && canWrite ? (
                       <Button
                         testID={`my-pay-ack-disagree-${household.id}`}
                         variant="ghost"

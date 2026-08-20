@@ -18,6 +18,7 @@
   "notFoundGoHome": "Go home",
   "restrictedAction": "Only {{name}} can {{action}} in this household.",
   "restrictedActionOwner": "the household owner",
+  "householdClosedReason": "This family's account is closed. You can read this, not change it.",
   "theFamily": "The family",
   "tabs": {
     "today": "Today",
@@ -77,5 +78,6 @@
       "message": "Ask them to add you back if that seems wrong.",
       "action": "Go to Today"
     }
-  }
+  },
+  "readOnlyBadge": "Read-only"
 }

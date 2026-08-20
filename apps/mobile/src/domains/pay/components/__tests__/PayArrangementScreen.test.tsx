@@ -929,6 +929,53 @@ describe('PayArrangementScreen', () => {
     expect(queryByTestId('pay-current-terms-card')).toBeNull();
   });
 
+  // She WAS the parent who managed this — "Pay & terms is managed by a
+  // parent on this household" describes her, about herself, in the third
+  // person. The testID stays `pay-not-available` in both branches (the test
+  // above pins that), so the KEY is the only thing that can discriminate the
+  // two cases — `t()` is key-echoed under bun:test, so the rendered text IS
+  // the i18n key.
+  it('a REMOVED parent (past member) gets the past-member copy, not the wrong-role copy written about herself', async () => {
+    membershipsListMock.mockImplementation(() =>
+      Promise.resolve([{ ...parentMembership, status: 'removed' }])
+    );
+
+    const { getByTestId, getByText, queryByText } = renderWithProviders(
+      <PayArrangementScreen />
+    );
+
+    await waitFor(() => expect(getByTestId('pay-not-available')).toBeTruthy());
+    expect(getByText('pastMember.title')).toBeTruthy();
+    expect(getByText('pastMember.description')).toBeTruthy();
+    expect(queryByText('notAvailableDescription')).toBeNull();
+  });
+
+  it('a non-parent role (never managed pay & terms) still gets the ordinary wrong-role copy', async () => {
+    membershipsListMock.mockImplementation(() =>
+      Promise.resolve([
+        {
+          ...parentMembership,
+          id: 'member-nanny',
+          user_id: NANNY_A_ID,
+          role: 'nanny',
+        },
+      ])
+    );
+    useAuthStore.setState({
+      session: { user: { id: NANNY_A_ID } } as unknown as never,
+      user: { id: NANNY_A_ID } as unknown as never,
+      isInitialized: true,
+    } as never);
+
+    const { getByTestId, getByText, queryByText } = renderWithProviders(
+      <PayArrangementScreen />
+    );
+
+    await waitFor(() => expect(getByTestId('pay-not-available')).toBeTruthy());
+    expect(getByText('notAvailableDescription')).toBeTruthy();
+    expect(queryByText('pastMember.description')).toBeNull();
+  });
+
   // C6 (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §C): `onboarding.status` stays
   // 'loading' FOREVER on a failed memberships read — checking only that made
   // this outer gate a permanent spinner with no reachable retry.

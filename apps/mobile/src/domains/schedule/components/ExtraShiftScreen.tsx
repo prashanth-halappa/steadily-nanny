@@ -12,6 +12,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { availabilityApi } from '@/src/api/endpoints/availability';
 import type { CreateExtraShiftInput } from '@/src/api/endpoints/changeRequests';
+import { RestrictedActionButton } from '@/src/components/custom/RestrictedActionButton';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,7 +24,6 @@ import {
   AlertDialogTitle,
 } from '@/src/components/ui/alert-dialog';
 import { BackButton } from '@/src/components/ui/back-button';
-import { Button } from '@/src/components/ui/button';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { DateTimeField } from '@/src/components/ui/date-time-field';
 import { EmptyState } from '@/src/components/ui/empty-state';
@@ -41,6 +41,7 @@ import {
 import { findConflictingBusyBlocks } from '@/src/domains/timeOff/utils/busyConflict';
 import { useCreateExtraShift } from '@/src/hooks/mutations/useCreateExtraShift';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
+import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { localDateInZone } from '@/src/lib/localDate';
@@ -64,6 +65,16 @@ export function ExtraShiftScreen() {
   const createExtra = useCreateExtraShift(active.householdId);
   const carers = useHouseholdCarers(active.householdId);
   const children = useChildren(active.householdId);
+  // No caller of this route (AgendaView, TodayCoverage, ScheduleShiftsScreen,
+  // WeeklyHoursNotSetCard) passes a `householdId` param, and this screen
+  // reads none — it always creates in whichever household is currently
+  // active, so `active.householdId` IS this screen's own entity household,
+  // not a stand-in for one it should have used instead.
+  const canWriteHousehold = useCanWriteHousehold(active.householdId);
+  const closedReason =
+    !canWriteHousehold.isLoading && !canWriteHousehold.canWrite
+      ? tCommon('householdClosedReason')
+      : null;
 
   const [date, setDate] = useState(
     () =>
@@ -105,8 +116,17 @@ export function ExtraShiftScreen() {
     () =>
       isExtraShiftFormValid({ date, start, end, carerId }) &&
       !!active.householdId &&
-      !createExtra.isPending,
-    [date, start, end, carerId, active.householdId, createExtra.isPending]
+      !createExtra.isPending &&
+      canWriteHousehold.canWrite,
+    [
+      date,
+      start,
+      end,
+      carerId,
+      active.householdId,
+      createExtra.isPending,
+      canWriteHousehold.canWrite,
+    ]
   );
 
   const toggleChild = (id: string) => {
@@ -306,16 +326,14 @@ export function ExtraShiftScreen() {
           </>
         ) : null}
 
-        <Button
+        <RestrictedActionButton
           testID="schedule-extra-submit"
           className="mt-2"
-          disabled={!canSubmit}
+          label={t('shifts.extraSubmit')}
+          reason={closedReason}
+          disabled={!canSubmit || canWriteHousehold.isLoading}
           onPress={() => void handleSubmit()}
-        >
-          <Text className="text-primary-foreground font-medium">
-            {t('shifts.extraSubmit')}
-          </Text>
-        </Button>
+        />
       </View>
 
       <AlertDialog open={clashOpen} onOpenChange={setClashOpen}>

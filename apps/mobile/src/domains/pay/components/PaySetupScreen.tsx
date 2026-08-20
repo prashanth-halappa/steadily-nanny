@@ -248,6 +248,15 @@ export function PaySetupScreen() {
     );
   }
 
+  // Two different facts, two different sentences (same split as
+  // TimeOffScreen's isPastMemberNanny): a wrong ROLE was never the one who
+  // managed pay & terms, so telling her "a parent manages this" is true. A
+  // REMOVED parent/owner WAS that parent — the same sentence tells her a
+  // stranger's job is hers to watch, about herself. testID stays the SAME
+  // in both branches (PaySetupScreen.test.tsx asserts on it for both cases)
+  // — only which copy key fills it changes.
+  const isPastMemberParent =
+    isParentEditorRole(onboarding.role) && onboarding.isPastMember;
   if (!isParentEditorRole(onboarding.role) || onboarding.isPastMember) {
     return (
       <View testID="pay-setup-not-available" className="flex-1 bg-background">
@@ -267,11 +276,19 @@ export function PaySetupScreen() {
           className="mt-8"
           style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
         >
-          <EmptyState
-            variant="inline"
-            title={t('notAvailableTitle')}
-            description={t('notAvailableDescription')}
-          />
+          {isPastMemberParent ? (
+            <EmptyState
+              variant="inline"
+              title={t('pastMember.title')}
+              description={t('pastMember.description')}
+            />
+          ) : (
+            <EmptyState
+              variant="inline"
+              title={t('notAvailableTitle')}
+              description={t('notAvailableDescription')}
+            />
+          )}
         </View>
       </View>
     );

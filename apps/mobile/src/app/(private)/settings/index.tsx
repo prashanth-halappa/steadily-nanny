@@ -6,7 +6,12 @@
  * while the Inbox that replaced it is visited daily.
  */
 
-import { HOUSEHOLD_STATES } from '@steadily-nanny/shared-types/schemas/household.schema';
+import {
+  HOUSEHOLD_MEMBER_STATUSES,
+  HOUSEHOLD_ROLES,
+  HOUSEHOLD_STATES,
+  PARENT_ROLES,
+} from '@steadily-nanny/shared-types/schemas/household.schema';
 import Constants from 'expo-constants';
 import { type Href, router } from 'expo-router';
 import {
@@ -52,6 +57,7 @@ import { Text } from '@/src/components/ui/text';
 import { Body, H1, H3, H4, Small } from '@/src/components/ui/typography';
 import { appIdentity } from '@/src/config/appIdentity';
 import { HouseholdSwitcher } from '@/src/domains/household';
+import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useDeleteAccount } from '@/src/hooks/mutations/useDeleteAccount';
 import { useUpdatePreferredLocale } from '@/src/hooks/mutations/useUpdatePreferredLocale';
@@ -205,6 +211,35 @@ export default function SettingsScreen() {
   const showIdentitySkeleton = profile.isPending;
   const showIdentity = accountEmail || onboarding.role;
   const member = (members.data ?? []).find(m => m.user_id === user?.id);
+
+  // The delete-account consequence sheet below: an active carer's hours are
+  // hers to be named, not folded into "your household" (docs/design's
+  // NAMES PEOPLE rule). Active only — a `removed` carer's own membership row
+  // is gone, so there is no ongoing relationship left to disclose.
+  const activeCarers = (members.data ?? []).filter(
+    m =>
+      m.role === HOUSEHOLD_ROLES.NANNY &&
+      m.status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE
+  );
+  const carerNames = activeCarers
+    .map(m => resolveCarerName(m, t('settings:role.nanny')))
+    .join(', ');
+  // The two extra consequence lines (cancelled shifts, permanently-unapproved
+  // weeks) are true only when deleting THIS account leaves nobody who can
+  // write to the household at all — i.e. she is the last active owner/parent.
+  // A co-parent staying behind means the household, and its ability to
+  // approve a week, survives her deletion untouched.
+  const activeWriteRoleMembers = (members.data ?? []).filter(
+    m =>
+      PARENT_ROLES.has(m.role) && m.status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE
+  );
+  const isLastWriteRoleMember =
+    !!member &&
+    PARENT_ROLES.has(member.role) &&
+    activeWriteRoleMembers.length === 1;
+  const showCarerDeleteConsequences =
+    isLastWriteRoleMember && activeCarers.length > 0;
+
   // Draft = a household she made to hold her own terms; she is its only
   // member and its author, so invite affordances belong to her here and
   // nowhere else.
@@ -377,15 +412,22 @@ export default function SettingsScreen() {
                         router.push('/settings/this-family' as Href)
                       }
                     />
-                    <SettingsNavRow
-                      testID="settings-manage-availability"
-                      label={t('household:availability.manageTitle')}
-                      icon={CalendarClock}
-                      tone="schedule"
-                      onPress={() =>
-                        router.push('/settings/availability' as Href)
-                      }
-                    />
+                    {/* A past member's household has ended for her — nobody
+                        reads an availability she can no longer offer, so the
+                        row would only dead-end her. Household holidays and
+                        My pay below stay: they still show her something of
+                        her own. */}
+                    {!onboarding.isPastMember ? (
+                      <SettingsNavRow
+                        testID="settings-manage-availability"
+                        label={t('household:availability.manageTitle')}
+                        icon={CalendarClock}
+                        tone="schedule"
+                        onPress={() =>
+                          router.push('/settings/availability' as Href)
+                        }
+                      />
+                    ) : null}
                     {/* Nanny only — a helper has no access to pay at all
                         (docs/TIER0-CX-SPEC.md §8 "Helper role"). */}
                     {onboarding.role === SETUP_ROLES.NANNY ? (
@@ -428,13 +470,21 @@ export default function SettingsScreen() {
                         onPress={() => router.push('/settings/invites' as Href)}
                       />
                     ) : null}
-                    <SettingsNavRow
-                      testID="settings-request-time-off"
-                      label={t('timeOff:screenTitle')}
-                      icon={CalendarOff}
-                      tone="schedule"
-                      onPress={() => router.push('/settings/time-off' as Href)}
-                    />
+                    {/* Same reasoning as Availability above — TimeOffScreen
+                        itself already refuses a past member outright, so a
+                        row that leads there for her is a dead end, not a
+                        record. */}
+                    {!onboarding.isPastMember ? (
+                      <SettingsNavRow
+                        testID="settings-request-time-off"
+                        label={t('timeOff:screenTitle')}
+                        icon={CalendarOff}
+                        tone="schedule"
+                        onPress={() =>
+                          router.push('/settings/time-off' as Href)
+                        }
+                      />
+                    ) : null}
                   </>
                 )}
                 {/* OUTSIDE the role ternary on purpose — every role can be
@@ -613,8 +663,36 @@ export default function SettingsScreen() {
                 • {t('settings:deleteAccountConsequenceAccount')}
               </Body>
               <Body className="text-muted-strong">
-                • {t('settings:deleteAccountConsequenceKeeps')}
+                •{' '}
+                {/* Literal `t()` per branch, never a ternary INSIDE `t(...)`
+                    — the second key is invisible to the locale-key guard that
+                    way (the same trap `ClockInBlockedCard` names). */}
+                {activeCarers.length > 0
+                  ? t('settings:deleteAccountConsequenceKeeps', {
+                      names: carerNames,
+                    })
+                  : t('settings:deleteAccountConsequenceKeepsGeneric')}
               </Body>
+              {showCarerDeleteConsequences ? (
+                <>
+                  <Body
+                    testID="settings-delete-consequence-carer"
+                    className="text-muted-strong"
+                  >
+                    •{' '}
+                    {t('settings:deleteAccountConsequenceCarer', {
+                      count: activeCarers.length,
+                      names: carerNames,
+                    })}
+                  </Body>
+                  <Body
+                    testID="settings-delete-consequence-approval"
+                    className="text-muted-strong"
+                  >
+                    • {t('settings:deleteAccountConsequenceApproval')}
+                  </Body>
+                </>
+              ) : null}
             </View>
             {accountEmail ? (
               <View className="gap-2">

@@ -91,7 +91,10 @@ describe('ShiftDetailScreen source', () => {
   it('S4: the cancel action is disabled WITH A REASON, never hidden', () => {
     expect(source).toContain('RestrictedActionButton');
     expect(source).toContain('useRestrictedAction');
-    expect(source).toContain('reason={cancelReason}');
+    // The cancel button now carries the closed-household reason too, and the
+    // owner_only restriction WINS when both apply — a co-parent who cannot
+    // cancel on short notice needs to hear that, not "the account is closed".
+    expect(source).toContain('reason={cancelReason ?? closedReason}');
     // Mirrors the server, which gates a co-parent's cancel only on short
     // notice — computed live, never off the authored `is_short_notice` flag.
     expect(source).toContain('hoursUntilStart(shift.starts_at)');
@@ -161,11 +164,12 @@ describe('ShiftDetailScreen source', () => {
   it('disables parent save and nanny counter when the time range is invalid', () => {
     expect(source).toContain('isRangeValid');
     expect(source).toContain('isEndAfterStart');
-    expect(source).toContain(
-      'disabled={!isRangeValid || updateShift.isPending}'
-    );
-    expect(source).toContain(
-      'disabled={!isRangeValid || createChange.isPending}'
+    // Pin the two guards, not the whole expression: both now also refuse
+    // while the household's write permission is still resolving, and a test
+    // that spells out every condition breaks on the next one added.
+    expect(source).toMatch(/!isRangeValid \|\|\s*\n?\s*updateShift\.isPending/);
+    expect(source).toMatch(
+      /!isRangeValid \|\|\s*\n?\s*createChange\.isPending/
     );
   });
 

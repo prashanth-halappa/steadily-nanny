@@ -302,5 +302,14 @@
     "codeA11y": "Invite code {{code}}. Opens your invite codes.",
     "shareButton": "Share code",
     "dismissButton": "Hide this"
+  },
+  "membershipEnded": {
+    "title": "{{familyName}} closed their account",
+    "titleRemoved": "You're no longer with {{familyName}}",
+    "body": "Your record of what you worked for them stays here — every shift, every hour, and the weeks that were approved.",
+    "bodyOnClock": "You're still on the clock. Clock out when you finish — these are hours you worked, and they stay on your record.",
+    "money": "Steadily records pay, it never moves it. Anything still to settle is between you and {{familyName}}.",
+    "hoursCta": "See my hours",
+    "joinCta": "Join another family"
   }
 }

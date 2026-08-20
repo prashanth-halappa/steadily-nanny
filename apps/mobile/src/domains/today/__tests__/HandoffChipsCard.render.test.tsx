@@ -85,6 +85,16 @@ beforeAll(async () => {
       selector({ user: { id: USER_ID } })
     ),
   }));
+  // This suite predates the household-closed gate — every case here is an
+  // open household, so a plain `canWrite: true` is the right default for
+  // every existing assertion.
+  mock.module('@/src/hooks/queries/useCanWriteHousehold', () => ({
+    useCanWriteHousehold: mock(() => ({
+      canWrite: true,
+      isPastMember: false,
+      isLoading: false,
+    })),
+  }));
 
   const mod = await import('../components/HandoffChipsCard');
   HandoffChipsCard = mod.HandoffChipsCard;

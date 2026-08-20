@@ -801,6 +801,94 @@ describe('MyPayScreen', () => {
     });
   });
 
+  /**
+   * §9.1's `canWrite` already hid "Suggest a change" on a past-household
+   * card. It missed two OTHER writes on the same card: the auto-ack effect
+   * (fires unconditionally on first render with data) and the dissent
+   * button (gated only on `agreement.kind`). Both write into
+   * `pay_arrangement_acks`, which migration 109's RLS fix now refuses for a
+   * non-active member — so before this fix, the auto-ack either wrote an
+   * unauthorized "she agrees" receipt on her behalf for a family she no
+   * longer works for (pre-109), or now fails and surfaces a confusing
+   * `ack.recordFailed` banner on a card that is supposed to be simple read
+   * access to her own record (post-109). This block pins both closed.
+   */
+  describe('past-household writes are gated on canWrite (the auto-ack and dissent gap)', () => {
+    beforeEach(() => {
+      listMock.mockImplementation(() => Promise.resolve([householdA]));
+      listPastMock.mockImplementation(() => Promise.resolve([householdPast]));
+      membershipsListMock.mockImplementation(() =>
+        Promise.resolve([
+          nannyMembership(HOUSEHOLD_A),
+          { ...nannyMembership(HOUSEHOLD_PAST), status: 'removed' },
+        ])
+      );
+      // Both cards need an arrangement — the ack effect and the dissent
+      // button both live inside the `arrangement` branch, and a card with
+      // nothing set never reaches either.
+      payCurrentMock.mockImplementation((householdId: string) =>
+        Promise.resolve(
+          householdId === HOUSEHOLD_A || householdId === HOUSEHOLD_PAST
+            ? arrangementFor(householdId)
+            : null
+        )
+      );
+    });
+
+    it('does not auto-ack a past-household card', async () => {
+      const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+      // Let the card fully settle — same idiom as "never records before the
+      // ack list has loaded" above: if the (buggy) effect were going to
+      // fire, it already would have by the time the state line renders.
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-ack-state-${HOUSEHOLD_PAST}`)).toBeTruthy()
+      );
+      expect(ackMock).not.toHaveBeenCalledWith(
+        HOUSEHOLD_PAST,
+        NANNY_ID,
+        `arr-${HOUSEHOLD_PAST}`
+      );
+    });
+
+    // The one I'd most fear regressing: the family she still works for must
+    // keep the automatic read receipt exactly as before.
+    it('still auto-acks the active household card', async () => {
+      renderWithProviders(<MyPayScreen />);
+
+      await waitFor(() =>
+        expect(ackMock).toHaveBeenCalledWith(
+          HOUSEHOLD_A,
+          NANNY_ID,
+          `arr-${HOUSEHOLD_A}`
+        )
+      );
+    });
+
+    it('hides the dissent affordance on a past-household card, keeps it on an active one', async () => {
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <MyPayScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-household-${HOUSEHOLD_PAST}`)).toBeTruthy()
+      );
+      expect(queryByTestId(`my-pay-ack-disagree-${HOUSEHOLD_PAST}`)).toBeNull();
+      expect(getByTestId(`my-pay-ack-disagree-${HOUSEHOLD_A}`)).toBeTruthy();
+    });
+
+    it('never shows the "could not record" error on a past-household card in the ordinary read case', async () => {
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <MyPayScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId(`my-pay-ack-state-${HOUSEHOLD_PAST}`)).toBeTruthy()
+      );
+      expect(queryByTestId(`my-pay-ack-error-${HOUSEHOLD_PAST}`)).toBeNull();
+    });
+  });
+
   // ---------------------------------------------------------------------
   // F16 — a nanny's blind spot on a live first offer. HOUSEHOLD_B has no
   // arrangement (`payCurrentMock` resolves null for it) in every fixture

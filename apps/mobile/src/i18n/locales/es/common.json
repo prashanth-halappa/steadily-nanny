@@ -18,6 +18,7 @@
   "notFoundGoHome": "Ir al inicio",
   "restrictedAction": "Solo {{name}} puede {{action}} en este hogar.",
   "restrictedActionOwner": "el titular del hogar",
+  "householdClosedReason": "La cuenta de esta familia está cerrada. Puedes leer esto, pero no cambiarlo.",
   "theFamily": "La familia",
   "tabs": {
     "today": "Hoy",
@@ -77,5 +78,6 @@
       "message": "Pídeles que te vuelvan a añadir si crees que es un error.",
       "action": "Ir a Hoy"
     }
-  }
+  },
+  "readOnlyBadge": "Solo lectura"
 }

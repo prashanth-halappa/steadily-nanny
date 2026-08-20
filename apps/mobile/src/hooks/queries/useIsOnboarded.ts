@@ -1,3 +1,4 @@
+import type { MembershipEndedReason } from '@steadily-nanny/shared-types/schemas/household.schema';
 import {
   HOUSEHOLD_MEMBER_STATUSES,
   HOUSEHOLD_ROLES,
@@ -74,6 +75,17 @@ export interface OnboardingState {
    * bad write. Widen the gate as those screens gain render tests.
    */
   isPastMember: boolean;
+  /**
+   * WHY the membership ended (110's `ended_reason`), or null when it ended
+   * before that column existed — or has not ended at all.
+   *
+   * "The family closed their account" and "a parent removed you" are opposite
+   * things to the person they happen to, so the card that announces it says
+   * them differently. Null means UNKNOWN, and unknown must take the weaker
+   * claim: "you're no longer with them" is true either way, while "they closed
+   * their account" is a fact we would be inventing.
+   */
+  endedReason: MembershipEndedReason | null;
   /**
    * The memberships query FAILED — we do not know whether this user is
    * onboarded. Deliberately DISTINCT from "resolved with zero memberships":
@@ -211,6 +223,7 @@ export function useIsOnboarded(): OnboardingState {
     null;
 
   const isPastMember = membership?.status === HOUSEHOLD_MEMBER_STATUSES.REMOVED;
+  const endedReason = isPastMember ? (membership?.ended_reason ?? null) : null;
 
   const setupRole = membership
     ? membershipRoleToSetupRole(membership.role)
@@ -244,6 +257,7 @@ export function useIsOnboarded(): OnboardingState {
       householdId: null,
       householdState: null,
       isPastMember: false,
+      endedReason: null,
       membershipsError: true,
       retryMemberships,
     };
@@ -257,6 +271,7 @@ export function useIsOnboarded(): OnboardingState {
       householdId: null,
       householdState: null,
       isPastMember: false,
+      endedReason: null,
       membershipsError: false,
       retryMemberships,
     };
@@ -270,6 +285,7 @@ export function useIsOnboarded(): OnboardingState {
       householdId: null,
       householdState: null,
       isPastMember: false,
+      endedReason: null,
       membershipsError: false,
       retryMemberships,
     };
@@ -283,6 +299,7 @@ export function useIsOnboarded(): OnboardingState {
       householdId: resolvedHouseholdId,
       householdState,
       isPastMember,
+      endedReason,
       membershipsError: false,
       retryMemberships,
     };
@@ -298,6 +315,7 @@ export function useIsOnboarded(): OnboardingState {
     householdId: resolvedHouseholdId,
     householdState,
     isPastMember,
+    endedReason,
     membershipsError: false,
     retryMemberships,
   };

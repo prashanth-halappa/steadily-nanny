@@ -41,6 +41,7 @@
 import {
   HOUSEHOLD_MEMBER_STATUSES,
   HOUSEHOLD_STATES,
+  MEMBERSHIP_ENDED_REASONS,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { TIMESHEET_STATUSES } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { type Href, useRouter } from 'expo-router';
@@ -115,6 +116,7 @@ import { FirstClockInMomentCard } from './FirstClockInMomentCard';
 import { FirstWeekApprovedMomentCard } from './FirstWeekApprovedMomentCard';
 import { HandoffChipsCard } from './HandoffChipsCard';
 import { InviteWaitingCard } from './InviteWaitingCard';
+import { MembershipEndedCard } from './MembershipEndedCard';
 import { NannyJoinedMomentCard } from './NannyJoinedMomentCard';
 import { PinnedSlot } from './PinnedSlot';
 import { ThisWeekCard } from './ThisWeekCard';
@@ -489,6 +491,16 @@ export function TodayScreen() {
         return <NeedsAttentionCard />;
       case 'blockedClockIn':
         return <ClockInBlockedCard household={household} />;
+      case 'membershipEnded':
+        return (
+          <MembershipEndedCard
+            familyName={household.name ?? t('household:untitledDraft')}
+            closed={
+              onboarding.endedReason ===
+              MEMBERSHIP_ENDED_REASONS.HOUSEHOLD_CLOSED
+            }
+          />
+        );
       case 'pendingOffer':
         return <PendingOfferCard />;
       default:
@@ -522,6 +534,9 @@ export function TodayScreen() {
           rather than splitting across `contextLine`/`anchor` — still just
           the single anchor slot Rule H allows. */}
         <ScreenHeader
+          // One chip, every tab: without it she can spend a whole session in
+          // a household that takes no writes with nothing on screen saying so.
+          readOnly={isPastMember}
           testID="today-header"
           title={t('screenTitle')}
           trailingAction={<SettingsHeaderButton />}
@@ -610,6 +625,22 @@ export function TodayScreen() {
                   />
                 ))}
               </View>
+            ) : null}
+
+            {/* Mid-shift, the pinned slot above holds the RUNNING CLOCK so she
+                can close the entry herself — clock-out is the one write a
+                removed member keeps. The explanation rides beneath it rather
+                than replacing it: stamping an end time she did not choose
+                would rewrite the hours she may later have to prove. */}
+            {isPastMember && clockInAt !== null ? (
+              <MembershipEndedCard
+                familyName={household.name ?? t('household:untitledDraft')}
+                closed={
+                  onboarding.endedReason ===
+                  MEMBERSHIP_ENDED_REASONS.HOUSEHOLD_CLOSED
+                }
+                onClock
+              />
             ) : null}
 
             {/* §8.1 — once per household, above everything else in the feed:

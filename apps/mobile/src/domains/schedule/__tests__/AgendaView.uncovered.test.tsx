@@ -92,6 +92,13 @@ beforeAll(async () => {
       isPending: false,
     }),
   }));
+  mock.module('@/src/hooks/queries/useCanWriteHousehold', () => ({
+    useCanWriteHousehold: () => ({
+      canWrite: true,
+      isPastMember: false,
+      isLoading: false,
+    }),
+  }));
 });
 
 let AgendaView: typeof import('../components/AgendaView').AgendaView;
@@ -198,7 +205,7 @@ describe('AgendaView uncovered row copy', () => {
     const button = getByTestId(
       `schedule-uncovered-ask-${uncoveredKey(window)}`
     );
-    const label = String(button.props.children);
+    const label = String(button.props.children.props.children);
     expect(label).toContain('Maria');
     expect(label).toContain(formattedStart);
     expect(label).not.toContain('{{start}}');
@@ -221,7 +228,7 @@ describe('AgendaView uncovered row copy', () => {
     const button = getByTestId(
       `schedule-uncovered-ask-${uncoveredKey(window)}`
     );
-    const label = String(button.props.children);
+    const label = String(button.props.children.props.children);
     expect(label).toContain(formattedStart);
     expect(label).toContain(formattedEnd);
     expect(label).not.toContain('{{start}}');
@@ -245,7 +252,7 @@ describe('AgendaView uncovered row copy', () => {
     const button = getByTestId(
       `schedule-uncovered-ask-${uncoveredKey(window)}`
     );
-    const label = String(button.props.children);
+    const label = String(button.props.children.props.children);
     expect(label).toBe(
       interpolate(getNested(scheduleEn, 'cover.askSomeoneToCover'), {
         start: formattedStart,

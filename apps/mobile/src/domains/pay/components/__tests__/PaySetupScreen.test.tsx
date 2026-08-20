@@ -610,6 +610,56 @@ describe('PaySetupScreen', () => {
     expect(queryByTestId('pay-setup-rate-input')).toBeNull();
   });
 
+  // She WAS the parent who set this up — "Pay & terms is managed by a
+  // parent on this household" describes her, about herself, in the third
+  // person. The testID stays `pay-setup-not-available` in both branches
+  // (the test above pins that), so the KEY is the only discriminator —
+  // `t()` is key-echoed under bun:test, so the rendered text IS the i18n key.
+  it('a REMOVED parent (past member) gets the past-member copy, not the wrong-role copy written about herself', async () => {
+    membershipsListMock.mockImplementation(() =>
+      Promise.resolve([{ ...parentMembership, status: 'removed' }])
+    );
+
+    const { getByTestId, getByText, queryByText } = renderWithProviders(
+      <PaySetupScreen />
+    );
+
+    await waitFor(() =>
+      expect(getByTestId('pay-setup-not-available')).toBeTruthy()
+    );
+    expect(getByText('pastMember.title')).toBeTruthy();
+    expect(getByText('pastMember.description')).toBeTruthy();
+    expect(queryByText('notAvailableDescription')).toBeNull();
+  });
+
+  it('a non-parent role (never managed pay & terms) still gets the ordinary wrong-role copy', async () => {
+    membershipsListMock.mockImplementation(() =>
+      Promise.resolve([
+        {
+          ...parentMembership,
+          id: 'member-nanny',
+          user_id: NANNY_ID,
+          role: 'nanny',
+        },
+      ])
+    );
+    useAuthStore.setState({
+      session: { user: { id: NANNY_ID } } as unknown as never,
+      user: { id: NANNY_ID } as unknown as never,
+      isInitialized: true,
+    } as never);
+
+    const { getByTestId, getByText, queryByText } = renderWithProviders(
+      <PaySetupScreen />
+    );
+
+    await waitFor(() =>
+      expect(getByTestId('pay-setup-not-available')).toBeTruthy()
+    );
+    expect(getByText('notAvailableDescription')).toBeTruthy();
+    expect(queryByText('pastMember.description')).toBeNull();
+  });
+
   it('defaults the currency to the device Language & Region, not a hardcoded GBP', async () => {
     // The device value is a PREFILL, so it has to reach the submitted request
     // when untouched. `getLocales` is the global mock from `bun.setup.ts`;

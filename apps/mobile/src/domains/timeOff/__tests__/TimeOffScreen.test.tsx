@@ -785,7 +785,7 @@ describe('TimeOffScreen — nanny', () => {
 });
 
 describe('TimeOffScreen — removed nanny (read-only past member)', () => {
-  it('renders "not available", never the request form, for a REMOVED nanny', () => {
+  it('renders past-member copy, never the request form or parent-facing message, for a REMOVED nanny', () => {
     mockUseIsOnboarded.mockImplementation(() => ({
       status: 'onboarded',
       role: 'nanny',
@@ -793,10 +793,16 @@ describe('TimeOffScreen — removed nanny (read-only past member)', () => {
       isPastMember: true,
     }));
 
-    const { getByTestId, queryByTestId } = render(<TimeOffScreen />);
+    const { getByTestId, getByText, queryByTestId, queryByText } = render(
+      <TimeOffScreen />
+    );
 
-    expect(getByTestId('time-off-not-available')).toBeTruthy();
+    expect(getByTestId('time-off-past-member')).toBeTruthy();
+    expect(queryByTestId('time-off-not-available')).toBeNull();
     expect(queryByTestId('time-off-request-form')).toBeNull();
+    expect(getByText('pastMember.title')).toBeTruthy();
+    expect(getByText('pastMember.description')).toBeTruthy();
+    expect(queryByText('notAvailableDescription')).toBeNull();
   });
 
   it('still renders the request form for an ACTIVE nanny', () => {
@@ -822,10 +828,15 @@ describe('TimeOffScreen — parent (no entry point exists, but a direct deep lin
       householdId: '5d4b0b70-edd9-4218-b7df-a28d234f7e06',
     }));
 
-    const { getByTestId, queryByTestId } = render(<TimeOffScreen />);
+    const { getByTestId, getByText, queryByTestId, queryByText } = render(
+      <TimeOffScreen />
+    );
 
     expect(getByTestId('time-off-not-available')).toBeTruthy();
     expect(queryByTestId('time-off-request-form')).toBeNull();
+    expect(getByText('notAvailableTitle')).toBeTruthy();
+    expect(getByText('notAvailableDescription')).toBeTruthy();
+    expect(queryByText('pastMember.title')).toBeNull();
   });
 });
 

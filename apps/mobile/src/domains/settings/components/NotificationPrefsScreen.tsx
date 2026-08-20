@@ -64,6 +64,9 @@ const PUSH_TYPE_GROUP: Record<PushNotificationType, NotificationGroup> = {
   handoff_note_added: 'schedule',
   household_closure_changed: 'schedule',
   invite_redeemed: 'household',
+  // Phase 2 — losing a household is money-adjacent, not household admin: the
+  // sentence that follows it is about the hours she worked.
+  membership_ended: 'hoursAndPay',
   parent_covering: 'schedule',
   payment_corrected: 'hoursAndPay',
   payment_recorded: 'hoursAndPay',

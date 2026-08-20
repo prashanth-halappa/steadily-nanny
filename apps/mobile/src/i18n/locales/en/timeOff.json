@@ -22,6 +22,10 @@
   "cancelledToast": "Time off cancelled",
   "notAvailableTitle": "Not available",
   "notAvailableDescription": "Time off is managed by the nanny on this household.",
+  "pastMember": {
+    "title": "Read-only",
+    "description": "You're no longer with this household, so time off can't be requested here. Your past requests stay on your record."
+  },
   "conflictTitle": "This overlaps a booked day",
   "conflictDescription": "You already have a shift or other commitment in this range. You can still book time off — the family is not notified automatically.",
   "conflictCancel": "Go back",

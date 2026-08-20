@@ -19,6 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
+import { RestrictedActionButton } from '@/src/components/custom/RestrictedActionButton';
 import { Button } from '@/src/components/ui/button';
 import { DayHeader } from '@/src/components/ui/day-header';
 import { IconChip } from '@/src/components/ui/icon-chip';
@@ -47,6 +48,7 @@ import { commitmentBoundsOnLocalDate } from '@/src/domains/schedule/utils/uncove
 import { formatDuration } from '@/src/domains/timesheet/utils/duration';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useCreateParentCover } from '@/src/hooks/mutations/useCreateParentCover';
+import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { localDateInZone } from '@/src/lib/localDate';
@@ -117,6 +119,7 @@ function UncoveredRow({
   currentUserId,
   membersByUserId,
   memberLabels,
+  closedReason,
 }: {
   localDate: string;
   window: UncoveredWindowDisplay;
@@ -136,6 +139,9 @@ function UncoveredRow({
     someone: string;
     roleFallback: (role: 'owner' | 'parent' | 'nanny' | 'helper') => string;
   };
+  /** From `useCanWriteHousehold`, computed once in `AgendaView` — the
+   * closed-household reason, or null when the reader may still act. */
+  closedReason: string | null;
 }) {
   const { t } = useTranslation('schedule');
   const { t: tToday } = useTranslation('today');
@@ -240,25 +246,29 @@ function UncoveredRow({
       </View>
       {showActions ? (
         <View className="gap-2">
-          <Button
+          <RestrictedActionButton
             testID={`schedule-uncovered-ask-${key}`}
             size="sm"
+            label={
+              carerFirstName
+                ? t('cover.askToCover', {
+                    carerName: carerFirstName,
+                    start: formattedStart,
+                  })
+                : t('cover.askSomeoneToCover', {
+                    start: formattedStart,
+                    end: formattedEnd,
+                  })
+            }
+            reason={closedReason}
             onPress={() => router.push(extraHref)}
-          >
-            {carerFirstName
-              ? t('cover.askToCover', {
-                  carerName: carerFirstName,
-                  start: formattedStart,
-                })
-              : t('cover.askSomeoneToCover', {
-                  start: formattedStart,
-                  end: formattedEnd,
-                })}
-          </Button>
-          <Button
+          />
+          <RestrictedActionButton
             testID={`schedule-uncovered-cover-${key}`}
             size="sm"
             variant="secondary"
+            label={t('cover.iveGotIt')}
+            reason={closedReason}
             disabled={createCover.isPending}
             onPress={() => {
               if (!householdId) return;
@@ -269,9 +279,7 @@ function UncoveredRow({
                 child_id: window.childId,
               });
             }}
-          >
-            {t('cover.iveGotIt')}
-          </Button>
+          />
           {/* A ghost Button, not a bare Pressable wrapping coloured Body
               text — see SchedulePatternBanner.tsx:222-234. Also fixes a
               sub-44pt touch target. */}
@@ -304,6 +312,18 @@ export function AgendaView({
   listHeader,
 }: AgendaViewProps) {
   const { t } = useTranslation('schedule');
+  const { t: tCommon } = useTranslation('common');
+  // Computed ONCE per screen, not per row/shift — the closed-household gate
+  // is orthogonal to `showUncoveredActions`'s existing role-based hide/show
+  // (left untouched): a role that may act still sees its buttons, now
+  // disabled+reasoned instead of active, once the household itself closes.
+  // Fails toward WAIT: stays null while unknown, so nothing flickers
+  // disabled while the read settles.
+  const canWriteHousehold = useCanWriteHousehold(householdId);
+  const closedReason =
+    !canWriteHousehold.isLoading && !canWriteHousehold.canWrite
+      ? tCommon('householdClosedReason')
+      : null;
   // Same tab-bar dead-zone fix as Settings (BUG1) — this is one of the
   // Schedule tab's own scrollable views, so it needs the same real
   // clearance a fixed magic number can't give.
@@ -593,6 +613,7 @@ export function AgendaView({
                 currentUserId={currentUserId}
                 membersByUserId={membersByUserId}
                 memberLabels={memberLabels}
+                closedReason={closedReason}
               />
             );
           }
@@ -632,6 +653,7 @@ export function AgendaView({
                 showUncoveredActions &&
                 item.shift.kind === SHIFT_KINDS.PARENT_COVER
               }
+              coverUndoDisabledReason={closedReason}
             />
           );
         }}

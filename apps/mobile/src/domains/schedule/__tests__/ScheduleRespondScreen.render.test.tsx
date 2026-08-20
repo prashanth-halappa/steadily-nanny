@@ -127,6 +127,13 @@ beforeAll(async () => {
   mock.module('@/src/hooks/mutations/useRespondToSchedulePattern', () => ({
     useRespondToSchedulePattern: () => ({ mutateAsync, isPending: false }),
   }));
+  mock.module('@/src/hooks/queries/useCanWriteHousehold', () => ({
+    useCanWriteHousehold: () => ({
+      canWrite: true,
+      isPastMember: false,
+      isLoading: false,
+    }),
+  }));
 
   ({ ScheduleRespondScreen } = await import(
     '../components/ScheduleRespondScreen'

@@ -173,3 +173,22 @@ describe('ScreenHeader', () => {
     expect(getByTestId('my-header-context')).toBeTruthy();
   });
 });
+
+describe('ScreenHeader — the read-only marker', () => {
+  // One chip, on every tab, instead of six banners. A nanny whose employer
+  // deleted their account can otherwise spend a whole session in a household
+  // that accepts nothing, with nothing on screen saying so — the switcher
+  // badge that used to be the only marker renders inside Settings, which she
+  // rarely opens.
+  it('renders the chip when the household is read-only', () => {
+    const { getByTestId } = render(<ScreenHeader title="Today" readOnly />);
+
+    expect(getByTestId('screen-header-read-only')).toBeTruthy();
+  });
+
+  it('renders nothing extra on an ordinary household', () => {
+    const { queryByTestId } = render(<ScreenHeader title="Today" />);
+
+    expect(queryByTestId('screen-header-read-only')).toBeNull();
+  });
+});

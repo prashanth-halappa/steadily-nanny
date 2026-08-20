@@ -47,6 +47,14 @@ beforeAll(async () => {
     }),
   }));
 
+  mock.module('@/src/hooks/queries/useCanWriteHousehold', () => ({
+    useCanWriteHousehold: () => ({
+      canWrite: true,
+      isPastMember: false,
+      isLoading: false,
+    }),
+  }));
+
   mock.module('expo-router', () => ({
     useRouter: () => ({ back: mockBack, replace: mock() }),
   }));

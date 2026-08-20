@@ -25,7 +25,11 @@ describe('ExtraShiftScreen', () => {
     expect(source).toContain('TimeRangePicker');
     expect(source).toContain('DateTimeField');
     expect(source).toContain('isExtraShiftFormValid');
-    expect(source).toContain('disabled={!canSubmit}');
+    // `canSubmit` now folds in `canWriteHousehold.canWrite`, and the button
+    // also refuses while that read is still resolving — unknown must not
+    // render an enabled write on a household that may have closed.
+    expect(source).toContain('!canSubmit');
+    expect(source).toContain('canWriteHousehold.canWrite');
     expect(source).not.toMatch(/catch\s*\{\s*return;\s*\}/);
   });
 

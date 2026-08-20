@@ -32,10 +32,11 @@ import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
-import { H3, MetadataLabel } from '@/src/components/ui/typography';
+import { H3, MetadataLabel, Small } from '@/src/components/ui/typography';
 import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { relativeDaysAgo } from '@/src/domains/schedule/utils/relativeDaysAgo';
 import { isParentEditorRole } from '@/src/domains/setup/types';
+import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useAuthStore } from '@/src/store/auth';
@@ -53,9 +54,20 @@ export function SchedulePatternBanner({
   isLoading = false,
 }: SchedulePatternBannerProps) {
   const { t } = useTranslation('schedule');
+  const { t: tCommon } = useTranslation('common');
   const router = useRouter();
   const onboarding = useIsOnboarded();
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
+  // The banner's OWN `householdId` prop — the entity this pattern belongs
+  // to — not `onboarding.householdId`/the switcher's active household. The
+  // caller already resolves this correctly; reuse it rather than re-deriving.
+  const canWriteHousehold = useCanWriteHousehold(householdId);
+  // Only asserted once we KNOW the household is closed — `isLoading` covers
+  // the unresolved frame with a plain disabled state and no claim yet.
+  const closedReason =
+    !canWriteHousehold.isLoading && !canWriteHousehold.canWrite
+      ? tCommon('householdClosedReason')
+      : null;
   const membersQuery = useHouseholdMembers(householdId);
   const members = membersQuery.data ?? [];
   const membersByUserId = new Map(
@@ -193,15 +205,27 @@ export function SchedulePatternBanner({
           </MetadataLabel>
         ) : null}
         {canEdit ? (
-          <Button
-            testID="schedule-pattern-banner-action"
-            size="lg"
-            className="w-full"
-            accessibilityLabel={`${message}. ${actionLabel}`}
-            onPress={onAction}
-          >
-            {actionLabel}
-          </Button>
+          <View>
+            <Button
+              testID="schedule-pattern-banner-action"
+              size="lg"
+              className="w-full"
+              accessibilityLabel={`${message}. ${actionLabel}`}
+              accessibilityHint={closedReason ?? undefined}
+              disabled={closedReason !== null || canWriteHousehold.isLoading}
+              onPress={onAction}
+            >
+              {actionLabel}
+            </Button>
+            {closedReason ? (
+              <Small
+                testID="schedule-pattern-banner-action-reason"
+                className="mt-2 text-center text-muted-foreground"
+              >
+                {closedReason}
+              </Small>
+            ) : null}
+          </View>
         ) : null}
       </Card>
     );
@@ -223,15 +247,27 @@ export function SchedulePatternBanner({
         // A ghost Button, not a bare Pressable wrapping coloured Body text —
         // it has to read as a control, and Button already carries the 44pt
         // touch target (`size="sm"` -> `native:h-12`).
-        <Button
-          testID="schedule-pattern-banner-action"
-          variant="ghost"
-          size="sm"
-          accessibilityLabel={`${message}. ${actionLabel}`}
-          onPress={onAction}
-        >
-          {actionLabel}
-        </Button>
+        <View>
+          <Button
+            testID="schedule-pattern-banner-action"
+            variant="ghost"
+            size="sm"
+            accessibilityLabel={`${message}. ${actionLabel}`}
+            accessibilityHint={closedReason ?? undefined}
+            disabled={closedReason !== null || canWriteHousehold.isLoading}
+            onPress={onAction}
+          >
+            {actionLabel}
+          </Button>
+          {closedReason ? (
+            <Small
+              testID="schedule-pattern-banner-action-reason"
+              className="mt-2 text-center text-muted-foreground"
+            >
+              {closedReason}
+            </Small>
+          ) : null}
+        </View>
       ) : null}
     </View>
   );

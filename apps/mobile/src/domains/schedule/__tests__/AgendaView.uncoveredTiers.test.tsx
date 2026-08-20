@@ -81,6 +81,13 @@ beforeAll(async () => {
       isPending: false,
     }),
   }));
+  mock.module('@/src/hooks/queries/useCanWriteHousehold', () => ({
+    useCanWriteHousehold: () => ({
+      canWrite: true,
+      isPastMember: false,
+      isLoading: false,
+    }),
+  }));
 });
 
 let AgendaView: typeof import('../components/AgendaView').AgendaView;

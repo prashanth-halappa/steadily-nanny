@@ -12,6 +12,10 @@
   "historyFromSetBy": "From {{date}} · set by {{name}} on {{createdDate}}",
   "notAvailableTitle": "Not available",
   "notAvailableDescription": "Pay & terms is managed by a parent on this household.",
+  "pastMember": {
+    "title": "Not available",
+    "description": "You're no longer active in this household, so pay and terms are no longer available here."
+  },
   "noCarerTitle": "No nanny yet",
   "noCarerDescription": "Invite your nanny, then set their pay terms here.",
   "inviteAction": "Invite",

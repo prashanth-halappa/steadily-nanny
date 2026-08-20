@@ -32,6 +32,7 @@
  * the title column, so it can never squeeze the H1.
  */
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens/spacing';
 import { H1, Small } from '@/src/components/ui/typography';
@@ -60,6 +61,19 @@ interface ScreenHeaderProps {
   /** Right-hand illustration (e.g. Today's 104x104 mood art). The title
    * column stays `flex-1` and is never squeezed by it. */
   art?: ReactNode;
+  /**
+   * This household takes no writes any more — her membership ended, or the
+   * family closed their account. ONE chip, under the title, on every tab
+   * that shows household data: the alternative is a banner per screen, which
+   * by the third one reads as an error state rather than a context. The
+   * explanation itself lives in exactly one place (Today's pinned card); this
+   * is only the reminder that carries it to the other tabs.
+   *
+   * Chip, never a filled pill: green/ochre/terracotta mean confirmed/pending/
+   * declined, and read-only is a context, not a status. Chips are one of the
+   * sanctioned exceptions to the no-1px-borders rule.
+   */
+  readOnly?: boolean;
   testID?: string;
 }
 
@@ -71,8 +85,11 @@ export function ScreenHeader({
   backButton,
   trailingAction,
   art,
+  readOnly = false,
   testID = 'screen-header',
 }: ScreenHeaderProps) {
+  const { t } = useTranslation('common');
+
   return (
     <View testID={testID} style={BAND_STYLE}>
       {backButton}
@@ -87,6 +104,16 @@ export function ScreenHeader({
             </H1>
             {titleAction}
           </View>
+          {readOnly ? (
+            <View
+              testID={`${testID}-read-only`}
+              className="mt-1 flex-row items-center gap-1 self-start rounded-chip border border-border bg-card px-3 py-1"
+            >
+              <Small className="text-muted-foreground">
+                {t('readOnlyBadge')}
+              </Small>
+            </View>
+          ) : null}
           {contextLine ? (
             <Small
               testID={`${testID}-context`}

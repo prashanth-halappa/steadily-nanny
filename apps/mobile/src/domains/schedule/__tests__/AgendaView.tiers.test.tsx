@@ -44,6 +44,13 @@ mock.module('@/src/hooks/mutations/useRemoveParentCover', () => ({
     isPending: false,
   }),
 }));
+mock.module('@/src/hooks/queries/useCanWriteHousehold', () => ({
+  useCanWriteHousehold: () => ({
+    canWrite: true,
+    isPastMember: false,
+    isLoading: false,
+  }),
+}));
 
 let AgendaView: typeof import('../components/AgendaView').AgendaView;
 

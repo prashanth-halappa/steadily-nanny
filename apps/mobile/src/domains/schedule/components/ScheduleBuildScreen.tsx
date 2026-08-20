@@ -96,6 +96,7 @@ import { useReplaceSchedulePatternDays } from '@/src/hooks/mutations/useReplaceS
 import { useSendSchedulePattern } from '@/src/hooks/mutations/useSendSchedulePattern';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useAvailabilityForCarer } from '@/src/hooks/queries/useAvailabilityForCarer';
+import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholdCommitments } from '@/src/hooks/queries/useHouseholdCommitments';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
@@ -146,6 +147,14 @@ export function ScheduleBuildScreen({
   const onboarding = useIsOnboarded();
   const activeHousehold = useActiveHousehold();
   const householdId = activeHousehold.householdId;
+  // Household-closed gate (D70): the only server write on this whole screen
+  // is the review step's Send CTA below — every earlier step just advances
+  // local wizard state. Derived once here, screen-level, not per step.
+  const canWriteHousehold = useCanWriteHousehold(householdId);
+  const closedReason =
+    !canWriteHousehold.isLoading && !canWriteHousehold.canWrite
+      ? tCommon('householdClosedReason')
+      : undefined;
   const profile = useUserProfile();
   const displayOrder = getWeekdayOrder(profile.data?.week_starts_on);
 
@@ -670,7 +679,10 @@ export function ScheduleBuildScreen({
               : undefined
           }
           ctaLabel={t('build.reviewSendCta')}
-          ctaDisabled={isSending || !allDaysValid}
+          ctaDisabled={
+            isSending || !allDaysValid || !canWriteHousehold.canWrite
+          }
+          ctaHint={closedReason}
           onCta={() => void onSend()}
           onBack={() => setStep('repeat')}
           backLabel={tCommon('back')}

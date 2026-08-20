@@ -105,6 +105,16 @@ mock.module('@/src/hooks/queries/useHouseholdClosures', () => ({
   }),
 }));
 
+// AgendaView and ShiftRow now ask whether this household still takes writes
+// (a removed member's cover actions must not sit there live). That is a real
+// `useQuery`, and this file renders without a QueryClientProvider.
+mock.module('@/src/hooks/queries/useCanWriteHousehold', () => ({
+  useCanWriteHousehold: () => ({
+    canWrite: true,
+    isPastMember: false,
+    isLoading: false,
+  }),
+}));
 mock.module('@/src/hooks/queries/useChildren', () => ({
   useChildren: () => ({ data: [], isLoading: false }),
 }));

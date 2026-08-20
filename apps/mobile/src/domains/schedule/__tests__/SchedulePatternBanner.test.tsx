@@ -54,6 +54,13 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
     useHouseholdMembers: mockUseHouseholdMembers,
   }));
+  mock.module('@/src/hooks/queries/useCanWriteHousehold', () => ({
+    useCanWriteHousehold: () => ({
+      canWrite: true,
+      isPastMember: false,
+      isLoading: false,
+    }),
+  }));
   mock.module('@/src/store/auth', () => ({
     useAuthStore: (selector: (s: unknown) => unknown) =>
       selector({ user: { id: CURRENT_USER_ID } }),

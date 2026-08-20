@@ -46,6 +46,7 @@ import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { InlineRetry } from '@/src/components/custom/InlineRetry';
+import { RestrictedActionButton } from '@/src/components/custom/RestrictedActionButton';
 import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
 import { FieldLabel } from '@/src/components/ui/field-label';
@@ -57,6 +58,7 @@ import { Body, H1, H4, Small } from '@/src/components/ui/typography';
 import { parseWeeklyDays } from '@/src/domains/setup/utils/commitmentRrule';
 import { useRespondToSchedulePattern } from '@/src/hooks/mutations/useRespondToSchedulePattern';
 import { useAvailability } from '@/src/hooks/queries/useAvailability';
+import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholdCommitments } from '@/src/hooks/queries/useHouseholdCommitments';
 import { useSchedulePattern } from '@/src/hooks/queries/useSchedulePattern';
@@ -105,6 +107,10 @@ export function ScheduleRespondScreen({
   const children = useChildren(pattern.data?.household_id);
   const commitments = useHouseholdCommitments(pattern.data?.household_id);
   const respond = useRespondToSchedulePattern(patternId);
+  // The PATTERN's own household — same rule as `useChildren`/`useHouseholdCommitments`
+  // above (Wave B doc comment): this screen is reached by `patternId` alone, so the
+  // reader's write permission is about the pattern's household, never the switcher's.
+  const canWriteHousehold = useCanWriteHousehold(pattern.data?.household_id);
 
   const hasRespondedRef = useRef(false);
   const [hasResponded, setHasResponded] = useState(false);
@@ -177,6 +183,15 @@ export function ScheduleRespondScreen({
   const maxDayHours = Math.max(0, ...Array.from(hoursPerWeekday.values()));
   const householdCommitments = commitments.data ?? [];
   const patternHouseholdId = pattern.data.household_id;
+  // No reason text while unresolved (fails toward WAIT, never toward an
+  // unconfirmed "this family is gone") — only the disabled flag below covers
+  // the loading gap.
+  const closedReason =
+    !canWriteHousehold.isLoading && !canWriteHousehold.canWrite
+      ? tCommon('householdClosedReason')
+      : null;
+  const writeDisabled =
+    respond.isPending || hasResponded || canWriteHousehold.isLoading;
 
   const handleAccept = async () => {
     if (hasRespondedRef.current || respond.isPending) return;
@@ -334,22 +349,23 @@ export function ScheduleRespondScreen({
           {t('respond.totalHours', { hours: totalHours })}
         </Body>
 
-        <Button
+        <RestrictedActionButton
           testID="schedule-respond-accept"
-          disabled={respond.isPending || hasResponded}
+          label={t('respond.accept')}
+          reason={closedReason}
+          disabled={writeDisabled}
           onPress={() => void handleAccept()}
-        >
-          <Text>{t('respond.accept')}</Text>
-        </Button>
+        />
 
-        <Button
+        <RestrictedActionButton
           testID="schedule-respond-decline"
+          label={t('respond.decline')}
+          reason={closedReason}
+          disabled={writeDisabled}
           variant="ghost"
-          disabled={respond.isPending || hasResponded}
+          destructive
           onPress={() => setDeclineOpen(true)}
-        >
-          <Text className="text-destructive">{t('respond.decline')}</Text>
-        </Button>
+        />
         <BottomSheetBase
           sheetId="schedule-respond-decline"
           visible={declineOpen}
@@ -374,14 +390,14 @@ export function ScheduleRespondScreen({
               <Button variant="outline" onPress={() => setDeclineOpen(false)}>
                 <Text>{t('respond.declineConfirmCancel')}</Text>
               </Button>
-              <Button
+              <RestrictedActionButton
                 testID="schedule-respond-decline-confirm"
+                label={t('respond.declineConfirmConfirm')}
+                reason={closedReason}
+                disabled={writeDisabled}
                 variant="destructive"
-                disabled={respond.isPending || hasResponded}
                 onPress={() => void handleDecline()}
-              >
-                <Text>{t('respond.declineConfirmConfirm')}</Text>
-              </Button>
+              />
             </View>
           </View>
         </BottomSheetBase>

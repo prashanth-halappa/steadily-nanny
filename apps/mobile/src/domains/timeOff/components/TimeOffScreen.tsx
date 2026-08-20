@@ -149,9 +149,13 @@ export function TimeOffScreen() {
     );
   }
 
-  // A removed nanny is STILL role `nanny`, so the role check alone lets her
-  // through to request/cancel/edit — writes the server now 403s.
-  if (onboarding.role !== SETUP_ROLES.NANNY || onboarding.isPastMember) {
+  // Two different facts, two different sentences. A removed nanny is STILL
+  // role `nanny`, so folding her into the role branch told her "time off is
+  // managed by the nanny on this household" — the opposite of the truth, and
+  // about herself in the third person.
+  const isPastMemberNanny =
+    onboarding.role === SETUP_ROLES.NANNY && onboarding.isPastMember;
+  if (onboarding.role !== SETUP_ROLES.NANNY || isPastMemberNanny) {
     return (
       <View testID="time-off-screen" className="flex-1 bg-background">
         <View
@@ -163,14 +167,24 @@ export function TimeOffScreen() {
           {backHeader}
         </View>
         <View
-          testID="time-off-not-available"
+          testID={
+            isPastMemberNanny
+              ? 'time-off-past-member'
+              : 'time-off-not-available'
+          }
           className="mt-8"
           style={{ paddingHorizontal: SCREEN_CONTENT_STYLE.padding }}
         >
           <EmptyState
             variant="inline"
-            title={t('notAvailableTitle')}
-            description={t('notAvailableDescription')}
+            title={t(
+              isPastMemberNanny ? 'pastMember.title' : 'notAvailableTitle'
+            )}
+            description={t(
+              isPastMemberNanny
+                ? 'pastMember.description'
+                : 'notAvailableDescription'
+            )}
           />
         </View>
       </View>

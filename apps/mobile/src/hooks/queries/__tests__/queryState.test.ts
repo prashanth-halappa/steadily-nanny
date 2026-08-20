@@ -75,6 +75,7 @@ function onboardingState(
       householdId: null,
       householdState: null,
       isPastMember: false,
+      endedReason: null,
       membershipsError: false,
       retryMemberships,
       ...overrides,
