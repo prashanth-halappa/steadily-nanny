@@ -13,9 +13,10 @@ import NetInfo from '@react-native-community/netinfo';
 import { onlineManager } from '@tanstack/react-query';
 import { WifiOff } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Icon } from '@/lib/icons/iconWithClassName';
 import { queryClient } from '@/src/api/queryClient';
+import { Body } from '@/src/components/ui/typography';
 import { useIsOnline } from '@/src/lib/network';
 
 export function OfflineBanner() {
@@ -40,9 +41,7 @@ export function OfflineBanner() {
       className="flex-row items-center justify-center gap-2 bg-muted px-4 py-2"
     >
       <Icon icon={WifiOff} size={14} className="text-muted-foreground" />
-      <Text className="text-xs text-muted-foreground">
-        {t('offlineBanner')}
-      </Text>
+      <Body className="text-muted-foreground">{t('offlineBanner')}</Body>
       <Pressable
         testID="offline-banner-retry"
         accessibilityRole="button"
@@ -50,9 +49,9 @@ export function OfflineBanner() {
         onPress={handleRetry}
         hitSlop={8}
       >
-        <Text className="text-xs text-primary font-medium">
+        <Body className="text-primary" weight="medium">
           {t('retryNow')}
-        </Text>
+        </Body>
       </Pressable>
     </View>
   );

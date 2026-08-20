@@ -27,7 +27,7 @@ export function BackButton({ onPress, label, testID }: BackButtonProps) {
       accessibilityLabel={label}
       onPress={onPress}
       hitSlop={12}
-      className="-ml-2 h-11 flex-row items-center gap-0.5 self-start pl-2 pr-3"
+      className="-ml-2 h-11 flex-row items-center gap-1 self-start pl-2 pr-3"
     >
       <Icon icon={ChevronLeft} size={20} className="text-primary" />
       <Body className="text-primary">{label}</Body>

@@ -29,7 +29,8 @@ function relativePath(absolutePath: string): string {
 
 function isExcludedPath(relativeFilePath: string): boolean {
   return (
-    relativeFilePath.includes('__tests__') || relativeFilePath.includes('.test.')
+    relativeFilePath.includes('__tests__') ||
+    relativeFilePath.includes('.test.')
   );
 }
 
@@ -46,11 +47,18 @@ function lineNumberAt(content: string, index: number): number {
   return content.slice(0, index).split('\n').length;
 }
 
-function formatViolation(relativeFilePath: string, lineNumber: number, line: string): string {
+function formatViolation(
+  relativeFilePath: string,
+  lineNumber: number,
+  line: string
+): string {
   return `${relativeFilePath}:${lineNumber}  ${line.trim()}`;
 }
 
-function findAnimatedOpeningTagEnd(content: string, startIndex: number): number {
+function findAnimatedOpeningTagEnd(
+  content: string,
+  startIndex: number
+): number {
   let depth = 0;
   for (let i = startIndex; i < content.length; i += 1) {
     const char = content[i];
@@ -139,7 +147,7 @@ function scanRawHexViolations(): string[] {
 
 function scanArbitraryTailwindViolations(): string[] {
   const violations: string[] = [];
-  const classNamePattern = /className="[^"]*\-\[[^"]*"/g;
+  const classNamePattern = /className="[^"]*-\[[^"]*"/g;
   const tsxFiles = walkFiles(scanRoot).filter(
     filePath =>
       filePath.endsWith('.tsx') && !isExcludedPath(relativePath(filePath))

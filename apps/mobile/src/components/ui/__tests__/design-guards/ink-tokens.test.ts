@@ -9,7 +9,10 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 const scanRoot = join(import.meta.dir, '../../../../');
-const tailwindConfigPath = join(import.meta.dir, '../../../../../tailwind.config.js');
+const tailwindConfigPath = join(
+  import.meta.dir,
+  '../../../../../tailwind.config.js'
+);
 
 /** FILL tokens used as text colour — use the paired *-ink token instead. */
 const FILL_AS_TEXT_PATTERN =
@@ -51,9 +54,7 @@ function scanForFillAsTextViolations(): string[] {
       }
       FILL_AS_TEXT_PATTERN.lastIndex = 0;
       if (FILL_AS_TEXT_PATTERN.test(line)) {
-        violations.push(
-          `${relativePath}:${lineIndex + 1}  ${line.trim()}`
-        );
+        violations.push(`${relativePath}:${lineIndex + 1}  ${line.trim()}`);
       }
     }
   }

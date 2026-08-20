@@ -96,7 +96,7 @@ interface WeekTotalAction {
   label: string;
   onPress: () => void;
   disabled?: boolean;
-  /** Tints the label text `text-destructive` (the ghost Query button). */
+  /** Tints the label text with the inline-error ink token (the ghost Query button). */
   destructive?: boolean;
 }
 
@@ -287,6 +287,8 @@ export function WeekTotal({
   // "logged"/"waiting" no longer mean anything.
   const showApprovedViewedNote = showAppreciation && !!parentViewedDateLabel;
   const showParentViewedNote = isParentViewer && !!parentViewedNote;
+  const smallToneClass =
+    tone === 'default' ? 'text-muted-foreground' : 'text-muted-strong';
 
   // Nothing to say about the agreement, nothing to do about it — an empty
   // tinted rectangle would be worse than no card at all.
@@ -355,7 +357,7 @@ export function WeekTotal({
             {showApprovedViewedNote ? (
               <Small
                 testID="hours-approved-viewed-note"
-                className="text-muted-foreground"
+                className={smallToneClass}
               >
                 {t('timeline.opened', {
                   household: householdName,
@@ -401,7 +403,7 @@ export function WeekTotal({
             {weekChanged.detail ? (
               <Small
                 testID="hours-week-changed-detail"
-                className="text-muted-foreground"
+                className={smallToneClass}
               >
                 {weekChanged.detail}
               </Small>
@@ -412,18 +414,12 @@ export function WeekTotal({
             week — distinct from `showApprovedViewedNote` above, which is
             the NANNY's evidence that the parent opened it. */}
         {showParentViewedNote ? (
-          <Small
-            testID="hours-parent-viewed-note"
-            className="text-muted-foreground"
-          >
+          <Small testID="hours-parent-viewed-note" className={smallToneClass}>
             {parentViewedNote}
           </Small>
         ) : null}
         {timesheetStatus === 'approved' && !onReopenPress ? (
-          <Small
-            testID="hours-approved-lock-note"
-            className="text-muted-foreground"
-          >
+          <Small testID="hours-approved-lock-note" className={smallToneClass}>
             {t('approvedLockNote')}
           </Small>
         ) : null}
@@ -440,10 +436,7 @@ export function WeekTotal({
           </Button>
         ) : null}
         {showPayBoundary ? (
-          <MetadataLabel
-            testID="hours-pay-boundary"
-            className="text-muted-foreground"
-          >
+          <MetadataLabel testID="hours-pay-boundary" className={smallToneClass}>
             {t('payBoundary')}
           </MetadataLabel>
         ) : null}
@@ -472,7 +465,9 @@ export function WeekTotal({
           >
             <Text
               className={
-                secondaryAction.destructive ? 'text-destructive' : undefined
+                secondaryAction.destructive
+                  ? 'text-error-inline-text'
+                  : undefined
               }
             >
               {secondaryAction.label}
@@ -488,7 +483,9 @@ export function WeekTotal({
           >
             <Text
               className={
-                tertiaryAction.destructive ? 'text-destructive' : undefined
+                tertiaryAction.destructive
+                  ? 'text-error-inline-text'
+                  : undefined
               }
             >
               {tertiaryAction.label}

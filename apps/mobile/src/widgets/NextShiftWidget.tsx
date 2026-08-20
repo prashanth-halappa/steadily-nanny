@@ -63,6 +63,19 @@ function NextShiftWidgetView(
   // Daylight palette (lib/design-tokens/palette.ts), inlined — see this
   // module's header for why. Both modes: widgets follow system appearance.
   const dark = env.colorScheme === 'dark';
+  const mixHex = (base: string, tint: string, ratio: number) => {
+    const clamp = (value: number) => Math.max(0, Math.min(255, value));
+    const parse = (hex: string) => ({
+      r: Number.parseInt(hex.slice(1, 3), 16),
+      g: Number.parseInt(hex.slice(3, 5), 16),
+      b: Number.parseInt(hex.slice(5, 7), 16),
+    });
+    const toHex = (value: number) =>
+      clamp(Math.round(value)).toString(16).padStart(2, '0');
+    const from = parse(base);
+    const to = parse(tint);
+    return `#${toHex(from.r + (to.r - from.r) * ratio)}${toHex(from.g + (to.g - from.g) * ratio)}${toHex(from.b + (to.b - from.b) * ratio)}`;
+  };
   const FG = dark ? '#F1EAF0' : '#2A1F2B';
   const MUTED = dark ? '#B2A4B3' : '#6E6270';
   const CARD = dark ? '#241C26' : '#FFFFFF';
@@ -72,6 +85,7 @@ function NextShiftWidgetView(
   const PLUM = dark ? '#C9A2CB' : '#5B3E5D';
   const APRICOT = dark ? '#F2954B' : '#E8823C';
   const OCHRE = dark ? '#E0B061' : '#C08A3E';
+  const SURFACE_ATTENTION = mixHex(CARD, OCHRE, 0.18);
   const OCHRE_FG = dark ? '#1B151C' : '#2A1F2B';
 
   // NO manual padding on any surface that carries `containerBackground(…,
@@ -348,7 +362,7 @@ function NextShiftWidgetView(
       <VStack alignment="leading" spacing={2}>
         <Text
           modifiers={[
-            font({ size: 20, weight: 'semibold', design: 'rounded' }),
+            font({ size: 44, weight: 'medium' }),
             foregroundStyle(INK),
             monospacedDigit(),
             lineLimit(1),
@@ -617,7 +631,7 @@ function NextShiftWidgetView(
       alignment="top"
       modifiers={[
         containerBackground(
-          pending ? OCHRE : isLive ? CARD_LIVE : CARD,
+          pending ? SURFACE_ATTENTION : isLive ? CARD_LIVE : CARD,
           'widget'
         ),
         widgetURL(props.deepLink),

@@ -267,14 +267,17 @@ export function NotificationPrefsScreen() {
                       onPress={() => setQuietHoursStart(value)}
                       className={
                         value === quietHoursStart
-                          ? 'rounded-chip border border-primary bg-primary/10 px-3 py-2'
-                          : 'rounded-chip border border-border px-3 py-2'
+                          ? 'rounded-chip bg-primary px-3 py-2'
+                          : 'rounded-chip bg-secondary px-3 py-2'
                       }
                     >
                       <Small
+                        weight={
+                          value === quietHoursStart ? 'semibold' : undefined
+                        }
                         className={
                           value === quietHoursStart
-                            ? 'text-primary'
+                            ? 'text-primary-foreground'
                             : 'text-foreground'
                         }
                       >
@@ -296,14 +299,17 @@ export function NotificationPrefsScreen() {
                       onPress={() => setQuietHoursEnd(value)}
                       className={
                         value === quietHoursEnd
-                          ? 'rounded-chip border border-primary bg-primary/10 px-3 py-2'
-                          : 'rounded-chip border border-border px-3 py-2'
+                          ? 'rounded-chip bg-primary px-3 py-2'
+                          : 'rounded-chip bg-secondary px-3 py-2'
                       }
                     >
                       <Small
+                        weight={
+                          value === quietHoursEnd ? 'semibold' : undefined
+                        }
                         className={
                           value === quietHoursEnd
-                            ? 'text-primary'
+                            ? 'text-primary-foreground'
                             : 'text-foreground'
                         }
                       >
