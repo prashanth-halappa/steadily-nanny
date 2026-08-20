@@ -38,7 +38,7 @@ const VARIANT_STYLES = {
   default: {
     container: 'flex-1 items-center justify-center px-6 py-12',
     iconWrapper:
-      'w-24 h-24 rounded-full bg-muted items-center justify-center mb-4',
+      'h-24 w-24 items-center justify-center rounded-cell bg-chip-plum mb-4',
     iconSize: 40,
     imageSize: 200,
     titleClassName: 'text-center mb-2',
@@ -47,7 +47,7 @@ const VARIANT_STYLES = {
   inline: {
     container: 'items-center justify-center px-4 py-8',
     iconWrapper:
-      'w-16 h-16 rounded-full bg-muted items-center justify-center mb-3',
+      'h-16 w-16 items-center justify-center rounded-cell bg-chip-plum mb-3',
     iconSize: 28,
     imageSize: 160,
     titleClassName: 'text-center mb-1',

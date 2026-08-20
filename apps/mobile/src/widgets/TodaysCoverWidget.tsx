@@ -349,7 +349,7 @@ function TodaysCoverWidgetView(
       <Text
         modifiers={[
           font({ size: 11, weight: 'semibold' }),
-          foregroundStyle(MUTED),
+          foregroundStyle(live ? FG : MUTED),
           lineLimit(1),
           // The kicker shares its row with a glyph and the identity mark, so
           // it has ~110pt on a 158pt card — enough to truncate
@@ -370,7 +370,7 @@ function TodaysCoverWidgetView(
       <Text
         modifiers={[
           font({ size: 17, weight: 'semibold' }),
-          foregroundStyle(lead && lead.kind === 'gap' ? OCHRE : FG),
+          foregroundStyle(FG),
           lineLimit(3),
           minimumScaleFactor(0.9),
         ]}
@@ -381,7 +381,7 @@ function TodaysCoverWidgetView(
         <Text
           modifiers={[
             font({ size: 12 }),
-            foregroundStyle(MUTED),
+            foregroundStyle(live ? FG : MUTED),
             monospacedDigit(),
             lineLimit(1),
           ]}
@@ -413,7 +413,11 @@ function TodaysCoverWidgetView(
 
   const asOf = showAsOf ? (
     <Text
-      modifiers={[font({ size: 11 }), foregroundStyle(MUTED), lineLimit(1)]}
+      modifiers={[
+        font({ size: 11 }),
+        foregroundStyle(live ? FG : MUTED),
+        lineLimit(1),
+      ]}
     >
       {props.asOfLabel}
     </Text>
@@ -432,7 +436,11 @@ function TodaysCoverWidgetView(
       {hero}
       {!isMedium && props.moreLabel ? (
         <Text
-          modifiers={[font({ size: 11 }), foregroundStyle(MUTED), lineLimit(1)]}
+          modifiers={[
+            font({ size: 11 }),
+            foregroundStyle(live ? FG : MUTED),
+            lineLimit(1),
+          ]}
         >
           {props.moreLabel}
         </Text>
@@ -494,7 +502,7 @@ function TodaysCoverWidgetView(
                   <Text
                     modifiers={[
                       font({ size: 11 }),
-                      foregroundStyle(MUTED),
+                      foregroundStyle(live ? FG : MUTED),
                       monospacedDigit(),
                       lineLimit(1),
                     ]}

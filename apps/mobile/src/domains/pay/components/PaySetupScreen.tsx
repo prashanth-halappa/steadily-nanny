@@ -33,11 +33,10 @@
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { BackButton } from '@/src/components/ui/back-button';
-import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -361,16 +360,18 @@ export function PaySetupScreen() {
                 <Body weight="medium">
                   {t('proposal.openRowTitleReceived', { name: carerName })}
                 </Body>
-                <Button
+                <Pressable
                   testID="pay-setup-open-proposal-review"
-                  variant="ghost"
-                  className="self-start px-0"
+                  accessibilityRole="button"
+                  className="self-start py-1"
                   onPress={() =>
                     router.push(`/pay/proposal/${openProposal.id}` as Href)
                   }
                 >
-                  <Text>{t('proposal.reviewButton')}</Text>
-                </Button>
+                  <Text className="text-primary">
+                    {t('proposal.reviewButton')}
+                  </Text>
+                </Pressable>
               </CardContent>
             </Card>
           )}

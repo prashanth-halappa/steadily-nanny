@@ -54,8 +54,7 @@ export function DraftHomeSkeleton() {
         <View
           key={index}
           testID="draft-skeleton-l4"
-          className="gap-2 rounded-row bg-card px-4 py-3"
-          style={elevation.row}
+          className="gap-2 px-4 py-3"
         >
           <SkeletonShimmer width="45%" height={16} />
           <SkeletonShimmer width="65%" height={12} />
