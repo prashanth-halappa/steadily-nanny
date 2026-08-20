@@ -118,10 +118,7 @@ export function ClockInBlockedCard({ household }: { household: Household }) {
       className="gap-3 p-5.5"
     >
       <H3 testID="today-clock-in-blocked-title">{title}</H3>
-      <Body
-        testID="today-clock-in-blocked-body"
-        className="text-muted-foreground"
-      >
+      <Body testID="today-clock-in-blocked-body" className="text-muted-strong">
         {body}
       </Body>
       <Button

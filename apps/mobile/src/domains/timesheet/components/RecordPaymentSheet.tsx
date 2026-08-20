@@ -191,13 +191,13 @@ export function RecordPaymentSheet({
         {overPayment ? (
           <View
             testID={`${testID}-overpayment-error`}
-            className="gap-2 rounded-cell bg-destructive/10 px-4 py-3"
+            className="gap-2 rounded-cell bg-surface-critical px-4 py-3"
           >
             {/* The figures are rendered as their own rows rather than
                 interpolated into one sentence: they are the actionable part,
                 and a parent scanning a red banner should find the two
                 numbers without reading a paragraph. */}
-            <Small className="text-destructive">
+            <Small className="text-foreground">
               {t('recordPaymentSheet.exceedsGrossTitle')}
             </Small>
             <AmountRow
@@ -245,7 +245,7 @@ export function RecordPaymentSheet({
           {amountInvalid ? (
             <Small
               testID={`${testID}-amount-error`}
-              className="text-destructive"
+              className="text-error-inline-text"
             >
               {t('recordPaymentSheet.amountError')}
             </Small>
@@ -257,12 +257,12 @@ export function RecordPaymentSheet({
           <View className="flex-row flex-wrap gap-2">
             <Button
               testID={`${testID}-date-chip-today`}
-              variant={dateChoice === 'today' ? 'default' : 'outline'}
+              variant={dateChoice === 'today' ? 'default' : 'secondary'}
               onPress={() => setDateChoice('today')}
             >
               <Text
                 className={cn(
-                  dateChoice === 'today' ? undefined : 'text-foreground'
+                  dateChoice === 'today' ? 'font-semibold' : 'text-foreground'
                 )}
               >
                 {t('recordPaymentSheet.chipToday', { date: todayISO })}
@@ -270,12 +270,12 @@ export function RecordPaymentSheet({
             </Button>
             <Button
               testID={`${testID}-date-chip-earlier`}
-              variant={dateChoice === 'earlier' ? 'default' : 'outline'}
+              variant={dateChoice === 'earlier' ? 'default' : 'secondary'}
               onPress={() => setDateChoice('earlier')}
             >
               <Text
                 className={cn(
-                  dateChoice === 'earlier' ? undefined : 'text-foreground'
+                  dateChoice === 'earlier' ? 'font-semibold' : 'text-foreground'
                 )}
               >
                 {t('recordPaymentSheet.chipEarlier')}
@@ -296,7 +296,7 @@ export function RecordPaymentSheet({
               {dateInvalid ? (
                 <Small
                   testID={`${testID}-date-error`}
-                  className="text-destructive"
+                  className="text-error-inline-text"
                 >
                   {t('recordPaymentSheet.dateInvalid')}
                 </Small>

@@ -34,7 +34,6 @@ import { InviteOfferSummary } from '@/src/domains/setup/components/InviteOfferSu
 import { getDeviceCurrency } from '@/src/lib/deviceLocale';
 import { formatRate } from '@/src/lib/money';
 import { formatDateShort } from '@/src/utils/dateFormatting';
-import { useElevation } from '~/lib/design-tokens/elevation';
 import { buildInviteTimeline, resolveInviteState } from '../utils/inviteState';
 
 /** Closed, the menu, or the revoke confirmation. Never two at once — a second
@@ -66,7 +65,6 @@ export function InviteRow({
   currency,
 }: InviteRowProps) {
   const { t } = useTranslation('draft');
-  const elevation = useElevation();
   const [open, setOpen] = useState<OpenSheet>('none');
 
   const state = resolveInviteState(invite, { viewedAt, now });
@@ -84,7 +82,6 @@ export function InviteRow({
     <View
       testID={`draft-invite-row-${invite.id}`}
       className="gap-1 rounded-row bg-card px-4 py-3"
-      style={elevation.row}
     >
       <View className="flex-row items-center gap-3">
         <Body testID="draft-invite-name" className="flex-1" weight="medium">
@@ -160,7 +157,9 @@ export function InviteRow({
               variant="ghost"
               onPress={() => setOpen('confirmStop')}
             >
-              <Text className="text-destructive">{t('rowMenu.stopLink')}</Text>
+              <Text className="text-error-inline-text">
+                {t('rowMenu.stopLink')}
+              </Text>
             </Button>
           ) : null}
         </View>
@@ -192,7 +191,9 @@ export function InviteRow({
             disabled={isRevoking}
             onPress={onRevoke}
           >
-            <Text className="text-destructive">{t('rowMenu.stopConfirm')}</Text>
+            <Text className="text-error-inline-text">
+              {t('rowMenu.stopConfirm')}
+            </Text>
           </Button>
           <Button
             testID="draft-invite-stop-cancel"

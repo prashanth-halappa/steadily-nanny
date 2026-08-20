@@ -89,6 +89,11 @@ export function ScreenHeader({
   testID = 'screen-header',
 }: ScreenHeaderProps) {
   const { t } = useTranslation('common');
+  const readOnlyLabel = readOnly ? t('readOnlyBadge') : null;
+  const resolvedContextLine =
+    readOnlyLabel && contextLine
+      ? `${readOnlyLabel} · ${contextLine}`
+      : (readOnlyLabel ?? contextLine);
 
   return (
     <View testID={testID} style={BAND_STYLE}>
@@ -104,22 +109,12 @@ export function ScreenHeader({
             </H1>
             {titleAction}
           </View>
-          {readOnly ? (
-            <View
-              testID={`${testID}-read-only`}
-              className="mt-1 flex-row items-center gap-1 self-start rounded-chip border border-border bg-card px-3 py-1"
-            >
-              <Small className="text-muted-foreground">
-                {t('readOnlyBadge')}
-              </Small>
-            </View>
-          ) : null}
-          {contextLine ? (
+          {resolvedContextLine ? (
             <Small
-              testID={`${testID}-context`}
+              testID={readOnly ? `${testID}-read-only` : `${testID}-context`}
               className="mt-1 text-muted-strong"
             >
-              {contextLine}
+              {resolvedContextLine}
             </Small>
           ) : null}
           {anchor}

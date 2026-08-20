@@ -31,7 +31,7 @@ export function InlineRetry({
       <Small className="text-muted-foreground">{message}</Small>
       <Button
         testID={`${testID}-button`}
-        variant="ghost"
+        variant="secondary"
         size="sm"
         className="self-start"
         onPress={onRetry}

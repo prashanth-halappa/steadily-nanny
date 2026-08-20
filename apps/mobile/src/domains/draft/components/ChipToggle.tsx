@@ -49,8 +49,10 @@ export function ChipToggle<T extends string | number>({
           >
             <Text
               className={cn(
-                'font-semibold text-sm',
-                selected ? 'text-primary-foreground' : 'text-muted-strong'
+                'text-sm',
+                selected
+                  ? 'font-semibold text-primary-foreground'
+                  : 'text-muted-strong'
               )}
             >
               {option.label}

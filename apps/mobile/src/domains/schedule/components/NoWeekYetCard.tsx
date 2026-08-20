@@ -36,7 +36,7 @@ import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { IconChip } from '@/src/components/ui/icon-chip';
 import { Text } from '@/src/components/ui/text';
-import { Body, H4 } from '@/src/components/ui/typography';
+import { H4, Small } from '@/src/components/ui/typography';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { getWeekStartISO } from '@/src/domains/timesheet/utils/week';
 import { useTermsGate } from '@/src/domains/today/hooks/useTermsGate';
@@ -164,9 +164,9 @@ export function NoWeekYetCard() {
             )}
           </H4>
         </View>
-        <Body className="text-muted-foreground">
+        <Small className="text-muted-foreground">
           {t('todayCard.noWeekNannyBody')}
-        </Body>
+        </Small>
         {/* Stacked, not a row: side by side these two ghost labels overflow a
             402pt screen and "Hide this" renders clipped, with its right edge
             past the screen bounds — Maestro's a11y-driven tap reaches it, a

@@ -34,7 +34,7 @@ export function ReceiptCard({
   return (
     <Card testID={testID} tone="positive">
       <CardContent className="gap-3">
-        <IconChip tone="hours" icon={CircleCheck} />
+        <IconChip tone="brand" icon={CircleCheck} />
         <H3>{title}</H3>
         {body ? <Body>{body}</Body> : null}
         {dots}

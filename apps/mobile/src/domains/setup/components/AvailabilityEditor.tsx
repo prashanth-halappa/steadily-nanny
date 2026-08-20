@@ -191,7 +191,7 @@ export function AvailabilityEditor() {
                     {appliedCount === null ? null : (
                       <Small
                         testID="availability-applied-confirmation"
-                        className="text-muted-strong"
+                        className="text-muted-foreground"
                       >
                         {tHousehold('availability.appliedToOtherDays', {
                           count: appliedCount,
