@@ -8,6 +8,8 @@
  */
 import { describe, expect, it } from 'bun:test';
 import { join } from 'node:path';
+import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types';
+import { NOTIFICATION_ROUTE_MAP } from '@/src/lib/notificationRouteMap';
 import type { InboxItem } from '../utils/buildInboxItems';
 import {
   ctaForItem,
@@ -602,6 +604,94 @@ describe('terms_proposal_declined copy (D66)', () => {
         expect(text).not.toContain('unfortunately');
         expect(text).not.toContain('sorry');
       }
+    }
+  });
+});
+
+// D77 — the parent's row for a carer's booked absence. Its destination is
+// the ONE property that must not drift: the push and the row are the same
+// fact, so they land on the same screen.
+describe('carer_time_off copy (D77)', () => {
+  function makeItem(overrides: Record<string, unknown> = {}): InboxItem {
+    return {
+      kind: 'carer_time_off',
+      id: 'to-1',
+      householdId: 'hh-1',
+      carerDisplayName: 'Marisol',
+      startsAt: '2026-08-27T09:00:00.000Z',
+      endsAt: '2026-08-29T17:00:00.000Z',
+      timeOffKind: 'personal',
+      ...overrides,
+    } as InboxItem;
+  }
+
+  it('lands on the same screen the TIME_OFF_REQUESTED push does, byte for byte', () => {
+    const pushHref = NOTIFICATION_ROUTE_MAP[
+      PUSH_NOTIFICATION_TYPES.TIME_OFF_REQUESTED
+    ]({});
+    expect(hrefForItem(makeItem())).toBe(
+      '/(private)/settings/household-time-off'
+    );
+    // The resolver's return is `Href | null`; compare as strings so the
+    // assertion is about the destination, not the union.
+    expect(String(pushHref)).toBe(String(hrefForItem(makeItem())));
+  });
+
+  it('picks the sick fork for a sick absence', () => {
+    expect(titleForItem(makeItem(), t, ZONE)).toBe('items.carerTimeOff.title');
+    expect(titleForItem(makeItem({ timeOffKind: 'sick' }), t, ZONE)).toBe(
+      'items.carerTimeOff.titleSick'
+    );
+    expect(subtitleForItem(makeItem(), t, ZONE)).toBe(
+      'items.carerTimeOff.subtitle'
+    );
+    expect(ctaForItem(makeItem(), t)).toBe('items.carerTimeOff.cta');
+  });
+
+  it('renders a range across days and a single date within one day', async () => {
+    const copy = (await locale('en')).items.carerTimeOff;
+    const render = (item: InboxItem) =>
+      copy.title.replace(
+        '{{dates}}',
+        // The interpolated value, pulled back out of the same call the
+        // screen makes.
+        titleForItem(item, (key, opts) => opts?.dates ?? key, ZONE)
+      );
+    expect(render(makeItem())).toContain('27 Aug – 29 Aug');
+    expect(
+      render(makeItem({ endsAt: '2026-08-27T17:00:00.000Z' }))
+    ).not.toContain('–');
+    expect(render(makeItem({ endsAt: '2026-08-27T17:00:00.000Z' }))).toContain(
+      '27 Aug'
+    );
+  });
+
+  it('names her when the roster could, and falls back to a label when it could not', () => {
+    const nameOf = (item: InboxItem) =>
+      titleForItem(item, (key, opts) => opts?.name ?? key, ZONE);
+    expect(nameOf(makeItem())).toBe('Marisol');
+    expect(nameOf(makeItem({ carerDisplayName: null }))).toBe(
+      'items.carerTimeOff.carerFallback'
+    );
+  });
+
+  // Nothing about an absence decays overnight, and nothing is owed by a
+  // deadline — never Rule B's coloured-text exception.
+  it('deadlineForItem is always null', () => {
+    expect(deadlineForItem(makeItem(), t, ZONE)).toBeNull();
+  });
+
+  it('has both-language strings and a kinds label', async () => {
+    for (const language of ['en', 'es'] as const) {
+      const copy = await locale(language);
+      expect(copy.items.carerTimeOff.title).toContain('{{name}}');
+      expect(copy.items.carerTimeOff.title).toContain('{{dates}}');
+      expect(copy.items.carerTimeOff.titleSick).toContain('{{name}}');
+      expect(copy.items.carerTimeOff.titleSick).toContain('{{dates}}');
+      expect(copy.items.carerTimeOff.subtitle.length).toBeGreaterThan(0);
+      expect(copy.items.carerTimeOff.carerFallback.length).toBeGreaterThan(0);
+      expect(copy.items.carerTimeOff.cta.length).toBeGreaterThan(0);
+      expect(copy.kinds.carer_time_off.length).toBeGreaterThan(0);
     }
   });
 });

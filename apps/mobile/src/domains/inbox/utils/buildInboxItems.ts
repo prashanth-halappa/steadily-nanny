@@ -41,6 +41,12 @@
  *    nothing at all and her own `terms_proposal_sent` row simply vanishes.
  *  - terms ack: nanny-only, active member, live arrangement, ack state
  *    still `none` — surfaces on NeedsAttentionCard, resolves on My pay.
+ *  - carer time off (D77): parent/owner-only, an absence that has not been
+ *    cancelled and has not finished. The push (`TIME_OFF_REQUESTED`) was the
+ *    only signal a family got, and it lands two levels down in Settings, so
+ *    a booked absence over booked shifts was easy to miss entirely. It is
+ *    informational-and-actionable (go re-plan), never answerable in place —
+ *    there is no approve/decline endpoint at all.
  *
  * §2.2's urgency ordering: items are sorted by `sortKey` ascending (a rank
  * per kind, `pending_shift` forking on whether the shift starts within 48h),
@@ -50,6 +56,8 @@
  */
 
 import {
+  CARER_TIME_OFF_STATUSES,
+  type CarerTimeOffKind,
   TERMS_PROPOSAL_STATUSES,
   type TermsProposalDirection,
 } from '@steadily-nanny/shared-types';
@@ -183,6 +191,25 @@ export type InboxUnsettledReimbursementInput = {
   week_start: string;
   amount_minor: number;
   currency: string;
+};
+
+/**
+ * One carer absence for one household (D77).
+ *
+ * A `carer_time_off` wire row carries `user_id` and nothing else about
+ * identity — no name — so the name is resolved against the household roster
+ * `buildInboxItems` already receives. `household_id` is not on the wire
+ * either: the row comes from a per-household read, so the hook stamps it on,
+ * the same way the unsettled-reimbursement aggregate does.
+ */
+export type InboxTimeOffInput = {
+  id: string;
+  household_id: string;
+  user_id: string;
+  starts_at: string;
+  ends_at: string;
+  kind: CarerTimeOffKind;
+  status: string;
 };
 
 export type InboxItem =
@@ -322,6 +349,20 @@ export type InboxItem =
       weekStart: string;
       amountMinor: number;
       currency: string;
+    }
+  | {
+      // D77 — a carer's booked absence, parent-side.
+      kind: 'carer_time_off';
+      id: string;
+      householdId: string;
+      /** Null when the roster cannot name her (a removed/deleted member) —
+       * the copy then uses its own fallback label rather than a blank. */
+      carerDisplayName: string | null;
+      startsAt: string;
+      endsAt: string;
+      /** `personal` or `sick` — the copy forks on it, exactly as both
+       * existing time-off pushes already do. */
+      timeOffKind: CarerTimeOffKind;
     };
 
 /** Who a row is about, when it names someone. Colour only when the source
@@ -399,6 +440,8 @@ export function buildInboxItems(input: {
   termsProposals?: readonly InboxTermsProposalInput[];
   termsAcks?: readonly InboxTermsAckInput[];
   unsettledReimbursements?: readonly InboxUnsettledReimbursementInput[];
+  /** D77 — every household's carer time off, flattened and household-stamped. */
+  timeOff?: readonly InboxTimeOffInput[];
   /** Every household the viewer belongs to — `queried_week`'s householdName. */
   households?: readonly { id: string; name: string | null }[];
   /** Every household's member roster the hook already fetches — flattened,
@@ -668,6 +711,30 @@ export function buildInboxItems(input: {
     }
   }
 
+  // D77 — parent/owner only: a nanny booking her own time off has nothing
+  // waiting on her, and a household's other nanny is not her business.
+  // `requested` never occurs (nothing writes it: the create schema has no
+  // `status` field and the column defaults to 'confirmed'), so the only
+  // status worth excluding is a cancelled one.
+  if (isParentEditorRole(input.role)) {
+    for (const row of input.timeOff ?? []) {
+      if (row.status === CARER_TIME_OFF_STATUSES.CANCELLED) continue;
+      // Still to come, or running right now. An absence that already ended
+      // is history, not something left to re-plan around.
+      if (Date.parse(row.ends_at) <= nowMs) continue;
+      const member = membersByUserId.get(row.user_id);
+      items.push({
+        kind: 'carer_time_off',
+        id: row.id,
+        householdId: row.household_id,
+        carerDisplayName: member ? resolveCarerName(member, '') || null : null,
+        startsAt: row.starts_at,
+        endsAt: row.ends_at,
+        timeOffKind: row.kind,
+      });
+    }
+  }
+
   items.sort((a, b) => compareItems(a, b, nowMs));
   return items;
 }
@@ -684,6 +751,12 @@ function sortKey(item: InboxItem, nowMs: number): number {
   switch (item.kind) {
     case 'change_request':
       return 2;
+    // D77 — deliberately fractional rather than renumbering six existing
+    // ranks and every test that pins them. An absence over booked shifts
+    // needs re-planning before a pay question does, but it does not
+    // out-rank a change request, which carries a deadline and auto-expires.
+    case 'carer_time_off':
+      return 2.5;
     case 'queried_week':
       return 3;
     // A contract waiting on a signature: it blocks every future figure, but
@@ -726,6 +799,9 @@ function sortDateFor(item: InboxItem): string | null {
   switch (item.kind) {
     case 'pending_shift':
     case 'cross_family_clash':
+    // D77 — the day the absence begins: the soonest one first, since that
+    // is the one there is least time to re-plan around.
+    case 'carer_time_off':
       return item.startsAt;
     case 'pending_pattern':
       return item.dtstart;

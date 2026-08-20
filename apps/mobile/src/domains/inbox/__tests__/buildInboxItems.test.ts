@@ -1716,3 +1716,156 @@ describe('buildInboxItems — person on the item', () => {
     }
   });
 });
+
+// D77 — a nanny books time off and the family's only signal was a push into
+// a screen two levels down in Settings. Parent-side, informational: there is
+// no approve/decline endpoint anywhere, so this row can never be answered in
+// place, only re-planned around.
+describe('buildInboxItems — carer_time_off kind (D77)', () => {
+  const NOW = '2026-08-25T12:00:00.000Z';
+
+  const timeOffRow = {
+    id: 'to-1',
+    household_id: 'hh-1',
+    user_id: OTHER,
+    starts_at: '2026-08-27T00:00:00.000Z',
+    ends_at: '2026-08-29T23:59:00.000Z',
+    kind: 'personal',
+    status: 'confirmed',
+  } as const;
+
+  type BuildInput = Parameters<typeof buildInboxItems>[0];
+
+  function build(overrides: Partial<BuildInput> = {}) {
+    return buildInboxItems({
+      role: SETUP_ROLES.PARENT,
+      currentUserId: PARENT,
+      todayISO: '2026-08-25',
+      nowISO: NOW,
+      changeRequests: [],
+      patterns: [],
+      timesheets: [],
+      timeOff: [timeOffRow],
+      ...overrides,
+    });
+  }
+
+  it('surfaces a confirmed future absence to a parent, named from the roster', () => {
+    expect(
+      build({
+        householdMembers: [
+          {
+            user_id: OTHER,
+            display_name_override: null,
+            profile_name: 'Marisol',
+          },
+        ],
+      })
+    ).toEqual([
+      {
+        kind: 'carer_time_off',
+        id: 'to-1',
+        householdId: 'hh-1',
+        carerDisplayName: 'Marisol',
+        startsAt: '2026-08-27T00:00:00.000Z',
+        endsAt: '2026-08-29T23:59:00.000Z',
+        timeOffKind: 'personal',
+      },
+    ]);
+  });
+
+  it('leaves the name null when the roster cannot name her — never a blank', () => {
+    const items = build();
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      kind: 'carer_time_off',
+      carerDisplayName: null,
+    });
+  });
+
+  it('is never shown to a nanny — her own absence waits on nobody', () => {
+    expect(build({ role: SETUP_ROLES.NANNY, currentUserId: OTHER })).toEqual(
+      []
+    );
+  });
+
+  it('excludes a cancelled absence', () => {
+    expect(
+      build({ timeOff: [{ ...timeOffRow, status: 'cancelled' }] })
+    ).toEqual([]);
+  });
+
+  it('excludes an absence that has already ended', () => {
+    expect(
+      build({
+        timeOff: [
+          {
+            ...timeOffRow,
+            starts_at: '2026-08-10T00:00:00.000Z',
+            ends_at: '2026-08-12T23:59:00.000Z',
+          },
+        ],
+      })
+    ).toEqual([]);
+  });
+
+  it('keeps an absence that started but has not finished', () => {
+    const items = build({
+      timeOff: [
+        {
+          ...timeOffRow,
+          starts_at: '2026-08-24T00:00:00.000Z',
+          ends_at: '2026-08-26T23:59:00.000Z',
+        },
+      ],
+    });
+    expect(items.map(i => i.kind)).toEqual(['carer_time_off']);
+  });
+
+  it('sorts between a change request and a queried week (rank 2.5)', () => {
+    const items = build({
+      role: SETUP_ROLES.PARENT,
+      currentUserId: ME,
+      changeRequests: [
+        {
+          id: 'cr-1',
+          shift_id: 'shift-1',
+          requested_by: OTHER,
+          kind: 'time_change',
+          status: 'pending',
+          created_at: '2026-08-20T09:00:00.000Z',
+        },
+      ],
+      timesheets: [
+        {
+          id: 'ts-q',
+          household_id: 'hh-1',
+          carer_id: ME,
+          week_start: '2026-08-18',
+          status: 'queried',
+          query_note: null,
+        },
+      ],
+    });
+    expect(items.map(i => i.kind)).toEqual([
+      'change_request',
+      'carer_time_off',
+      'queried_week',
+    ]);
+  });
+
+  it('orders two absences soonest-first', () => {
+    const items = build({
+      timeOff: [
+        {
+          ...timeOffRow,
+          id: 'to-later',
+          starts_at: '2026-09-10T00:00:00.000Z',
+          ends_at: '2026-09-12T00:00:00.000Z',
+        },
+        timeOffRow,
+      ],
+    });
+    expect(items.map(i => i.id)).toEqual(['to-1', 'to-later']);
+  });
+});

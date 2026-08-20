@@ -47,6 +47,7 @@ const listProposals = mock(() => Promise.resolve([] as unknown[]));
 const listUnsettledReimbursements = mock(() =>
   Promise.resolve([] as unknown[])
 );
+const listTimeOff = mock(() => Promise.resolve([] as unknown[]));
 
 const CARER = '44444444-4444-4444-8444-444444444444';
 const PROPOSAL = {
@@ -110,6 +111,9 @@ beforeAll(async () => {
   mock.module('@/src/api/endpoints/reimbursementSettlements', () => ({
     reimbursementSettlementApi: { listUnsettled: listUnsettledReimbursements },
   }));
+  mock.module('@/src/api/endpoints/timeOff', () => ({
+    timeOffApi: { listForHousehold: listTimeOff },
+  }));
 
   useInboxItems = (await import('../useInboxItems')).useInboxItems;
   useAuthStore = (await import('@/src/store/auth')).useAuthStore;
@@ -123,9 +127,11 @@ beforeEach(() => {
   listMembers.mockReset();
   listProposals.mockReset();
   listUnsettledReimbursements.mockReset();
+  listTimeOff.mockReset();
   listMembers.mockResolvedValue([]);
   listProposals.mockResolvedValue([]);
   listUnsettledReimbursements.mockResolvedValue([]);
+  listTimeOff.mockResolvedValue([]);
   listPatterns.mockResolvedValue([]);
   listTimesheets.mockResolvedValue([]);
   listPendingChangeRequests.mockResolvedValue([]);
@@ -218,6 +224,17 @@ describe('useInboxItems isError channel', () => {
     const { result } = renderHookWithProviders(() => useInboxItems());
 
     await waitFor(() => expect(result.current.isError).toBe(true));
+  });
+
+  // D77 — folded in like every other term: `isError` swaps the list for a
+  // retry state, so an incomplete inbox is never rendered as a complete one.
+  it('surfaces isError when a household time-off read fails', async () => {
+    listTimeOff.mockRejectedValue(new Error('time off boom'));
+
+    const { result } = renderHookWithProviders(() => useInboxItems());
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.items).toEqual([]);
   });
 
   it('isError stays false on empty success — distinguishes from failure', async () => {

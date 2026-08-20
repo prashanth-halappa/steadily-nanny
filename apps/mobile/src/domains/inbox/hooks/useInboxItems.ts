@@ -30,6 +30,7 @@ import { payArrangementApi } from '@/src/api/endpoints/payArrangements';
 import { reimbursementSettlementApi } from '@/src/api/endpoints/reimbursementSettlements';
 import { schedulePatternApi } from '@/src/api/endpoints/schedulePatterns';
 import { termsProposalApi } from '@/src/api/endpoints/termsProposals';
+import { timeOffApi } from '@/src/api/endpoints/timeOff';
 import { timesheetApi } from '@/src/api/endpoints/timesheets';
 import { queryKeys } from '@/src/api/queryKeys';
 import type { InboxTermsAckInput } from '@/src/domains/inbox/utils/buildInboxItems';
@@ -136,6 +137,18 @@ export function useInboxItems() {
       queryKey: queryKeys.reimbursementSettlements.unsettled(h.id),
       queryFn: () => reimbursementSettlementApi.listUnsettled(h.id),
       staleTime: QUERY_TIMING.STALE_1M,
+      enabled: baseEnabled && isValidId(h.id) && isParentEditorRole(role),
+    })),
+  });
+
+  // D77 — parent/owner only; one list per household, on the same key and
+  // staleTime `useHouseholdTimeOff` uses, so the settings screen and this
+  // list share one cache entry rather than double-fetching.
+  const timeOffQueries = useQueries({
+    queries: households.map(h => ({
+      queryKey: queryKeys.timeOff.forHousehold(h.id),
+      queryFn: () => timeOffApi.listForHousehold(h.id),
+      staleTime: QUERY_TIMING.STALE_2M,
       enabled: baseEnabled && isValidId(h.id) && isParentEditorRole(role),
     })),
   });
@@ -337,6 +350,20 @@ export function useInboxItems() {
     [unsettledReimbursementQueries, households]
   );
 
+  // The wire row carries no household id (time off is scoped to the CARER),
+  // so it is stamped on from the query's own household — same shape as the
+  // unsettled-reimbursement flatten above.
+  const timeOff = useMemo(
+    () =>
+      timeOffQueries.flatMap((q, index) =>
+        (q.data ?? []).map(row => ({
+          ...row,
+          household_id: households[index]?.id ?? '',
+        }))
+      ),
+    [timeOffQueries, households]
+  );
+
   const items = useMemo(
     () =>
       buildInboxItems({
@@ -352,6 +379,7 @@ export function useInboxItems() {
         termsProposals,
         termsAcks,
         unsettledReimbursements,
+        timeOff,
         households,
         householdMembers,
       }),
@@ -368,6 +396,7 @@ export function useInboxItems() {
       termsProposals,
       termsAcks,
       unsettledReimbursements,
+      timeOff,
       households,
       householdMembers,
     ]
@@ -393,7 +422,8 @@ export function useInboxItems() {
     arrangementQueries.some(q => q.isLoading) ||
     arrangementHistoryQueries.some(q => q.isLoading) ||
     arrangementAckQueries.some(q => q.isLoading) ||
-    unsettledReimbursementQueries.some(q => q.isLoading);
+    unsettledReimbursementQueries.some(q => q.isLoading) ||
+    timeOffQueries.some(q => q.isLoading);
 
   const isError =
     active.isError ||
@@ -407,7 +437,8 @@ export function useInboxItems() {
     arrangementQueries.some(q => q.isError) ||
     arrangementHistoryQueries.some(q => q.isError) ||
     arrangementAckQueries.some(q => q.isError) ||
-    unsettledReimbursementQueries.some(q => q.isError);
+    unsettledReimbursementQueries.some(q => q.isError) ||
+    timeOffQueries.some(q => q.isError);
 
   const refetch = useCallback(() => {
     onboarding.retryMemberships();
@@ -419,6 +450,7 @@ export function useInboxItems() {
     for (const q of arrangementHistoryQueries) void q.refetch();
     for (const q of arrangementAckQueries) void q.refetch();
     for (const q of unsettledReimbursementQueries) void q.refetch();
+    for (const q of timeOffQueries) void q.refetch();
     void changeRequestsQuery.refetch();
     void meShiftsQuery.refetch();
   }, [
@@ -431,6 +463,7 @@ export function useInboxItems() {
     arrangementHistoryQueries,
     arrangementAckQueries,
     unsettledReimbursementQueries,
+    timeOffQueries,
     changeRequestsQuery,
     meShiftsQuery,
   ]);

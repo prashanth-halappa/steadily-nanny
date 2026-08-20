@@ -74,7 +74,29 @@ export function hrefForItem(item: InboxItem): Href {
       return '/(private)/settings/my-pay' as Href;
     case 'reimbursement_owed':
       return `/(private)/(tabs)/hours?weekStart=${item.weekStart}&householdId=${item.householdId}` as Href;
+    // D77 — byte-identical to what `TIME_OFF_REQUESTED` resolves to in
+    // `notificationRouteMap`: the push and the inbox row are the same fact,
+    // so they must land on the same screen.
+    case 'carer_time_off':
+      return '/(private)/settings/household-time-off' as Href;
   }
+}
+
+/**
+ * "26 Aug – 28 Aug", collapsed to "26 Aug" when both ends land on the same
+ * day in the household's zone — a one-day absence is a date, not a range of
+ * one. Same day/month convention every other kind in this module uses.
+ */
+function absenceDates(
+  startsAt: string,
+  endsAt: string,
+  timeZone: string
+): string {
+  const start = localDateInZone(timeZone, new Date(startsAt));
+  const end = localDateInZone(timeZone, new Date(endsAt));
+  return start === end
+    ? formatDisplayDate(start)
+    : `${formatDisplayDate(start)} – ${formatDisplayDate(end)}`;
 }
 
 /** The day a proposal was sent, in the reader's zone — §10's law is that the
@@ -186,6 +208,17 @@ export function titleForItem(
     // a verdict about who is at fault.
     case 'cross_family_clash':
       return t('items.crossFamilyClash.title');
+    // D77 — forks on `personal`/`sick`, exactly as both existing time-off
+    // pushes already word it. Names her when the roster can; falls back to a
+    // label rather than rendering a sentence with a hole in it.
+    case 'carer_time_off': {
+      const name =
+        item.carerDisplayName ?? t('items.carerTimeOff.carerFallback');
+      const dates = absenceDates(item.startsAt, item.endsAt, timeZone);
+      return item.timeOffKind === 'sick'
+        ? t('items.carerTimeOff.titleSick', { name, dates })
+        : t('items.carerTimeOff.title', { name, dates });
+    }
   }
 }
 
@@ -286,6 +319,12 @@ export function subtitleForItem(
         ),
         time: formatClockTime(item.startsAt, timeZone),
       });
+    // D77 — states the hazard rather than instructing the reader: booking
+    // time off cancels, demotes and flags NOTHING, and uncovered-care
+    // detection still counts those shifts as covered because the carer is
+    // still assigned to them.
+    case 'carer_time_off':
+      return t('items.carerTimeOff.subtitle');
   }
 }
 
@@ -316,6 +355,8 @@ export function ctaForItem(item: InboxItem, t: InboxItemT): string {
       return t('items.reimbursementOwed.cta');
     case 'cross_family_clash':
       return t('items.crossFamilyClash.cta');
+    case 'carer_time_off':
+      return t('items.carerTimeOff.cta');
   }
 }
 

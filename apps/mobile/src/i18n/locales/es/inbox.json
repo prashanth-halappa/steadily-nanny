@@ -90,6 +90,13 @@
       "title": "Este turno se superpone con un turno de otra familia",
       "subtitle": "{{date}}, {{time}}",
       "cta": "Abrir el turno"
+    },
+    "carerTimeOff": {
+      "title": "{{name}} está fuera: {{dates}}",
+      "titleSick": "{{name}} avisó por enfermedad: {{dates}}",
+      "subtitle": "Lo que ya esté reservado en esas fechas sigue apareciendo como cubierto.",
+      "carerFallback": "Tu niñera",
+      "cta": "Abrir Tiempo libre"
     }
   },
   "pendingOfferCard": {
@@ -124,6 +131,7 @@
     "terms_proposal_declined": "Condiciones",
     "terms_ack": "Condiciones",
     "reimbursement_owed": "Reembolso",
-    "cross_family_clash": "Turno superpuesto"
+    "cross_family_clash": "Turno superpuesto",
+    "carer_time_off": "Tiempo libre"
   }
 }
