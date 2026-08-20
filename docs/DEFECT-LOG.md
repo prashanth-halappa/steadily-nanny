@@ -2367,3 +2367,347 @@ compared ISO timestamps as **strings**. One side is built locally by
 `timestamptz` can serialise as `…T09:00:00+00:00`, and `'+'` sorts before `'.'` —
 so the same instant could compare as earlier. It parses now. The pre-existing
 time-off caller had the same latent exposure.
+
+---
+
+## D75 — A nanny's own counter-offer said she was waiting on herself
+
+**Status:** FIXED · **Severity:** medium — the wrong name on the one screen whose whole job is "who is waiting on whom"
+
+Found in the S5 manual pass. The nanny counters a parent's proposed shift, and
+her own card reads *"Waiting for the nanny to confirm."*
+
+The string named a role instead of deriving one. `en/schedule.json:243` was
+`"awaitingNannyConfirm": "Waiting for the nanny to confirm"`, and
+`ShiftDetailScreen.tsx:830-837` emitted it unconditionally for **any** pending
+request the reader had raised — neither `req.kind` nor the requester's role was
+consulted. Since `counter_offer` is the only kind a nanny can raise
+(`shiftChangeRequestCommandService.ts:884-895`), hers always pointed back at
+her.
+
+The server has known the answer all along
+(`shiftChangeRequestCommandService.ts:907-960`): a parent's request is answered
+by the assigned carer, a nanny's counter by a parent. The screen already had
+everything needed to say so — `membersByUserId` (`:289-291`) carries roles, and
+`nameFor` (`:298-304`) resolves names.
+
+**Fix.** Two keys replace the one. A parent's request →
+`detail.awaitingCarerConfirm` ("Waiting for {{name}} to confirm"), which is the
+shape the same screen already used forty lines up in
+`detail.freshProposalAwaitingCarer`. A nanny's → `detail.awaitingFamilyConfirm`
+("Waiting for the family to confirm"). Neither role resolves → no line at all;
+it is a supporting sentence, not a gate.
+
+**"The family", not "the parent" — owner decision.** It is how this app
+addresses the nanny's counterpart everywhere else (her week reads "With the
+family", never "With the parent", `screens-hours.md` §8), and it stays true
+when either of two parents can answer. Naming a single "parent" in a household
+with a co-parent would be a smaller lie than the original but still a lie.
+
+**The trap this set, and it bites on a correct fix:**
+`ShiftDetailScreen.test.ts:66` greps the *source* for the literal string
+`'detail.awaitingNannyConfirm'`, so deleting the key turns the suite red.
+`ShiftDetailScreen.withdraw.test.tsx:262` separately asserts the
+`shift-change-awaiting-${req.id}` testID *disappears* after a withdrawal, so
+the testID had to survive the rewrite unchanged. **A source-grep test pins a
+key name, not a behaviour — it has to be updated in the same commit as any
+rename, and it will not tell you that from its failure message.**
+
+---
+
+## D76 — A counter-offer never showed the time it was countering
+
+**Status:** FIXED · **Severity:** high — Accept was pressed on a proposal the reader had never seen
+
+The other half of the same card, and the worse half. Reviewing a nanny's
+counter, the parent saw four lines — "Counter offer / Pending / Requested by
+Andrea / 8:48 PM" — and two buttons. **The 8:48 PM is `created_at`**: when the
+counter was raised, not what it proposes. The proposed window appeared nowhere,
+so the parent could accept a change to a shift's hours without ever being shown
+the new hours.
+
+Nothing was missing from the stack below the render. `proposed_starts_at` /
+`proposed_ends_at` are columns with a `proposed_ends_at > proposed_starts_at`
+CHECK (`015_shifts.sql:149-179`), are **required** for the time-bearing kinds
+(`shiftChangeRequestCommandService.ts:859-868`), come back through a
+`select('*')` (`shiftChangeRequestRepository.ts:82-97`), are on the wire
+(`shift.schema.ts:259-275`), and are parsed by the client
+(`endpoints/changeRequests.ts:63-72`). They were sitting on the objects the
+component was already mapping over. A pure rendering omission, top to bottom.
+
+**Fix.** `detail.proposedWindow` ("New time: {{start}}–{{end}}") on the row
+whenever both instants are present, at `Body` weight `medium` rather than the
+muted `Small` its siblings use — it is the thing being accepted and it should
+not read as metadata. Plus `detail.raisedAt` ("Asked at {{time}}") wrapping the
+bare timestamp, because two unlabelled clock readings on one card is how this
+bug half-hides itself. The *original* window needed nothing: it was already on
+screen in the shift header (`:656-659`).
+
+**Deliberately not fixed, so nobody "completes" it later:** the inbox row has
+the same missing detail. It stays missing. `attention-and-notifications.md` §0
+rule 3 — the inbox deep-links and never resolves in place — so its subtitle's
+job is to route, not to be sufficient to decide on. Adding proposed times there
+would mean widening `InboxItem` for a row that carries no Accept button.
+
+---
+
+## D77 — A nanny's time off never reached the parent's Today screen
+
+**Status:** FIXED · **Severity:** medium-high — the only signal was a push landing two levels down in Settings
+
+The nanny books time off, the parent gets a push, and that is the entire
+mechanism. `TIME_OFF_REQUESTED` deep-links to
+`/(private)/settings/household-time-off`. Miss the notification and the absence
+is invisible on every screen the parent actually opens.
+
+The parts existed and were simply never joined up:
+`GET /v1/households/:householdId/time-off` ships, and so does the mobile hook
+`useHouseholdTimeOff` — whose only two consumers were the Settings screen it
+was written for and the schedule calendar. Neither `TodayScreen.tsx` nor
+`useInboxItems.ts` had ever read it.
+
+**Fix — a new `carer_time_off` inbox kind, parent/owner-only.** Today has no
+server-driven feed; it is hand-written JSX. The extensible surface is
+`buildInboxItems.ts`, rendered on Today by `NeedsAttentionCard` and on the
+Inbox tab by `InboxScreen`, both generic over the item union. So the card
+arrives with **no `TodayScreen.tsx` edit and no new attention rung** — which
+matters, because `attentionOwner.ts`'s module doc requires any new rung to name
+the rung it displaces, and this displaces nothing.
+
+Ranked `2.5` in `sortKey` — deliberately fractional rather than renumbering six
+existing ranks and every test pinning them. An absence over booked shifts needs
+re-planning before a pay question does, but does not out-rank a change request,
+which carries a deadline and auto-expires.
+
+`hrefForItem` returns the *byte-identical* destination the push resolver builds
+(`notificationRouteMap.ts:247-248`) — the same property `inboxItemCopy.test.ts`
+already asserts for `change_request`. One fact, one place to land.
+
+**Two things found while doing it, both left alone on purpose:**
+
+1. **Booking time off cancels, demotes and flags nothing.** The overlapped
+   shifts keep their carer, so uncovered-care detection still counts them as
+   *covered*. `buildConflictPush`'s own header admits it —
+   *"This push is the ONLY signal a family gets that a booked shift is about to
+   go uncovered"* (`timeOffCommandService.ts:60-67`). That is why the card's
+   subtitle states the hazard rather than instructing the reader: **"Anything
+   booked in that window still shows as covered."** Logged as **D77a, OPEN**.
+2. **`CARER_TIME_OFF_STATUSES.REQUESTED` is dead.** Nothing writes it —
+   `CreateCarerTimeOffSchema` has no `status` field, the column defaults to
+   `'confirmed'`, and there is no approve/decline endpoint anywhere. The push
+   title "Time off requested" therefore promises the parent a decision they
+   cannot make. Copy not changed in this pass; recorded here.
+
+---
+
+## D77a — Time off does not mark the shifts it overlaps as needing cover
+
+**Status:** OPEN · **Severity:** medium-high — a booked shift can be uncovered while every surface says it is covered
+
+Split out of D77 so it is not mistaken for fixed. A `carer_time_off` row
+overlapping confirmed shifts leaves those shifts `confirmed` with the absent
+carer still assigned. Every coverage read — the uncovered-care detector,
+`TodayCoverage`, the uncovered digest — therefore reports them as covered.
+
+Fixing it means deciding what a booked absence *does* to a booked shift
+(cancel? demote to pending? flag?), which is a schedule-behaviour change with
+its own regression surface. Owner scoped D77 to the card only.
+
+---
+
+## D78 — Approving a week produced no acknowledgement on the nanny's Today
+
+**Status:** FIXED · **Severity:** medium — the push existed; the thing she opens the app to see did not
+
+A parent approving a week is the biggest event in the nanny's week. The push
+already fired and always had — `timesheetCommandService.approve` calls
+`approvalPushPayload`, which forks to `WEEK_BELOW_GUARANTEE` or
+`TIMESHEET_APPROVED`. **No push work was needed.**
+
+The card was the gap, and it was a near miss rather than an absence:
+`FirstWeekApprovedMomentCard` renders **once ever**, gated on
+`herApprovedTimesheets.length === 1` (`TodayScreen.tsx:385-399`), and is
+money-free by its own module doc. Every approval after the first produced
+nothing at all.
+
+**Fix — `WeekApprovedCard`, a plain L3 feed card, deliberately NOT a moment.**
+A moment is a once-per-relationship celebration, and `moments.*` is the only
+i18n namespace the voice guard lets carry an exclamation mark
+(`i18n/__tests__/voice-guard.test.ts`). A weekly acknowledgement is neither.
+Dismissal reuses `useMomentOnce` over the existing `todayCardDismissalStore`,
+keyed `weekApproved:${timesheetId}` — one card per approved week. It is
+suppressed when the first-week moment covers the same timesheet: two cards
+about one approval is the "one owner per item" violation
+(`attention-and-notifications.md` §0 rule 2) the slot rules exist to prevent.
+
+**The amount is on the card — owner decision, and it needed a second read.**
+The push stays figure-free (a lock screen is a public surface, A8), but her own
+pay record on her own device is a different question, and the same reasoning
+`§1.4` uses for `timesheet_queried`'s note applies. The trap: **the amount is
+not on the list response.** `toWireTimesheet` (`utils/toWireTimesheet.ts:33-42`)
+strips `gross_minor`, `currency`, `earnings` and `earnings_computed_at` before
+serialising, so `useHouseholdTimesheets` — which `TodayScreen` already holds —
+has no figure on it at all. The card reads it through `useWeekTimesheet` (the
+earnings-bearing `getWeek`) and selects her own row, the same shape
+`NannyWeekLine.tsx:100-108` already uses.
+
+Money discipline held, and is the part worth re-reading before touching this
+card: the gross renders only under the `Approved` state label
+(`docs/11-MONEY.md` §3 — an amount with no state label is a defect), at
+`Figure28` against `Small` hours so the two can never be confused
+(`screens-hours.md` §5, and GOLDEN #52 on `Figure` vs `Figure28`), and when the
+earnings read is loading, errored, or in any non-`ok` arm
+(`no_arrangement`, `currency_change`, `hours_only`) **the money line is omitted
+entirely.** No `?? 0` exists anywhere in the component. A fabricated £0.00 on
+this card is the exact figure that invites a second payment.
+
+The CTA builds the byte-identical query string `hoursHref`
+(`notificationRouteMap.ts:41`) does, so card and push land on the same week.
+
+---
+
+## D79 — A week that was approved, and possibly paid, changed underneath both people
+
+**Status:** FIXED (migration written, NOT yet applied to prod) · **Severity:** high — money clarity, both directions
+
+Reported from S5: *"if a parent has already approved and paid the amount, and
+the week unlocks when the nanny clocks in again, the week reopens
+automatically. The parent might have paid already and doesn't know the delta
+amount they need to pay."*
+
+The area was more built than the report suggested, and less built than it
+looked. Migration 102 already gave the clock-out two branches and was right
+about both:
+
+| | Status | Snapshot | Approver | Flag |
+|---|---|---|---|---|
+| **Shape A** — payments exist | stays `approved` | kept | kept | `hours_changed_after_payment_at` |
+| **Shape B** — no payments | → `submitted` | **all four nulled** | **nulled** | cleared |
+
+**What was actually wrong was different in each shape, and the reporter hit the
+second one.**
+
+**Shape A — the delta was not derivable at all.** `earningsFor`
+(`timesheetQueryService.ts:755-770`) serves the FROZEN snapshot on an approved
+week, so the client had no figure for what the week is now worth. The only
+surface was a muted `Small` with no figure (`WeekTotal.tsx:359-366`) saying
+"Include them in the next payment" — without ever saying how much. And there is
+no in-week way to pay it either: `record_timesheet_payment` refuses anything
+above the frozen gross, so the extra hours have no settlement path at all.
+
+**Shape B — nothing survived, and the parent never got a say.** The roll-up
+nulls the approval, does NOT write `reopen_reason` (only the manual reopen
+does, `:2237`), and emits no `shift_event`. `useReopenedNotice` is
+mount-scoped. So a parent who was not staring at the Hours screen when the
+clock-out landed opened a week **byte-identical to one nobody had ever
+approved**. If they had paid by bank transfer — which is what "already paid the
+amount" means to most families — there was no record they had ever agreed
+anything.
+
+**The reframe the fix is built on, and the sentence worth keeping:** an
+approval is not a status, it is a **statement between two people** — "I looked
+at 38h 30m, I agreed £462.00, on 14 August." New hours do not make that
+statement wrong. They create a *tail*. **Destroying the statement is the
+defect; reopening the week is not.**
+
+**The fix, in four parts.**
+
+*111 — the receipt.* One nullable `jsonb` column, `timesheets.previous_approval`,
+written from the OLD row inside 102's existing lock by adding one arm to
+`roll_up_timesheet_hours`'s `SET` list. Bare column references on the RIGHT of
+a `SET` are the OLD values, so the new arm reads exactly the four values the
+same statement is nulling — atomic, no pre-read, no TOCTOU, and 102 already
+depended on the same rule (`approved_by = case when v_paid then approved_by
+end` is how its paid branch keeps its approver). `else previous_approval` is
+**load-bearing**: after the first demotion the row is `submitted`, so the
+`when status = 'approved'` arm stops matching and without the `else` Sunday's
+clock-out would null the receipt Saturday's wrote. Checked against both of
+102's constraints: `timesheets_approved_has_snapshot` never mentions the
+column and is vacuous on the `submitted` branch;
+`timesheets_refuse_reopen_when_paid` only fires on the paid branch, which does
+not touch it. Cleared by `approve`, and also written by the manual reopen.
+
+*The delta.* A wire-only `revised_earnings` on `TimesheetWeekSchema`, computed
+only when the week is `approved` AND flagged, from the same live branch
+`earningsFor` uses for unapproved weeks. It must never reach `exportWeekCsv` or
+the year-end tax read — both go through `frozenEarningsFor`, and a live
+estimate on a signed export is the hazard `timesheetQueryService.ts:484-487`
+already warns about.
+
+*One block, both roles.* `WeekTotal`'s `hoursChangedAfterPaymentNote` string
+prop becomes a pre-formatted `weekChanged` object (`headline` / `amountLabel` /
+`detail`), rendered with the same `Body → Figure28 → Small` anatomy as the
+appreciation block. `amountLabel === null` omits the figure entirely.
+`WeekMoneyCard` and `PaidStateSection` are untouched — "Paid" stays true *of
+the approved total*, and the block above now says what the approved total does
+not cover. The nanny sees the figure too: A8 governs the lock screen, not her
+own pay record on her own device.
+
+*Her route.* The existing `hours-flag-link` → `QueryNoteSheet` path already
+rendered in both shapes; it gained only a prefilled prefix, worded "About the
+2h 30m I logged…" rather than "I haven't been paid for" — she states a fact and
+continues in her own words. No new push, no new component, no new endpoint.
+
+**Every unknowable branch renders a sentence and no figure.** Missing
+`revised_earnings` (older API), a non-`ok` revised state, two different
+currencies, a week that shrank, and a `no_arrangement` receipt with no
+`gross_minor` at all. No `?? 0` exists anywhere in the new code. A fabricated
+£0.00 here is the figure that invites a second payment.
+
+**Two traps worth carrying forward.**
+
+**The minutes delta has a plausible wrong pair sitting next to the right one.**
+`timesheet.total_minutes` is `sumWorkedMinutes` over EVERY entry including
+`cancellation_paid` (`workedMinutes.ts:96`); `WeekEarnings.worked_minutes` is
+the engine's `worked` + `manual_adjustment` basis (`earningsService.ts:520,1051`).
+Subtracting one from the other compiles, looks right, and is wrong on any week
+with a paid cancellation — it would tell a nanny she logged hours she did not.
+Both operands must come from the same engine field. There is a guard comment at
+the call site; do not "simplify" it away.
+
+**Shape B is gated on `!reopen_reason`, which was not in the original design.**
+A *manual* reopen also writes `previous_approval`, but a manual reopen was
+never silent — the parent performed it, typed a reason, and `WeekTotal` already
+renders that reason. This block is for the demotion nobody performed. The
+manual reopen's receipt still earns its keep in `ApproveWeekDialog`'s
+supersedes line, which renders for both ways an approval was lost: approving
+again replaces a figure that really existed, and the parent should be told
+which one.
+
+**Deliberately not built**, so these read as decisions rather than oversights:
+no blocking or delaying a clock-out (the hours happened); the unpaid branch
+still demotes and clears (keeping a frozen gross over hours nobody signed off
+is D1's original hazard — demote, but keep the receipt); no deleting a payment
+row or mutating a frozen snapshot; no "re-approve in place" on a paid week; no
+auto-created top-up or auto-adjusted next week, which would fabricate an
+obligation the parent never agreed to — the manual `WeekAdjustmentSheet` path
+exists and the copy names it. The `timesheet_changed_after_approval` push and
+the two inbox kinds designed alongside this were scoped out by the owner and
+remain available.
+
+**`bun run qc` green: 10,553 tests, 0 failures.** The DB integration test
+(`apps/api/tests/integration/previousApproval.integration.test.ts`) proves the
+old-row read, the `else` arm and the paid branch against a real Postgres — it
+is the `bun run test:db` tier, so it does NOT run in `qc` and needs a live
+stack.
+
+---
+
+## D79a — A nanny who forgot to clock in cannot fix an approved week
+
+**Status:** OPEN · **Severity:** medium — a real dead end, on both sides
+
+Found while fixing D79. `createRetroactiveEntry` throws
+`TimeEntryNotEditableError('new', 'week_approved')`
+(`timesheetCommandService.ts:1059-1061`) and `updateEntry` matches (`:1126`).
+So a nanny who forgot Thursday and notices on Monday has **no path at all** —
+and if the week has been paid, the parent cannot reopen it for her either
+(`timesheets_refuse_reopen_when_paid`).
+
+The refusal is probably correct and should stay: a clock-out is a fact the app
+watched happen, a retroactive add is a claim about the past, and on a signed
+week a claim about the past needs the other party. What is missing is a
+**route** out of the refusal rather than a dead end — the same
+`QueryNoteSheet` thread D79 wired for the extra-hours case would serve, with a
+"I need to add 3h on Thursday" prefix, letting the parent answer with a reopen
+on an unpaid week or an adjustment on a paid one.
