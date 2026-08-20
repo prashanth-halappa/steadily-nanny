@@ -66,10 +66,10 @@ If the phones are on a different subnet, override: `LAN_IP=192.168.x.y scripts/d
 | Email | Becomes |
 |---|---|
 | `parent@steadilynanny.test` | Parent A, owner of Household A |
-| `coparent@steadilynanny.test` | Co-parent in Household A |
+| `coparent@steadilynanny.test` | parent in Household B |
 | `nanny@steadilynanny.test` | Nanny 1 (ends up in **both** households) |
 | `nanny2@steadilynanny.test` | Nanny 2 (Household A only) |
-| `otherparent@steadilynanny.test` | Parent B, owner of Household B |
+| `otherparent@steadilynanny.test` | Co-Parent A, owner of Household A |
 
 Households, children, invites, schedules and pay are all created **through the
 app** — that is what you are testing.
@@ -179,29 +179,29 @@ Also try, then undo:
 *Do not reset. Household A carries forward.*
 
 **Co-parent (physical iPhone)**
-- [ ] Parent A mints a **parent**-role invite (check the role picker actually
+- [x] Parent A mints a **parent**-role invite (check the role picker actually
       changes the minted role — it silently didn't, once)
-- [ ] Co-parent registers, joins, sees Household A's real data immediately
-- [ ] Parent A → Settings → Household: set approval mode to **ask_other**,
+- [x] Co-parent registers, joins, sees Household A's real data immediately
+- [x] Parent A → Settings → Household: set approval mode to **ask_other**,
       scope `short_notice_and_cancellations`, timeout 120 min
-- [ ] Parent A cancels a shift inside the short-notice window → co-parent is
+- [x] Parent A cancels a shift inside the short-notice window → co-parent is
       asked. Approve on the phone, confirm it goes through
-- [ ] Repeat and **decline**. Then repeat and let it sit — the timeout must
+- [x] Repeat and **decline**. Then repeat and let it sit — the timeout must
       eventually send it anyway
-- [ ] Switch to `owner_only`, confirm the co-parent is refused a change
-- [ ] Add a **second child** (Settings → Children) and confirm it appears on
+- [x] Switch to `owner_only`, confirm the co-parent is refused a change
+- [x] Add a **second child** (Settings → Children) and confirm it appears on
       the nanny's side
 
 **Nanny-first onboarding (Android, as a throwaway account)**
 This is the other entry door and it has its own failure mode. Register a fresh
 nanny account — email anything — pick **Nanny**, then choose **create** rather
 than join:
-- [ ] The draft household keeps all four tabs usable
-- [ ] Build a draft usual week and draft terms inside it
-- [ ] Mint the draft's invite; open it as a **parent** account
-- [ ] The parent absorbs the draft: assert the drafted week and terms survive
+- [x] The draft household keeps all four tabs usable
+- [x] Build a draft usual week and draft terms inside it
+- [x] Mint the draft's invite; open it as a **parent** account
+- [x] The parent absorbs the draft: assert the drafted week and terms survive
       absorption and arrive as a proposal, not as silently-accepted fact
-- [ ] Log the throwaway accounts out; Android now signs in as `nanny2@`
+- [x] Log the throwaway accounts out; Android now signs in as `nanny2@`
 
 ---
 
@@ -216,7 +216,7 @@ than join:
 - [ ] **The key assertion:** Nanny 2 accepting must not supersede, end, or
       touch Nanny 1's accepted week. Check both carers' schedules after
 - [ ] Try to book Nanny 2 over one of Nanny 1's existing blocks — an
-      **in-household** overlap must be refused
+      **in-household** overlap must get confirmatino before booking
 - [ ] Settings → Pay: assert each carer's terms, rate and history are separate
 - [ ] Nanny 1 must not see Nanny 2's rate anywhere
 

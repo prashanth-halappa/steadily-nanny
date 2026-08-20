@@ -2158,3 +2158,212 @@ My pay and the earnings breakdown do change — `earningsService` flips its
 `no_arrangement` arm to `ok` — but that is visible once hours exist, not at the
 moment of acceptance. The fix was to `LAUNCH-MANUAL-PASS.md` §4, which promised
 a visible change that the architecture does not make.
+
+---
+
+# D70–D74 — S3 manual pass (two nannies in one household), 2026-08-19
+
+Found by running §6 of `LAUNCH-MANUAL-PASS.md` on the local stack: Parent A on
+Sim A, Nanny 1 on Sim B, Nanny 2 on Android. Five reports, four defects.
+
+---
+
+## D70 — The parent was told the nanny had joined while she was still deciding whether to agree
+
+**Status:** FIXED · **Severity:** high — the app asserted an agreement that did not exist
+
+Reported as: the parent got a card saying Nanny 2 *had joined the household*
+while she was still inside the accept sheet — she had tapped "Agree to these
+terms", which opens a bottom sheet with a confirmation checkbox, and had not yet
+pressed **Agree**.
+
+The obvious suspect — an acceptance that fires on sheet open, or on the checkbox
+tick — is not what happened. That path is clean and was traced end to end:
+`proposal-agree-button` only sets local state (`ProposalReviewScreen.tsx:365`),
+`proposal-accept-checkbox` only sets local state (`AcceptTermsSheet.tsx:119`),
+and `useAcceptTerms` has exactly one call site, behind
+`proposal-accept-confirm`'s `canAgree` guard. Server-side,
+`notifyOfAcceptance` runs *after* the arrangement insert and the CAS resolve
+(`termsProposalCommandService.ts:355`), so the acceptance push cannot precede
+the write.
+
+The card was the parent's Today **moment card**, and its gate never mentioned
+terms at all — `TodayScreen.tsx:354`'s `recentNannyMember` filtered on
+`role === 'nanny'` plus 7-day recency and nothing else. On the parent-invite
+path `redeemInvite` writes the membership `ACTIVE` outright
+(`householdCommandService.ts:794-800`), so the card fires the instant the code
+is typed, days before any terms conversation. Its title —
+"{name} has joined {family}" — is the same in all four of its body variants,
+including the one whose body reads "They can clock in as soon as they agree to
+the terms you sent". Title and body contradicted each other, and the title is
+what gets read.
+
+Two things were wrong, and both are one predicate each:
+
+1. **The title claimed a settled state.** It now forks on `arrangement.data` —
+the same predicate the body already forked on — to
+`moments.nannyJoined.titleJoining` ("{name} is joining {family}") until an
+accepted pay arrangement exists. Literal `t()` per branch, never a ternary
+inside `t(...)`, or the locale-key guard cannot see the second key.
+2. **`candidate` memberships counted as joins.** `GET /households/:id/members`
+deliberately returns `candidate` rows (`householdMemberRepository.listNonRemovedByHousehold`),
+so on the draft-absorb path the card claimed a join for someone whose membership
+is explicitly *not yet* one. The gate now requires
+`status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE`, matching its sibling
+`hasNannyMember` twelve lines below, which had always checked it.
+
+The card still appears at redemption — the parent does need to know the code was
+used — it just no longer describes that as agreement. Generalised as
+**GOLDEN-FIXES #54**.
+
+---
+
+## D71 — The invite screen offered two primary buttons and no way to tell them apart
+
+**Status:** FIXED · **Severity:** low — no data at risk, but the screen asks a question it does not mean
+
+Reported as: minting a second nanny invite shows both "Generate invite code" and
+"Done", stacked, both filled, and it is not clear what "Done" does.
+
+Nothing was conditional about it. `ManageInviteScreen` rendered its own
+`invite-generate-button` as the last item of the scroll body, and
+`SetupScreenShell` *always* renders a pinned CTA below the scroll view
+(`SetupScreenShell.tsx:166-172`) — which this screen had wired to
+`invite.doneButton` → `router.back()`. Two different buttons from two different
+files, permanently coexisting in the pre-mint state. ("Done" was doing exactly
+what the Back button above it does, which is why it read as meaningless.)
+
+**Fix:** the pinned CTA is the only primary and changes with state — before a
+code is minted it is "Generate invite code" (`onGenerate`, disabled without a
+household id), after minting it is "Done". The body button is gone. The
+onboarding twin, `InviteScreen.tsx`, is a separate component whose CTA is
+"Continue" and was already correct; it was not touched.
+
+---
+
+## D72 — A household's second nanny had nowhere to be given a usual week
+
+**Status:** FIXED · **Severity:** high — a whole carer's schedule was unreachable through the UI
+
+Reported from S3: with Andrea and a second nanny in one household, the Schedule
+tab reads "Andrea's usual week is set · Change" and offers nothing for the
+second carer. The header above it already names both ("Andrea 3 days · Test
+Nanny Two 0 days"), so the tab clearly knew there were two.
+
+Nothing was wrong on the server. `GET /households/:id/schedule-patterns`
+returns a **list**, `schedule_patterns.carer_id` has always been per-carer, and
+supersede-on-accept is already scoped to `(household, carer)` — two concurrent
+accepted weeks for two carers is a supported state. The collapse was entirely
+client-side, in one line: `schedule.tsx:45` ran
+`resolveActivePattern(patterns.data ?? [])`, which ranks by status across **all**
+carers and returns one row, and handed it to a banner whose prop is
+`pattern: SchedulePattern | null` — singular by type, so nothing complained.
+Andrea's `accepted` week outranked the second carer's absence of one, and the
+banner spoke only for her. Two further places repeated the shape: the banner's
+own no-pattern fallback named `members.find(m => m.role === 'nanny')` — the
+FIRST nanny — and `SchedulePendingScreen` (the "Change" screen) iterated
+*patterns* rather than *carers*, so a carer with zero patterns produced zero
+sections and was invisible there too.
+
+Net effect: after `WeeklyHoursNotSetCard` on Today was dismissed (it is
+dismissible, and gated on agreed terms), a second nanny had **no** entry point
+anywhere in the product.
+
+**Fix — walk the carers and look the pattern up, never the reverse.** Both
+helpers already existed and one was already in use on Today:
+`resolvePerCarerPatterns` (`utils/patternPrecedence.ts`) and
+`useHouseholdCarers`. The Schedule tab now renders one `SchedulePatternBanner`
+per carer; the banner takes an explicit `carerId` (with `undefined` = "not
+passed, keep the old single-banner fallback" and `null` = "this household has no
+carer", so it can never borrow a different carer's name); the builder route
+accepts `?carerId=` and seeds the wizard's `selectedCarerId`, skipping its
+carer-picker step; and `SchedulePendingScreen` merges in carers with no pattern
+— but only once at least one section exists, so a fresh household still gets its
+single illustrated empty state rather than a bare CTA.
+
+A carer_id that appears only in the pattern list (unassigned draft, departed
+carer whose row survives) still gets a banner rather than being dropped.
+Generalised as **GOLDEN-FIXES #55**.
+
+---
+
+## D73 — A one-off shift could be booked into the past with nothing said
+
+**Status:** FIXED · **Severity:** medium — silent creation of a shift nobody can work
+
+Reported alongside D74: the usual-week flow appears to refuse the past, the
+one-off flow does not.
+
+There was no past-time guard anywhere on the one-off path — not in
+`isExtraShiftFormValid` (`extraShiftForm.ts:31-36`, which only checks shape and
+`end > start`), not in the client zod (`changeRequests.ts`), not in the API zod
+(`shift/schemas.ts:121-139`), and not in `createExtraShift`. The date field also
+passed no `minimumDate`, though `DateTimeField` supports one. Since the form
+defaults to *today*, "today 09:00" submitted at 15:00 is the ordinary case, not
+an exotic one — and the agenda's uncovered-slot prefill points straight at it.
+
+The usual week was never explicitly guarded either. Its protection is a
+side-effect of materialisation: `scheduleMaterialisationService.ts:363-375`
+only creates occurrences with `startsAt > now`, so today's already-started
+occurrence is skipped and the week appears to "start tomorrow". Two different
+mechanisms, one of which does not exist on the other path.
+
+**Fix — confirm, do not refuse.** Backfilling a shift that already happened is
+legitimate (it is how a parent logs something after the fact) and nothing in the
+product forbids it, so a hard block would be wrong. `handleSubmit` now runs the
+pre-submit check through the new pure helper
+`domains/schedule/utils/extraShiftWarnings.ts` and, for a past start, defers into
+the **existing** confirm dialog the screen already used for busy-block clashes —
+`shifts.extraPastTitle` ("That start time has already passed.") over the same
+"Create anyway?" body. No second dialog, no server change.
+
+Watch out for the trap this set: `ExtraShiftScreen.clash.test.tsx` used a fixed
+fixture date of `2026-08-10`, which quietly became the past and made that suite
+start exercising the new dialog instead of the busy-block one. It now pins the
+clock with `setSystemTime`. **Any suite with a hard-coded date and a now-relative
+guard needs the clock pinned, or it rots into testing something else.**
+
+---
+
+## D74 — "An in-household overlap must be refused" was never true, and should not be
+
+**Status:** NOT A DEFECT (the refusal claim) · behaviour changed to a confirmation
+
+Reported as: booking Nanny 2 over one of Nanny 1's existing blocks is not
+refused, per `LAUNCH-MANUAL-PASS.md` §6 — *and it should not be, because a
+family may genuinely need both carers at once.*
+
+The code was right and the test plan was wrong. `015_shifts.sql:14-19` states
+the rule outright — *"NO OVERLAP CONSTRAINT, DELIBERATELY … a household may
+double-book while it sorts cover out"*. The one refusing constraint that does
+exist, `shifts_carer_window_excl` (`104_schedule_invariants.sql:164-176`), is
+keyed `carer_id with =`, so two **different** carers can never collide by
+construction. No design doc ever asked for a cross-carer refusal;
+`docs/design/screens-schedule.md` §8 says two nannies are "two independent
+agreements" and states no overlap rule between them.
+
+Where the false expectation came from: `docs/AS-BUILT-SCHEDULE.md`'s S4 row
+summarised WP-S1b as *"in-household overlap refused"*, which reads as a blanket
+rule when the shipped constraint is same-carer only. That line now says so
+explicitly.
+
+**What changed instead (owner decision):** overlap between two different carers
+now raises a confirmation before creating — `shifts.extraHouseholdOverlapTitle`
+("{name} is already booked then.") in the same dialog as D73 — and creation
+proceeds on confirm. Legal, visible, not blocked.
+
+**One thing was genuinely broken here**, and is fixed: the same-carer 409 the DB
+*does* raise had no client-side reading. `SHIFT_OVERLAP` appears nowhere in
+`packages/shared-types/src/errorCodes.ts` or in `apps/mobile/src`, so a parent
+double-booking one nanny against herself got a generic failure. The screen now
+detects that case before submitting and says
+`shifts.extraSameCarerConflict` ("{name} already has a shift then. Pick another
+time.") — deliberately **not** a "Create anyway" dialog, because the database
+will refuse it and offering the choice would be a lie.
+
+Also fixed in passing: `intervalsOverlap` (`domains/timeOff/utils/busyConflict.ts`)
+compared ISO timestamps as **strings**. One side is built locally by
+`wallClockToUtcIso` (`…T09:00:00.000Z`), the other comes from the API where a
+`timestamptz` can serialise as `…T09:00:00+00:00`, and `'+'` sorts before `'.'` —
+so the same instant could compare as earlier. It parses now. The pre-existing
+time-off caller had the same latent exposure.

@@ -17,7 +17,7 @@
 | S1 | Fixed in WP-S1 |
 | S2 | Fixed in WP-J1/J2. Decided: "job-health job, no Sentry — D-58 stands" |
 | S3 | Fixed in WP-S1 |
-| S4 | Fixed in WP-S1b. Decided: "in-household overlap refused; cross-household advisory + persisted" |
+| S4 | Fixed in WP-S1b. Decided: "in-household overlap refused; cross-household advisory + persisted" — **"in-household" here means the SAME CARER against herself** (`shifts_carer_window_excl` is keyed `carer_id with =`). Two DIFFERENT carers overlapping inside one household is legal and always was (`015_shifts.sql`); since D74 the parent confirms it in a dialog rather than being refused. This line read as a blanket refusal and sent a manual pass hunting for one that never existed. |
 | S5 | Fixed in WP-S1 |
 | S6 | Fixed in WP-S2. Decided: "parent-side age only, no expiry" |
 | S7 | Fixed in WP-S2. Decided: "per-carer everywhere" |
