@@ -63,8 +63,8 @@ function NannyWeekWidgetView(
   const CARD = dark ? '#241C26' : '#FFFFFF';
   const PLUM = dark ? '#C9A2CB' : '#5B3E5D';
   const OCHRE = dark ? '#E0B061' : '#C08A3E';
-  const GREEN = dark ? '#6FB98A' : '#4A7A5C';
-  const TERRACOTTA = dark ? '#E89A63' : '#C4693A';
+  const _GREEN = dark ? '#6FB98A' : '#4A7A5C';
+  const _TERRACOTTA = dark ? '#E89A63' : '#C4693A';
   const GREEN_INK = dark ? '#6FB98A' : '#2F5A42';
   const TERRACOTTA_INK = dark ? '#F0B189' : '#7E3C1B';
 

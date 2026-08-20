@@ -51,14 +51,14 @@ import { ErrorState } from '@/src/components/custom/ErrorState';
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { MomentCard } from '@/src/components/ui/moment-card';
-import { ScreenWash } from '@/src/components/ui/screen-wash';
 import { SkeletonShimmer } from '@/src/components/ui/skeleton-shimmer';
 import { Text } from '@/src/components/ui/text';
-import { H1 } from '@/src/components/ui/typography';
+import { Body, H1 } from '@/src/components/ui/typography';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { DEFAULT_WEEK_STARTS_ON } from '@/src/domains/timesheet/utils/week';
 import { useAcceptTerms } from '@/src/hooks/mutations/useAcceptTerms';
 import { useCounterTerms } from '@/src/hooks/mutations/useCounterTerms';
+import { useDeclineTerms } from '@/src/hooks/mutations/useDeclineTerms';
 import { useMarkProposalViewed } from '@/src/hooks/mutations/useMarkProposalViewed';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useHouseholdById } from '@/src/hooks/queries/useHouseholdById';
@@ -79,6 +79,7 @@ import {
 } from '../utils/proposalTerms';
 import { AcceptTermsSheet } from './AcceptTermsSheet';
 import { BackRow } from './BackRow';
+import { DeclineTermsDialog } from './DeclineTermsDialog';
 import { PayChangeSheet } from './PayChangeSheet';
 import { ProposalTermsDocument } from './ProposalTermsDocument';
 
@@ -144,9 +145,11 @@ export function ProposalReviewScreen() {
     data?.carer_id ?? ''
   );
   const markViewed = useMarkProposalViewed(proposalId);
+  const decline = useDeclineTerms(proposalId);
 
   const [acceptOpen, setAcceptOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
+  const [declineOpen, setDeclineOpen] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const openedAt = useRef(Date.now());
 
@@ -279,6 +282,19 @@ export function ProposalReviewScreen() {
       .catch(() => undefined);
   };
 
+  // B4 — the counterparty's refusal. `useDeclineTerms` already reports a
+  // failure via its own toast (same shape as `useWithdrawTerms`), so there is
+  // nothing further to render here on catch.
+  const handleDecline = () => {
+    decline
+      .mutateAsync()
+      .then(() => {
+        setDeclineOpen(false);
+        router.back();
+      })
+      .catch(() => undefined);
+  };
+
   if (agreed) {
     // `/settings/pay` is the PARENT's management surface — a carer is
     // gated to `pay-not-available` there (PayArrangementScreen's
@@ -287,136 +303,150 @@ export function ProposalReviewScreen() {
     const continueToTerms = () =>
       router.replace(isNanny ? '/settings/my-pay' : '/settings/pay');
     return (
-      <View className="flex-1 bg-background">
-        <ScreenWash kind="brand" />
-        <ScrollView
-          testID="proposal-review-screen"
-          className="flex-1 bg-background"
-          contentContainerStyle={SCREEN_CONTENT_STYLE}
-          refreshControl={refreshControl}
-        >
-          <MomentCard
-            testID="terms-agreed-moment"
-            illustration="emptyPay"
-            title={t('moments.termsAgreed.title', { name: counterpartyName })}
-            body={t('moments.termsAgreed.body', {
-              rate: formatMoney(arrangement.rate_minor, arrangement.currency),
-              date: formatDisplayDateWithYear(arrangement.valid_from),
-            })}
-            action={{
-              label: t('moments.termsAgreed.cta'),
-              onPress: continueToTerms,
-              testID: 'terms-agreed-continue',
-            }}
-            momentKey={`termsAgreed:${data.id}`}
-          />
-        </ScrollView>
-      </View>
-    );
-  }
-
-  return (
-    <View className="flex-1 bg-background">
-      <ScreenWash kind="brand" />
       <ScrollView
         testID="proposal-review-screen"
         className="flex-1 bg-background"
         contentContainerStyle={SCREEN_CONTENT_STYLE}
         refreshControl={refreshControl}
       >
-        <BackRow
-          testID="proposal-back"
-          onPress={() => router.back()}
-          label={tCommon('back')}
-        />
-        <H1 testID="proposal-title" className="mt-1">
-          {isNanny
-            ? t('proposal.reviewTitleFamily', { name: counterpartyName })
-            : t('proposal.reviewTitle', { name: data.carer_display_name })}
-        </H1>
-
-        <Card testID="proposal-document-card" tone="default" className="mt-4">
-          <CardContent>
-            <ProposalTermsDocument
-              proposal={data}
-              chain={chain}
-              viewerId={userId ?? ''}
-              counterpartyName={counterpartyName}
-              timezone={household?.timezone ?? 'UTC'}
-            />
-          </CardContent>
-        </Card>
-
-        {canRespond ? (
-          <View className="mt-6 gap-2">
-            <Button
-              testID="proposal-agree-button"
-              size="lg"
-              onPress={() => setAcceptOpen(true)}
-            >
-              <Text>{t('proposal.agreeButton')}</Text>
-            </Button>
-            <Button
-              testID="proposal-counter-button"
-              variant="outline"
-              onPress={() => setCounterOpen(true)}
-            >
-              <Text className="text-foreground">
-                {t('proposal.counterButton')}
-              </Text>
-            </Button>
-          </View>
-        ) : null}
-
-        <AcceptTermsSheet
-          visible={acceptOpen}
-          proposal={data}
-          accepterRole={isNanny ? 'carer' : 'parent'}
-          isSubmitting={accept.isPending}
-          isError={accept.isError}
-          isOnline={isOnline}
-          onAgree={handleAgree}
-          onDismiss={() => setAcceptOpen(false)}
-        />
-
-        {/* 3-U1's form, pre-filled from the proposal. D-16 is live server-side,
-            so a future `valid_from` — the NORMAL interview case — passes
-            straight through; nothing here clamps it to today (§7.4). */}
-        <PayChangeSheet
-          mode="propose"
-          counterpartyName={counterpartyName}
-          visible={counterOpen}
-          onDismiss={() => setCounterOpen(false)}
-          onSubmit={terms => {
-            counter
-              .mutateAsync({ terms, supersedes_id: data.id })
-              .then(() => {
-                analytics.track(ANALYTICS_EVENTS.PROPOSAL_COUNTERED, {
-                  proposal_id: data.id,
-                  round,
-                  by_role: isNanny ? 'carer' : 'parent',
-                });
-                setCounterOpen(false);
-                router.back();
-              })
-              // Failure renders inline INSIDE the sheet (GOLDEN #40), which
-              // stays open with every typed value intact.
-              .catch(() => undefined);
+        <MomentCard
+          testID="terms-agreed-moment"
+          illustration="emptyPay"
+          title={t('moments.termsAgreed.title', { name: counterpartyName })}
+          body={t('moments.termsAgreed.body', {
+            rate: formatMoney(arrangement.rate_minor, arrangement.currency),
+            date: formatDisplayDateWithYear(arrangement.valid_from),
+          })}
+          action={{
+            label: t('moments.termsAgreed.cta'),
+            onPress: continueToTerms,
+            testID: 'terms-agreed-continue',
           }}
-          isSubmitting={counter.isPending}
-          submitError={counter.isError ? t('proposal.sendFailed') : null}
-          currentArrangement={arrangement}
-          householdCancellationDefaultHours={
-            household?.cancellation_paid_within_hours ?? 0
-          }
-          householdTimezone={household?.timezone ?? 'UTC'}
-          householdWeekStartsOn={
-            household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON
-          }
-          todayISO={localDateInZone(household?.timezone ?? 'UTC')}
-          initialEffectiveDateISO={arrangement.valid_from}
+          momentKey={`termsAgreed:${data.id}`}
         />
       </ScrollView>
-    </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      testID="proposal-review-screen"
+      className="flex-1 bg-background"
+      contentContainerStyle={SCREEN_CONTENT_STYLE}
+      refreshControl={refreshControl}
+    >
+      <BackRow
+        testID="proposal-back"
+        onPress={() => router.back()}
+        label={tCommon('back')}
+      />
+      <H1 testID="proposal-title" className="mt-1">
+        {isNanny
+          ? t('proposal.reviewTitleFamily', { name: counterpartyName })
+          : t('proposal.reviewTitle', { name: data.carer_display_name })}
+      </H1>
+      <Body
+        testID="proposal-not-agreed-yet"
+        className="mt-2 text-muted-foreground"
+      >
+        {t('proposal.notAgreedYet')}
+      </Body>
+
+      <View className="mt-4">
+        <ProposalTermsDocument
+          proposal={data}
+          chain={chain}
+          viewerId={userId ?? ''}
+          counterpartyName={counterpartyName}
+          timezone={household?.timezone ?? 'UTC'}
+        />
+      </View>
+
+      {canRespond ? (
+        <View className="mt-6 gap-2">
+          <Button
+            testID="proposal-agree-button"
+            size="lg"
+            onPress={() => setAcceptOpen(true)}
+          >
+            <Text>{t('proposal.agreeButton')}</Text>
+          </Button>
+          <Button
+            testID="proposal-counter-button"
+            variant="outline"
+            onPress={() => setCounterOpen(true)}
+          >
+            <Text className="text-foreground">
+              {t('proposal.counterButton')}
+            </Text>
+          </Button>
+          <Button
+            testID="proposal-decline-button"
+            variant="ghost"
+            onPress={() => setDeclineOpen(true)}
+          >
+            <Text className="text-foreground">
+              {t('proposal.declineButton')}
+            </Text>
+          </Button>
+        </View>
+      ) : null}
+
+      <AcceptTermsSheet
+        visible={acceptOpen}
+        proposal={data}
+        accepterRole={isNanny ? 'carer' : 'parent'}
+        isSubmitting={accept.isPending}
+        isError={accept.isError}
+        isOnline={isOnline}
+        onAgree={handleAgree}
+        onDismiss={() => setAcceptOpen(false)}
+      />
+
+      <DeclineTermsDialog
+        open={declineOpen}
+        onOpenChange={setDeclineOpen}
+        onConfirm={handleDecline}
+        isSubmitting={decline.isPending}
+      />
+
+      {/* 3-U1's form, pre-filled from the proposal. D-16 is live server-side,
+          so a future `valid_from` — the NORMAL interview case — passes
+          straight through; nothing here clamps it to today (§7.4). */}
+      <PayChangeSheet
+        mode="propose"
+        counterpartyName={counterpartyName}
+        visible={counterOpen}
+        onDismiss={() => setCounterOpen(false)}
+        onSubmit={terms => {
+          counter
+            .mutateAsync({ terms, supersedes_id: data.id })
+            .then(() => {
+              analytics.track(ANALYTICS_EVENTS.PROPOSAL_COUNTERED, {
+                proposal_id: data.id,
+                round,
+                by_role: isNanny ? 'carer' : 'parent',
+              });
+              setCounterOpen(false);
+              router.back();
+            })
+            // Failure renders inline INSIDE the sheet (GOLDEN #40), which
+            // stays open with every typed value intact.
+            .catch(() => undefined);
+        }}
+        isSubmitting={counter.isPending}
+        submitError={counter.isError ? t('proposal.sendFailed') : null}
+        currentArrangement={arrangement}
+        householdCancellationDefaultHours={
+          household?.cancellation_paid_within_hours ?? 0
+        }
+        householdTimezone={household?.timezone ?? 'UTC'}
+        householdWeekStartsOn={
+          household?.week_starts_on ?? DEFAULT_WEEK_STARTS_ON
+        }
+        todayISO={localDateInZone(household?.timezone ?? 'UTC')}
+        initialEffectiveDateISO={arrangement.valid_from}
+      />
+    </ScrollView>
   );
 }

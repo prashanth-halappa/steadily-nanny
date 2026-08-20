@@ -1,5 +1,10 @@
 import type * as React from 'react';
-import { type Text as RNText, type TextProps, View, type ViewProps } from 'react-native';
+import {
+  type Text as RNText,
+  type TextProps,
+  View,
+  type ViewProps,
+} from 'react-native';
 import { cn } from '@/lib/utils';
 import { TextClassContext } from '@/src/components/ui/text';
 import { H4, Small } from '@/src/components/ui/typography';
