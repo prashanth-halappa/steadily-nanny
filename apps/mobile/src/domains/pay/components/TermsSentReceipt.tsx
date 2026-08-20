@@ -103,7 +103,7 @@ export function TermsSentReceipt({
     : t('receipt.notOpened');
 
   return (
-    <Card testID={testID} provisional>
+    <Card testID={testID} tone="positive" provisional>
       <CardContent className="gap-2">
         <Body testID={`${testID}-title`} weight="medium">
           {t('receipt.sentTo', { name: counterpartyName, date: sentDate })}
@@ -117,14 +117,11 @@ export function TermsSentReceipt({
         <Body testID={`${testID}-consequence`} className="text-muted-strong">
           {consequence}
         </Body>
-        <Small testID={`${testID}-seen`} className="text-muted-foreground">
+        <Small testID={`${testID}-seen`} className="text-muted-strong">
           {seenLine}
         </Small>
         {remindedAt ? (
-          <Small
-            testID={`${testID}-reminded`}
-            className="text-muted-foreground"
-          >
+          <Small testID={`${testID}-reminded`} className="text-muted-strong">
             {t('receipt.reminded', {
               date: formatShortDate(
                 localDateInZone(householdTimezone, new Date(remindedAt))
@@ -135,7 +132,7 @@ export function TermsSentReceipt({
         {!remindedAt && remindTooSoon ? (
           <Small
             testID={`${testID}-remind-too-soon`}
-            className="text-muted-foreground"
+            className="text-muted-strong"
           >
             {t('receipt.remindTooSoon')}
           </Small>

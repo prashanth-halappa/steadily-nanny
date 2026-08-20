@@ -65,6 +65,8 @@ function NannyWeekWidgetView(
   const OCHRE = dark ? '#E0B061' : '#C08A3E';
   const GREEN = dark ? '#6FB98A' : '#4A7A5C';
   const TERRACOTTA = dark ? '#E89A63' : '#C4693A';
+  const GREEN_INK = dark ? '#6FB98A' : '#2F5A42';
+  const TERRACOTTA_INK = dark ? '#F0B189' : '#7E3C1B';
 
   const family = env.widgetFamily;
   const isAccessory = family === 'accessoryRectangular';
@@ -174,9 +176,9 @@ function NannyWeekWidgetView(
     props.tone === 'ochre'
       ? OCHRE
       : props.tone === 'green'
-        ? GREEN
+        ? GREEN_INK
         : props.tone === 'terracotta'
-          ? TERRACOTTA
+          ? TERRACOTTA_INK
           : MUTED;
 
   // `@expo/ui` hex strings are #RRGGBBAA — alpha LAST. `expo-modules-core`'s

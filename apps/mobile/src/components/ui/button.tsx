@@ -28,7 +28,7 @@ const buttonVariants = cva(
         // min-h, not h: an L1 button's label carries times and can wrap —
         // a fixed height clips the second line instead of growing.
         lg: 'min-h-[44px] rounded-button px-8 py-2 native:min-h-[56px] native:py-3',
-        icon: 'h-10 w-10',
+        icon: 'h-touch w-touch',
       },
     },
     defaultVariants: {

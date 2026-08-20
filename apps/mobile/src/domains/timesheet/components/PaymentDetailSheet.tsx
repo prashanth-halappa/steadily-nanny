@@ -32,6 +32,7 @@ import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { Icon } from '@/lib/icons/iconWithClassName';
 import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
+import { Button } from '@/src/components/ui/button';
 import {
   Body,
   Caption,
@@ -258,16 +259,15 @@ export function PaymentDetailSheet({
           </Caption>
 
           {onCorrectPress && payment.kind !== 'correction' ? (
-            <Pressable
+            <Button
               testID={`${testID}-correct`}
-              accessibilityRole="button"
+              variant="secondary"
+              size="sm"
+              className="self-start"
               onPress={() => onCorrectPress(payment)}
-              className="self-start py-2"
             >
-              <Body className="text-primary">
-                {t('payments.detail.correctAction')}
-              </Body>
-            </Pressable>
+              {t('payments.detail.correctAction')}
+            </Button>
           ) : null}
 
           {onFlagPress ? (

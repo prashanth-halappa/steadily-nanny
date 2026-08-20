@@ -109,22 +109,28 @@ export function NeedsAttentionCard() {
         <H3 className="flex-1">{titleForItem(headline, t, timeZone)}</H3>
       </View>
       {deadline ? (
-        <MetadataLabel className="text-destructive">{deadline}</MetadataLabel>
+        <MetadataLabel className="text-error-inline-text">
+          {deadline}
+        </MetadataLabel>
       ) : null}
       {moreCount > 0 ? (
-        <Body className="text-muted-foreground">
+        <Body
+          className={
+            tone === 'attention' ? 'text-muted-strong' : 'text-muted-foreground'
+          }
+        >
           {t('needsAttentionCard.moreItems', { count: moreCount })}
         </Body>
       ) : null}
       <View className="gap-2">
         <Button
           testID="today-needs-attention-cta"
-          className="w-full"
+          variant={tone === 'attention' ? 'default' : 'ghost'}
+          size={tone === 'attention' ? 'lg' : 'default'}
+          className={tone === 'attention' ? 'w-full' : 'self-start px-0'}
           onPress={() => router.push(hrefForItem(headline))}
         >
-          <Text className="text-primary-foreground font-medium">
-            {ctaForItem(headline, t)}
-          </Text>
+          <Text className="font-medium">{ctaForItem(headline, t)}</Text>
         </Button>
         {moreCount > 0 ? (
           <Button
