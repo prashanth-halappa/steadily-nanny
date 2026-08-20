@@ -4,7 +4,7 @@
  * The parent's pending-expenses review (TIER0-CX-SPEC.md §6.2):
  * `BottomSheetBase`, `sheetId="expense-review"`. One card per pending item
  * — date, description, and amount OR miles — with "Approve" (default) and
- * "Not this one" (`variant="ghost"`, `text-destructive`), the latter
+ * "Not this one" (`variant="secondary"`, destructive ink), the latter
  * revealing an optional note before "Send".
  *
  * OWNER RULING (binding, overrides the spec's own worked example of
@@ -121,7 +121,7 @@ function ReviewCard({
         <View className="gap-1">
           <Small
             testID={`expense-review-card-${expense.id}-mileage-error`}
-            className="text-destructive"
+            className="text-error-inline-text"
           >
             {t('reviewSheet.noMileageRateError')}
           </Small>
@@ -147,7 +147,7 @@ function ReviewCard({
         // forever. Rejecting still works, so the parent keeps an action.
         <Small
           testID={`expense-review-card-${expense.id}-week-locked-error`}
-          className="text-destructive"
+          className="text-error-inline-text"
         >
           {t('reviewSheet.weekLockedError')}
         </Small>
@@ -156,7 +156,7 @@ function ReviewCard({
       {showGenericError ? (
         <Small
           testID={`expense-review-card-${expense.id}-error`}
-          className="text-destructive"
+          className="text-error-inline-text"
         >
           {t('reviewSheet.reviewFailedGeneric')}
         </Small>
@@ -191,11 +191,11 @@ function ReviewCard({
           </Button>
           <Button
             testID={`expense-review-card-${expense.id}-reject`}
-            variant="ghost"
+            variant="secondary"
             disabled={isSubmitting}
             onPress={() => setIsRejecting(true)}
           >
-            <Text className="text-destructive">
+            <Text className="text-error-inline-text">
               {t('reviewSheet.rejectButton')}
             </Text>
           </Button>

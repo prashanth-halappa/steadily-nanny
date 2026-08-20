@@ -37,7 +37,8 @@ import {
   AlertDialogTitle,
 } from '@/src/components/ui/alert-dialog';
 import { BackButton } from '@/src/components/ui/back-button';
-import { buttonVariants } from '@/src/components/ui/button';
+import { Button, buttonVariants } from '@/src/components/ui/button';
+import { Card } from '@/src/components/ui/card';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { PersonAvatar } from '@/src/components/ui/person-avatar';
 import { Text } from '@/src/components/ui/text';
@@ -60,17 +61,19 @@ function ProfileRow({
   testID,
   label,
   onPress,
+  showDivider = false,
 }: {
   testID: string;
   label: string;
   onPress: () => void;
+  showDivider?: boolean;
 }) {
   return (
     <Pressable
       testID={testID}
       accessibilityRole="button"
       onPress={onPress}
-      className="flex-row items-center justify-between rounded-row border border-border bg-background px-4 py-3"
+      className={showDivider ? 'border-border border-t px-4 py-3' : 'px-4 py-3'}
     >
       <Body>{label}</Body>
     </Pressable>
@@ -209,7 +212,7 @@ export function CarerProfileScreen() {
         ) : null}
       </View>
 
-      <View className="mt-6 gap-2">
+      <Card className="mt-6 overflow-hidden p-0">
         <ProfileRow
           testID="carer-profile-pay-row"
           label={t('carerProfile.payRow')}
@@ -218,6 +221,7 @@ export function CarerProfileScreen() {
         <ProfileRow
           testID="carer-profile-availability-row"
           label={t('carerProfile.availabilityRow')}
+          showDivider
           onPress={() =>
             router.push(
               `/settings/carer-availability?carerId=${carerId}` as Href
@@ -227,20 +231,21 @@ export function CarerProfileScreen() {
         <ProfileRow
           testID="carer-profile-time-off-row"
           label={t('carerProfile.timeOffRow')}
+          showDivider
           onPress={() => router.push('/settings/household-time-off' as Href)}
         />
-      </View>
+      </Card>
 
-      <Pressable
+      <Button
         testID="carer-profile-remove-button"
-        accessibilityRole="button"
+        variant="ghost"
+        className="mt-6 self-start px-0"
         onPress={() => setConfirmingRemove(true)}
-        className="mt-6 rounded-row border border-border bg-background px-4 py-3"
       >
-        <Small className="text-destructive">
+        <Text className="text-error-inline-text">
           {t('carerProfile.removeButton')}
-        </Small>
-      </Pressable>
+        </Text>
+      </Button>
 
       <AlertDialog
         open={confirmingRemove}

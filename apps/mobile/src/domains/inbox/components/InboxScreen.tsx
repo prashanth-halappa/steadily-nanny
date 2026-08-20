@@ -15,6 +15,7 @@ import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
+import { Card } from '@/src/components/ui/card';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { PersonAvatar } from '@/src/components/ui/person-avatar';
@@ -32,7 +33,6 @@ import {
   titleForItem,
 } from '@/src/domains/inbox/utils/inboxItemCopy';
 import { useHouseholdLookup } from '@/src/hooks/queries/useHouseholdById';
-import { useElevation } from '~/lib/design-tokens/elevation';
 
 // `ScreenHeader` owns the band's own top+horizontal padding (Rule H), so the
 // ScrollView's contentContainerStyle can't also carry SCREEN_CONTENT_STYLE's
@@ -45,7 +45,6 @@ const CONTENT_STYLE = {
 export function InboxScreen() {
   const { t } = useTranslation('inbox');
   const router = useRouter();
-  const elevation = useElevation();
   const { timeZoneFor } = useHouseholdLookup();
   const { items, isLoading, isError, refetch } = useInboxItems();
   const { refreshControl } = usePullToRefresh();
@@ -107,46 +106,53 @@ export function InboxScreen() {
             <Body testID="inbox-lead" className="text-muted-foreground">
               {t('lead', { count: items.length })}
             </Body>
-            {items.map(item => {
-              const person = personOf(item);
-              // Deliberately cross-household (module doc) — each row
-              // formats in ITS OWN household's zone, never a single one
-              // applied to the whole list.
-              const itemTimeZone = timeZoneFor(householdIdOf(item));
-              return (
-                <Pressable
-                  key={`${item.kind}-${item.id}`}
-                  testID={`inbox-item-${item.kind}-${item.id}`}
-                  accessibilityRole="button"
-                  onPress={() => router.push(hrefForItem(item))}
-                  className="flex-row items-center gap-3 rounded-row bg-card p-4"
-                  style={elevation.row}
-                >
-                  {person ? (
-                    <PersonAvatar
-                      testID={`inbox-item-avatar-${item.id}`}
-                      name={person.name}
-                      colour={person.colour}
-                      size="sm"
-                    />
-                  ) : null}
-                  <View className="min-w-0 flex-1 gap-1">
-                    <MetadataLabel
-                      testID={`inbox-item-kind-${item.kind}`}
-                      className="text-muted-foreground"
-                    >
-                      {t(`kinds.${item.kind}`)}
-                    </MetadataLabel>
-                    <Body weight="semibold">
-                      {titleForItem(item, t, itemTimeZone)}
-                    </Body>
-                    <Small className="text-muted-foreground">
-                      {subtitleForItem(item, t, itemTimeZone)}
-                    </Small>
-                  </View>
-                </Pressable>
-              );
-            })}
+            {/* The group card owns the lift via Card's internal useElevation;
+                rows stay flat inside it per Rule D. */}
+            <Card className="overflow-hidden p-0">
+              {items.map((item, index) => {
+                const person = personOf(item);
+                // Deliberately cross-household (module doc) — each row
+                // formats in ITS OWN household's zone, never a single one
+                // applied to the whole list.
+                const itemTimeZone = timeZoneFor(householdIdOf(item));
+                return (
+                  <Pressable
+                    key={`${item.kind}-${item.id}`}
+                    testID={`inbox-item-${item.kind}-${item.id}`}
+                    accessibilityRole="button"
+                    onPress={() => router.push(hrefForItem(item))}
+                    className={
+                      index === 0
+                        ? 'flex-row items-center gap-3 p-4'
+                        : 'border-border border-t flex-row items-center gap-3 p-4'
+                    }
+                  >
+                    {person ? (
+                      <PersonAvatar
+                        testID={`inbox-item-avatar-${item.id}`}
+                        name={person.name}
+                        colour={person.colour}
+                        size="sm"
+                      />
+                    ) : null}
+                    <View className="min-w-0 flex-1 gap-1">
+                      <MetadataLabel
+                        testID={`inbox-item-kind-${item.kind}`}
+                        className="text-muted-foreground"
+                      >
+                        {t(`kinds.${item.kind}`)}
+                      </MetadataLabel>
+                      <Body weight="semibold">
+                        {titleForItem(item, t, itemTimeZone)}
+                      </Body>
+                      <Small className="text-muted-foreground">
+                        {subtitleForItem(item, t, itemTimeZone)}
+                      </Small>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </Card>
           </View>
         )}
       </View>

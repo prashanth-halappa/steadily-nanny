@@ -242,7 +242,11 @@ function UncoveredRow({
           </H4>
           <StatusPill variant="uncovered" label={t('cover.rowPill')} />
         </View>
-        <Small className="text-muted-strong">{causeLabel}</Small>
+        <Small
+          className={isPrimary ? 'text-muted-strong' : 'text-muted-foreground'}
+        >
+          {causeLabel}
+        </Small>
       </View>
       {showActions ? (
         <View className="gap-2">

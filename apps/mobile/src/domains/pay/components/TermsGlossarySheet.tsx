@@ -132,7 +132,7 @@ export function TermsGlossarySheet({
             </Body>
             <Body
               testID="terms-glossary-sheet-definition"
-              className="text-muted-strong"
+              className="text-muted-foreground"
             >
               {t(keys.definition)}
             </Body>

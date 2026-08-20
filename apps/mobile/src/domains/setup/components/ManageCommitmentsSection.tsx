@@ -30,7 +30,7 @@ import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { Text } from '@/src/components/ui/text';
-import { Body, H3, Small } from '@/src/components/ui/typography';
+import { Body, H4, Small } from '@/src/components/ui/typography';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
 import {
   buildWeeklyRrule,
@@ -152,7 +152,7 @@ export function ManageCommitmentsSection({
 
   return (
     <Card testID={`manage-commitments-${childId}`} className="gap-3 p-3">
-      <H3>{t('careHours.sectionTitle')}</H3>
+      <H4>{t('careHours.sectionTitle')}</H4>
       <Small className="text-muted-foreground">
         {t('careHours.sectionBody', { childName })}
       </Small>
