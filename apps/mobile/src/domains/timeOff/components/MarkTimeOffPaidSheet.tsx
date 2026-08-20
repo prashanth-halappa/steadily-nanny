@@ -231,7 +231,7 @@ export function MarkTimeOffPaidSheet({
             {isOverBalance ? (
               <Small
                 testID="pto-mark-paid-over-balance-warning"
-                className="text-warning-strong"
+                className="text-warning-ink"
               >
                 {t('markPaidSheet.overBalanceWarning', {
                   after: formatSignedHours(afterMinutes ?? 0),

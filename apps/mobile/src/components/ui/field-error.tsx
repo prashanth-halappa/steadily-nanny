@@ -14,7 +14,7 @@ function FieldError({ className, children, ...props }: FieldErrorProps) {
   return (
     <Caption
       accessibilityRole="alert"
-      className={cn('mt-2 text-destructive', className)}
+      className={cn('mt-2 text-error-inline-text', className)}
       {...props}
     >
       {children}

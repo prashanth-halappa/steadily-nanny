@@ -30,6 +30,7 @@ import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
+import { Card } from '@/src/components/ui/card';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Switch } from '@/src/components/ui/switch';
 import { Text } from '@/src/components/ui/text';
@@ -225,85 +226,94 @@ export function HouseholdHolidaysScreen() {
           {t('holidays.readOnlyNote')}
         </Small>
       )}
-      {catalog.map(entry => (
-        <View
-          key={entry.key}
-          className="flex-row items-center justify-between gap-3"
-        >
-          <View className="flex-1 gap-1">
-            <Body weight="medium">{t(`holidays.names.${entry.key}`)}</Body>
-            {entry.date ? (
-              <Small className="text-muted-foreground">
-                {formatDisplayDateWithYear(entry.date)}
-              </Small>
-            ) : null}
-          </View>
-          <Switch
-            testID={`holiday-toggle-${entry.key}`}
-            checked={observedByKey[entry.key] === true}
-            onCheckedChange={next => handleToggle(entry.key, next)}
-            disabled={!canEdit}
-          />
-        </View>
-      ))}
-
-      <View testID="custom-holiday-section" className="mt-4 gap-3">
-        <Body weight="medium">{t('holidays.custom.sectionTitle')}</Body>
-        {customDays.length === 0 ? (
-          <Small
-            testID="custom-holiday-empty"
-            className="text-muted-foreground"
+      <Card className="overflow-hidden p-0">
+        {catalog.map(entry => (
+          <View
+            key={entry.key}
+            className="flex-row items-center justify-between gap-3 px-4 py-3"
           >
-            {t('holidays.custom.empty')}
-          </Small>
-        ) : (
-          customDays.map((day, index) => (
-            <View
-              key={day.name}
-              testID={`custom-holiday-row-${index}`}
-              className="flex-row items-center justify-between gap-3"
-            >
-              <View className="flex-1 gap-1">
-                <Body weight="medium">{day.name}</Body>
+            <View className="flex-1 gap-1">
+              <Body weight="medium">{t(`holidays.names.${entry.key}`)}</Body>
+              {entry.date ? (
                 <Small className="text-muted-foreground">
-                  {day.dates
-                    .map(date => formatDisplayDateWithYear(date))
-                    .join(' · ')}
+                  {formatDisplayDateWithYear(entry.date)}
                 </Small>
-              </View>
-              {canEdit ? (
-                <View className="flex-row gap-1">
-                  <Button
-                    testID={`custom-holiday-edit-${index}`}
-                    variant="ghost"
-                    size="sm"
-                    onPress={() => {
-                      setEditingIndex(index);
-                      setSheetVisible(true);
-                    }}
-                    accessibilityLabel={t('holidays.custom.editTitle')}
-                  >
-                    <Text>{t('holidays.custom.editTitle')}</Text>
-                  </Button>
-                  <Button
-                    testID={`custom-holiday-delete-${index}`}
-                    variant="ghost"
-                    size="sm"
-                    onPress={() => handleCustomDelete(index)}
-                    accessibilityLabel={t('holidays.custom.deleteDay')}
-                  >
-                    <Text>{t('holidays.custom.deleteDay')}</Text>
-                  </Button>
-                </View>
               ) : null}
             </View>
-          ))
-        )}
+            <Switch
+              testID={`holiday-toggle-${entry.key}`}
+              checked={observedByKey[entry.key] === true}
+              onCheckedChange={next => handleToggle(entry.key, next)}
+              disabled={!canEdit}
+            />
+          </View>
+        ))}
+      </Card>
+
+      <View testID="custom-holiday-section" className="pt-8">
+        <View className="pb-2">
+          <Body weight="medium">{t('holidays.custom.sectionTitle')}</Body>
+        </View>
+        <Card className="overflow-hidden p-0">
+          {customDays.length === 0 ? (
+            <View className="px-4 py-3">
+              <Small
+                testID="custom-holiday-empty"
+                className="text-muted-foreground"
+              >
+                {t('holidays.custom.empty')}
+              </Small>
+            </View>
+          ) : (
+            customDays.map((day, index) => (
+              <View
+                key={day.name}
+                testID={`custom-holiday-row-${index}`}
+                className="flex-row items-center justify-between gap-3 px-4 py-3"
+              >
+                <View className="flex-1 gap-1">
+                  <Body weight="medium">{day.name}</Body>
+                  <Small className="text-muted-foreground">
+                    {day.dates
+                      .map(date => formatDisplayDateWithYear(date))
+                      .join(' · ')}
+                  </Small>
+                </View>
+                {canEdit ? (
+                  <View className="flex-row gap-1">
+                    <Button
+                      testID={`custom-holiday-edit-${index}`}
+                      variant="ghost"
+                      size="sm"
+                      onPress={() => {
+                        setEditingIndex(index);
+                        setSheetVisible(true);
+                      }}
+                      accessibilityLabel={t('holidays.custom.editTitle')}
+                    >
+                      <Text>{t('holidays.custom.editTitle')}</Text>
+                    </Button>
+                    <Button
+                      testID={`custom-holiday-delete-${index}`}
+                      variant="ghost"
+                      size="sm"
+                      onPress={() => handleCustomDelete(index)}
+                      accessibilityLabel={t('holidays.custom.deleteDay')}
+                    >
+                      <Text>{t('holidays.custom.deleteDay')}</Text>
+                    </Button>
+                  </View>
+                ) : null}
+              </View>
+            ))
+          )}
+        </Card>
         {canEdit ? (
           <Button
             testID="custom-holiday-add"
             variant="outline"
             size="sm"
+            className="mt-3"
             onPress={() => {
               setEditingIndex(null);
               setSheetVisible(true);

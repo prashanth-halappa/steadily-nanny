@@ -355,11 +355,10 @@ function SchedulePendingCarerSection({
               </Body>
               <Button
                 testID="schedule-pending-view-shifts"
+                variant="link"
                 onPress={() => router.push(SHIFTS_HREF)}
               >
-                <Text className="text-primary-foreground font-medium">
-                  {t('pending.viewShifts')}
-                </Text>
+                <Text>{t('pending.viewShifts')}</Text>
               </Button>
               {canEditSchedule ? (
                 <RestrictedActionButton
@@ -682,7 +681,7 @@ export function SchedulePendingScreen() {
                 carerName={carerName}
                 canEditSchedule={canEditSchedule}
                 childrenById={childrenById}
-                showCarerLabel={sections.length > 1}
+                showCarerLabel
                 closedReason={closedReason}
                 writeDisabled={canWriteHousehold.isLoading}
               />
@@ -692,7 +691,7 @@ export function SchedulePendingScreen() {
                 carerId={section.carerId}
                 carerName={carerName}
                 canEditSchedule={canEditSchedule}
-                showCarerLabel={sections.length > 1}
+                showCarerLabel
                 closedReason={closedReason}
                 writeDisabled={canWriteHousehold.isLoading}
               />

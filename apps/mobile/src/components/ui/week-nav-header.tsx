@@ -46,7 +46,7 @@ export function WeekNavHeader({
         accessibilityState={{ disabled: isPreviousDisabled }}
         disabled={isPreviousDisabled}
         haptic={isPreviousDisabled ? 'none' : 'light'}
-        scaleIntensity="subtle"
+        scaleIntensity="standard"
         onPress={onPreviousWeek}
         hitSlop={12}
         style={{
@@ -54,8 +54,8 @@ export function WeekNavHeader({
           minHeight: spacing.minTouchTarget,
           alignItems: 'center',
           justifyContent: 'center',
+          opacity: isPreviousDisabled ? 0.4 : 1,
         }}
-        className={isPreviousDisabled ? 'opacity-40' : undefined}
       >
         <Icon icon={ChevronLeft} size={20} className="text-foreground" />
       </AnimatedPressable>
@@ -69,7 +69,7 @@ export function WeekNavHeader({
         accessibilityState={{ disabled: isNextDisabled }}
         disabled={isNextDisabled}
         haptic={isNextDisabled ? 'none' : 'light'}
-        scaleIntensity="subtle"
+        scaleIntensity="standard"
         onPress={onNextWeek}
         hitSlop={12}
         style={{
@@ -77,8 +77,8 @@ export function WeekNavHeader({
           minHeight: spacing.minTouchTarget,
           alignItems: 'center',
           justifyContent: 'center',
+          opacity: isNextDisabled ? 0.4 : 1,
         }}
-        className={isNextDisabled ? 'opacity-40' : undefined}
       >
         <Icon icon={ChevronRight} size={20} className="text-foreground" />
       </AnimatedPressable>
