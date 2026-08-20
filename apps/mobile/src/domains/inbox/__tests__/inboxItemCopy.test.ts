@@ -418,6 +418,35 @@ describe('terms_proposal copy (§7.2, §10)', () => {
     );
   });
 
+  // Phase 2: when the nanny must answer (family-authored), the subtitle
+  // keeps the figures and names what agreeing unblocks. Parent-facing
+  // (carer-authored) must not get the clock-in framing.
+  it('adds the clock-in consequence when the nanny must answer (direction parent)', () => {
+    expect(subtitleForItem(makeItem({ direction: 'parent' }), t, ZONE)).toBe(
+      'items.termsProposal.subtitleClockIn'
+    );
+    expect(
+      subtitleForItem(
+        makeItem({ direction: 'parent', weeklyEquivalentMinor: null }),
+        t,
+        ZONE
+      )
+    ).toBe('items.termsProposal.subtitleRateOnlyClockIn');
+    expect(
+      subtitleForItem(
+        makeItem({ direction: 'parent', currency: null }),
+        t,
+        ZONE
+      )
+    ).toBe('items.termsProposal.subtitleNoFiguresClockIn');
+  });
+
+  it('does not add the clock-in consequence when the parent must answer', () => {
+    expect(subtitleForItem(makeItem({ direction: 'carer' }), t, ZONE)).toBe(
+      'items.termsProposal.subtitle'
+    );
+  });
+
   // §7.5: proposals deliberately never expire — two people negotiating is not
   // a workflow to time out, so there is no deadline line to colour.
   it('has no deadline — a proposal never expires', () => {
@@ -451,6 +480,27 @@ describe('terms_proposal copy (§7.2, §10)', () => {
       }
     }
   });
+
+  it('clock-in subtitle keys keep the figures and name agreeing as the unblock', async () => {
+    for (const language of ['en', 'es'] as const) {
+      const copy = (await locale(language)).items.termsProposal;
+      expect(copy.subtitleClockIn).toContain('{{rate}}');
+      expect(copy.subtitleClockIn).toContain('{{weekly}}');
+      expect(copy.subtitleRateOnlyClockIn).toContain('{{rate}}');
+      expect(copy.subtitleNoFiguresClockIn.length).toBeGreaterThan(0);
+      for (const key of [
+        'subtitleClockIn',
+        'subtitleRateOnlyClockIn',
+        'subtitleNoFiguresClockIn',
+      ] as const) {
+        const text = copy[key].toLowerCase();
+        expect(text).not.toContain('!');
+        const mentionsClockIn =
+          text.includes('clock in') || text.includes('fichar');
+        expect(mentionsClockIn).toBe(true);
+      }
+    }
+  });
 });
 
 describe('terms_ack copy (§2.2 rank 9)', () => {
@@ -461,6 +511,7 @@ describe('terms_ack copy (§2.2 rank 9)', () => {
       householdId: 'hh-1',
       validFrom: '2026-08-01',
       isFirstTerms: true,
+      direction: null,
       ...overrides,
     } as InboxItem;
   }
@@ -469,16 +520,38 @@ describe('terms_ack copy (§2.2 rank 9)', () => {
     expect(hrefForItem(makeItem())).toBe('/(private)/settings/my-pay');
   });
 
-  it('uses first vs changed title keys', () => {
+  it('uses first vs changed title keys for parent-direction and legacy', () => {
     expect(titleForItem(makeItem(), t, ZONE)).toBe('items.termsAck.titleFirst');
     expect(titleForItem(makeItem({ isFirstTerms: false }), t, ZONE)).toBe(
       'items.termsAck.titleChanged'
     );
+    expect(titleForItem(makeItem({ direction: 'parent' }), t, ZONE)).toBe(
+      'items.termsAck.titleFirst'
+    );
+    expect(
+      titleForItem(
+        makeItem({ direction: 'parent', isFirstTerms: false }),
+        t,
+        ZONE
+      )
+    ).toBe('items.termsAck.titleChanged');
   });
 
-  it('has subtitle and cta keys', () => {
+  it('uses a carer-direction title when she proposed and the family accepted', () => {
+    expect(titleForItem(makeItem({ direction: 'carer' }), t, ZONE)).toBe(
+      'items.termsAck.titleCarer'
+    );
+  });
+
+  it('has direction-aware subtitle keys and a neutral legacy fallback', () => {
     expect(subtitleForItem(makeItem(), t, ZONE)).toBe(
       'items.termsAck.subtitle'
+    );
+    expect(subtitleForItem(makeItem({ direction: 'parent' }), t, ZONE)).toBe(
+      'items.termsAck.subtitleParent'
+    );
+    expect(subtitleForItem(makeItem({ direction: 'carer' }), t, ZONE)).toBe(
+      'items.termsAck.subtitleCarer'
     );
     expect(ctaForItem(makeItem(), t)).toBe('items.termsAck.cta');
   });
@@ -492,9 +565,43 @@ describe('terms_ack copy (§2.2 rank 9)', () => {
       const copy = (await locale(language)).items.termsAck;
       expect(copy.titleChanged).toContain('{{date}}');
       expect(copy.titleFirst.length).toBeGreaterThan(0);
+      expect(copy.titleCarer.length).toBeGreaterThan(0);
       expect(copy.subtitle.length).toBeGreaterThan(0);
+      expect(copy.subtitleParent.length).toBeGreaterThan(0);
+      expect(copy.subtitleCarer.length).toBeGreaterThan(0);
       expect(copy.cta.length).toBeGreaterThan(0);
     }
+  });
+
+  // Phase 2: seeing is an acknowledgement, not a bookkeeping task we ask
+  // her to perform — and the row must stay key-for-key across locales.
+  it('drops the record-that-you-have-seen framing and keeps en/es key parity', async () => {
+    const en = (await locale('en')).items.termsAck;
+    const es = (await locale('es')).items.termsAck;
+    expect(Object.keys(en).sort()).toEqual(Object.keys(es).sort());
+
+    const bannedEn = [
+      /record that you'?ve seen/i,
+      /record that you have seen/i,
+    ];
+    const bannedEs = [/registrar que las has visto/i];
+    for (const value of Object.values(en) as string[]) {
+      for (const banned of bannedEn) {
+        expect(value).not.toMatch(banned);
+      }
+      expect(value).not.toContain('!');
+    }
+    for (const value of Object.values(es) as string[]) {
+      for (const banned of bannedEs) {
+        expect(value).not.toMatch(banned);
+      }
+      expect(value).not.toContain('!');
+    }
+
+    expect(en.titleCarer.toLowerCase()).toMatch(/family|agreed|your terms/);
+    expect(en.subtitleCarer.toLowerCase()).toMatch(/my pay/);
+    expect(en.subtitleParent.toLowerCase()).toMatch(/my pay|review/);
+    expect(en.subtitle.toLowerCase()).toMatch(/my pay/);
   });
 });
 

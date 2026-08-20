@@ -46,4 +46,14 @@ describe('ParentWeekWidget inlined palette', () => {
       '@expo/ui/swift-ui/modifiers',
     ]);
   });
+
+  // `figure` token is 28 — hero must not use the oversized 34/32 branches.
+  // Whitespace-insensitive: Biome re-wraps long modifier lists.
+  it('hero figure uses figure-token size 28', () => {
+    const flat = source.replace(/\s+/g, ' ');
+    expect(flat).toContain(
+      "font({ size: 28, weight: 'bold', design: 'rounded', })"
+    );
+    expect(flat).not.toContain('isMedium ? 34 : 32');
+  });
 });

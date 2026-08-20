@@ -61,12 +61,18 @@
       "subtitle": "{{rate}} · {{weekly}} a la semana",
       "subtitleRateOnly": "{{rate}}",
       "subtitleNoFigures": "Abre para ver las condiciones.",
+      "subtitleClockIn": "{{rate}} · {{weekly}} a la semana. Acéptalas y podrás fichar de inmediato.",
+      "subtitleRateOnlyClockIn": "{{rate}}. Acéptalas y podrás fichar de inmediato.",
+      "subtitleNoFiguresClockIn": "Acéptalas y podrás fichar de inmediato.",
       "cta": "Revisar condiciones"
     },
     "termsAck": {
       "titleChanged": "Tus condiciones de pago cambiaron el {{date}}",
       "titleFirst": "Tus condiciones de pago están definidas",
-      "subtitle": "Abre Mi pago para leerlas y registrar que las has visto.",
+      "titleCarer": "La familia aceptó tus condiciones",
+      "subtitle": "Abre Mi pago para revisarlas.",
+      "subtitleParent": "Puedes revisarlas en Mi pago.",
+      "subtitleCarer": "Puedes verlas en Mi pago.",
       "cta": "Abrir Mi pago"
     },
     "reimbursementOwed": {

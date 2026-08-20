@@ -380,7 +380,7 @@ function NextShiftWidgetView(
       <VStack alignment="leading" spacing={2}>
         <Text
           modifiers={[
-            font({ size: 28, weight: 'semibold', design: 'rounded' }),
+            font({ size: 28, weight: 'bold', design: 'rounded' }),
             foregroundStyle(INK),
             monospacedDigit(),
             lineLimit(1),

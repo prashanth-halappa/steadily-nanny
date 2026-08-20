@@ -1134,6 +1134,7 @@ describe('buildInboxItems — terms_proposal_sent kind (A7)', () => {
           valid_from: '2026-08-01',
           is_first_terms: true,
           acks: [],
+          direction: null,
         },
       ],
     });
@@ -1362,6 +1363,7 @@ describe('buildInboxItems — terms_ack kind', () => {
     valid_from: '2026-08-01',
     is_first_terms: true,
     acks: [],
+    direction: null,
   };
 
   it('includes terms_ack for a nanny with a live arrangement and no ack yet', () => {
@@ -1378,8 +1380,26 @@ describe('buildInboxItems — terms_ack kind', () => {
         householdId: 'hh-1',
         validFrom: '2026-08-01',
         isFirstTerms: true,
+        direction: null,
       },
     ]);
+  });
+
+  it('threads agreement direction onto the terms_ack item', () => {
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.NANNY,
+        termsAcks: [{ ...liveAck, direction: 'carer' }],
+      })[0]
+    ).toMatchObject({ kind: 'terms_ack', direction: 'carer' });
+    expect(
+      buildInboxItems({
+        ...base,
+        role: SETUP_ROLES.NANNY,
+        termsAcks: [{ ...liveAck, direction: 'parent' }],
+      })[0]
+    ).toMatchObject({ kind: 'terms_ack', direction: 'parent' });
   });
 
   it('excludes terms_ack once she has recorded seen', () => {
@@ -1681,6 +1701,7 @@ describe('buildInboxItems — person on the item', () => {
           valid_from: '2026-08-01',
           is_first_terms: true,
           acks: [],
+          direction: null,
         },
       ],
     });

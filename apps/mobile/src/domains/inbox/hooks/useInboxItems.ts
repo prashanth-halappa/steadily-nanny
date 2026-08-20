@@ -35,6 +35,7 @@ import { timesheetApi } from '@/src/api/endpoints/timesheets';
 import { queryKeys } from '@/src/api/queryKeys';
 import type { InboxTermsAckInput } from '@/src/domains/inbox/utils/buildInboxItems';
 import { buildInboxItems } from '@/src/domains/inbox/utils/buildInboxItems';
+import { resolveTermsAgreement } from '@/src/domains/pay/utils/termsAgreement';
 import { isParentEditorRole, SETUP_ROLES } from '@/src/domains/setup/types';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useHouseholdLookup } from '@/src/hooks/queries/useHouseholdById';
@@ -320,12 +321,27 @@ export function useInboxItems() {
       const historyIndex = history.findIndex(row => row.id === arrangement.id);
       const isFirstTerms =
         historyIndex < 0 || history[historyIndex + 1] == null;
+      // Same helper the pay screens use — never invent an acceptance. A
+      // missing match is the real legacy case (`notAgreedInSteadily`).
+      const proposalsForCarer = termsProposals.filter(
+        p =>
+          p.household_id === arrangement.household_id &&
+          p.carer_id === arrangement.carer_id
+      );
+      const agreement = resolveTermsAgreement(
+        arrangement,
+        proposalsForCarer,
+        history,
+        key => key
+      );
       rows.push({
         household_id: households[index]?.id ?? '',
         arrangement_id: arrangement.id,
         valid_from: arrangement.valid_from,
         is_first_terms: isFirstTerms,
         acks: arrangementAckQueries[index]?.data ?? [],
+        direction:
+          agreement.kind === 'agreed' ? agreement.proposal.direction : null,
       });
     }
     return rows;
@@ -337,6 +353,7 @@ export function useInboxItems() {
     arrangementQueries,
     arrangementHistoryQueries,
     arrangementAckQueries,
+    termsProposals,
   ]);
 
   const unsettledReimbursements = useMemo(

@@ -194,11 +194,13 @@ export function titleForItem(
             date: proposedOn(item.declinedAt, timeZone),
           });
     case 'terms_ack':
-      return item.isFirstTerms
-        ? t('items.termsAck.titleFirst')
-        : t('items.termsAck.titleChanged', {
-            date: formatDisplayDateWithYear(item.validFrom),
-          });
+      return item.direction === 'carer'
+        ? t('items.termsAck.titleCarer')
+        : item.isFirstTerms
+          ? t('items.termsAck.titleFirst')
+          : t('items.termsAck.titleChanged', {
+              date: formatDisplayDateWithYear(item.validFrom),
+            });
     case 'reimbursement_owed':
       return t('items.reimbursementOwed.title', {
         amount: formatMoney(item.amountMinor, item.currency),
@@ -276,14 +278,35 @@ export function subtitleForItem(
     // with no currency on the proposal's terms there is no honest way to
     // render either amount, so the row names none.
     case 'terms_proposal': {
-      if (!item.currency) return t('items.termsProposal.subtitleNoFigures');
+      // direction === 'parent': the nanny must answer — name what agreeing
+      // unblocks. direction === 'carer': the parent answers; clock-in framing
+      // would be wrong on their row.
+      const nannyMustAnswer = item.direction === 'parent';
+      if (!item.currency) {
+        return t(
+          nannyMustAnswer
+            ? 'items.termsProposal.subtitleNoFiguresClockIn'
+            : 'items.termsProposal.subtitleNoFigures'
+        );
+      }
       const rate = formatRate(item.rateMinor, item.currency);
-      return item.weeklyEquivalentMinor === null
-        ? t('items.termsProposal.subtitleRateOnly', { rate })
-        : t('items.termsProposal.subtitle', {
-            rate,
-            weekly: formatMoney(item.weeklyEquivalentMinor, item.currency),
-          });
+      if (item.weeklyEquivalentMinor === null) {
+        return t(
+          nannyMustAnswer
+            ? 'items.termsProposal.subtitleRateOnlyClockIn'
+            : 'items.termsProposal.subtitleRateOnly',
+          { rate }
+        );
+      }
+      return t(
+        nannyMustAnswer
+          ? 'items.termsProposal.subtitleClockIn'
+          : 'items.termsProposal.subtitle',
+        {
+          rate,
+          weekly: formatMoney(item.weeklyEquivalentMinor, item.currency),
+        }
+      );
     }
     // §1's law: the state word never appears without its date, and "opened"
     // never appears without "not answered" attached — `viewed_at` is stamped
@@ -304,6 +327,12 @@ export function subtitleForItem(
         sentDate: proposedOn(item.proposedAt, timeZone),
       });
     case 'terms_ack':
+      if (item.direction === 'carer') {
+        return t('items.termsAck.subtitleCarer');
+      }
+      if (item.direction === 'parent') {
+        return t('items.termsAck.subtitleParent');
+      }
       return t('items.termsAck.subtitle');
     case 'reimbursement_owed':
       return t('items.reimbursementOwed.subtitle', {

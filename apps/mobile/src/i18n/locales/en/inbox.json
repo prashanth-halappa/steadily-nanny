@@ -61,12 +61,18 @@
       "subtitle": "{{rate}} · {{weekly}} a week",
       "subtitleRateOnly": "{{rate}}",
       "subtitleNoFigures": "Open to see the terms.",
+      "subtitleClockIn": "{{rate}} · {{weekly}} a week. Agree and you can clock in straight away.",
+      "subtitleRateOnlyClockIn": "{{rate}}. Agree and you can clock in straight away.",
+      "subtitleNoFiguresClockIn": "Agree and you can clock in straight away.",
       "cta": "Review terms"
     },
     "termsAck": {
       "titleChanged": "Your pay terms changed on {{date}}",
       "titleFirst": "Your pay terms are set",
-      "subtitle": "Open My pay to read them and record that you've seen them.",
+      "titleCarer": "The family agreed to your terms",
+      "subtitle": "Open My pay to review them.",
+      "subtitleParent": "You can review them in My pay.",
+      "subtitleCarer": "You can see them in My pay.",
       "cta": "Open My pay"
     },
     "reimbursementOwed": {

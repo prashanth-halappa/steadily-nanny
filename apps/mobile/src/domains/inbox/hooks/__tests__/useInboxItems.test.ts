@@ -48,6 +48,9 @@ const listUnsettledReimbursements = mock(() =>
   Promise.resolve([] as unknown[])
 );
 const listTimeOff = mock(() => Promise.resolve([] as unknown[]));
+const getCurrentArrangement = mock(() => Promise.resolve(null as unknown));
+const getArrangementHistory = mock(() => Promise.resolve([] as unknown[]));
+const listArrangementAcks = mock(() => Promise.resolve([] as unknown[]));
 
 const CARER = '44444444-4444-4444-8444-444444444444';
 const PROPOSAL = {
@@ -108,6 +111,13 @@ beforeAll(async () => {
   mock.module('@/src/api/endpoints/termsProposals', () => ({
     termsProposalApi: { list: listProposals },
   }));
+  mock.module('@/src/api/endpoints/payArrangements', () => ({
+    payArrangementApi: {
+      getCurrent: getCurrentArrangement,
+      getHistory: getArrangementHistory,
+      listAcks: listArrangementAcks,
+    },
+  }));
   mock.module('@/src/api/endpoints/reimbursementSettlements', () => ({
     reimbursementSettlementApi: { listUnsettled: listUnsettledReimbursements },
   }));
@@ -128,10 +138,16 @@ beforeEach(() => {
   listProposals.mockReset();
   listUnsettledReimbursements.mockReset();
   listTimeOff.mockReset();
+  getCurrentArrangement.mockReset();
+  getArrangementHistory.mockReset();
+  listArrangementAcks.mockReset();
   listMembers.mockResolvedValue([]);
   listProposals.mockResolvedValue([]);
   listUnsettledReimbursements.mockResolvedValue([]);
   listTimeOff.mockResolvedValue([]);
+  getCurrentArrangement.mockResolvedValue(null);
+  getArrangementHistory.mockResolvedValue([]);
+  listArrangementAcks.mockResolvedValue([]);
   listPatterns.mockResolvedValue([]);
   listTimesheets.mockResolvedValue([]);
   listPendingChangeRequests.mockResolvedValue([]);
@@ -342,6 +358,107 @@ describe('useInboxItems terms proposals (§7.1)', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(listProposals).not.toHaveBeenCalled();
     expect(result.current.items).toEqual([]);
+  });
+});
+
+// Phase 2 — terms_ack direction comes from the accepted proposal behind the
+// live arrangement (`resolveTermsAgreement`), never invented. Legacy rows
+// with no acceptance stay `direction: null`.
+describe('useInboxItems terms_ack direction (Phase 2)', () => {
+  const ARRANGEMENT = {
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    household_id: HOUSEHOLD.id,
+    carer_id: 'user-1',
+    valid_from: '2026-08-01',
+    rate_minor: 2800,
+    currency: 'USD',
+    overtime_multiplier: 1.5,
+    overtime_threshold_minutes: 2400,
+    terms: {},
+  };
+
+  beforeEach(() => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'nanny' as const,
+      status: 'onboarded' as const,
+    }));
+    useAuthStore.setState({
+      session: { user: { id: 'user-1' } } as unknown as never,
+      isInitialized: true,
+    } as never);
+  });
+
+  it('threads carer direction when an accepted proposal authored by her backs the arrangement', async () => {
+    getCurrentArrangement.mockResolvedValue(ARRANGEMENT);
+    getArrangementHistory.mockResolvedValue([ARRANGEMENT]);
+    listArrangementAcks.mockResolvedValue([]);
+    listProposals.mockResolvedValue([
+      {
+        ...PROPOSAL,
+        carer_id: 'user-1',
+        direction: 'carer',
+        status: 'accepted',
+        accepted_arrangement_id: ARRANGEMENT.id,
+      },
+    ]);
+
+    const { result } = renderHookWithProviders(() => useInboxItems());
+
+    await waitFor(() =>
+      expect(result.current.items.some(i => i.kind === 'terms_ack')).toBe(true)
+    );
+    expect(
+      result.current.items.find(i => i.kind === 'terms_ack')
+    ).toMatchObject({
+      kind: 'terms_ack',
+      direction: 'carer',
+    });
+  });
+
+  it('threads parent direction when the family-authored acceptance backs the arrangement', async () => {
+    getCurrentArrangement.mockResolvedValue(ARRANGEMENT);
+    getArrangementHistory.mockResolvedValue([ARRANGEMENT]);
+    listArrangementAcks.mockResolvedValue([]);
+    listProposals.mockResolvedValue([
+      {
+        ...PROPOSAL,
+        carer_id: 'user-1',
+        direction: 'parent',
+        status: 'accepted',
+        accepted_arrangement_id: ARRANGEMENT.id,
+      },
+    ]);
+
+    const { result } = renderHookWithProviders(() => useInboxItems());
+
+    await waitFor(() =>
+      expect(result.current.items.some(i => i.kind === 'terms_ack')).toBe(true)
+    );
+    expect(
+      result.current.items.find(i => i.kind === 'terms_ack')
+    ).toMatchObject({
+      kind: 'terms_ack',
+      direction: 'parent',
+    });
+  });
+
+  it('leaves direction null for a legacy arrangement with no accepted proposal', async () => {
+    getCurrentArrangement.mockResolvedValue(ARRANGEMENT);
+    getArrangementHistory.mockResolvedValue([ARRANGEMENT]);
+    listArrangementAcks.mockResolvedValue([]);
+    listProposals.mockResolvedValue([]);
+
+    const { result } = renderHookWithProviders(() => useInboxItems());
+
+    await waitFor(() =>
+      expect(result.current.items.some(i => i.kind === 'terms_ack')).toBe(true)
+    );
+    expect(
+      result.current.items.find(i => i.kind === 'terms_ack')
+    ).toMatchObject({
+      kind: 'terms_ack',
+      direction: null,
+    });
   });
 });
 

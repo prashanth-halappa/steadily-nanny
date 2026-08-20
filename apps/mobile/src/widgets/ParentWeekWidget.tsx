@@ -162,7 +162,7 @@ function ParentWeekWidgetView(
     <Text
       modifiers={[
         font({
-          size: isMedium ? 34 : 32,
+          size: 28,
           weight: 'bold',
           design: 'rounded',
         }),

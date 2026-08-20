@@ -173,6 +173,12 @@ export type InboxTermsAckInput = {
   valid_from: string;
   is_first_terms: boolean;
   acks: readonly PayArrangementAck[];
+  /**
+   * Who authored the accepted proposal behind this arrangement, or `null`
+   * when there is no accepted proposal (legacy / grandfathered rows).
+   * Resolved via `resolveTermsAgreement` in `useInboxItems` — never invented.
+   */
+  direction: TermsProposalDirection | null;
 };
 
 /**
@@ -341,6 +347,10 @@ export type InboxItem =
       householdId: string;
       validFrom: string;
       isFirstTerms: boolean;
+      /** Accepted-proposal direction, or null/absent for legacy arrangements.
+       * Optional because consumers and fixtures may omit it; the producer
+       * (`InboxTermsAckInput`) always supplies it. */
+      direction?: TermsProposalDirection | null;
     }
   | {
       kind: 'reimbursement_owed';
@@ -688,6 +698,7 @@ export function buildInboxItems(input: {
         householdId: row.household_id,
         validFrom: row.valid_from,
         isFirstTerms: row.is_first_terms,
+        direction: row.direction,
       });
     }
   }

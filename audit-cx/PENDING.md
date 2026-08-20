@@ -330,7 +330,7 @@ already in the file: `ManageHouseholdScreen`-4, `TimeOffRow`-5, `DraftHomeScreen
 | `TimeOffRow`-6 | **CONFLICT** → see the register |
 | `lib/notificationRouteMap.ts`-1 | **STALE** — 63/63 push types verified mapped |
 
-## Bucket 6 — Widgets — 2 fixes, 2 files — DO LAST
+## Bucket 6 — Widgets — 2 fixes, 2 files — ✅ DONE
 
 **The previous list put these first, on the grounds that they render outside the app where
 nothing else checks them. That was the right instinct and the wrong conclusion: the reason
@@ -345,11 +345,11 @@ extension. Elements are `@expo/ui/swift-ui` driving real SwiftUI views; styling 
 build if a widget body references *any* module-scope name — `palette` is explicitly in
 `FORBIDDEN_CONSTANTS`, because a shipped `ReferenceError` is what put it there.
 
-- [ ] **`widgets/NextShiftWidget.tsx`-4 — CONFIRMED.** L383
+- [x] **`widgets/NextShiftWidget.tsx`-4 — CONFIRMED.** L383
       `font({ size: 28, weight: 'semibold', design: 'rounded' })`. `00-FOUNDATIONS.md` §4 pins
       `figure` at 28/34/**700**. Direct precedent: `e78bdef2` already made this exact
       `semibold`→`bold` change to `ParentWeekWidget` L166.
-- [ ] **`widgets/ParentWeekWidget.tsx`-2 — CONFIRMED (judgement call).** L165
+- [x] **`widgets/ParentWeekWidget.tsx`-2 — CONFIRMED (judgement call).** L165
       `size: isMedium ? 34 : 32` where the `figure` token is 28. Weigh against the 158pt card and
       the existing `minimumScaleFactor` before changing.
 

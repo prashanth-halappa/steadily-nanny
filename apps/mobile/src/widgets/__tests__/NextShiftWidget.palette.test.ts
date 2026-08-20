@@ -85,4 +85,13 @@ describe('NextShiftWidget inlined palette', () => {
       '@expo/ui/swift-ui/modifiers',
     ]);
   });
+
+  // `figure` token is 28/34/700 — startingSoon hero must use bold, not semibold.
+  // Whitespace-insensitive: Biome re-wraps long modifier lists.
+  it('startingSoon figure uses figure-token weight bold', () => {
+    const flat = source.replace(/\s+/g, ' ');
+    expect(flat).toContain(
+      "font({ size: 28, weight: 'bold', design: 'rounded' })"
+    );
+  });
 });
