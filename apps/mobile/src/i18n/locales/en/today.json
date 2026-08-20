@@ -37,6 +37,12 @@
   "awaitingYourAnswer": "Waiting on you",
   "clockedIntoHousehold": "At {{household}}",
   "weekLine": "{{duration}} this week",
+  "weekApproved": {
+    "title": "Week of {{week}}",
+    "state": "Approved",
+    "hours": "{{hours}} · approved {{date}}",
+    "cta": "Open the week"
+  },
   "stateLive": "On the clock since {{time}}",
   "stateFinished": "Clocked out {{time}} · {{duration}}",
   "stateArriving": "Arriving at {{start}}",

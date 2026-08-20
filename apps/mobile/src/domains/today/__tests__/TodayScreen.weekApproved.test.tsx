@@ -1,14 +1,13 @@
 /**
- * @module domains/today/__tests__/TodayScreen.moments.test
+ * @module domains/today/__tests__/TodayScreen.weekApproved.test
  *
- * Stream U3 — three feed-only milestone moments: the parent-side nanny-joined
- * card (the nanny already has JoinedHouseholdCard), first clock-in, and first
- * week approved. They never occupy PinnedSlot. This file copies the cardOrder
- * harness and stubs the three new cards as order markers so feed position and
- * the gates are observable without rendering MomentCard.
- *
- * Hooks are mocked via `mock.module()` in `beforeAll` before the dynamic
- * import, per docs/09-TESTING.md / TodayScreen.cardOrder.test.tsx.
+ * D78 — the plain week-approved feed card that follows EVERY approval, not
+ * just the first. Its two gates are the subject here: it is suppressed while
+ * `FirstWeekApprovedMomentCard` owns the same approval (one owner per item),
+ * and it never returns once its `weekApproved:${timesheetId}` key is
+ * dismissed. Harness copied from `TodayScreen.moments.test.tsx`; both cards
+ * are stubbed as order markers so the gates are observable without rendering
+ * either.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { render, within } from '@testing-library/react-native';
@@ -130,9 +129,6 @@ mock.module(
     FirstWeekApprovedMomentCard: marker('first-week-approved'),
   })
 );
-// D78's later-approval card renders a real `useQuery`; this file has no
-// QueryClient and is about which MOMENT shows. Its own gates are covered in
-// `TodayScreen.weekApproved.test.tsx`.
 mock.module('@/src/domains/today/components/WeekApprovedCard', () => ({
   WeekApprovedCard: marker('week-approved'),
 }));
@@ -157,7 +153,11 @@ function memberJoined(
   };
 }
 
-function approvedTimesheet(id: string, carerId = VIEWER_ID) {
+function approvedTimesheet(
+  id: string,
+  approvedAt = '2026-08-17T10:00:00.000Z',
+  carerId = VIEWER_ID
+) {
   return {
     id,
     household_id: HOUSEHOLD_ID,
@@ -165,6 +165,7 @@ function approvedTimesheet(id: string, carerId = VIEWER_ID) {
     status: 'approved',
     total_minutes: 2400,
     week_start: '2026-08-10',
+    approved_at: approvedAt,
   };
 }
 
@@ -318,134 +319,64 @@ beforeEach(() => {
   }));
 });
 
-describe('TodayScreen — milestone moments', () => {
-  it('parent view shows today-nanny-joined-moment for a nanny who joined less than 7 days ago', () => {
-    mockMembers = [memberJoined(1, { userId: NANNY_USER_ID, role: 'nanny' })];
-
-    const { feed } = renderScreen('parent');
-
-    expect(feed).toContain('nanny-joined');
-  });
-
-  it('parent view does not show it for a nanny who joined 8 days ago', () => {
-    mockMembers = [memberJoined(8, { userId: NANNY_USER_ID, role: 'nanny' })];
-
-    const { all } = renderScreen('parent');
-
-    expect(all).not.toContain('nanny-joined');
-  });
-
-  it('parent view does not show the joined moment for a candidate nanny member', () => {
-    mockMembers = [
-      memberJoined(1, {
-        userId: NANNY_USER_ID,
-        role: 'nanny',
-        status: 'candidate',
-      }),
-    ];
-
-    const { all } = renderScreen('parent');
-
-    expect(all).not.toContain('nanny-joined');
-  });
-
-  it('parent view does not show it once the key is already dismissed', () => {
-    mockMembers = [memberJoined(1, { userId: NANNY_USER_ID, role: 'nanny' })];
-    mockIsCardDismissed.mockImplementation(
-      (key: string) => key === `nannyJoined:${HOUSEHOLD_ID}:${NANNY_USER_ID}`
-    );
-
-    const { all } = renderScreen('parent');
-
-    expect(all).not.toContain('nanny-joined');
-  });
-
-  it('nanny view never shows the parent joined moment', () => {
-    mockMembers = [memberJoined(1)];
-
-    const { all } = renderScreen('nanny');
-
-    expect(all).not.toContain('nanny-joined');
-  });
-
-  it('shows today-first-clock-in-moment for a nanny on the clock who joined recently and has not seen it', () => {
-    mockUseOverdueClockOut.mockImplementation(() => ({
-      overdue: false,
-      clockInAt: '2026-08-10T08:00:00.000Z',
-      shiftEndsAt: null,
-    }));
+describe('TodayScreen — week approved card (D78)', () => {
+  it('shows the week-approved card on a later approval', () => {
+    mockTimesheets = {
+      data: [
+        approvedTimesheet('ts-1', '2026-08-10T10:00:00.000Z'),
+        approvedTimesheet('ts-2', '2026-08-17T10:00:00.000Z'),
+      ],
+      isLoading: false,
+    };
 
     const { feed } = renderScreen('nanny');
 
-    expect(feed).toContain('first-clock-in');
+    expect(feed).toContain('week-approved');
   });
 
-  it('does not show the first clock-in moment when its key is already dismissed', () => {
-    mockUseOverdueClockOut.mockImplementation(() => ({
-      overdue: false,
-      clockInAt: '2026-08-10T08:00:00.000Z',
-      shiftEndsAt: null,
-    }));
-    mockIsCardDismissed.mockImplementation(
-      (key: string) => key === `firstClockIn:${HOUSEHOLD_ID}`
-    );
-
-    const { all } = renderScreen('nanny');
-
-    expect(all).not.toContain('first-clock-in');
-  });
-
-  it('shows today-first-week-approved-moment when exactly one of her timesheets is approved', () => {
+  it('is suppressed while the first-week moment owns the same approval', () => {
     mockTimesheets = {
       data: [approvedTimesheet('ts-1')],
       isLoading: false,
     };
 
-    const { feed } = renderScreen('nanny');
+    const { feed, all } = renderScreen('nanny');
 
     expect(feed).toContain('first-week-approved');
+    expect(all).not.toContain('week-approved');
   });
 
-  it('does not show it when two of her timesheets are approved', () => {
+  it('does not render once its key is dismissed', () => {
     mockTimesheets = {
-      data: [approvedTimesheet('ts-1'), approvedTimesheet('ts-2')],
+      data: [
+        approvedTimesheet('ts-1', '2026-08-10T10:00:00.000Z'),
+        approvedTimesheet('ts-2', '2026-08-17T10:00:00.000Z'),
+      ],
       isLoading: false,
     };
+    mockIsCardDismissed.mockImplementation(
+      (key: string) => key === 'weekApproved:ts-2'
+    );
 
     const { all } = renderScreen('nanny');
 
-    expect(all).not.toContain('first-week-approved');
+    expect(all).not.toContain('week-approved');
   });
 
-  it('renders the moment cards after today-children and before needs-attention', () => {
-    mockMembers = [memberJoined(1, { userId: NANNY_USER_ID, role: 'nanny' })];
-
-    const parent = renderScreen('parent');
-    expect(parent.tree.getByTestId('today-children')).toBeTruthy();
-    expect(parent.feed.indexOf('nanny-joined')).toBeGreaterThan(-1);
-    expect(parent.feed.indexOf('nanny-joined')).toBeLessThan(
-      parent.feed.indexOf('needs-attention')
-    );
-
-    mockMembers = [memberJoined(1)];
-    mockUseOverdueClockOut.mockImplementation(() => ({
-      overdue: false,
-      clockInAt: '2026-08-10T08:00:00.000Z',
-      shiftEndsAt: null,
-    }));
+  it('keys off the MOST RECENT approval, not the oldest', () => {
     mockTimesheets = {
-      data: [approvedTimesheet('ts-1')],
+      data: [
+        approvedTimesheet('ts-old', '2026-08-03T10:00:00.000Z'),
+        approvedTimesheet('ts-new', '2026-08-17T10:00:00.000Z'),
+      ],
       isLoading: false,
     };
+    mockIsCardDismissed.mockImplementation(
+      (key: string) => key === 'weekApproved:ts-old'
+    );
 
-    const nanny = renderScreen('nanny');
-    expect(nanny.feed.indexOf('first-clock-in')).toBeGreaterThan(-1);
-    expect(nanny.feed.indexOf('first-week-approved')).toBeGreaterThan(-1);
-    expect(nanny.feed.indexOf('first-clock-in')).toBeLessThan(
-      nanny.feed.indexOf('this-week')
-    );
-    expect(nanny.feed.indexOf('first-week-approved')).toBeLessThan(
-      nanny.feed.indexOf('this-week')
-    );
+    const { feed } = renderScreen('nanny');
+
+    expect(feed).toContain('week-approved');
   });
 });

@@ -37,6 +37,12 @@
   "awaitingYourAnswer": "Esperando tu respuesta",
   "clockedIntoHousehold": "En {{household}}",
   "weekLine": "{{duration}} esta semana",
+  "weekApproved": {
+    "title": "Semana del {{week}}",
+    "state": "Aprobada",
+    "hours": "{{hours}} · aprobada el {{date}}",
+    "cta": "Abrir la semana"
+  },
   "stateLive": "En horario desde las {{time}}",
   "stateFinished": "Salida {{time}} · {{duration}}",
   "stateArriving": "Llega a las {{start}}",

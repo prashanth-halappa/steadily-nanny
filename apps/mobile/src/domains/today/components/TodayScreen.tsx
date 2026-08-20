@@ -121,6 +121,7 @@ import { NannyJoinedMomentCard } from './NannyJoinedMomentCard';
 import { PinnedSlot } from './PinnedSlot';
 import { ThisWeekCard } from './ThisWeekCard';
 import { TodayCoverage } from './TodayCoverage';
+import { WeekApprovedCard } from './WeekApprovedCard';
 
 /**
  * How recently she must have joined for §8.1's arrival card to still be true.
@@ -397,6 +398,25 @@ export function TodayScreen() {
       ? `firstWeekApproved:${household.id}`
       : null;
   const showFirstWeekApprovedMoment = useMomentOnce(firstWeekApprovedKey);
+  // D78 — every LATER approval gets a plain feed card (with the amount),
+  // where only the first one gets a moment. Suppressed while the moment is
+  // showing for that same week: one owner per item
+  // (docs/design/attention-and-notifications.md §0 rule 2).
+  const latestApprovedTimesheet = [...herApprovedTimesheets].sort(
+    (a, b) =>
+      new Date(b.approved_at ?? b.week_start).getTime() -
+      new Date(a.approved_at ?? a.week_start).getTime()
+  )[0];
+  const weekApprovedKey =
+    activeNanny &&
+    !timesheets.isLoading &&
+    latestApprovedTimesheet &&
+    household &&
+    myUserId &&
+    !(showFirstWeekApprovedMoment && firstApprovedTimesheet)
+      ? `weekApproved:${latestApprovedTimesheet.id}`
+      : null;
+  const showWeekApprovedCard = useMomentOnce(weekApprovedKey);
   // P4.2 — wave two's first fetch (children, household members) still in
   // flight for a household that already resolved. `isLoading` (not
   // `isFetching`) so a background refetch never re-shows the skeleton over
@@ -684,6 +704,19 @@ export function TodayScreen() {
                   firstApprovedTimesheet.week_start
                 }
                 momentKey={firstWeekApprovedKey}
+              />
+            ) : null}
+            {showWeekApprovedCard && latestApprovedTimesheet && myUserId ? (
+              <WeekApprovedCard
+                householdId={household.id}
+                weekStart={latestApprovedTimesheet.week_start}
+                carerId={myUserId}
+                totalMinutes={latestApprovedTimesheet.total_minutes}
+                approvedAt={
+                  latestApprovedTimesheet.approved_at ??
+                  latestApprovedTimesheet.week_start
+                }
+                timesheetId={latestApprovedTimesheet.id}
               />
             ) : null}
 

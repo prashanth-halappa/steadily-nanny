@@ -16,6 +16,8 @@
  *     (`TodayScreen.tsx`) so it fires once per relationship.
  *   - the first week-approved moment keys by `firstWeekApproved:${householdId}`
  *     (`TodayScreen.tsx`) so a later approved week is not a moment.
+ *   - the D78 week-approved feed card keys by `weekApproved:${timesheetId}`
+ *     (`TodayScreen.tsx`) so every approved week gets exactly one card.
  *
  * Persisted to MMKV so a dismissal survives app restarts; reset on
  * account switch (`resetStores.ts`) so one user's dismissals don't hide a
