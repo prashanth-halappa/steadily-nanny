@@ -39,6 +39,7 @@ let households: Row[] = [];
 let rosters: Record<string, Row[]> = {};
 let acceptedPatterns: Record<string, Row[]> = {};
 let runningEntry: Row | null = null;
+let departingProfile: Row | null = null;
 let failures: Record<string, boolean> = {};
 
 /** Everything the teardown did, in the order it did it. */
@@ -79,6 +80,12 @@ beforeAll(async () => {
         record('filter', key, value);
         return chain;
       }),
+      // `getProfileById` — the departing user's name for the promotion notice.
+      // Their profile row is still there: the delete runs after the teardown.
+      maybeSingle: mock(async () => ({
+        data: departingProfile,
+        error: null,
+      })),
       // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
       then: (resolve: any) =>
         Promise.resolve({ data: null, error: null }).then(resolve),
@@ -104,6 +111,33 @@ beforeAll(async () => {
     logger: { info: mock(), error: mock(), warn: mock(), debug: mock() },
   }));
 
+  // The ownership cache holds `(user, resource)` for an hour and nothing
+  // invalidates it on a membership change (GOLDEN-FIXES #32), so the flip has
+  // to say so out loud. Only the two invalidators this module uses are
+  // stubbed; nothing else here reads the cache.
+  mock.module('../../../../../src/utils/cache', () => ({
+    invalidateUserTokenCache: mock((userId: string) => {
+      record('cache.invalidateUserToken', userId);
+      return 0;
+    }),
+    invalidateResourceRelationshipCache: mock((resourceId: string) => {
+      record('cache.invalidateRelationship', resourceId);
+    }),
+  }));
+
+  mock.module(
+    '../../../../../src/domains/notification/services/householdPush',
+    () => ({
+      notifyUser: mock((userId: string, payload: Row) => {
+        record('push.notifyUser', userId, payload);
+        if (failures.push) {
+          throw new Error('push exploded');
+        }
+      }),
+      notifyHouseholdParents: mock(() => undefined),
+    })
+  );
+
   mock.module(
     '../../../../../src/domains/household/repositories/householdMemberRepository',
     () => ({
@@ -116,7 +150,21 @@ beforeAll(async () => {
           return memberships;
         }
         async listActiveByHousehold(householdId: string) {
-          return rosters[householdId] ?? [];
+          return (rosters[householdId] ?? []).filter(
+            row => (row.status ?? 'active') === 'active'
+          );
+        }
+        async listNonRemovedByHousehold(householdId: string) {
+          return (rosters[householdId] ?? []).filter(
+            row => (row.status ?? 'active') !== 'removed'
+          );
+        }
+        async removeMembership(id: string) {
+          record('members.removeMembership', id);
+          if (failures.removeMembership) {
+            throw new Error('membership flip exploded');
+          }
+          return { ...member(), id, status: 'removed' };
         }
         async update(id: string, patch: Row) {
           record('members.update', id, patch);
@@ -183,7 +231,11 @@ beforeAll(async () => {
           carerId: string
         ) {
           record('patterns.list', householdId, carerId);
-          return acceptedPatterns[householdId] ?? [];
+          // Carer-scoped, like the real query: a fixture row with no
+          // `carer_id` belongs to whoever asks (the pre-existing tests).
+          return (acceptedPatterns[householdId] ?? []).filter(
+            row => row.carer_id === undefined || row.carer_id === carerId
+          );
         }
         async update(id: string, patch: Row) {
           record('patterns.update', id, patch);
@@ -244,6 +296,7 @@ beforeEach(() => {
   rosters = {};
   acceptedPatterns = {};
   runningEntry = null;
+  departingProfile = { user_id: 'u1', name: 'Sam Okonkwo' };
   failures = {};
   trace = [];
   logger.error.mockClear?.();
@@ -450,8 +503,8 @@ describe('UserService.deleteUser — owner promotion', () => {
   });
 
   it('promotes nobody when no parent remains, and still deletes the account', async () => {
-    // The household is then memberless-or-nannies-only; the reaper and the
-    // integrity job are the backstop, not a refusal here.
+    // Nobody is promoted — a nanny never speaks for the family. What happens
+    // to her instead is the "last writer leaves" block below.
     memberships = [member({ id: 'm-owner', role: 'owner' })];
     rosters = {
       h1: [
@@ -462,7 +515,14 @@ describe('UserService.deleteUser — owner promotion', () => {
 
     await UserService.deleteUser('u1');
 
-    expect(argsFor('members.update')).toEqual([]);
+    // No ROLE change. `members.update` is not empty any more — the closure
+    // below stamps `ended_reason` through the same method — so this asserts
+    // the thing it always meant: nobody was promoted.
+    expect(
+      argsFor('members.update').filter(call =>
+        Object.hasOwn(call[1] as object, 'role')
+      )
+    ).toEqual([]);
     expect(stepNames()).toContain('auth.delete');
   });
 
@@ -539,5 +599,391 @@ describe('UserService.deleteUser — teardown failures never fail the request', 
 
     await expect(UserService.deleteUser('u1')).resolves.toBeUndefined();
     expect(logger.error).toHaveBeenCalled();
+  });
+});
+
+describe('UserService.deleteUser — the household loses its last writer', () => {
+  /** Owner leaves, one nanny stays, no other parent. */
+  function ownerLeavesNannyStays(nanny: Row = {}) {
+    memberships = [member({ id: 'm-owner', role: 'owner' })];
+    rosters = {
+      h1: [
+        member({ id: 'm-owner', role: 'owner' }),
+        member({
+          id: 'm-nanny',
+          user_id: 'u-nanny',
+          role: 'nanny',
+          joined_at: '2026-02-01T00:00:00.000Z',
+          ...nanny,
+        }),
+      ],
+    };
+  }
+
+  it('ends the surviving nanny’s membership — nobody is left who could approve her hours', async () => {
+    ownerLeavesNannyStays();
+
+    await UserService.deleteUser('u1');
+
+    expect(argsFor('members.removeMembership')).toEqual([['m-nanny']]);
+  });
+
+  it('end-dates HER pay arrangement, not the departing parent’s', async () => {
+    ownerLeavesNannyStays();
+
+    await UserService.deleteUser('u1');
+
+    // The bug: every teardown step filtered on the departing user, and a
+    // parent is never a carer, so her live terms survived him.
+    const calls = argsFor('pay.endForCarer');
+    expect(calls).toContainEqual(['h1', 'u-nanny', expect.any(String)]);
+    // Household-LOCAL closure day, INCLUSIVE — docs/11-MONEY.md §10, the same
+    // rule `removeMember` uses, so a shift already worked today is not cut
+    // short.
+    const hers = calls.find(call => call[1] === 'u-nanny');
+    expect(hers?.[2]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('ends her terms BEFORE flipping her membership, the only order that cannot strand', async () => {
+    ownerLeavesNannyStays();
+
+    await UserService.deleteUser('u1');
+
+    const names = stepNames();
+    expect(names.indexOf('pay.endForCarer')).toBeLessThan(
+      names.indexOf('members.removeMembership')
+    );
+  });
+
+  it('withdraws HER open terms proposal', async () => {
+    ownerLeavesNannyStays();
+
+    await UserService.deleteUser('u1');
+
+    expect(argsFor('proposals.withdrawOpenForCarer')).toContainEqual([
+      'h1',
+      'u-nanny',
+    ]);
+  });
+
+  it('ends her accepted pattern and cancels the ghost shifts it was still making', async () => {
+    ownerLeavesNannyStays();
+    acceptedPatterns = { h1: [{ id: 'p-nanny', carer_id: 'u-nanny' }] };
+
+    await UserService.deleteUser('u1');
+
+    // `patterns.list` is asked for HER, not for the parent who owned nothing.
+    expect(argsFor('patterns.list')).toContainEqual(['h1', 'u-nanny']);
+    expect(argsFor('patterns.update')).toContainEqual([
+      'p-nanny',
+      { status: 'ended' },
+    ]);
+    expect(argsFor('patterns.cancelFuture')).toContainEqual(['p-nanny']);
+  });
+
+  it('busts her cached ownership relationships, which otherwise stand for an hour', async () => {
+    ownerLeavesNannyStays();
+
+    await UserService.deleteUser('u1');
+
+    expect(argsFor('cache.invalidateRelationship')).toContainEqual(['u-nanny']);
+  });
+
+  it('flips a candidate too — a redeemed invite nobody can accept any more', async () => {
+    ownerLeavesNannyStays({
+      id: 'm-cand',
+      user_id: 'u-cand',
+      status: 'candidate',
+    });
+
+    await UserService.deleteUser('u1');
+
+    expect(argsFor('members.removeMembership')).toEqual([['m-cand']]);
+    expect(argsFor('proposals.withdrawOpenForCarer')).toContainEqual([
+      'h1',
+      'u-cand',
+    ]);
+  });
+
+  it('finishes the deletion when a survivor step throws', async () => {
+    ownerLeavesNannyStays();
+    failures.pay = true;
+
+    await UserService.deleteUser('u1');
+
+    // One bad survivor step must not skip the flip, or the rest of the account.
+    expect(stepNames()).toContain('members.removeMembership');
+    expect(stepNames()).toContain('auth.delete');
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it('leaves the whole household alone when a CO-PARENT remains', async () => {
+    // The critical regression case: a successor is promoted, so the family is
+    // still a family and the nanny keeps her job, her terms and her pattern.
+    memberships = [member({ id: 'm-owner', role: 'owner' })];
+    rosters = {
+      h1: [
+        member({ id: 'm-owner', role: 'owner' }),
+        member({
+          id: 'm-parent',
+          user_id: 'u-parent',
+          role: 'parent',
+          joined_at: '2026-03-01T00:00:00.000Z',
+        }),
+        member({
+          id: 'm-nanny',
+          user_id: 'u-nanny',
+          role: 'nanny',
+          joined_at: '2026-02-01T00:00:00.000Z',
+        }),
+      ],
+    };
+    acceptedPatterns = { h1: [{ id: 'p-nanny', carer_id: 'u-nanny' }] };
+
+    await UserService.deleteUser('u1');
+
+    expect(argsFor('members.update')).toEqual([
+      ['m-parent', { role: 'owner' }],
+    ]);
+    expect(argsFor('members.removeMembership')).toEqual([]);
+    expect(argsFor('pay.endForCarer')).not.toContainEqual([
+      'h1',
+      'u-nanny',
+      expect.any(String),
+    ]);
+    expect(argsFor('patterns.update')).toEqual([]);
+    expect(argsFor('proposals.withdrawOpenForCarer')).toEqual([['h1', 'u1']]);
+  });
+
+  it('leaves the others alone when a NANNY deletes her own account', async () => {
+    // Unchanged behaviour: her own rows are torn down, the family is not.
+    memberships = [member({ id: 'm-nanny', role: 'nanny' })];
+    rosters = {
+      h1: [
+        member({ id: 'm-owner', user_id: 'u-owner', role: 'owner' }),
+        member({ id: 'm-nanny', role: 'nanny' }),
+      ],
+    };
+
+    await UserService.deleteUser('u1');
+
+    expect(argsFor('members.removeMembership')).toEqual([]);
+    expect(argsFor('members.update')).toEqual([]);
+    expect(argsFor('pay.endForCarer')).toEqual([
+      ['h1', 'u1', expect.any(String)],
+    ]);
+  });
+});
+
+describe('UserService.deleteUser — a departure that changes nothing', () => {
+  it('closes nothing when the departing parent had already left the household', async () => {
+    // Her membership is `removed` already, so this deletion is not what took
+    // the household's last writer away. Whatever state it is in, it was in
+    // before — and tearing down a nanny's terms on the strength of an
+    // unrelated account deletion is a write nobody asked for.
+    memberships = [member({ id: 'm-past', role: 'parent', status: 'removed' })];
+    rosters = {
+      h1: [
+        member({
+          id: 'm-nanny',
+          user_id: 'u-nanny',
+          role: 'nanny',
+          joined_at: '2026-02-01T00:00:00.000Z',
+        }),
+      ],
+    };
+
+    await UserService.deleteUser('u1');
+
+    expect(argsFor('members.removeMembership')).toEqual([]);
+    expect(argsFor('pay.endForCarer')).not.toContainEqual([
+      'h1',
+      'u-nanny',
+      expect.any(String),
+    ]);
+  });
+});
+
+describe('UserService.deleteUser — the notice (Phase 2)', () => {
+  function ownerLeavesNannyStays() {
+    memberships = [member({ id: 'm-owner', role: 'owner' })];
+    households = [
+      { id: 'h1', timezone: 'Europe/London', name: 'The Okonkwos' },
+    ];
+    rosters = {
+      h1: [
+        member({ id: 'm-owner', role: 'owner' }),
+        member({
+          id: 'm-nanny',
+          user_id: 'u-nanny',
+          role: 'nanny',
+          joined_at: '2026-02-01T00:00:00.000Z',
+        }),
+      ],
+    };
+  }
+
+  it('tells the surviving nanny the family closed, and says nothing about money', async () => {
+    ownerLeavesNannyStays();
+
+    await UserService.deleteUser('u1');
+
+    expect(argsFor('push.notifyUser')).toEqual([
+      [
+        'u-nanny',
+        {
+          title: 'The Okonkwos closed their Steadily account',
+          body: 'Your record of the hours you worked stays here.',
+          data: {
+            type: 'membership_ended',
+            householdId: 'h1',
+            reason: 'household_closed',
+          },
+        },
+      ],
+    ]);
+  });
+
+  it('stamps WHY the membership ended, for the reader who missed the push', async () => {
+    ownerLeavesNannyStays();
+
+    await UserService.deleteUser('u1');
+
+    expect(argsFor('members.update')).toContainEqual([
+      'm-nanny',
+      { ended_reason: 'household_closed' },
+    ]);
+  });
+
+  it('tells the NANNY nothing when a co-parent remains — her job is unchanged', async () => {
+    memberships = [member({ id: 'm-owner', role: 'owner' })];
+    households = [
+      { id: 'h1', timezone: 'Europe/London', name: 'The Okonkwos' },
+    ];
+    rosters = {
+      h1: [
+        member({ id: 'm-owner', role: 'owner' }),
+        member({ id: 'm-parent', user_id: 'u-parent', role: 'parent' }),
+        member({ id: 'm-nanny', user_id: 'u-nanny', role: 'nanny' }),
+      ],
+    };
+
+    await UserService.deleteUser('u1');
+
+    // The promoted successor IS told (see the ownership block below); the
+    // nanny is not, because nothing about her membership changed.
+    expect(argsFor('push.notifyUser').map(call => call[0])).not.toContain(
+      'u-nanny'
+    );
+  });
+
+  it('still names the household when it never had a name', async () => {
+    ownerLeavesNannyStays();
+    households = [{ id: 'h1', timezone: 'Europe/London', name: null }];
+
+    await UserService.deleteUser('u1');
+
+    expect(argsFor('push.notifyUser')[0]?.[1]).toMatchObject({
+      title: 'The family closed their Steadily account',
+    });
+  });
+
+  it('finishes the teardown when the push throws', async () => {
+    ownerLeavesNannyStays();
+    failures.push = true;
+
+    await UserService.deleteUser('u1');
+
+    expect(stepNames()).toContain('auth.delete');
+  });
+});
+
+describe('UserService.deleteUser — the successor is told they inherited it', () => {
+  function ownerLeavesCoParentStays() {
+    memberships = [member({ id: 'm-owner', role: 'owner' })];
+    households = [
+      { id: 'h1', timezone: 'Europe/London', name: 'The Okonkwos' },
+    ];
+    rosters = {
+      h1: [
+        member({ id: 'm-owner', role: 'owner' }),
+        member({
+          id: 'm-parent',
+          user_id: 'u-parent',
+          role: 'parent',
+          joined_at: '2026-03-01T00:00:00.000Z',
+        }),
+        member({ id: 'm-nanny', user_id: 'u-nanny', role: 'nanny' }),
+      ],
+    };
+  }
+
+  it('tells the promoted co-parent, once, that approving hours is theirs now', async () => {
+    ownerLeavesCoParentStays();
+
+    await UserService.deleteUser('u1');
+
+    expect(argsFor('push.notifyUser')).toEqual([
+      [
+        'u-parent',
+        {
+          title: "You're now the owner of The Okonkwos",
+          body: 'Sam Okonkwo closed their account. Approving hours is yours now.',
+          data: {
+            type: 'invite_redeemed',
+            householdId: 'h1',
+          },
+        },
+      ],
+    ]);
+  });
+
+  it('promotes even when the departing profile has no name to read', async () => {
+    ownerLeavesCoParentStays();
+    departingProfile = null;
+
+    await UserService.deleteUser('u1');
+
+    expect(argsFor('members.update')).toEqual([
+      ['m-parent', { role: 'owner' }],
+    ]);
+    expect(argsFor('push.notifyUser')[0]?.[1]).toMatchObject({
+      body: 'The other parent closed their account. Approving hours is yours now.',
+    });
+  });
+
+  it('says nothing about ownership when there is nobody to promote, and still closes the household', async () => {
+    memberships = [member({ id: 'm-owner', role: 'owner' })];
+    households = [
+      { id: 'h1', timezone: 'Europe/London', name: 'The Okonkwos' },
+    ];
+    rosters = {
+      h1: [
+        member({ id: 'm-owner', role: 'owner' }),
+        member({ id: 'm-nanny', user_id: 'u-nanny', role: 'nanny' }),
+      ],
+    };
+
+    await UserService.deleteUser('u1');
+
+    const titles = argsFor('push.notifyUser').map(
+      call => (call[1] as { title: string }).title
+    );
+    expect(titles).toEqual(['The Okonkwos closed their Steadily account']);
+    expect(argsFor('members.removeMembership')).toEqual([['m-nanny']]);
+  });
+
+  it('sends no ownership notice when a NANNY deletes her own account', async () => {
+    memberships = [member({ id: 'm-nanny', role: 'nanny' })];
+    rosters = {
+      h1: [
+        member({ id: 'm-owner', user_id: 'u-owner', role: 'owner' }),
+        member({ id: 'm-nanny', role: 'nanny' }),
+      ],
+    };
+
+    await UserService.deleteUser('u1');
+
+    expect(argsFor('push.notifyUser')).toEqual([]);
   });
 });

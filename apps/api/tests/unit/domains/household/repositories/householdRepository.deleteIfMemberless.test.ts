@@ -26,10 +26,21 @@ interface Row {
 
 /** Rows the fake `household_members` table holds for the duration of a test. */
 let memberRows: Row[] = [];
+/**
+ * Rows the fake payroll tables hold, per table — the guard's evidence that a
+ * memberless household is not actually garbage.
+ */
+let payrollRows: Record<string, Row[]> = {
+  time_entries: [],
+  timesheets: [],
+  shifts: [],
+};
 /** Every `households` delete the fake saw, as the id list it was given. */
 let deletedIds: string[][] = [];
 /** Forced errors, per table. */
 let failures: Record<string, { message: string } | null> = {};
+
+const PAYROLL_TABLES = ['time_entries', 'timesheets', 'shifts'] as const;
 
 function membersChain(): any {
   let ids: string[] = [];
@@ -48,6 +59,32 @@ function membersChain(): any {
           ? { data: null, error: failures.household_members }
           : {
               data: memberRows
+                .filter(row => ids.includes(row.household_id as string))
+                .map(row => ({ household_id: row.household_id })),
+              error: null,
+            }
+      ).then(resolve),
+  };
+  return chain;
+}
+
+function payrollChain(table: string): any {
+  let ids: string[] = [];
+  const chain: any = {
+    select: mock(() => chain),
+    in: mock((key: string, values: string[]) => {
+      if (key === 'household_id') {
+        ids = values;
+      }
+      return chain;
+    }),
+    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
+    then: (resolve: any) =>
+      Promise.resolve(
+        failures[table]
+          ? { data: null, error: failures[table] }
+          : {
+              data: (payrollRows[table] ?? [])
                 .filter(row => ids.includes(row.household_id as string))
                 .map(row => ({ household_id: row.household_id })),
               error: null,
@@ -79,9 +116,15 @@ function householdsChain(): any {
 beforeAll(async () => {
   mock.module('../../../../../src/config/supabase', () => {
     const obj = {
-      from: mock((table: string) =>
-        table === 'household_members' ? membersChain() : householdsChain()
-      ),
+      from: mock((table: string) => {
+        if (table === 'household_members') {
+          return membersChain();
+        }
+        if ((PAYROLL_TABLES as readonly string[]).includes(table)) {
+          return payrollChain(table);
+        }
+        return householdsChain();
+      }),
     };
     return { supabase: obj, supabaseService: obj };
   });
@@ -100,6 +143,7 @@ beforeAll(async () => {
 
 beforeEach(() => {
   memberRows = [];
+  payrollRows = { time_entries: [], timesheets: [], shifts: [] };
   deletedIds = [];
   failures = {};
   mockSupabaseService.from.mockClear?.();
@@ -179,5 +223,54 @@ describe('HouseholdRepository.deleteIfMemberless', () => {
     const repo = new HouseholdRepository();
 
     expect(repo.deleteIfMemberless(['h1'])).rejects.toThrow();
+  });
+});
+
+describe('HouseholdRepository.deleteIfMemberless — payroll history guard', () => {
+  // A household with nobody left in it is not garbage if it is still holding
+  // somebody's evidence of hours worked. Migration 033 exists so this evidence
+  // survives a carer's own account deletion; the reaper must not undo that.
+  it('SPARES a memberless household that still has time_entries', async () => {
+    payrollRows.time_entries = [{ household_id: 'h1' }];
+    const repo = new HouseholdRepository();
+
+    expect(await repo.deleteIfMemberless(['h1'])).toEqual([]);
+    expect(deletedIds).toEqual([]);
+  });
+
+  it('SPARES a memberless household that still has timesheets', async () => {
+    payrollRows.timesheets = [{ household_id: 'h1' }];
+    const repo = new HouseholdRepository();
+
+    expect(await repo.deleteIfMemberless(['h1'])).toEqual([]);
+    expect(deletedIds).toEqual([]);
+  });
+
+  it('SPARES a memberless household that still has shifts', async () => {
+    payrollRows.shifts = [{ household_id: 'h1' }];
+    const repo = new HouseholdRepository();
+
+    expect(await repo.deleteIfMemberless(['h1'])).toEqual([]);
+    expect(deletedIds).toEqual([]);
+  });
+
+  it('reaps only the memberless households with no payroll history of any kind', async () => {
+    // h1: memberless, has time_entries -> spared.
+    // h2: memberless, no payroll rows -> reaped.
+    // h3: still has a member -> spared (unrelated to this guard).
+    payrollRows.time_entries = [{ household_id: 'h1' }];
+    memberRows = [{ household_id: 'h3', user_id: 'u2', status: 'active' }];
+    const repo = new HouseholdRepository();
+
+    expect(await repo.deleteIfMemberless(['h1', 'h2', 'h3'])).toEqual(['h2']);
+    expect(deletedIds).toEqual([['h2']]);
+  });
+
+  it('throws rather than guessing when a payroll-table read fails', async () => {
+    failures.time_entries = { message: 'boom' };
+    const repo = new HouseholdRepository();
+
+    expect(repo.deleteIfMemberless(['h1'])).rejects.toThrow();
+    expect(deletedIds).toEqual([]);
   });
 });

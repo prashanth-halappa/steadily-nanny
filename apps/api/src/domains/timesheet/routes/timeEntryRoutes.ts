@@ -56,9 +56,22 @@ router.post(
   asyncHandler(TimesheetController.createRetroactiveEntry)
 );
 
+// NO ownership middleware, deliberately — the service gates this one itself
+// (`TimesheetCommandService.loadEntryForClockOut`). Clock-out is the single
+// write a REMOVED member keeps: she is completing a `running` record she
+// started while active, and when the household's last parent deletes their
+// account her membership is flipped out from under her mid-shift. The shared
+// guard above resolves an ACTIVE membership and would 404 her at the door.
+//
+// Giving this route its own wider lookup instead would be the GOLDEN-FIXES #32
+// shape exactly: `makeOwnershipValidator` caches on `(user, resource)` with no
+// lookup identity, so a permitted clock-out would leave a positive entry that
+// PATCH and DELETE on the same id then read and short-circuit on. Same fix as
+// `GET /timesheets/:id` — don't use the middleware where the two permissions
+// diverge.
 router.post(
   '/:id/clock-out',
-  ...authWithOwnership(TimeEntryIdParamSchema, timeEntryOwnership),
+  ...authWithValidation(TimeEntryIdParamSchema),
   validate(ClockOutSchema, 'body'),
   asyncHandler(TimesheetController.clockOut)
 );

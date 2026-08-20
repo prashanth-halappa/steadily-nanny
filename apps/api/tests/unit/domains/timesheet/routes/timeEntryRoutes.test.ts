@@ -30,11 +30,13 @@ import type { AddressInfo } from 'node:net';
 
 const HOUSEHOLD_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const AUTH_USER_ID = 'carer-1';
+const ENTRY_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 let server: import('node:http').Server;
 let baseUrl: string;
 let clockInMock: ReturnType<typeof mock>;
 let retroMock: ReturnType<typeof mock>;
+let clockOutMock: ReturnType<typeof mock>;
 
 beforeAll(async () => {
   const refuse = async (..._args: unknown[]) => {
@@ -45,6 +47,7 @@ beforeAll(async () => {
   };
   clockInMock = mock(refuse);
   retroMock = mock(refuse);
+  clockOutMock = mock(async () => ({ id: 'te-1', status: 'submitted' }));
 
   mock.module('../../../../../src/middlewares/auth', () => ({
     requireAuth: (req: any, _res: any, next: any) => {
@@ -62,6 +65,23 @@ beforeAll(async () => {
       timesheetCommandService: {
         clockIn: (...args: unknown[]) => clockInMock(...args),
         createRetroactiveEntry: (...args: unknown[]) => retroMock(...args),
+        clockOut: (...args: unknown[]) => clockOutMock(...args),
+      },
+    })
+  );
+
+  // The route's ownership lookup, refusing exactly as it does for a member
+  // whose household lost its last writer while she was on shift.
+  mock.module(
+    '../../../../../src/domains/timesheet/services/timesheetQueryService',
+    () => ({
+      timesheetQueryService: {
+        getOwnedTimeEntry: mock(async (_userId: string, id: string) => {
+          const { TimeEntryNotFoundError } = await import(
+            '../../../../../src/domains/timesheet/errors/timesheetErrors'
+          );
+          throw new TimeEntryNotFoundError(id);
+        }),
       },
     })
   );
@@ -97,6 +117,7 @@ afterAll(() => {
 beforeEach(() => {
   clockInMock.mockClear();
   retroMock.mockClear();
+  clockOutMock.mockClear();
 });
 
 function post(path: string, body: unknown): Promise<Response> {
@@ -144,5 +165,19 @@ describe('POST /time-entries/retroactive — the same refusal, same shape', () =
 
     expect(res.status).toBe(409);
     expect(body.error.metadata.reason).toBe('TERMS_NOT_AGREED');
+  });
+});
+
+describe('POST /time-entries/:id/clock-out — the one write a removed member keeps', () => {
+  // The strict ownership middleware would 404 her at the door, before the
+  // service's own gate ever ran. It is off this route deliberately, and the
+  // service gates instead — the same shape GOLDEN-FIXES #32 prescribes for
+  // `GET /timesheets/:id`, and for the same reason: two routes over one id
+  // with two different permissions must never share the relationship cache.
+  it('reaches the service even when the strict ownership lookup refuses', async () => {
+    const res = await post(`${ENTRY_ID}/clock-out`, {});
+
+    expect(res.status).toBe(200);
+    expect(clockOutMock).toHaveBeenCalled();
   });
 });

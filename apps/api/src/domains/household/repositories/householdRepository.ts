@@ -69,6 +69,49 @@ export class HouseholdRepository extends BaseRepository<Household> {
   }
 
   /**
+   * Tables that a "delete this memberless household" sweep must never
+   * cascade into if any of them still hold a row for it — 033's payroll
+   * history survives a carer's own account deletion, and a household that
+   * outlives every one of its members is the same case: nobody left to ask,
+   * but the record two parties trusted must not vanish because of it.
+   */
+  private static readonly PAYROLL_TABLES = [
+    'time_entries',
+    'timesheets',
+    'shifts',
+  ] as const;
+
+  /**
+   * Of these households, which still hold payroll history — at least one row
+   * in `time_entries`, `timesheets` or `shifts`. Same "a read failure THROWS"
+   * reasoning as `deleteIfMemberless`'s membership read: "I could not tell if
+   * there's a record in here" must never resolve to "delete it".
+   */
+  private async householdsWithPayrollHistory(
+    ids: string[]
+  ): Promise<Set<string>> {
+    const held = new Set<string>();
+    for (const table of HouseholdRepository.PAYROLL_TABLES) {
+      const { data, error } = await supabaseService
+        .from(table)
+        .select('household_id')
+        .in('household_id', ids);
+
+      if (error) {
+        throw new DatabaseError(
+          `Failed to check ${table} before reaping households`,
+          'DATABASE_ERROR',
+          { details: error.message }
+        );
+      }
+      for (const row of (data ?? []) as { household_id: string }[]) {
+        held.add(row.household_id);
+      }
+    }
+    return held;
+  }
+
+  /**
    * Of these households, delete the ones nobody has a row in any more, and
    * report which went. The orphan reaper, shared by account deletion
    * (`userService.deleteUser`) and the daily `integrityCheckJob` sweep.
@@ -88,7 +131,15 @@ export class HouseholdRepository extends BaseRepository<Household> {
    * A read failure THROWS rather than returning an empty set: "I could not
    * tell who is in there" must never resolve to "delete it".
    *
-   * One `in (...)` read and at most one `in (...)` delete, whatever the batch
+   * MEMBERLESS IS NOT THE SAME AS EMPTY. A household can outlive every one of
+   * its members (each of them deleted their own account) while `time_entries`
+   * / `timesheets` / `shifts` rows still stand on it — the very payroll
+   * history 033 exists to keep. `householdsWithPayrollHistory` spares those:
+   * they are somebody's evidence, not garbage, and stay standing with no
+   * member able to see them, same as any other data-retention record.
+   *
+   * One `in (...)` membership read, one `in (...)` payroll-history read (per
+   * payroll table) and at most one `in (...)` delete, whatever the batch
    * size; the cascade does the rest of the work.
    */
   async deleteIfMemberless(ids: string[]): Promise<string[]> {
@@ -117,10 +168,16 @@ export class HouseholdRepository extends BaseRepository<Household> {
       return [];
     }
 
+    const holdsPayroll = await this.householdsWithPayrollHistory(memberless);
+    const reapable = memberless.filter(id => !holdsPayroll.has(id));
+    if (reapable.length === 0) {
+      return [];
+    }
+
     const { error: deleteError } = await supabaseService
       .from(this.table)
       .delete()
-      .in('id', memberless);
+      .in('id', reapable);
 
     if (deleteError) {
       throw new DatabaseError(
@@ -129,7 +186,7 @@ export class HouseholdRepository extends BaseRepository<Household> {
         { details: deleteError.message }
       );
     }
-    return memberless;
+    return reapable;
   }
 
   /**

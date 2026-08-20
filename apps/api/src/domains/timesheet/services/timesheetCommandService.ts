@@ -76,6 +76,7 @@ import {
   NotACarerError,
   NotATimesheetParentError,
   TimeEntryNotEditableError,
+  TimeEntryNotFoundError,
   TimeEntryNotRunningError,
   TimeEntryOverlapError,
   TimesheetAdjustmentNegativeGrossError,
@@ -585,6 +586,55 @@ export class TimesheetCommandService {
   }
 
   /**
+   * Resolve the entry a clock-out is about to close.
+   *
+   * The strict gate runs FIRST and unchanged: `getOwnedTimeEntry` demands an
+   * ACTIVE membership, and for every other id-scoped write that is the end of
+   * it (F-B3b-3). Clock-out is the one exception, because closing a record is
+   * not creating an obligation — and the member who needs it did not choose to
+   * leave: when the last parent deletes their account, `UserService` flips
+   * every remaining membership to `removed`, and it can happen while she is on
+   * shift. Refuse her here and the entry runs forever, the hours never reach a
+   * timesheet, and `time_entries_one_running_per_carer` blocks her next
+   * clock-in anywhere — F-B2-4 through a different door.
+   *
+   * So on the strict gate's 404, and only then, one narrower question: is this
+   * a RUNNING entry of her own, in a household she is or once was a member of?
+   * A stranger, somebody else's entry and an already-closed entry all rethrow
+   * the original error, byte-identical, so nothing new is leaked. `candidate`
+   * is excluded by `findMembershipAnyStatus`'s positive `{active, removed}`
+   * list, and cannot reach here anyway — she was never able to clock in.
+   *
+   * ponytail: the refusal is the signal, so this costs one extra `findById`
+   * on a path that already 404s. Cheaper than a second lookup on every
+   * clock-out.
+   */
+  private async loadEntryForClockOut(
+    userId: string,
+    timeEntryId: string
+  ): Promise<TimeEntry> {
+    try {
+      return await this.queries.getOwnedTimeEntry(userId, timeEntryId);
+    } catch (error) {
+      if (!(error instanceof TimeEntryNotFoundError)) {
+        throw error;
+      }
+      const entry = await this.timeEntryRepo.findById(timeEntryId);
+      if (!entry || entry.carer_id !== userId || entry.status !== 'running') {
+        throw error;
+      }
+      const membership = await this.memberRepo.findMembershipAnyStatus(
+        entry.household_id,
+        userId
+      );
+      if (!membership) {
+        throw error;
+      }
+      return entry;
+    }
+  }
+
+  /**
    * End a clock-in. Only the carer it belongs to may clock it out (enforced
    * by `queries.getOwnedTimeEntry`, which throws the SAME not-found error
    * whether the entry is missing or someone else's — see that method).
@@ -602,13 +652,16 @@ export class TimesheetCommandService {
    * before terms lapsed on a member removal — and must always be closeable:
    * refusing would strand it, and `time_entries_one_running_per_carer` would
    * then block every future clock-in with no way out (the F-B2-4 class).
+   *
+   * And, for the same reason, not ACTIVE-MEMBERSHIP-gated either — see
+   * `loadEntryForClockOut`.
    */
   async clockOut(
     userId: string,
     timeEntryId: string,
     input: ClockOutInput
   ): Promise<TimeEntry> {
-    const entry = await this.queries.getOwnedTimeEntry(userId, timeEntryId);
+    const entry = await this.loadEntryForClockOut(userId, timeEntryId);
     if (entry.status !== 'running') {
       throw new TimeEntryNotRunningError(timeEntryId, entry.status);
     }

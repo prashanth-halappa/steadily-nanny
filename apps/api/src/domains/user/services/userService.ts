@@ -8,7 +8,12 @@
  * @module domains/user/services/userService
  */
 import type { UserProfile } from '@steadily-nanny/shared-types';
-import { HOUSEHOLD_ROLES } from '@steadily-nanny/shared-types/schemas/household.schema';
+import {
+  HOUSEHOLD_ROLES,
+  MEMBERSHIP_ENDED_REASONS,
+  PARENT_ROLES,
+} from '@steadily-nanny/shared-types/schemas/household.schema';
+import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import { SCHEDULE_PATTERN_STATUSES } from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import { SHIFT_CHANGE_REQUEST_STATUSES } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { supabaseService } from '../../../config/supabase';
@@ -18,7 +23,10 @@ import type {
   UpdateProfileInput,
   UpsertProfileInput,
 } from '../../../schemas/user.schema';
-import { invalidateUserTokenCache } from '../../../utils/cache';
+import {
+  invalidateResourceRelationshipCache,
+  invalidateUserTokenCache,
+} from '../../../utils/cache';
 // Every one of these is imported from its own MODULE, never from the domain
 // barrel: `domains/household` and `domains/pay` re-export services that
 // import `UserService` back, and pulling a barrel here would close that loop
@@ -322,12 +330,20 @@ export class UserService {
 
     const now = new Date();
     const householdIds = [...new Set(memberships.map(m => m.household_id))];
-    const timezones = new Map<string, string>();
-    await tearDownStep('load_household_timezones', userId, async () => {
+    // The ROW, not just its zone: the closure notice names the family, and
+    // that is the only place the name is available on this path.
+    const households = new Map<
+      string,
+      { timezone: string; name: string | null }
+    >();
+    await tearDownStep('load_households', userId, async () => {
       for (const household of await new HouseholdRepository().findByIds(
         householdIds
       )) {
-        timezones.set(household.id, household.timezone);
+        households.set(household.id, {
+          timezone: household.timezone,
+          name: household.name,
+        });
       }
     });
 
@@ -353,7 +369,7 @@ export class UserService {
         await payArrangements.endForCarer(
           householdId,
           userId,
-          localDateOf(now, timezones.get(householdId) ?? 'UTC')
+          localDateOf(now, households.get(householdId)?.timezone ?? 'UTC')
         );
       });
 
@@ -362,7 +378,32 @@ export class UserService {
       );
 
       await tearDownStep('promote_owner', userId, () =>
-        UserService.promoteSuccessorOwner(userId, membership, memberRepo)
+        UserService.promoteSuccessorOwner(
+          userId,
+          membership,
+          memberRepo,
+          households.get(householdId)?.name ?? null
+        )
+      );
+
+      // AFTER the promotion, and it needs no signal from it: a promoted
+      // successor was a `parent` and is now an `owner`, and the check below
+      // reads both as a writer either way.
+      await tearDownStep('close_household_without_writers', userId, () =>
+        UserService.closeHouseholdWithoutWriters(userId, membership, {
+          memberRepo,
+          payArrangements,
+          patternRepo,
+          proposalRepo,
+          closureDay: localDateOf(
+            now,
+            households.get(householdId)?.timezone ?? 'UTC'
+          ),
+          // A live household always has a name (CreateHouseholdSchema's
+          // refine); the fallback is for the draft-shaped row that never did.
+          familyName: households.get(householdId)?.name ?? 'The family',
+          now,
+        })
       );
     }
   }
@@ -460,6 +501,29 @@ export class UserService {
   }
 
   /**
+   * One push, loaded lazily.
+   *
+   * The lazy import is the whole point of the helper: `householdPush` reaches
+   * the household barrel, which constructs `householdCommandService`, whose
+   * default argument is `UserService` — a static import here is a "Cannot
+   * access 'UserService' before initialization" at boot. Same trick, same
+   * reason, as `closeRunningEntry`'s `timesheetCommandService` import.
+   */
+  private static async sendNotice(
+    userId: string,
+    payload: {
+      title: string;
+      body: string;
+      data: Record<string, unknown>;
+    }
+  ): Promise<void> {
+    const { notifyUser } = await import(
+      '../../notification/services/householdPush'
+    );
+    notifyUser(userId, payload);
+  }
+
+  /**
    * Hand the household to somebody who can still run it.
    *
    * `removeMember` refuses to remove an owner precisely because a household
@@ -473,13 +537,15 @@ export class UserService {
    * by `joined_at` ascending, so the first match is that person. A nanny or
    * helper is never promoted — owner speaks for the family.
    *
-   * No parent left means no promotion and no complaint: either the household
-   * is about to be reaped as memberless, or `integrityCheckJob` will find it.
+   * No parent left means no promotion. That is NOT the end of it — a nanny
+   * still standing in a household with no writer is
+   * `closeHouseholdWithoutWriters`' problem, and it runs straight after this.
    */
   private static async promoteSuccessorOwner(
     userId: string,
     membership: HouseholdMember,
-    memberRepo: HouseholdMemberRepository
+    memberRepo: HouseholdMemberRepository,
+    householdName: string | null
   ): Promise<void> {
     if (membership.role !== HOUSEHOLD_ROLES.OWNER) {
       return;
@@ -496,6 +562,193 @@ export class UserService {
     logger.info('Promoted a parent to owner on account deletion', {
       householdId: membership.household_id,
       memberId: successor.id,
+    });
+
+    // Approving somebody's wages just became this person's job and nothing
+    // told them — they would find out, if ever, because a button appeared.
+    //
+    // Reuses INVITE_REDEEMED, the household's membership-changed push, for
+    // the reason `householdCommandService.leave` already reuses it and
+    // documents at length: the name lies, every effect a client observes is
+    // right, and `notificationRouteMap` sends it to
+    // `/(private)/settings/household` — the roster, which is exactly where a
+    // new owner needs to land. CO_PARENT_ACTION_FYI would be the obvious
+    // pick and resolves to `shiftDetailHref`, which returns NULL without a
+    // `shiftId`: a push about a role change that navigates nowhere.
+    //
+    // AFTER the role write, and the name read cannot block it: a profile
+    // lookup that fails must cost the successor a name, never the household
+    // an owner.
+    const departing = await UserService.getProfileById(userId).catch(
+      () => null
+    );
+    await UserService.sendNotice(successor.user_id, {
+      title: `You're now the owner of ${householdName ?? 'your household'}`,
+      body: `${departing?.name ?? 'The other parent'} closed their account. Approving hours is yours now.`,
+      data: {
+        type: PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED,
+        householdId: membership.household_id,
+      },
+    });
+  }
+
+  /**
+   * End the household for everyone left in it when its last WRITER goes.
+   *
+   * The teardown above is written from the departing user's point of view —
+   * "which rows are this user's?" — and for a nanny that is the whole answer.
+   * For a parent it is almost none of it: `end_pay_arrangements`,
+   * `end_schedule_patterns` and `withdraw_open_terms_proposals` all filter on
+   * `carer_id = <the departing user>`, and a parent is never a carer, so they
+   * match zero rows. Everything a parent's leaving actually ends lives on
+   * OTHER people's rows.
+   *
+   * Left alone, the nanny's membership stays `active`, so `isPastMember` never
+   * engages and the API keeps accepting her writes into a household nobody can
+   * approve in; her arrangement stays live; and her `accepted` pattern keeps
+   * `scheduleHorizonJob` materialising shifts and `reminderJob` pushing "you
+   * have a shift tomorrow" to a family that no longer exists. If she turns up,
+   * the app sent her.
+   *
+   * WRITER, not owner: a co-parent left standing means the family is still a
+   * family (they were just promoted, one line above) and NOTHING here runs.
+   * Only the case where the last `{owner, parent}` walks out closes anything.
+   *
+   * `candidate` rows go too — a redeemed invite whose terms nobody is left to
+   * accept is a dead end, and `removeMembership` CASes on `{active,
+   * candidate}` for exactly this reason (the same call `archive`,
+   * `removeMember` and `leave` make; there is no second update path).
+   *
+   * Per-survivor step granularity, same discipline as the caller: one carer's
+   * failed pay write must not skip her membership flip or the next carer.
+   */
+  private static async closeHouseholdWithoutWriters(
+    userId: string,
+    membership: HouseholdMember,
+    deps: {
+      memberRepo: HouseholdMemberRepository;
+      payArrangements: PayArrangementRepository;
+      patternRepo: SchedulePatternRepository;
+      proposalRepo: TermsProposalRepository;
+      closureDay: string;
+      familyName: string;
+      now: Date;
+    }
+  ): Promise<void> {
+    // Her OWN membership has to be the one that just ended. A parent who
+    // already left keeps her `parent` role on a `removed` row; deleting that
+    // account takes nothing away from the household, and a household already
+    // short of a writer was already short of one before today.
+    if (membership.status !== 'active' || !PARENT_ROLES.has(membership.role)) {
+      return;
+    }
+    const householdId = membership.household_id;
+    // Active AND candidate: the writer check reads only the active ones (a
+    // candidate is always a nanny — 094 — so she can never be the writer that
+    // keeps a household alive), but both statuses have to be flipped.
+    const remaining = (
+      await deps.memberRepo.listNonRemovedByHousehold(householdId)
+    ).filter(other => other.user_id !== userId);
+    const writerRemains = remaining.some(
+      other => other.status === 'active' && PARENT_ROLES.has(other.role)
+    );
+    if (writerRemains || remaining.length === 0) {
+      return;
+    }
+
+    for (const survivor of remaining) {
+      if (survivor.role === HOUSEHOLD_ROLES.NANNY) {
+        // The same three steps, the same helpers, the same order the departing
+        // user's own teardown uses — only the carer argument differs, which is
+        // the whole bug. `removeMember`'s ordering rule holds here too: end the
+        // terms BEFORE the membership flip, or a throw strands a removed member
+        // with live terms.
+        await tearDownStep(
+          'survivor_withdraw_open_terms_proposals',
+          survivor.user_id,
+          async () => {
+            await deps.proposalRepo.withdrawOpenForCarer(
+              householdId,
+              survivor.user_id
+            );
+          }
+        );
+        await tearDownStep(
+          'survivor_end_pay_arrangements',
+          survivor.user_id,
+          async () => {
+            // Household-LOCAL and INCLUSIVE (docs/11-MONEY.md §10), the same
+            // date `removeMember` end-dates on, so a shift already worked
+            // today is not cut short.
+            await deps.payArrangements.endForCarer(
+              householdId,
+              survivor.user_id,
+              deps.closureDay
+            );
+          }
+        );
+        await tearDownStep(
+          'survivor_end_schedule_patterns',
+          survivor.user_id,
+          () =>
+            UserService.endAcceptedPatterns(
+              survivor.user_id,
+              householdId,
+              deps.patternRepo,
+              deps.now
+            )
+        );
+      }
+
+      await tearDownStep(
+        'survivor_end_membership',
+        survivor.user_id,
+        async () => {
+          const ended = await deps.memberRepo.removeMembership(survivor.id);
+          if (ended) {
+            // A SECOND write, deliberately: the CAS flip is the repository's
+            // and stamping a reason onto a row somebody else already removed
+            // would be a lie. Only the caller that won the flip records why.
+            //
+            // ponytail: one extra UPDATE on a path that runs once per
+            // household closure. Fold it into `removeMembership` as an
+            // optional argument when that repository is next touched.
+            await deps.memberRepo.update(survivor.id, {
+              ended_reason: MEMBERSHIP_ENDED_REASONS.HOUSEHOLD_CLOSED,
+            });
+          }
+          // `makeOwnershipValidator` caches `(user, resource)` for an hour
+          // (TTL.RELATIONSHIP) and nothing else invalidates it on a membership
+          // change, so without this she keeps passing every id-scoped write
+          // gate she happened to touch in the last hour (GOLDEN-FIXES #32).
+          // The existing resource-invalidator does the job unchanged: the key
+          // embeds the user id, so passing it clears every `auth:` entry that
+          // names her.
+          invalidateResourceRelationshipCache(survivor.user_id);
+
+          // Nobody removed her — the family is gone — so without this she
+          // opens the app to a household that has quietly stopped accepting
+          // her writes and no sentence anywhere saying why. No figure and no
+          // promise: whether she is owed anything is the payroll record's
+          // answer, and a push that guessed either way would be wrong
+          // expensively.
+          await UserService.sendNotice(survivor.user_id, {
+            title: `${deps.familyName} closed their Steadily account`,
+            body: 'Your record of the hours you worked stays here.',
+            data: {
+              type: PUSH_NOTIFICATION_TYPES.MEMBERSHIP_ENDED,
+              householdId,
+              reason: MEMBERSHIP_ENDED_REASONS.HOUSEHOLD_CLOSED,
+            },
+          });
+        }
+      );
+    }
+
+    logger.info('Closed a household that lost its last writer', {
+      householdId,
+      departingUserId: userId,
+      memberIds: remaining.map(other => other.id),
     });
   }
 }
