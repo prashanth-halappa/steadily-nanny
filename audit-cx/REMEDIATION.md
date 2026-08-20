@@ -63,3 +63,36 @@ left alone; the docs need a decision.
 - **Arbitrary values** excludes percentages: the 8pt scale governs px, and `max-w-[38%]` has no
   token equivalent.
 - **Ink tokens** skips comment lines, so a docblock naming the banned class is not a violation.
+
+---
+
+## Accounting for the other 119
+
+"Closed" here means **the evidence line the finding quoted is no longer in the tree**. That is a
+conservative test: a finding can be genuinely fixed while its quoted line survives, because 118
+of the 212 sites were located by signal rather than by an exact evidence match (many of the
+model's `Evidence:` fields quoted the wrong line — see `APPENDIX-REFUTED.md`). So **119 is an
+upper bound on what is left, not a count of real defects.**
+
+| Bucket | Count | What it means |
+|---|---|---|
+| In files that DID change | **91** | Partially addressed. Sampling `MyPayScreen` (10 flagged): `StatusPill` adoption landed, but the `H1` rate, the history toggle and per-row elevation are genuinely still there — roughly half real. |
+| In files never touched | **28** | Of these, ~15 are the deliberate reverts and deferrals above (`ProposalReviewScreen` 4, `OnTheClock` 3, `ParentWeekView` 2, `HoursHeroBand` 2, and one each for `JoinedHouseholdCard`, `SickTimeOffButton`, `person-avatar`, `DraftInviteScreen`). |
+| Genuinely untouched, unexplained | **~9** | `CodeEntryScreen` 2, `skeleton-shimmer` 2, `status-pill` 2, `TermsGlossarySheet` 1, `AvailabilityEditor` 1, `typography/factory` 1. |
+
+**Realistic remaining work: roughly 45–60 findings**, concentrated in `MyPayScreen`,
+`PayArrangementScreen`, `WeekTotal`, `ThisFamilyScreen`, and the four home-screen widgets
+(16 findings, never attempted — the widget bucket's agent stopped at the ink-token change).
+
+None of the remaining findings reached S0. The three mechanical classes that had guards behind
+them — ink tokens, Rule M on tinted cards, Reanimated/hex/arbitrary values — are at **zero**, and
+the guards keep them there. What is left is rung and affordance work, which needs a per-screen
+judgement call about which rung a given card actually is, and cannot be guarded statically.
+
+### Recommended next pass
+
+1. Re-derive worklists from the **guards plus a fresh read**, not from the original findings —
+   the evidence lines have drifted and the audit's line numbers are now two remediation waves old.
+2. Widgets first (16 findings, 4 files, fully untouched, and they render outside the app where
+   nothing else checks them). Watch dark-mode ink: that is where the 1.92:1 regression came from.
+3. Then `MyPayScreen` + `PayArrangementScreen` (15), which are the two densest screens left.
