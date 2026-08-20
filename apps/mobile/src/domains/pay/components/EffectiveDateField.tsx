@@ -106,7 +106,7 @@ export function EffectiveDateField({
       {malformed ? (
         <Small
           testID={`${testIDPrefix}-date-error`}
-          className="text-destructive"
+          className="text-error-inline-text"
         >
           {t('changeSheet.dateInvalid')}
         </Small>
@@ -114,7 +114,7 @@ export function EffectiveDateField({
       {tooFarAhead ? (
         <Small
           testID={`${testIDPrefix}-date-horizon-error`}
-          className="text-destructive"
+          className="text-error-inline-text"
         >
           {t('changeSheet.dateTooFarAhead')}
         </Small>

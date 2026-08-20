@@ -46,6 +46,7 @@ import {
 import { Button } from '@/src/components/ui/button';
 import { Card, CardContent } from '@/src/components/ui/card';
 import { EmptyState } from '@/src/components/ui/empty-state';
+import { ListGroup } from '@/src/components/ui/list-group';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Text } from '@/src/components/ui/text';
@@ -566,7 +567,7 @@ function CarerPayDetail({
             </View>
           ) : null}
 
-          <View className="gap-2" testID="pay-history-list">
+          <ListGroup testID="pay-history-list">
             {history.data?.map((row, index) => {
               const setByMember = row.created_by
                 ? members.find(m => m.user_id === row.created_by)
@@ -583,8 +584,7 @@ function CarerPayDetail({
                 <View
                   key={row.id}
                   testID={`pay-history-${row.id}`}
-                  className="gap-2 rounded-row bg-card px-4 py-3"
-                  style={elevation.row}
+                  className="gap-2 px-4 py-3"
                 >
                   <Body weight="medium">
                     {t('historyFrom', {
@@ -629,7 +629,7 @@ function CarerPayDetail({
                 </View>
               );
             })}
-          </View>
+          </ListGroup>
 
           <PayChangeSheet
             visible={sheetOpen}

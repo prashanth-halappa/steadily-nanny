@@ -45,7 +45,6 @@ import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
 import { spacing } from '@/lib/design-tokens';
-import { useElevation } from '@/lib/design-tokens/elevation';
 import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { StatusPill } from '@/src/components/ui/status-pill';
 import { Body, Small } from '@/src/components/ui/typography';
@@ -101,7 +100,6 @@ export function HouseholdTimeOffRow({
   // reusing the SAME string `TimeOffRow`'s own marker uses on the carer's
   // own cross-household view — one label, not a second one coined here.
   const { t: tTimeOff } = useTranslation('timeOff');
-  const elevation = useElevation();
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const year = Number(
@@ -179,7 +177,7 @@ export function HouseholdTimeOffRow({
       >
         <View
           className="gap-1 rounded-row bg-card px-4 py-3"
-          style={[elevation.row, { minHeight: spacing.minTouchTarget }]}
+          style={{ minHeight: spacing.minTouchTarget }}
         >
           <Body weight="medium">{rangeLabel}</Body>
           {isErrored ? (
@@ -200,11 +198,9 @@ export function HouseholdTimeOffRow({
             />
           )}
           {timeOff.kind === 'sick' ? (
-            <StatusPill
-              testID={`household-time-off-kind-sick-${timeOff.id}`}
-              variant="short-notice"
-              label={tTimeOff('kind.sick')}
-            />
+            <Small testID={`household-time-off-kind-sick-${timeOff.id}`}>
+              {tTimeOff('kind.sick')}
+            </Small>
           ) : null}
           {timeOff.message ? (
             <Small className="text-muted-foreground">{timeOff.message}</Small>

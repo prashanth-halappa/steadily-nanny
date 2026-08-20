@@ -227,7 +227,7 @@ export function SchedulePatternBanner({
         {sentAgo ? (
           <MetadataLabel
             testID="schedule-pattern-banner-sent-age"
-            className="text-muted-foreground"
+            className="text-muted-strong"
           >
             {sentAgo}
           </MetadataLabel>
@@ -248,7 +248,7 @@ export function SchedulePatternBanner({
             {closedReason ? (
               <Small
                 testID="schedule-pattern-banner-action-reason"
-                className="mt-2 text-center text-muted-foreground"
+                className="mt-2 text-center text-muted-strong"
               >
                 {closedReason}
               </Small>

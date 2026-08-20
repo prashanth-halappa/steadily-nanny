@@ -3,9 +3,8 @@
  *
  * One parent coverage surface — need-centric headline, shift-centric plan lines
  * below. T4 on the bare ground except gap (`attention`) and live (`live`) cards.
- * The SplitTrack day bar sits with those plan lines in the booked state only;
- * the gap state keeps the sentences, not the strip (an all-amber bar below the
- * attention card reads as an orphan and amplifies alarm).
+ * The SplitTrack day bar sits with those plan lines in both booked and gap
+ * states so the day's coverage shape stays visible above the plan sentences.
  *
  * This card has ONE look — no quiet second rung, no per-card emphasis prop,
  * and deliberately no `usePinnedTone()`: its own state machine already
@@ -49,7 +48,14 @@ import { InlineError } from '@/src/components/ui/inline-error';
 import { LiveDot } from '@/src/components/ui/live-dot';
 import { SplitTrack } from '@/src/components/ui/split-track';
 import { StatusPill } from '@/src/components/ui/status-pill';
-import { Body, Caption, H3, Small } from '@/src/components/ui/typography';
+import {
+  Body,
+  Caption,
+  H3,
+  H4,
+  MetadataLabel,
+  Small,
+} from '@/src/components/ui/typography';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { localDateToWeekday } from '@/src/domains/schedule/utils/shiftGrouping';
@@ -288,7 +294,7 @@ export function TodayCoverage({
           onPress={() => router.push('/settings/children' as Href)}
         >
           <Card testID="today-coverage" className="gap-1 p-5.5">
-            <Body weight="medium">{t('cover.setup.title')}</Body>
+            <H4>{t('cover.setup.title')}</H4>
             <Caption className="text-muted-foreground">
               {t('cover.setup.body')}
             </Caption>
@@ -304,7 +310,7 @@ export function TodayCoverage({
     return (
       <View className="gap-3">
         <View testID="today-coverage" className="gap-1">
-          <Body weight="medium">{t('cover.noNeed.title')}</Body>
+          <MetadataLabel>{t('cover.noNeed.title')}</MetadataLabel>
           <Caption className="text-muted-foreground">
             {t('cover.noNeed.body', { weekday })}
           </Caption>
@@ -331,7 +337,7 @@ export function TodayCoverage({
 
   const planLines = (
     <View className="gap-2">
-      {state.status === 'booked' ? (
+      {state.status === 'booked' || state.status === 'gap' ? (
         <SplitTrack testID="today-coverage-day-bar" segments={dayBarSegments} />
       ) : null}
       {state.plan.map(line => (
@@ -660,9 +666,7 @@ export function TodayCoverage({
                 >
                   <Small
                     className={
-                      withdrawDisabled
-                        ? 'text-muted-foreground'
-                        : 'text-primary'
+                      withdrawDisabled ? 'text-muted-strong' : 'text-primary'
                     }
                     weight="medium"
                   >
@@ -672,7 +676,7 @@ export function TodayCoverage({
                 {withdrawReason ? (
                   <Small
                     testID="today-coverage-withdraw-ask-reason"
-                    className="mt-2 text-muted-foreground"
+                    className="mt-2 text-muted-strong"
                   >
                     {withdrawReason}
                   </Small>

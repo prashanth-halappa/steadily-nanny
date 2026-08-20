@@ -376,7 +376,9 @@ export function ExtraShiftScreen() {
               >
                 <Text
                   className={
-                    selected ? 'text-primary-foreground' : 'text-foreground'
+                    selected
+                      ? 'font-semibold text-primary-foreground'
+                      : 'text-foreground'
                   }
                 >
                   {label}

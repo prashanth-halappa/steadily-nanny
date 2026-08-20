@@ -199,10 +199,6 @@ export function LoadingButton({
       testID={testID}
       variant={variant}
       disabled={isLoading || buttonProps.disabled}
-      style={[
-        isLoading ? { opacity: 0.8 } : undefined,
-        buttonProps.style as object | undefined,
-      ]}
       {...buttonProps}
     >
       <View

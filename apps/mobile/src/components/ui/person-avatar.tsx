@@ -22,12 +22,10 @@ const NAME_ACCENTS = [
   palette.light.categoryAccent3.hex,
 ] as const;
 
-/** First letter of the trimmed name, uppercased. Never throws. */
+/** First letter of the trimmed name, preserving sentence case. Never throws. */
 function getInitial(name: string): string {
   const trimmed = name.trim();
-  return trimmed.length > 0
-    ? trimmed.charAt(0).toUpperCase()
-    : FALLBACK_INITIAL;
+  return trimmed.length > 0 ? trimmed.charAt(0) : FALLBACK_INITIAL;
 }
 
 /** Deterministic category accent for a person name. Closed 3-hue palette. */

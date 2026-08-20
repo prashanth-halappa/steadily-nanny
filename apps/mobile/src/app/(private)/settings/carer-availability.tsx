@@ -19,6 +19,7 @@ import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { BackButton } from '@/src/components/ui/back-button';
 import { EmptyState } from '@/src/components/ui/empty-state';
+import { ListGroup } from '@/src/components/ui/list-group';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Body, H1, Small } from '@/src/components/ui/typography';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
@@ -136,12 +137,12 @@ export default function CarerAvailabilityScreen() {
           />
         </View>
       ) : (
-        <View className="mt-4 gap-2">
+        <ListGroup testID="carer-availability-list" className="mt-4">
           {(availability.data ?? []).map(row => (
             <View
               key={row.id}
               testID={`carer-availability-${row.id}`}
-              className="rounded-row bg-card px-4 py-3"
+              className="px-4 py-3"
             >
               <Body weight="medium">{tSchedule(`weekday.${row.weekday}`)}</Body>
               <Small className="text-muted-foreground" tabular>
@@ -150,7 +151,7 @@ export default function CarerAvailabilityScreen() {
               </Small>
             </View>
           ))}
-        </View>
+        </ListGroup>
       )}
     </ScrollView>
   );

@@ -115,7 +115,11 @@ export function TimeEntryDayRow({
           className="flex-row items-center justify-between gap-3"
         >
           <View className="min-w-0 flex-1 flex-row items-center gap-2">
-            <MetadataLabel className="text-muted-foreground">
+            <MetadataLabel
+              className={
+                isRunning ? 'text-muted-strong' : 'text-muted-foreground'
+              }
+            >
               {`${t(`schedule:weekday.${weekdayDow(date)}`)} ${formatDisplayDate(date)}`}
             </MetadataLabel>
             {isToday ? (
