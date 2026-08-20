@@ -158,3 +158,56 @@ superseded), §8.5 twice (per-row elevation vs Rule D; `MetadataLabel` header vs
 in the hero band or the feed. No test pins either placement.
 
 In every case the doc is the stale side, and wave 2 amends the doc rather than inverting a test.
+
+## What wave 2 landed
+
+**All 30 confirmed items closed. `qc` green — 5378 mobile · 4521 api · 685 shared-types ·
+0 failures, 0 typecheck errors.** Mobile gained 50 tests (5328 -> 5378).
+
+| Bucket | Result |
+|---|---|
+| Shared primitives | `dimensionColor` deleted outright (zero callers, and it drew the accent bar §6 bans); the shimmer crossfades base -> highlight at 1200ms per §8.8 instead of dimming opacity; a selected `ChildChip` now moves weight AND fill together |
+| Today / Inbox / Schedule | **the S0** — a white label on a white ghost button, on the only entry to the nanny accept flow; `TermsProposalCard`'s three unconditional channels made tone-conditional (its feed mount had been shipping a filled L1 button at L3); two `ClockInCard` Smalls that render on `surfacePositive`; `SchedulePatternBanner`'s accepted arm over the brand wash |
+| Setup / household / settings | member rows into one `ListGroup` (they were individually bordered boxes with nothing containing them); two register-2 colours on one time-off row; a filled primary rendered once *per child*; four `Body`-as-section-header swaps |
+| Pay screens | `SignatureHeroBold` rate, two `StatusPill`s (both kept inside the false-alarm gate), history into a `ListGroup`, the carer-picker run into a `ListGroup`, a ghost change-terms action, the History heading given Rule A's tier and Rule B's 32/8 rhythm, and §10's daily-OT caveat |
+| Money surfaces | `WeekTotal` was *half* Rule-M-correct — it already computed the conditional and two nodes ignored it; the flag action stopped being a link that writes |
+| Widgets | two size/weight changes, no colour touched |
+
+## Process notes worth keeping
+
+**The verification pass was the work.** 71 of 101 items closed without a code change. The
+30 that survived were each re-quoted from the current file first.
+
+**Two false reds were caught, and both would have shipped a lie.**
+1. A render test asserting a button label's class failed on *element lookup*, not on the
+   assertion — it would have failed identically against correct code. Found only by
+   stashing the fix and re-running. `bun.setup.ts` stubs `buttonVariants` to `''`, so no
+   render test in this repo can observe a button class; button findings need source
+   inspection.
+2. A source-inspection test pinned the single-line formatting of a className ternary, so
+   `bun run format` re-wrapped the code and reddened the gate. Source assertions must
+   normalise whitespace (`src.replace(/\s+/g, ' ')`) — a test must never dictate line breaks.
+
+**Tests passing is not the gate; `qc` is.** One change passed every mobile test and failed
+`tsc` (a new required field broke a fixture in a file the agent could not see). Another
+API failure appeared only under `qc`'s 8-way parallel load and did not reproduce alone —
+a flake, confirmed before being dismissed.
+
+**An implementing agent stopped and asked rather than editing a test to match its code**,
+when converting the ack line to a `StatusPill` moved the string to a `-label` child. That
+was the right call; the assertions were updated to the child testID with the same expected
+strings, matching the `pay-ack-pill` precedent already in the parent screen's tests.
+
+## Still open after wave 2
+
+- **`RECOMMENDATIONS.md` R1 (`CardToneContext`) was deliberately not done**, and R1's own
+  warning applies to everything above: "Fixed by hand, they regress; fixed at the
+  component, they cannot." Decide on R1 before commissioning a wave 3.
+- The deferrals in `PENDING.md` — `PayChangeSheet` -> full screen, the `HoursHeroBand` /
+  `PaymentsScreen` headers, and `PayTermsGroups`' holiday list (an architectural call, not
+  a defect).
+- **Count the legacy arrangements** rendering `notAgreedSetBy`. They have no accepted
+  proposal behind them and are the only population where an explicit agree affordance on
+  My pay would do real work.
+- Manual checks the harness cannot reach: the widgets on device in **both** appearances,
+  and the `PendingScheduleCard` CTA label actually being visible.
