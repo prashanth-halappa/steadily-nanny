@@ -248,4 +248,24 @@ describe('SchedulePendingScreen', () => {
       "pattern.status === 'pending' && pattern.sent_at"
     );
   });
+
+  // S7 gap: `resolvePerCarerPatterns` only ever produces a section for a
+  // carer with at least one pattern row, so a second nanny with zero
+  // patterns had no section at all on this screen — invisible on "Change"
+  // just as she was on the tab's own banner.
+  it('S7 gap fix: a patternless carer is merged into the section list via useHouseholdCarers, not silently dropped', () => {
+    expect(screenSource).toContain('useHouseholdCarers');
+    expect(screenSource).toContain(
+      'function SchedulePendingPatternlessCarerSection'
+    );
+    expect(screenSource).toContain("t('pending.patternBannerNone'");
+    expect(screenSource).toContain("t('pending.patternBannerBuildAction'");
+    expect(screenSource).toMatch(/schedule\/build\?carerId=\$\{carerId\}/);
+  });
+
+  it('S7 gap fix: the merge is gated on at least one carer already having a section, so an all-fresh household still hits the top-level empty state', () => {
+    expect(screenSource).toMatch(
+      /perCarerPatterns\.length > 0\s*\n\s*\?[\s\S]{0,200}carers\.data/
+    );
+  });
 });

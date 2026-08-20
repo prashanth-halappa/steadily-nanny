@@ -44,6 +44,14 @@ import { useAuthStore } from '@/src/store/auth';
 type SchedulePatternBannerProps = {
   pattern: SchedulePattern | null;
   householdId: string | null;
+  /**
+   * S7/S8: which carer this banner speaks for, when the caller already
+   * knows (the Schedule tab renders one banner per carer). Undefined keeps
+   * the old single-banner behaviour — name the pattern's own `carer_id`, or
+   * fall back to the household's first nanny. `null` means "no carer at
+   * all" (the household has none), distinct from "not passed".
+   */
+  carerId?: string | null;
   /** While the owning patterns query is loading, render nothing. */
   isLoading?: boolean;
 };
@@ -51,6 +59,7 @@ type SchedulePatternBannerProps = {
 export function SchedulePatternBanner({
   pattern,
   householdId,
+  carerId,
   isLoading = false,
 }: SchedulePatternBannerProps) {
   const { t } = useTranslation('schedule');
@@ -76,10 +85,19 @@ export function SchedulePatternBanner({
   // With no pattern there is no `carer_id` to name, so fall back to the
   // household's nanny — "You haven't set Priya's weekly hours" beats
   // "...someone's weekly hours", which is worse than saying nothing at all
-  // (the no-carer copy below).
+  // (the no-carer copy below). An explicit `carerId` prop (per-carer
+  // rendering, S7/S8) always wins over that fallback — including `null`,
+  // which means the household has no carer at all and must not borrow a
+  // DIFFERENT carer's row.
   const nannyMember = members.find(member => member.role === 'nanny');
+  const resolvedCarerId =
+    carerId !== undefined
+      ? carerId
+      : (pattern?.carer_id ?? nannyMember?.user_id ?? null);
+  const hasCarer =
+    carerId !== undefined ? carerId !== null : nannyMember !== undefined;
   const carerName = resolveMemberDisplayName(
-    pattern?.carer_id ?? nannyMember?.user_id,
+    resolvedCarerId,
     currentUserId,
     membersByUserId,
     {
@@ -89,6 +107,16 @@ export function SchedulePatternBanner({
         t(`detail.roleFallback.${role}`),
     }
   );
+  // S7/S8: every arm below that starts a FRESH wizard (no `?patternId=` to
+  // resume) must pin the carer this banner is for, once one is known —
+  // otherwise the builder falls back to its own carer-picker step, which
+  // for a two-carer household reopens the very ambiguity this banner was
+  // meant to resolve. `draft`'s resume arm doesn't need this: the wizard
+  // hydrates its carer from the draft pattern itself.
+  const buildHref = (): Href =>
+    (carerId
+      ? `/(private)/schedule/build?carerId=${carerId}`
+      : '/(private)/schedule/build') as Href;
   // S6: silence had no surface on the parent's side — the banner read
   // identically on day 1 and day 30 of an unanswered week. Age-only, no
   // expiry/new status/job (owner decision, docs/AS-BUILT-SCHEDULE.md §6 S6).
@@ -153,24 +181,24 @@ export function SchedulePatternBanner({
           : {
               message: t('pending.patternBannerDeclined', { name: carerName }),
               actionLabel: t('pending.patternBannerBuildAction'),
-              onAction: () => router.push('/(private)/schedule/build' as Href),
+              onAction: () => router.push(buildHref()),
             };
       case 'withdrawn':
         return {
           message: t('pending.patternBannerWithdrawn'),
           actionLabel: t('pending.patternBannerBuildAction'),
-          onAction: () => router.push('/(private)/schedule/build' as Href),
+          onAction: () => router.push(buildHref()),
         };
       case 'ended':
         return {
           message: t('pending.patternBannerEnded', { name: carerName }),
           actionLabel: t('pending.patternBannerBuildAction'),
-          onAction: () => router.push('/(private)/schedule/build' as Href),
+          onAction: () => router.push(buildHref()),
         };
       default:
-        // No nanny on record: the honest next act is the invite, and the
+        // No carer on record: the honest next act is the invite, and the
         // copy says nothing about a person rather than naming "someone".
-        return nannyMember === undefined
+        return !hasCarer
           ? {
               message: t('pending.patternBannerNoneNoCarer'),
               actionLabel: t('pending.patternBannerNoneNoCarerAction'),
@@ -179,7 +207,7 @@ export function SchedulePatternBanner({
           : {
               message: t('pending.patternBannerNone', { name: carerName }),
               actionLabel: t('pending.patternBannerBuildAction'),
-              onAction: () => router.push('/(private)/schedule/build' as Href),
+              onAction: () => router.push(buildHref()),
             };
     }
   })();

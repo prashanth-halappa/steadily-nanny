@@ -92,6 +92,7 @@ import { Body, H1, H3, Small } from '@/src/components/ui/typography';
 import { AdjustSchedulePatternSheet } from '@/src/domains/schedule/components/AdjustSchedulePatternSheet';
 import { PatternStatusIndicator } from '@/src/domains/schedule/components/PatternStatusIndicator';
 import { SchedulePatternPreview } from '@/src/domains/schedule/components/SchedulePatternPreview';
+import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
 import { parseWeeklyRruleInterval } from '@/src/domains/schedule/utils';
 import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { resolvePerCarerPatterns } from '@/src/domains/schedule/utils/patternPrecedence';
@@ -425,6 +426,56 @@ function SchedulePendingCarerSection({
   );
 }
 
+/**
+ * S7 gap: `resolvePerCarerPatterns` only ever produces a section for a
+ * carer who has AT LEAST ONE pattern row — a second nanny with zero
+ * patterns produced zero sections and was invisible here too, the same gap
+ * the Schedule tab's banner had. Reuses the pattern banner's own
+ * `patternBannerNone`/`patternBannerBuildAction` copy (already
+ * `{{name}}`-parameterised) rather than inventing a new pair of strings for
+ * the identical "no usual week set for this carer" message.
+ */
+function SchedulePendingPatternlessCarerSection({
+  carerId,
+  carerName,
+  canEditSchedule,
+  showCarerLabel,
+  closedReason,
+  writeDisabled,
+}: {
+  carerId: string;
+  carerName: string;
+  canEditSchedule: boolean;
+  showCarerLabel: boolean;
+  closedReason: string | null;
+  writeDisabled: boolean;
+}) {
+  const { t } = useTranslation('schedule');
+  const router = useRouter();
+
+  return (
+    <View className="gap-4">
+      {showCarerLabel ? (
+        <H3 testID="schedule-pending-carer-name">{carerName}</H3>
+      ) : null}
+      <Body className="text-muted-foreground">
+        {t('pending.patternBannerNone', { name: carerName })}
+      </Body>
+      {canEditSchedule ? (
+        <RestrictedActionButton
+          testID="schedule-pending-build-cta"
+          label={t('pending.patternBannerBuildAction')}
+          reason={closedReason}
+          disabled={writeDisabled}
+          onPress={() =>
+            router.push(`/(private)/schedule/build?carerId=${carerId}` as Href)
+          }
+        />
+      ) : null}
+    </View>
+  );
+}
+
 export function SchedulePendingScreen() {
   const { t } = useTranslation('schedule');
   const { t: tCommon } = useTranslation('common');
@@ -479,7 +530,30 @@ export function SchedulePendingScreen() {
   // `.find(p => p.status !== 'ended')` this screen used to run, which could
   // name one carer's pattern while a DIFFERENT carer's live week sat
   // unrepresented.
-  const sections = resolvePerCarerPatterns(patterns.data ?? []);
+  const carers = useHouseholdCarers(onboarding.householdId);
+  const perCarerPatterns = resolvePerCarerPatterns(patterns.data ?? []);
+  // S7 gap: `resolvePerCarerPatterns` only speaks for a carer who has AT
+  // LEAST ONE pattern row — a second nanny with zero patterns produced zero
+  // sections here, same gap the Schedule tab's banner had. Merge in every
+  // household carer `resolvePerCarerPatterns` didn't already cover — but
+  // ONLY once at least one carer already has a section: a household with NO
+  // patterns at all (the common fresh-household case) must still hit the
+  // single top-level empty state below (`sections.length === 0`), not a
+  // bare per-carer CTA with no illustration.
+  const patternedCarerIds = new Set(perCarerPatterns.map(cp => cp.carerId));
+  const patternlessCarers =
+    perCarerPatterns.length > 0
+      ? (carers.data ?? []).filter(
+          member => !patternedCarerIds.has(member.user_id)
+        )
+      : [];
+  const sections = [
+    ...perCarerPatterns.map(cp => ({ ...cp, hasPattern: true as const })),
+    ...patternlessCarers.map(member => ({
+      carerId: member.user_id,
+      hasPattern: false as const,
+    })),
+  ];
 
   // C5 (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §C): a loading/error guard
   // must precede the role gate below — otherwise `onboarding.role` is still
@@ -594,23 +668,36 @@ export function SchedulePendingScreen() {
         </View>
       ) : (
         <View className="mt-6 gap-6">
-          {sections.map(section => (
-            <SchedulePendingCarerSection
-              key={section.carerId ?? 'no-carer'}
-              pattern={section.pattern}
-              carerName={resolveMemberDisplayName(
-                section.carerId,
-                currentUserId,
-                membersByUserId,
-                memberLabels
-              )}
-              canEditSchedule={canEditSchedule}
-              childrenById={childrenById}
-              showCarerLabel={sections.length > 1}
-              closedReason={closedReason}
-              writeDisabled={canWriteHousehold.isLoading}
-            />
-          ))}
+          {sections.map(section => {
+            const carerName = resolveMemberDisplayName(
+              section.carerId,
+              currentUserId,
+              membersByUserId,
+              memberLabels
+            );
+            return section.hasPattern ? (
+              <SchedulePendingCarerSection
+                key={section.carerId ?? 'no-carer'}
+                pattern={section.pattern}
+                carerName={carerName}
+                canEditSchedule={canEditSchedule}
+                childrenById={childrenById}
+                showCarerLabel={sections.length > 1}
+                closedReason={closedReason}
+                writeDisabled={canWriteHousehold.isLoading}
+              />
+            ) : (
+              <SchedulePendingPatternlessCarerSection
+                key={section.carerId}
+                carerId={section.carerId}
+                carerName={carerName}
+                canEditSchedule={canEditSchedule}
+                showCarerLabel={sections.length > 1}
+                closedReason={closedReason}
+                writeDisabled={canWriteHousehold.isLoading}
+              />
+            );
+          })}
         </View>
       )}
     </ScrollView>

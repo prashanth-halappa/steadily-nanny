@@ -104,32 +104,64 @@ mock.module('@/src/domains/schedule', () => {
     // A thin stand-in mirroring the real banner's per-state message, so
     // this file can assert the message text without pulling in the real
     // component's own hooks (useHouseholdMembers etc.) — those are covered
-    // by SchedulePatternBanner.test.tsx.
+    // by SchedulePatternBanner.test.tsx. `carerId` is echoed via
+    // accessibilityLabel so the S7/S8 per-carer tests below can tell which
+    // banner is which without pulling in the real component.
     SchedulePatternBanner: ({
       pattern,
       isLoading,
+      carerId,
     }: {
       pattern: { status: string } | null;
       isLoading?: boolean;
+      carerId?: string | null;
     }) =>
       isLoading
         ? null
         : React.createElement(
             'Text',
-            { testID: 'schedule-pattern-banner-status' },
+            {
+              testID: 'schedule-pattern-banner-status',
+              accessibilityLabel: carerId ?? 'no-carer',
+            },
             pattern?.status ?? 'none'
           ),
   };
 });
 
 const mockUseSchedulePatterns = mock(
-  (): { data: Array<{ status: string; id?: string }> | undefined } => ({
+  (): {
+    data:
+      | Array<{
+          status: string;
+          id?: string;
+          carer_id?: string;
+          created_at?: string;
+        }>
+      | undefined;
+  } => ({
     data: undefined,
   })
 );
 
 mock.module('@/src/hooks/queries/useSchedulePatterns', () => ({
   useSchedulePatterns: mockUseSchedulePatterns,
+}));
+
+// S7/S8: not mocked by any existing test below (default `{ data: undefined
+// }`, i.e. "not loaded yet") — `ParentPatternBanners`' carer-id list then
+// falls back entirely to whichever carer_id(s) show up in the patterns
+// list, which is exactly the single-banner precedent every pre-existing
+// test in this file already exercises.
+const mockUseHouseholdCarers = mock(
+  (): { data: Array<{ user_id: string }> | undefined; isLoading: boolean } => ({
+    data: undefined,
+    isLoading: false,
+  })
+);
+
+mock.module('@/src/domains/schedule/hooks/useHouseholdCarers', () => ({
+  useHouseholdCarers: mockUseHouseholdCarers,
 }));
 
 const mockPush = mock(() => {});
@@ -158,6 +190,11 @@ beforeEach(() => {
   mockRetryMemberships.mockReset();
   mockUseSchedulePatterns.mockReset();
   mockUseSchedulePatterns.mockImplementation(() => ({ data: undefined }));
+  mockUseHouseholdCarers.mockReset();
+  mockUseHouseholdCarers.mockImplementation(() => ({
+    data: undefined,
+    isLoading: false,
+  }));
   mockPush.mockReset();
   mockUseActiveHousehold.mockReset();
   mockUseActiveHousehold.mockImplementation(() => ({ household: null }));
@@ -383,6 +420,63 @@ describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
     expect(getByTestId('schedule-pattern-banner-status').children[0]).toBe(
       'ended'
     );
+  });
+
+  // S7/S8: a household with TWO nannies used to collapse to ONE banner
+  // (`resolveActivePattern` picking a single household-wide winner) —
+  // there was no entry point to build a usual week for the second nanny at
+  // all. One `SchedulePatternBanner` per carer now, carer-list order, each
+  // with its OWN resolved pattern (or null).
+  it('S7/S8: two carers -> two banners, each with its own resolved pattern (one accepted, one with none)', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'onboarded' as const,
+      role: 'parent' as const,
+      householdId: 'h1',
+      membershipsError: false,
+      retryMemberships: mockRetryMemberships,
+    }));
+    mockUseHouseholdCarers.mockImplementation(() => ({
+      data: [{ user_id: 'nanny-1' }, { user_id: 'nanny-2' }],
+      isLoading: false,
+    }));
+    mockUseSchedulePatterns.mockImplementation(() => ({
+      data: [
+        { status: 'accepted', carer_id: 'nanny-1', created_at: '2026-01-01' },
+      ],
+    }));
+
+    const { getAllByTestId } = render(<ScheduleRoute />);
+
+    const banners = getAllByTestId('schedule-pattern-banner-status');
+    expect(banners).toHaveLength(2);
+    expect(banners[0]?.props.accessibilityLabel).toBe('nanny-1');
+    expect(banners[0]?.children[0]).toBe('accepted');
+    // The second nanny has no pattern at all — she used to be entirely
+    // invisible; now she gets her own "none" banner.
+    expect(banners[1]?.props.accessibilityLabel).toBe('nanny-2');
+    expect(banners[1]?.children[0]).toBe('none');
+  });
+
+  it('S7/S8: zero carers renders exactly today\'s single "no nanny yet" banner, not zero banners', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'onboarded' as const,
+      role: 'parent' as const,
+      householdId: 'h1',
+      membershipsError: false,
+      retryMemberships: mockRetryMemberships,
+    }));
+    mockUseHouseholdCarers.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+    }));
+    mockUseSchedulePatterns.mockImplementation(() => ({ data: [] }));
+
+    const { getAllByTestId } = render(<ScheduleRoute />);
+
+    const banners = getAllByTestId('schedule-pattern-banner-status');
+    expect(banners).toHaveLength(1);
+    expect(banners[0]?.props.accessibilityLabel).toBe('no-carer');
+    expect(banners[0]?.children[0]).toBe('none');
   });
 
   it('routes helper role to the calendar too, never the full-screen pending takeover', () => {

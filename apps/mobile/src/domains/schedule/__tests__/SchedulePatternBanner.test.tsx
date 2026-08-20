@@ -28,6 +28,7 @@ const HOUSEHOLD_ID = '11111111-1111-4111-8111-111111111111';
 const CARER_USER_ID = '22222222-2222-4222-8222-222222222222';
 const CURRENT_USER_ID = '33333333-3333-4333-8333-333333333333';
 const PATTERN_ID = '44444444-4444-4444-8444-444444444444';
+const CARER_USER_ID_2 = '55555555-5555-4555-8555-555555555555';
 
 let SchedulePatternBanner: typeof import('../components/SchedulePatternBanner').SchedulePatternBanner;
 let mockUseIsOnboarded: ReturnType<typeof mock>;
@@ -312,6 +313,72 @@ describe('SchedulePatternBanner', () => {
     );
     getByTestId('schedule-pattern-banner-action').props.onPress?.();
     expect(mockPush).toHaveBeenCalledWith('/(private)/schedule/build');
+  });
+
+  // S7/S8: the Schedule tab now renders one banner per carer, passing each
+  // its OWN carer id — the banner must name and route for THAT carer, never
+  // fall back to the household's first nanny row.
+  it("S7/S8: an explicit carerId prop names that specific carer, not the household's first nanny", () => {
+    mockUseHouseholdMembers.mockImplementation(() => ({
+      data: [
+        ...DEFAULT_MEMBERS,
+        {
+          user_id: CARER_USER_ID_2,
+          role: 'nanny',
+          display_name_override: 'Meera',
+          profile_name: null,
+        },
+      ],
+    }));
+
+    const { getByTestId } = render(
+      <SchedulePatternBanner
+        pattern={null}
+        householdId={HOUSEHOLD_ID}
+        carerId={CARER_USER_ID_2}
+      />
+    );
+
+    expect(getByTestId('schedule-pattern-banner-status').children[0]).toBe(
+      'pending.patternBannerNone(Meera)'
+    );
+  });
+
+  it.each([
+    ['none (no pattern)', null],
+    ['withdrawn', makePattern({ status: 'withdrawn' })],
+    ['ended', makePattern({ status: 'ended' })],
+    [
+      'declined with no reason',
+      makePattern({ status: 'declined', decline_message: null }),
+    ],
+  ])('S7/S8: with a carerId prop, %s pushes /schedule/build?carerId=<id> instead of the bare route', (_label, pattern) => {
+    const { getByTestId } = render(
+      <SchedulePatternBanner
+        pattern={pattern}
+        householdId={HOUSEHOLD_ID}
+        carerId={CARER_USER_ID_2}
+      />
+    );
+
+    getByTestId('schedule-pattern-banner-action').props.onPress?.();
+    expect(mockPush).toHaveBeenCalledWith(
+      `/(private)/schedule/build?carerId=${CARER_USER_ID_2}`
+    );
+  });
+
+  it('S7/S8: carerId={null} means "no carer at all" for THIS banner, even though the household has an unrelated nanny row', () => {
+    const { getByTestId } = render(
+      <SchedulePatternBanner
+        pattern={null}
+        householdId={HOUSEHOLD_ID}
+        carerId={null}
+      />
+    );
+
+    expect(getByTestId('schedule-pattern-banner-status').children[0]).toBe(
+      'pending.patternBannerNoneNoCarer'
+    );
   });
 
   it('helper (non-editor) role: message renders with NO action Pressable, in every state', () => {

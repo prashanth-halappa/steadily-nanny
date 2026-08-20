@@ -330,3 +330,20 @@ describe('ScheduleBuildScreen care-hours prefill (P3.2)', () => {
     expect(source).not.toContain('useUpdateCommitment');
   });
 });
+
+describe('ScheduleBuildScreen carerId prop (S7/S8)', () => {
+  // The banner's per-carer "Set the weekly hours" arms push
+  // `?carerId=<id>` so the wizard already knows which of two-plus carers
+  // it's building for, instead of reopening the carer-picker step the
+  // banner itself was meant to skip.
+  it('seeds selectedCarerId from the carerId prop', () => {
+    expect(source).toContain('carerId?: string');
+    expect(source).toMatch(
+      /useState<string \| null>\(\s*resumePatternId \? null : \(carerId \?\? null\)\s*\)/
+    );
+  });
+
+  it('resuming a draft (patternId set) ignores the carerId prop — the draft hydrate effect owns the carer instead', () => {
+    expect(source).toContain('resumePatternId ? null : (carerId ?? null)');
+  });
+});

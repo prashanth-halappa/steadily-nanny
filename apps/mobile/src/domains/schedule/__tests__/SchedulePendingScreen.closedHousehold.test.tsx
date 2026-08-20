@@ -111,6 +111,11 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
     useHouseholdMembers: () => ({ data: [], isLoading: false }),
   }));
+  // D72: the screen merges in carers who have NO pattern, so it now reads the
+  // carer list too — unmocked, that is a React Query hook with no provider.
+  mock.module('@/src/domains/schedule/hooks/useHouseholdCarers', () => ({
+    useHouseholdCarers: () => ({ data: [], isLoading: false }),
+  }));
   mock.module('@/src/hooks/mutations/useWithdrawSchedulePattern', () => ({
     useWithdrawSchedulePattern: () => ({
       mutateAsync: mockWithdrawMutateAsync,

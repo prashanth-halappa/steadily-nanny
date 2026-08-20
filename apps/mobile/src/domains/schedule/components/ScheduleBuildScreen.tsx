@@ -135,10 +135,20 @@ const DEFAULT_END = '17:00';
 interface ScheduleBuildScreenProps {
   /** An existing draft pattern's id, e.g. from the build route's `?patternId=` search param — see this component's own header comment (DRAFT RESUME). */
   patternId?: string;
+  /**
+   * S7/S8: a carer already known before the wizard opens, e.g. from the
+   * per-carer pattern banner's `?carerId=` search param — seeds
+   * `selectedCarerId` so the step-advance effect below skips the
+   * carer-picker step entirely, the same as its existing "exactly one
+   * nanny" shortcut. Ignored when resuming a draft (`patternId` set): the
+   * hydrate effect derives the carer from the draft pattern itself instead.
+   */
+  carerId?: string;
 }
 
 export function ScheduleBuildScreen({
   patternId: resumePatternId,
+  carerId,
 }: ScheduleBuildScreenProps = {}) {
   const router = useRouter();
   const { t } = useTranslation('schedule');
@@ -169,7 +179,12 @@ export function ScheduleBuildScreen({
     resumePatternId ? null : householdId
   );
 
-  const [selectedCarerId, setSelectedCarerId] = useState<string | null>(null);
+  // S7/S8: seeded from the `carerId` prop when the caller already knows
+  // (never when resuming a draft — that resolves its own carer via the
+  // hydrate effect below, and `resumePatternId` takes precedence here).
+  const [selectedCarerId, setSelectedCarerId] = useState<string | null>(
+    resumePatternId ? null : (carerId ?? null)
+  );
   // D25: fetched as soon as a carer is selected (before the 'hours' step is
   // even reached) so the warning is ready the moment there's something to
   // warn about, rather than popping in after the picker renders.

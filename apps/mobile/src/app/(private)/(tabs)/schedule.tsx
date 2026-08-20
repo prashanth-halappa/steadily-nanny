@@ -12,6 +12,7 @@
  */
 
 import { HOUSEHOLD_STATES } from '@steadily-nanny/shared-types/schemas/household.schema';
+import type { SchedulePattern } from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
@@ -23,7 +24,11 @@ import {
   SchedulePatternBanner,
   ScheduleShiftsScreen,
 } from '@/src/domains/schedule';
-import { resolveActivePattern } from '@/src/domains/schedule/utils/patternPrecedence';
+import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
+import {
+  resolveActivePattern,
+  resolvePerCarerPatterns,
+} from '@/src/domains/schedule/utils/patternPrecedence';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
@@ -109,12 +114,60 @@ export default function ScheduleRoute() {
       pattern={pattern}
       patternLoading={patterns.isLoading}
       patternBanner={
-        <SchedulePatternBanner
-          pattern={pattern}
+        <ParentPatternBanners
           householdId={onboarding.householdId}
-          isLoading={patterns.isLoading}
+          patterns={patterns.data ?? []}
+          patternsLoading={patterns.isLoading}
         />
       }
     />
+  );
+}
+
+/**
+ * S7/S8 for the tab's own banner: one `SchedulePatternBanner` PER CARER,
+ * never the household-wide `resolveActivePattern` winner this tab used to
+ * collapse to — that hid every carer but the first, with no entry point to
+ * build a second nanny's own usual week at all. Carer order comes from
+ * `useHouseholdCarers` (the same list the build wizard's picker uses); a
+ * carer_id that only shows up in `patterns` (list not loaded yet, or a
+ * departed carer whose row survives) still gets a banner rather than being
+ * silently dropped. Zero carers at all falls back to the one "no nanny yet"
+ * banner today's single-row render always showed.
+ */
+function ParentPatternBanners({
+  householdId,
+  patterns,
+  patternsLoading,
+}: {
+  householdId: string | null;
+  patterns: readonly SchedulePattern[];
+  patternsLoading: boolean;
+}) {
+  const carers = useHouseholdCarers(householdId);
+  const perCarerPatterns = resolvePerCarerPatterns(patterns);
+  const rowIds = (carers.data ?? []).map(member => member.user_id);
+  const extraIds = perCarerPatterns
+    .map(carerPattern => carerPattern.carerId)
+    .filter(carerId => carerId === null || !rowIds.includes(carerId));
+  const bannerCarerIds: Array<string | null> =
+    rowIds.length > 0 || extraIds.length > 0
+      ? [...rowIds, ...extraIds]
+      : [null];
+
+  return (
+    <View className="gap-4">
+      {bannerCarerIds.map(carerId => (
+        <SchedulePatternBanner
+          key={carerId ?? 'no-carer'}
+          pattern={
+            perCarerPatterns.find(cp => cp.carerId === carerId)?.pattern ?? null
+          }
+          carerId={carerId}
+          householdId={householdId}
+          isLoading={patternsLoading || carers.isLoading}
+        />
+      ))}
+    </View>
   );
 }
