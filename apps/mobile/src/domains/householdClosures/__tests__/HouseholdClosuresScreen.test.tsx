@@ -368,3 +368,20 @@ describe('HouseholdClosuresScreen — loading', () => {
     expect(queryByTestId('household-closures-form')).toBeNull();
   });
 });
+
+describe('HouseholdClosuresScreen — section header typography (01-LAWS Rule A)', () => {
+  it('labels the form section with DayGroup, not Body weight=medium', async () => {
+    const source = await Bun.file(
+      new URL('../components/HouseholdClosuresScreen.tsx', import.meta.url)
+        .pathname
+    ).text();
+
+    const formIdx = source.indexOf('testID="household-closures-form"');
+    expect(formIdx).toBeGreaterThan(-1);
+    const window = source.slice(formIdx, formIdx + 280);
+    expect(window).toContain("<DayGroup>{t('closures.formTitle')}</DayGroup>");
+    expect(window).not.toContain(
+      '<Body weight="medium">{t(\'closures.formTitle\')}</Body>'
+    );
+  });
+});

@@ -125,4 +125,18 @@ describe('NotificationPrefsScreen', () => {
   it('groups schedule_not_set under Schedule', () => {
     expect(source).toContain("schedule_not_set: 'schedule'");
   });
+
+  // 01-LAWS Rule A: top-level named group uses H2; nested per-group headers
+  // use DayGroup. Body weight="medium" (16/500) over Body content (16/400)
+  // fails law 7 (weight non-decreasing) — the two levels MUST differ.
+  it('uses H2 for the types heading and DayGroup for per-group headers', () => {
+    expect(source).toContain("<H2>{t('notificationPrefs.typesHeading')}</H2>");
+    expect(source).toContain('<DayGroup>{t(GROUP_I18N_KEY[group])}</DayGroup>');
+    expect(source).not.toContain(
+      '<Body weight="medium">{t(\'notificationPrefs.typesHeading\')}</Body>'
+    );
+    expect(source).not.toContain(
+      '<Body weight="medium">{t(GROUP_I18N_KEY[group])}</Body>'
+    );
+  });
 });

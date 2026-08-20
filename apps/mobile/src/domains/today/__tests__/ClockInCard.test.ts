@@ -14,9 +14,12 @@ import { join } from 'node:path';
 
 const cardPath = join(__dirname, '../components/ClockInCard.tsx');
 let cardSource: string;
+/** Whitespace-collapsed copy — assert intent, not Biome line breaks. */
+let flat: string;
 
 beforeAll(async () => {
   cardSource = await Bun.file(cardPath).text();
+  flat = cardSource.replace(/\s+/g, ' ');
 });
 
 describe('ClockInCard', () => {
@@ -127,6 +130,38 @@ describe('ClockInCard', () => {
     );
     expect(cardSource).not.toMatch(
       /testID="today-clock-in"[\s\S]{0,400}sendRunningLate\.isPending/
+    );
+  });
+
+  // Rule M: the running-late-sent line and clock-in hint sit outside the
+  // receiptEntry ternary, so they also render on tone="positive"
+  // (surfacePositive). mutedStrong there; mutedForeground on plain default.
+  // A blanket swap would break the default-tone off-clock card.
+  it('hoists card tone and tones the two Smalls that share the receipt ground', () => {
+    expect(cardSource).toMatch(
+      /const tone =\s*overdue\s*\?\s*'attention'\s*:\s*entry\s*\?\s*'live'\s*:\s*receiptEntry\s*\?\s*'positive'\s*:\s*'default'/
+    );
+    expect(cardSource).toMatch(/tone=\{tone\}/);
+
+    expect(flat).toMatch(
+      /testID="today-running-late-sent"[\s\S]{0,200}tone === 'positive' \? 'text-muted-strong' : 'text-muted-foreground'/
+    );
+
+    // Hint Small (no testID) — anchored by the offClockShift branch that follows.
+    expect(flat).toMatch(
+      /<Small className=\{\s?tone === 'positive' \? 'text-muted-strong' : 'text-muted-foreground'\s?\}[\s\S]{0,20}\{offClockShift\.kind === 'none'/
+    );
+
+    // Leave the non-receipt off-clock labels alone — they only paint on
+    // tone="default" plain card, where mutedForeground is correct.
+    expect(cardSource).toMatch(
+      /<MetadataLabel className="text-muted-foreground">\s*\{t\('notOnTheClock'\)\}/
+    );
+    expect(cardSource).toMatch(
+      /testID="today-shift-meta"\s+className="text-muted-foreground"/
+    );
+    expect(cardSource).toMatch(
+      /testID="today-off-clock-declined-secondary"\s+className="text-muted-foreground"/
     );
   });
 });

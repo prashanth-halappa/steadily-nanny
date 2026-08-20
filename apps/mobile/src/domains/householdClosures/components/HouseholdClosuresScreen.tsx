@@ -56,7 +56,7 @@ import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
-import { Body, H1, Small } from '@/src/components/ui/typography';
+import { Body, DayGroup, H1, Small } from '@/src/components/ui/typography';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { TimeOffDateRangePicker } from '@/src/domains/timeOff/components/TimeOffDateRangePicker';
 import { isEndOnOrAfterStart } from '@/src/domains/timeOff/components/TimeOffDateRangePicker.utils';
@@ -243,7 +243,7 @@ export function HouseholdClosuresScreen() {
               </Small>
               <View testID="household-closures-form" className="mb-6 gap-4">
                 <View className="pt-8 pb-2">
-                  <Body weight="medium">{t('closures.formTitle')}</Body>
+                  <DayGroup>{t('closures.formTitle')}</DayGroup>
                 </View>
                 <TimeOffDateRangePicker
                   testID="household-closures-dates"

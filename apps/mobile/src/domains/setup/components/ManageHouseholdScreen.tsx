@@ -86,6 +86,7 @@ import { buttonVariants } from '@/src/components/ui/button';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { FieldLabel } from '@/src/components/ui/field-label';
 import { Input } from '@/src/components/ui/input';
+import { ListGroup } from '@/src/components/ui/list-group';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Body, Small } from '@/src/components/ui/typography';
@@ -670,7 +671,7 @@ export function ManageHouseholdScreen() {
 
       <View className="gap-2" testID="household-members-section">
         <FieldLabel>{t('householdSettings.membersSectionTitle')}</FieldLabel>
-        <View className="gap-2">
+        <ListGroup>
           {activeMembers.map(member => {
             // Only a carer has a profile screen to open (pay, availability,
             // time off) — a co-parent's row stays inert here.
@@ -691,7 +692,7 @@ export function ManageHouseholdScreen() {
               <View
                 key={member.id}
                 testID={`household-member-row-${member.id}`}
-                className="flex-row items-center justify-between rounded-row border border-border bg-background px-4 py-3"
+                className="flex-row items-center justify-between px-4 py-3"
               >
                 {isCarer ? (
                   <AnimatedPressable
@@ -728,7 +729,7 @@ export function ManageHouseholdScreen() {
               </View>
             );
           })}
-        </View>
+        </ListGroup>
       </View>
 
       {canLeave ? (

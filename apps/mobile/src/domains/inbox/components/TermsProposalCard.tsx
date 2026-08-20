@@ -63,17 +63,21 @@ export function TermsProposalCard() {
         <IconChip tone="brand" icon={FileText} />
         <H3 className="flex-1">{titleForItem(proposal, t, timeZone)}</H3>
       </View>
-      <Body className="text-muted-foreground">
+      <Body
+        className={
+          tone === 'attention' ? 'text-muted-strong' : 'text-muted-foreground'
+        }
+      >
         {subtitleForItem(proposal, t, timeZone)}
       </Body>
       <Button
         testID="today-terms-proposal-cta"
-        className="w-full"
+        variant={tone === 'attention' ? 'default' : 'ghost'}
+        size={tone === 'attention' ? 'lg' : 'default'}
+        className={tone === 'attention' ? 'w-full' : 'self-start px-0'}
         onPress={() => router.push(hrefForItem(proposal))}
       >
-        <Text className="text-primary-foreground font-medium">
-          {ctaForItem(proposal, t)}
-        </Text>
+        <Text>{ctaForItem(proposal, t)}</Text>
       </Button>
     </Card>
   );

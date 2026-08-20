@@ -315,3 +315,25 @@ describe('TimeOffRow', () => {
     });
   });
 });
+
+describe('TimeOffRow — register-2 colour budget (00-FOUNDATIONS §3.3)', () => {
+  it('keeps Cancel on a register-1 ink so StatusPill remains the sole register-2', async () => {
+    // An ACTIVE row already shows StatusPill variant="confirmed" (success
+    // fill). A second register-2 colour on the Cancel label is forbidden.
+    const source = await Bun.file(
+      new URL('../components/TimeOffRow.tsx', import.meta.url).pathname
+    ).text();
+
+    const cancelIdx = source.indexOf(
+      'testID={`time-off-cancel-${timeOff.id}`}'
+    );
+    expect(cancelIdx).toBeGreaterThan(-1);
+    const cancelWindow = source.slice(cancelIdx, cancelIdx + 320);
+    expect(cancelWindow).toContain("{t('cancelButton')}");
+    expect(cancelWindow).not.toContain('text-error-inline-text');
+    expect(cancelWindow).toMatch(/text-(muted-foreground|foreground)/);
+    // StatusPill stays — do not "fix" the budget by removing it.
+    expect(source).toContain('variant={pillVariant}');
+    expect(source).toContain('time-off-status-');
+  });
+});

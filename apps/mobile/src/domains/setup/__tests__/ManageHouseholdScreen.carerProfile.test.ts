@@ -41,3 +41,36 @@ describe('ManageHouseholdScreen — carer rows navigate to the carer profile', (
     expect(removeIdx).toBeGreaterThan(openIdx);
   });
 });
+
+describe('ManageHouseholdScreen — member list grouping (01-LAWS 6)', () => {
+  it('wraps active members in one ListGroup and drops per-row borders', () => {
+    // Bare bordered boxes on bg-background are list hairlines (law 6). Rule D's
+    // inset-hairline exception only applies INSIDE a group card — ListGroup.
+    expect(screenSource).toContain('<ListGroup>');
+    expect(screenSource).toContain('</ListGroup>');
+
+    const membersIdx = screenSource.indexOf(
+      'testID="household-members-section"'
+    );
+    expect(membersIdx).toBeGreaterThan(-1);
+    const membersWindow = screenSource.slice(membersIdx, membersIdx + 2200);
+    expect(membersWindow).toContain('activeMembers.map');
+    expect(membersWindow).toContain('<ListGroup>');
+    expect(membersWindow).not.toMatch(
+      /household-member-row-\$\{member\.id\}[\s\S]{0,200}border border-border/
+    );
+  });
+
+  it('keeps member rows flush with the ListGroup card surface', () => {
+    // ListRow contract: no elevation and no rounded corners of its own — the
+    // group clips and lifts. bg-background is the page ground, so painting it
+    // inside Card tone="default" (white) reads as a grey block in a white card.
+    const rowMatch = screenSource.match(
+      /testID=\{`household-member-row-\$\{member\.id\}`\}\s+className="([^"]+)"/
+    );
+    expect(rowMatch).not.toBeNull();
+    const rowClassName = rowMatch?.[1] ?? '';
+    expect(rowClassName).not.toContain('bg-background');
+    expect(rowClassName).not.toContain('rounded-row');
+  });
+});

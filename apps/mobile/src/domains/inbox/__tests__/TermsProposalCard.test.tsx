@@ -173,6 +173,27 @@ describe('TermsProposalCard', () => {
     expect(getByTestId('today-terms-proposal-cta')).toBeTruthy();
   });
 
+  // Rule M / L1 body: mutedStrong on the pinned attention mount; L3 feed
+  // keeps mutedForeground. An unconditional swap would break the feed.
+  it('uses mutedStrong body on attention tone and mutedForeground on default', () => {
+    setItems([TERMS_PROPOSAL]);
+
+    const pinned = render(
+      <PinnedSlot>
+        <TermsProposalCard />
+      </PinnedSlot>
+    );
+    const pinnedBody = pinned.getByText(/items\.termsProposal\.subtitle/);
+    expect(pinnedBody.props.className).toContain('text-muted-strong');
+    expect(pinnedBody.props.className).not.toContain('text-muted-foreground');
+    pinned.unmount();
+
+    const feed = render(<TermsProposalCard />);
+    const feedBody = feed.getByText(/items\.termsProposal\.subtitle/);
+    expect(feedBody.props.className).toContain('text-muted-foreground');
+    expect(feedBody.props.className).not.toContain('text-muted-strong');
+  });
+
   // Pattern A (render-time, inverse of the mislabel): this card sits on the
   // ACTIVE household's Today, so a proposal from her OTHER family must never
   // pin here — that is that family's own Today's job, reached by switching.

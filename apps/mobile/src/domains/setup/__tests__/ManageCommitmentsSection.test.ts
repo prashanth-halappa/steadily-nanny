@@ -114,6 +114,18 @@ describe('ManageCommitmentsSection — confirm-as-usual-week offer (P3.3)', () =
     expect(sectionSource).not.toContain('useCreateSchedulePattern');
     expect(sectionSource).not.toContain('mutateAsync');
   });
+
+  // 01-LAWS 1 + 5.G: L3 card actions are ghost/none; filled default is one
+  // per screen — ChildrenManager mounts one section per child.
+  it('renders the confirm-week CTA as ghost (source inspection)', () => {
+    const ctaIdx = sectionSource.indexOf(
+      'testID={`commitment-confirm-week-cta-${childId}`}'
+    );
+    expect(ctaIdx).toBeGreaterThan(-1);
+    const ctaWindow = sectionSource.slice(ctaIdx - 80, ctaIdx + 200);
+    expect(ctaWindow).toContain('variant="ghost"');
+    expect(ctaWindow).toContain('size="sm"');
+  });
 });
 
 describe('careHours confirm-week copy', () => {

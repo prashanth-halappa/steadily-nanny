@@ -193,6 +193,7 @@ export function ManageCommitmentsSection({
           </Small>
           <Button
             testID={`commitment-confirm-week-cta-${childId}`}
+            variant="ghost"
             size="sm"
             onPress={() => router.push('/(private)/schedule/build' as Href)}
           >

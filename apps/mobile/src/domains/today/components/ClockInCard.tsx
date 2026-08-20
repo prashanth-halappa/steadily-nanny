@@ -592,20 +592,16 @@ export function ClockInCard({
   const sheetDefaultClockOutAt = sheetDefaultClockOutAtRef.current;
   const sheetShowOverdueHint = sheetShowOverdueHintRef.current;
 
+  const tone = overdue
+    ? 'attention'
+    : entry
+      ? 'live'
+      : receiptEntry
+        ? 'positive'
+        : 'default';
+
   return (
-    <Card
-      testID="today-clock-card"
-      tone={
-        overdue
-          ? 'attention'
-          : entry
-            ? 'live'
-            : receiptEntry
-              ? 'positive'
-              : 'default'
-      }
-      className="gap-4 p-5.5"
-    >
+    <Card testID="today-clock-card" tone={tone} className="gap-4 p-5.5">
       {entry ? (
         <>
           <View className="flex-row items-center gap-2">
@@ -787,7 +783,11 @@ export function ClockInCard({
             runningLateSent ? (
               <Small
                 testID="today-running-late-sent"
-                className="text-muted-foreground"
+                className={
+                  tone === 'positive'
+                    ? 'text-muted-strong'
+                    : 'text-muted-foreground'
+                }
               >
                 {t('runningLateSent')}
               </Small>
@@ -815,7 +815,13 @@ export function ClockInCard({
               waits for the query to actually answer — otherwise a slow or
               failed fetch states it as settled fact. The generic hint is safe
               in every state, so it is what an unsettled query falls back to. */}
-          <Small className="text-muted-foreground">
+          <Small
+            className={
+              tone === 'positive'
+                ? 'text-muted-strong'
+                : 'text-muted-foreground'
+            }
+          >
             {offClockShift.kind === 'none'
               ? shiftsSettled
                 ? t('clockInHintNoShift')

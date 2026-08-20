@@ -20,7 +20,7 @@ import { AnimatedPressable } from '@/lib/animations';
 import { useElevation } from '@/lib/design-tokens/elevation';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Switch } from '@/src/components/ui/switch';
-import { Body, Small } from '@/src/components/ui/typography';
+import { Body, DayGroup, H2, Small } from '@/src/components/ui/typography';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useUpdateNotificationPrefs } from '@/src/hooks/mutations/useUpdateNotificationPrefs';
@@ -324,7 +324,7 @@ export function NotificationPrefsScreen() {
         </View>
 
         <View className="gap-6">
-          <Body weight="medium">{t('notificationPrefs.typesHeading')}</Body>
+          <H2>{t('notificationPrefs.typesHeading')}</H2>
           <Small className="text-muted-foreground">
             {t('notificationPrefs.typesHint')}
           </Small>
@@ -334,7 +334,7 @@ export function NotificationPrefsScreen() {
               className="gap-3"
               testID={`notification-prefs-group-${group}`}
             >
-              <Body weight="medium">{t(GROUP_I18N_KEY[group])}</Body>
+              <DayGroup>{t(GROUP_I18N_KEY[group])}</DayGroup>
               {types.map(type => {
                 const enabled = !disabledTypes.includes(type);
                 return (

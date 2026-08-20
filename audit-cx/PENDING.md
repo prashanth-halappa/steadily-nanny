@@ -67,20 +67,20 @@ resolves light.
 
 # The work
 
-## Bucket 5 — Shared primitives — 3 fixes, 2 files — LAND FIRST
+## Bucket 5 — Shared primitives — 3 fixes, 2 files — ✅ DONE
 
 Domain buckets import these. Disjoint *files* are not disjoint *APIs*.
 
-- [ ] **`components/ui/skeleton-shimmer.tsx`-1 — CONFIRMED.** L78-82 adds `borderTopWidth: 2` +
+- [x] **`components/ui/skeleton-shimmer.tsx`-1 — CONFIRMED.** L78-82 adds `borderTopWidth: 2` +
       `borderTopColor: ${dimensionColor}33` — the accent bar banned by `01-LAWS.md` §6.
       **Fix: delete the `dimensionColor` prop entirely.** It has *zero* production consumers —
       only the component and its own test reference it. Deletion beats restyling.
-- [ ] **`components/ui/skeleton-shimmer.tsx`-2 — CONFIRMED.** L51-57 animates `opacity` 0.3→1.0
+- [x] **`components/ui/skeleton-shimmer.tsx`-2 — CONFIRMED.** L51-57 animates `opacity` 0.3→1.0
       at 600ms. `00-FOUNDATIONS.md` §8.8 specifies a crossfade `skeletonBase → skeletonHighlight`
       at 1200ms, `easing.inOut`. Fix via `useThemeColors().skeleton.highlight`
       (`#FFFFFF` light / `#332839` dark) — **never a literal**, or this becomes the next
       dark-mode regression.
-- [ ] **`components/ui/child-chip.tsx`-6 — CONFIRMED.** L53 `'font-medium text-sm'` never changes
+- [x] **`components/ui/child-chip.tsx`-6 — CONFIRMED.** L53 `'font-medium text-sm'` never changes
       on selection. §8.4: "selected `bg-primary` + `text-primary-foreground` **and**
       `fontWeight: 600` — selection is weight + fill together, never fill alone."
 
@@ -208,9 +208,9 @@ to change, and equally, nothing will catch a regression. Read the diff.
 | `ExpenseReviewSheet`-2 | **STALE** — reject is already `variant="secondary"` (L193) *and* already uses the correct `text-error-inline-text` ink rather than the guard-banned `text-destructive` |
 | `PaymentsScreen`-5 | **DEFERRED** — Rule C is real, but the export icon is legitimately inline on the title line (Rule C allows exactly that; L412's comment cites it). The genuine excess is `HouseholdSwitcher` (L437, self-hides at one household) plus a conditional read-only `Caption` (L439). Same shape as the already-deferred `HoursHeroBand` — a tested money-screen header. Grouped with it. |
 
-## Bucket 3 — Today / Inbox / Schedule — 6 fixes, 4 files
+## Bucket 3 — Today / Inbox / Schedule — 6 fixes, 4 files — ✅ DONE
 
-- [ ] **`domains/schedule/components/PendingScheduleCard.tsx` — THE S0. CONFIRMED.** L93
+- [x] **`domains/schedule/components/PendingScheduleCard.tsx` — THE S0. CONFIRMED.** L93
       `<Text className="text-primary-foreground font-medium">` on a button that is *already*
       `variant="ghost"` (L86) over `card #FFFFFF`. `text-primary-foreground` is `#FFFFFF` —
       **1:1, an invisible label.** Per the file's own docblock and `TodayScreen.tsx:36-38` this
@@ -221,24 +221,24 @@ to change, and equally, nothing will catch a regression. Read the diff.
       *The audit's own claim for this file — "L3 routine card uses a filled primary action
       button" — is false: the card has no `tone` (L71-74, so L3, correct) and the button is
       already ghost.*
-- [ ] **`domains/inbox/components/TermsProposalCard.tsx`-6 — CONFIRMED.** L66
+- [x] **`domains/inbox/components/TermsProposalCard.tsx`-6 — CONFIRMED.** L66
       `<Body className="text-muted-foreground">`, unconditional. The card mounts **twice** —
       `TodayScreen.tsx:519` (pinned slot, `tone='attention'`) and `:745` (feed, `tone='default'`).
       **The fix must be conditional**: `tone === 'attention' ? 'text-muted-strong' :
       'text-muted-foreground'`. An unconditional swap is wrong on the feed mount.
       *Contrast-optional — Rule B §3 passes `mutedForeground` on a tint at 5.23:1; this is a
       rung-table fix, not an accessibility one.*
-- [ ] **`domains/inbox/components/TermsProposalCard.tsx`-7 — CONFIRMED, and the audit named the
+- [x] **`domains/inbox/components/TermsProposalCard.tsx`-7 — CONFIRMED, and the audit named the
       smaller half.** L69-73 has neither `size` nor `variant`, so both default — meaning the
       **feed (L3) mount also ships a filled, full-width L1 button**, which §1's L3 row and §5.G's
       "one per screen" both forbid. Make all three channels tone-conditional, mirroring
       `NeedsAttentionCard.tsx:126-131`, which already does it correctly.
-- [ ] **`domains/inbox/components/TermsProposalCard.tsx`-8 — CONFIRMED.** L74
+- [x] **`domains/inbox/components/TermsProposalCard.tsx`-8 — CONFIRMED.** L74
       `className="text-primary-foreground font-medium"`. `buttonTextVariants` base is already
       `font-semibold` (600) and the later class wins; `text-primary-foreground` is redundant on
       the `default` variant. **Must land with -7** or the label goes white-on-white — the same
       defect as the S0 above. 21 `font-medium` sites repo-wide → candidate for a 4th guard.
-- [ ] **`domains/today/components/ClockInCard.tsx` — CONFIRMED for L790 + L818 (not the nodes the
+- [x] **`domains/today/components/ClockInCard.tsx` — CONFIRMED for L790 + L818 (not the nodes the
       audit meant).** The tone is a four-way computed expression at L598-606
       (`overdue ? 'attention' : entry ? 'live' : receiptEntry ? 'positive' : 'default'`). L788-791
       (`today-running-late-sent`) and L818 (clock-in hint) sit **outside** the `receiptEntry`
@@ -246,7 +246,7 @@ to change, and equally, nothing will catch a regression. Read the diff.
       by Rule M. Hoist the tone expression to a variable and branch. **Both nodes also render on
       plain card, so a blanket swap is wrong.** L721, L754 and L767 are inside the non-receipt
       sub-branch (tone `'default'`, plain card) — **correct, leave them.**
-- [ ] **`domains/schedule/components/SchedulePatternBanner.tsx` — CONFIRMED, two sites in the
+- [x] **`domains/schedule/components/SchedulePatternBanner.tsx` — CONFIRMED, two sites in the
       `accepted` arm only.** L267-273 (`schedule-pattern-banner-status`, `MetadataLabel`) and
       L291-296 (`schedule-pattern-banner-action-reason`, `Small`), both
       `className="… text-muted-foreground"`. Ground traced: `(tabs)/schedule.tsx:117` →
@@ -270,11 +270,11 @@ to change, and equally, nothing will catch a regression. Read the diff.
 | `TodayScreen` child chips | **CONFLICT** → see the register |
 | `TodayCoverage` day bar | **CONFLICT** (already recorded) |
 
-## Bucket 4 — Setup / Household / Settings — 4 fixes, 4 files
+## Bucket 4 — Setup / Household / Settings — 4 fixes, 4 files — ✅ DONE
 
 Of 20 sub-findings: 4 stale, 5 refuted, 1 conflict, 10 confirmed — **4 earn their diff.**
 
-- [ ] **`domains/setup/components/ManageHouseholdScreen.tsx`-3 — CONFIRMED. The one structural
+- [x] **`domains/setup/components/ManageHouseholdScreen.tsx`-3 — CONFIRMED. The one structural
       defect in the batch.** L694
       `className="flex-row items-center justify-between rounded-row border border-border bg-background px-4 py-3"`
       — each member row is its own bordered box on bare `bg-background`, siblings in `gap-2`
@@ -284,21 +284,21 @@ Of 20 sub-findings: 4 stale, 5 refuted, 1 conflict, 10 confirmed — **4 earn th
       **Risk: the `isCarer` fork (L696-708) and the `canRemoveMember` gate (L709) are
       *behaviour*.** A rewrite that flattens the row loses the carer-profile route and the remove
       action. Pinned by `ManageHouseholdScreen.memberNames.test.tsx` and `.carerProfile.test.ts`.
-- [ ] **`domains/timeOff/components/TimeOffRow.tsx`-1 — CONFIRMED.** An active row shows two
+- [x] **`domains/timeOff/components/TimeOffRow.tsx`-1 — CONFIRMED.** An active row shows two
       register-2 colours: `StatusPill variant="confirmed"` (L67-71 → `bg-pill-success` /
       `text-success-ink`) and `<Text className="text-error-inline-text">` (L112).
       `00-FOUNDATIONS.md` §3.3: "a card may show at most one register-2 colour." Neutralise
       L112 — **do not recolour the pill instead**; `time-off-status-*` visibility is asserted at
       `TimeOffRow.test.tsx:120`. (The cancelled row is already clean — `cancelled` →
       `bg-secondary`/`text-muted-strong`, register 1.)
-- [ ] **`domains/setup/components/ManageCommitmentsSection.tsx`-3 — CONFIRMED.** L194-200
+- [x] **`domains/setup/components/ManageCommitmentsSection.tsx`-3 — CONFIRMED.** L194-200
       `<Button size="sm">` — filled `default` — inside a card whose title is `H4` (L155), i.e.
       L3. And `ChildrenManager` renders one of these sections **per child**, so a two-child
       household gets two filled primaries against §5.G's "one per screen". Make it ghost.
       **Risk: do not disturb the `canOfferWeek`/`showConfirmWeek` gate (L132-133)** — that gate
       is the documented fix for a prior false-alarm bug. Pinned by
       `ManageCommitmentsSection.error.test.tsx`.
-- [ ] **Section-header cluster — 4 identical CONFIRMED swaps, batch them.** All are
+- [x] **Section-header cluster — 4 identical CONFIRMED swaps, batch them.** All are
       `<Body weight="medium">` used as a section header, which Rule A reserves for `DayGroup`
       (17/24/700) or `H2` (24/700) — and §7 (weight non-decreasing) is what makes it a real
       defect rather than a token mismatch, since the header renders 16/500 over 16/400 content.

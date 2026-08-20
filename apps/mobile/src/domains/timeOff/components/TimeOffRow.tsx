@@ -109,9 +109,7 @@ export function TimeOffRow({
               disabled={isCancelling}
               onPress={() => onCancel(timeOff.id)}
             >
-              <Text className="text-error-inline-text">
-                {t('cancelButton')}
-              </Text>
+              <Text className="text-foreground">{t('cancelButton')}</Text>
             </Button>
           ) : null}
         </View>

@@ -464,3 +464,22 @@ describe('HouseholdHolidaysScreen', () => {
     expect(queryByTestId('custom-holiday-delete-0')).toBeNull();
   });
 });
+
+describe('HouseholdHolidaysScreen — section header typography (01-LAWS Rule A)', () => {
+  it('labels the custom-holiday section with DayGroup, not Body weight=medium', async () => {
+    const source = await Bun.file(
+      new URL('../components/HouseholdHolidaysScreen.tsx', import.meta.url)
+        .pathname
+    ).text();
+
+    const sectionIdx = source.indexOf('testID="custom-holiday-section"');
+    expect(sectionIdx).toBeGreaterThan(-1);
+    const window = source.slice(sectionIdx, sectionIdx + 280);
+    expect(window).toContain(
+      "<DayGroup>{t('holidays.custom.sectionTitle')}</DayGroup>"
+    );
+    expect(window).not.toContain(
+      '<Body weight="medium">{t(\'holidays.custom.sectionTitle\')}</Body>'
+    );
+  });
+});

@@ -266,7 +266,7 @@ export function SchedulePatternBanner({
     >
       <MetadataLabel
         testID="schedule-pattern-banner-status"
-        className="flex-1 text-muted-foreground"
+        className="flex-1 text-muted-strong"
         numberOfLines={1}
       >
         {message}
@@ -290,7 +290,7 @@ export function SchedulePatternBanner({
           {closedReason ? (
             <Small
               testID="schedule-pattern-banner-action-reason"
-              className="mt-2 text-center text-muted-foreground"
+              className="mt-2 text-center text-muted-strong"
             >
               {closedReason}
             </Small>

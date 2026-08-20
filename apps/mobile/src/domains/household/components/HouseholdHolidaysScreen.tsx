@@ -34,7 +34,7 @@ import { Card } from '@/src/components/ui/card';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Switch } from '@/src/components/ui/switch';
 import { Text } from '@/src/components/ui/text';
-import { Body, Small } from '@/src/components/ui/typography';
+import { Body, DayGroup, Small } from '@/src/components/ui/typography';
 import { formatDisplayDateWithYear } from '@/src/domains/pay/utils/payArrangementForm';
 import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShell';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
@@ -252,7 +252,7 @@ export function HouseholdHolidaysScreen() {
 
       <View testID="custom-holiday-section" className="pt-8">
         <View className="pb-2">
-          <Body weight="medium">{t('holidays.custom.sectionTitle')}</Body>
+          <DayGroup>{t('holidays.custom.sectionTitle')}</DayGroup>
         </View>
         <Card className="overflow-hidden p-0">
           {customDays.length === 0 ? (
