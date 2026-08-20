@@ -204,16 +204,23 @@ export function TimeSettingsScreen() {
                 testID={`time-settings-week-start-${day}`}
                 onPress={() => setWeekStartsOn(day)}
               >
-                <Small
+                <View
                   className={cn(
-                    'rounded-chip border px-3 py-2',
-                    day === weekStartsOn
-                      ? 'border-primary bg-primary/10 text-primary'
-                      : 'border-border text-foreground'
+                    'rounded-chip px-3 py-2',
+                    day === weekStartsOn ? 'bg-primary' : 'bg-secondary'
                   )}
                 >
-                  {t(`schedule:weekday.${day}`)}
-                </Small>
+                  <Small
+                    weight={day === weekStartsOn ? 'semibold' : 'regular'}
+                    className={
+                      day === weekStartsOn
+                        ? 'text-primary-foreground'
+                        : 'text-foreground'
+                    }
+                  >
+                    {t(`schedule:weekday.${day}`)}
+                  </Small>
+                </View>
               </AnimatedPressable>
             ))}
           </View>
@@ -244,7 +251,7 @@ export function TimeSettingsScreen() {
               testID="time-settings-calendar-permission-denied"
               onPress={() => void Linking.openSettings()}
             >
-              <Small className="text-destructive">
+              <Small className="text-error-inline-text">
                 {t('settings:time.calendarSync.permissionDeniedHint')}
               </Small>
               <Small className="text-primary">

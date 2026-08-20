@@ -377,7 +377,7 @@ export function HandoffChipsCard({
           </View>
           <RestrictedActionButton
             testID="handoff-save-moment"
-            variant={eveningNote.moment_saved_at ? 'outline' : 'default'}
+            variant="ghost"
             size="sm"
             label={
               eveningNote.moment_saved_at

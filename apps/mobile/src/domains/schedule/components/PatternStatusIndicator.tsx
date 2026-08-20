@@ -17,31 +17,23 @@ type PatternStatus =
   | 'withdrawn'
   | 'ended';
 
-const STATUS_STYLES: Record<
-  PatternStatus,
-  { border: string; statusText: string }
-> = {
+const STATUS_STYLES: Record<PatternStatus, { statusText: string }> = {
   pending: {
-    border: 'border-warning',
-    statusText: 'text-warning-strong',
+    statusText: 'text-warning-ink',
   },
   accepted: {
-    border: 'border-success',
-    statusText: 'text-success',
+    statusText: 'text-success-ink',
   },
   declined: {
-    border: 'border-destructive',
-    statusText: 'text-destructive',
+    statusText: 'text-error-inline-text',
   },
   withdrawn: {
-    border: 'border-border',
     statusText: 'text-muted-foreground',
   },
   // S9: an ended pattern used to fall through to "no schedule yet" — it
   // reads the same as `withdrawn` (a live week that is no longer live),
   // not as an error state.
   ended: {
-    border: 'border-border',
     statusText: 'text-muted-foreground',
   },
 };
@@ -78,8 +70,7 @@ export function PatternStatusIndicator({
       testID={testID}
       accessibilityRole="text"
       className={cn(
-        'self-start flex-row items-center gap-2 rounded-row border bg-card px-4 py-2.5',
-        styles.border
+        'self-start flex-row items-center gap-2 rounded-row bg-card px-4 py-2.5'
       )}
     >
       <Caption className="text-muted-foreground">

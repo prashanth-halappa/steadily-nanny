@@ -8,7 +8,6 @@ import { X } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { Icon } from '@/lib/icons/iconWithClassName';
-import { Card } from '@/src/components/ui/card';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { Body } from '@/src/components/ui/typography';
 import { ageFromBirthDate } from '@/src/domains/setup/childAge';
@@ -34,7 +33,7 @@ export function ChildRow({
   const age = ageFromBirthDate(birthDate);
 
   return (
-    <Card testID={testID} className="flex-row items-center gap-3 p-3">
+    <View testID={testID} className="flex-row items-center gap-3 px-3 py-3">
       <Pressable
         testID={`${testID}-edit`}
         accessibilityRole="button"
@@ -55,10 +54,10 @@ export function ChildRow({
         onPress={onRemove}
         hitSlop={8}
       >
-        <View className="h-8 w-8 items-center justify-center rounded-full bg-muted">
+        <View className="h-8 w-8 items-center justify-center rounded-cell bg-muted">
           <Icon icon={X} className="text-muted-foreground" size="sm" />
         </View>
       </Pressable>
-    </Card>
+    </View>
   );
 }
