@@ -231,7 +231,12 @@ export function WeeklyHoursNotSetCard() {
   );
 }
 
-function WeeklyHoursNotSetGroupCard({
+/**
+ * Exported for tests only — the two render branches share one testID, so
+ * covering both means rendering this directly rather than driving the
+ * hook-heavy outer component twice.
+ */
+export function WeeklyHoursNotSetGroupCard({
   group,
   nameFor,
   activePatternFor,
