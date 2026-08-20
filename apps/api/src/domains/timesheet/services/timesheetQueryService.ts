@@ -48,6 +48,7 @@ import {
   HOUSEHOLD_ROLES,
   HouseholdMemberRepository,
   HouseholdRepository,
+  PARENT_ROLES,
 } from '../../household';
 import { PayArrangementRepository } from '../../pay/repositories/payArrangementRepository';
 // Concrete cross-domain imports, never the pay barrel — the same rule
@@ -466,9 +467,29 @@ export class TimesheetQueryService {
    * amount is still live), a pre-042 legacy approval, an unreadable snapshot,
    * a carer who deleted her account.
    *
-   * NOTHING IS RECOMPUTED. The status check happens BEFORE `earningsFor`, so
-   * the only branch this can reach in there is the frozen-snapshot one — a
-   * live estimate can never end up in an exported file.
+   * PHASE 5.1 — HER EVIDENCE, THE ONE CARVED EXCEPTION. When a household's
+   * last owner/parent deletes their account, `PARENT_ROLES` membership is
+   * gone from it forever — no one is left who can ever approve a week again,
+   * and the approval gate above would refuse her one piece of evidence of the
+   * hours she worked, permanently, at exactly the moment it might be
+   * contested (docs/11-MONEY.md §8: payroll is an audit trail that outlives
+   * the relationship). So: a CARER exporting HER OWN unapproved week, when
+   * her household has zero ACTIVE members holding `PARENT_ROLES`, exports
+   * anyway. Nobody else, no other combination — checked BELOW the identity
+   * gate `getReadableTimesheet` already applies, and only for a non-approved
+   * status, so it can never widen who reads which row, only what an
+   * already-permitted read is allowed to leave with.
+   *
+   * NOTHING IS RECOMPUTED for the ordinary approved case — the status check
+   * happens BEFORE `earningsFor`, so a live estimate never reaches an export
+   * THROUGH THAT PATH. The Phase 5.1 exception is the one place that is no
+   * longer true: there is no frozen snapshot for a week nobody approved, so
+   * `earningsFor` computes LIVE, exactly as the on-screen week already does
+   * for an unapproved week — never silently, though: `renderWeekExportCsv`'s
+   * `unapprovedNotice` makes the file say, in plain English, that it was
+   * never approved and that nobody remains who could approve it. An
+   * unapproved week presented as approved would be worse than no export at
+   * all; this is what stops that.
    *
    * The settlement ROWS come from the payments table, and `paid_to_date_minor`
    * is derived from them (D-20): a correction and the payment it reverses BOTH
@@ -483,12 +504,25 @@ export class TimesheetQueryService {
     timesheetId: string
   ): Promise<WeekExportCsv> {
     const row = await this.getReadableTimesheet(userId, timesheetId);
+    let unapprovedNotice: string | null = null;
     if (row.status !== TIMESHEET_STATUSES.APPROVED) {
-      throw new TimesheetNotExportableError(
-        timesheetId,
-        row.status,
-        'not_approved'
-      );
+      // Not her own row at all (a parent, or a different carer's week):
+      // refuse without even asking who else is active in the household.
+      const isHerOwnWeek = row.carer_id === userId;
+      const householdHasWriter =
+        isHerOwnWeek &&
+        (await this.memberRepo.listActiveByHousehold(row.household_id)).some(
+          m => PARENT_ROLES.has(m.role)
+        );
+      if (!isHerOwnWeek || householdHasWriter) {
+        throw new TimesheetNotExportableError(
+          timesheetId,
+          row.status,
+          'not_approved'
+        );
+      }
+      unapprovedNotice =
+        'This week was never approved. No one is left in this household who could approve it.';
     }
     const earnings = await this.earningsFor(row);
     if (earnings.status !== WEEK_EARNINGS_STATES.OK) {
@@ -531,6 +565,7 @@ export class TimesheetQueryService {
       payments: await this.payments.listForTimesheet(timesheetId),
       periodEnd,
       householdDisplayName: household?.name || null,
+      unapprovedNotice,
     });
   }
 

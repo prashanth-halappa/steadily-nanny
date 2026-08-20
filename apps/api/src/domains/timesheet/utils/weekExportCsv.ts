@@ -185,6 +185,19 @@ export interface WeekExportCsvInput {
    * field). OMITTED ENTIRELY when absent, same discipline as `periodEnd`.
    */
   householdDisplayName?: string | null;
+  /**
+   * Phase 5.1 — the one exception `timesheetQueryService.exportWeekCsv` ever
+   * carves into "only an approved week exports": a carer, on her own week,
+   * in a household with no active owner/parent left to approve it. The FILE
+   * MUST STATE ITS OWN STATUS — an unapproved week exported as though it
+   * were approved would be evidence that misrepresents itself, which is
+   * worse than no export at all. Plain English, appended as the LAST summary
+   * row, in place of `approved_at` (mutually exclusive by construction: the
+   * caller only ever supplies this for a week that has none). OMITTED
+   * ENTIRELY when null/absent — an ordinary approved export is byte-identical
+   * to before this field existed.
+   */
+  unapprovedNotice?: string | null;
 }
 
 /** A ready-to-send download. */
@@ -313,8 +326,14 @@ function settlementRecord(payment: Payment): string {
 
 /** The frozen week, serialised. Pure: same input, same bytes, every time. */
 export function renderWeekExportCsv(input: WeekExportCsvInput): WeekExportCsv {
-  const { timesheet, earnings, payments, periodEnd, householdDisplayName } =
-    input;
+  const {
+    timesheet,
+    earnings,
+    payments,
+    periodEnd,
+    householdDisplayName,
+    unapprovedNotice,
+  } = input;
   // The SIGNED sum: correction rows carry a negative `amount_minor`, so this
   // one expression is paid-to-date WITH corrections — the same arithmetic
   // migration 085's over-gross gate does inside the database. Do NOT filter it
@@ -351,6 +370,9 @@ export function renderWeekExportCsv(input: WeekExportCsvInput): WeekExportCsv {
     records.push(csvRow(['period_end', periodEnd]));
   }
   records.push(csvRow(['currency', earnings.currency]));
+  if (unapprovedNotice) {
+    records.push(csvRow(['export_notice', unapprovedNotice]));
+  }
   if (timesheet.approved_at) {
     records.push(csvRow(['approved_at', timesheet.approved_at]));
   }

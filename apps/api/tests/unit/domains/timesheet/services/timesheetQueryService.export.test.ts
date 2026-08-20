@@ -120,6 +120,8 @@ function makeService(
     anyStatusMembership?: unknown;
     household?: unknown;
     arrangement?: unknown;
+    /** Active `household_members` rows — the Phase 5.1 ownerless-household check. */
+    activeMembers?: unknown[];
   } = {}
 ) {
   const timesheetRepo: any = { findById: mock(async () => row) };
@@ -132,6 +134,7 @@ function makeService(
         ? membership
         : overrides.anyStatusMembership
     ),
+    listActiveByHousehold: mock(async () => overrides.activeMembers ?? []),
   };
   const householdRepo: any = {
     findById: mock(async () =>
@@ -364,6 +367,159 @@ describe('exportWeekCsv — only an APPROVED week exports', () => {
       expect(payments.listForTimesheet).not.toHaveBeenCalled();
     });
   }
+});
+
+/**
+ * Phase 5.1 — her evidence. When the household has nobody left who can
+ * approve a week (every owner/parent has gone), an approval-gated export
+ * would refuse forever, and hers is the one artifact a tribunal might
+ * actually ask for. ONE carved exception: she, on HER OWN week, in a
+ * household with no active owner/parent — nobody else, no other combination.
+ */
+describe('exportWeekCsv — her own unapproved week, in a household nobody can approve for', () => {
+  const unapprovedOwnRow = {
+    ...approvedRow,
+    status: 'open',
+    approved_at: null,
+    earnings: null,
+  };
+
+  it('exports when she is the carer and the household has no active owner/parent', async () => {
+    const { service, earnings, memberRepo } = makeService(unapprovedOwnRow, {
+      // assertPayrollReader reads findMembershipAnyStatus, NOT
+      // findActiveMembership — the scope (and therefore whether this read
+      // counts as "her own") turns on THIS override.
+      anyStatusMembership: { ...membership, role: 'nanny', status: 'active' },
+      activeMembers: [
+        {
+          id: 'm1',
+          household_id: 'h-1',
+          user_id: 'carer-1',
+          role: 'nanny',
+          status: 'active',
+        },
+      ],
+    });
+
+    const { csv } = await service.exportWeekCsv('carer-1', 'ts-1');
+
+    expect(memberRepo.listActiveByHousehold).toHaveBeenCalledWith('h-1');
+    // No frozen snapshot exists for an unapproved week — the live engine has
+    // to be asked, same computation the on-screen week already uses.
+    expect(earnings.computeForWeek).toHaveBeenCalledWith(
+      'h-1',
+      'carer-1',
+      '2026-08-03'
+    );
+    expect(csv).toContain('total_gross_minor,74000');
+    expect(csv).toContain('export_notice,');
+    expect(csv).not.toContain('approved_at');
+  });
+
+  it('STILL refuses when a co-parent/owner remains active — the ordinary case does not regress', async () => {
+    const { service, earnings } = makeService(unapprovedOwnRow, {
+      anyStatusMembership: { ...membership, role: 'nanny', status: 'active' },
+      activeMembers: [
+        {
+          id: 'm1',
+          household_id: 'h-1',
+          user_id: 'carer-1',
+          role: 'nanny',
+          status: 'active',
+        },
+        {
+          id: 'm2',
+          household_id: 'h-1',
+          user_id: 'u1',
+          role: 'parent',
+          status: 'active',
+        },
+      ],
+    });
+
+    const error = await service
+      .exportWeekCsv('carer-1', 'ts-1')
+      .then(() => null)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(TimesheetNotExportableError);
+    expect((error as any).metadata).toMatchObject({
+      exportReason: 'not_approved',
+    });
+    expect(earnings.computeForWeek).not.toHaveBeenCalled();
+  });
+
+  it("still refuses another carer's unapproved week even in an ownerless household", async () => {
+    // A nanny's read scope is 'own', pinned to the CALLING user's id
+    // (assertPayrollReader), so calling as carer-2 against carer-1's row
+    // never resolves the row at all — TimesheetNotFoundError, same as
+    // any other "not yours" case, well before the new gate runs.
+    const { service, memberRepo } = makeService(unapprovedOwnRow, {
+      anyStatusMembership: {
+        ...membership,
+        user_id: 'carer-2',
+        role: 'nanny',
+        status: 'active',
+      },
+      activeMembers: [
+        {
+          id: 'm1',
+          household_id: 'h-1',
+          user_id: 'carer-1',
+          role: 'nanny',
+          status: 'active',
+        },
+        {
+          id: 'm2',
+          household_id: 'h-1',
+          user_id: 'carer-2',
+          role: 'nanny',
+          status: 'active',
+        },
+      ],
+    });
+
+    const error = await service
+      .exportWeekCsv('carer-2', 'ts-1')
+      .then(() => null)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(TimesheetNotFoundError);
+    // Not her row at all — the export's own gate is never even reached.
+    expect(memberRepo.listActiveByHousehold).not.toHaveBeenCalled();
+  });
+
+  it('still refuses a parent asking for an unapproved week', async () => {
+    // Default `membership` fixture is already role 'parent' — a parent's
+    // scope is household-wide, so the row resolves regardless of carer_id;
+    // the refusal has to come from exportWeekCsv's own carer-identity check.
+    const { service, memberRepo } = makeService(unapprovedOwnRow, {
+      activeMembers: [],
+    });
+
+    const error = await service
+      .exportWeekCsv('u1', 'ts-1')
+      .then(() => null)
+      .catch((caught: unknown) => caught);
+
+    expect(error).toBeInstanceOf(TimesheetNotExportableError);
+    // 'u1' is not the row's carer ('carer-1') — refused before the household
+    // is even asked who else is active.
+    expect(memberRepo.listActiveByHousehold).not.toHaveBeenCalled();
+  });
+});
+
+describe('exportWeekCsv — an approved week is unaffected by the Phase 5.1 exception', () => {
+  it('never carries export_notice, and never asks who else is active', async () => {
+    const { service, memberRepo } = makeService(approvedRow, {
+      payments: [PAID_30000],
+    });
+
+    const { csv } = await service.exportWeekCsv('u1', 'ts-1');
+
+    expect(csv).not.toContain('export_notice');
+    expect(memberRepo.listActiveByHousehold).not.toHaveBeenCalled();
+  });
 });
 
 describe('exportWeekCsv — a degraded snapshot refuses rather than lying', () => {

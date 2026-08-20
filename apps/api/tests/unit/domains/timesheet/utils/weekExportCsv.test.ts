@@ -802,6 +802,44 @@ describe('renderWeekExportCsv — period-end + household identifier (082, D-29)'
     expect(csv).not.toContain('household_display_name');
   });
 
+  it('omits export_notice entirely when the caller supplies none — byte-identical to today (Phase 5.1)', () => {
+    const { csv } = renderWeekExportCsv({
+      timesheet,
+      earnings,
+      payments: [PAID_30000],
+    });
+    expect(csv).toBe(EXPECTED_CSV);
+    expect(csv).not.toContain('export_notice');
+  });
+
+  it('adds export_notice as the last summary row when supplied, in place of approved_at', () => {
+    const unapproved: Timesheet = { ...timesheet, approved_at: null };
+    const notice =
+      'This week was never approved. No one is left in this household who could approve it.';
+    const { csv } = renderWeekExportCsv({
+      timesheet: unapproved,
+      earnings,
+      payments: [],
+      unapprovedNotice: notice,
+    });
+    const rows = csv.split(CRLF).filter(row => row.length > 0);
+    expect(rows.at(-1)).toBe(`export_notice,${notice}`);
+    expect(csv).not.toContain('approved_at');
+  });
+
+  it('escapes a notice containing a comma or a quote, same as every other free-text field', () => {
+    const unapproved: Timesheet = { ...timesheet, approved_at: null };
+    const { csv } = renderWeekExportCsv({
+      timesheet: unapproved,
+      earnings,
+      payments: [],
+      unapprovedNotice: 'Never approved, and nobody said "why".',
+    });
+    expect(csv).toContain(
+      'export_notice,"Never approved, and nobody said ""why""."'
+    );
+  });
+
   it('both fields together, in the documented order', () => {
     const { csv } = renderWeekExportCsv({
       timesheet,
