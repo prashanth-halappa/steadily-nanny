@@ -7,19 +7,27 @@
  * "Continue" gating are wizard-specific concerns and stay in `ChildrenScreen`
  * — this component only needs an already-existing household id.
  */
+
+import { X } from 'lucide-react-native';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
+import { Icon } from '@/lib/icons/iconWithClassName';
 import { Button } from '@/src/components/ui/button';
+import { Card } from '@/src/components/ui/card';
+import { ChildChip } from '@/src/components/ui/child-chip';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { Text } from '@/src/components/ui/text';
-import { birthDateFromAge } from '@/src/domains/setup/childAge';
+import { Body } from '@/src/components/ui/typography';
+import {
+  ageFromBirthDate,
+  birthDateFromAge,
+} from '@/src/domains/setup/childAge';
 import {
   ChildFormSheet,
   type ChildFormValues,
 } from '@/src/domains/setup/components/ChildFormSheet';
-import { ChildRow } from '@/src/domains/setup/components/ChildRow';
 import { ManageCommitmentsSection } from '@/src/domains/setup/components/ManageCommitmentsSection';
 import { useCreateChild } from '@/src/hooks/mutations/useCreateChild';
 import { useDeleteChild } from '@/src/hooks/mutations/useDeleteChild';
@@ -84,23 +92,68 @@ export function ChildrenManager({ householdId }: ChildrenManagerProps) {
 
   return (
     <View className="gap-3">
-      {(children.data ?? []).map(child => (
-        <View key={child.id} className="gap-2">
-          <ChildRow
-            testID={`children-row-${child.id}`}
-            name={child.name}
-            colour={child.colour}
-            birthDate={child.birth_date}
-            onPress={() => openEditForm(child.id)}
-            onRemove={() => deleteChild.mutate(child.id)}
-          />
-          <ManageCommitmentsSection
-            householdId={householdId}
-            childId={child.id}
-            childName={child.name}
-          />
-        </View>
-      ))}
+      {(children.data ?? []).length > 0 ? (
+        <Card className="overflow-hidden p-0">
+          {(children.data ?? []).map((child, index, allChildren) => {
+            const age = ageFromBirthDate(child.birth_date);
+            return (
+              <View key={child.id}>
+                <View className="gap-2 p-4">
+                  <View
+                    testID={`children-row-${child.id}`}
+                    className="flex-row items-center gap-3"
+                  >
+                    <Pressable
+                      testID={`children-row-${child.id}-edit`}
+                      accessibilityRole="button"
+                      onPress={() => openEditForm(child.id)}
+                      className="flex-1 flex-row items-center gap-3"
+                    >
+                      <ChildChip
+                        name={child.name}
+                        colour={child.colour ?? undefined}
+                      />
+                      <Body className="text-muted-foreground">
+                        {age === null
+                          ? t('children.ageUnknown')
+                          : t('children.ageYears', { count: age })}
+                      </Body>
+                    </Pressable>
+                    <Pressable
+                      testID={`children-row-${child.id}-remove`}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('children.removeLabel', {
+                        name: child.name,
+                      })}
+                      onPress={() => deleteChild.mutate(child.id)}
+                      hitSlop={8}
+                    >
+                      <View className="h-8 w-8 items-center justify-center rounded-full bg-muted">
+                        <Icon
+                          icon={X}
+                          className="text-muted-foreground"
+                          size="sm"
+                        />
+                      </View>
+                    </Pressable>
+                  </View>
+                  <ManageCommitmentsSection
+                    householdId={householdId}
+                    childId={child.id}
+                    childName={child.name}
+                  />
+                </View>
+                {index < allChildren.length - 1 ? (
+                  <View
+                    className="ml-4 bg-border"
+                    style={{ height: StyleSheet.hairlineWidth }}
+                  />
+                ) : null}
+              </View>
+            );
+          })}
+        </Card>
+      ) : null}
 
       {children.isSuccess && children.data.length === 0 ? (
         <EmptyState

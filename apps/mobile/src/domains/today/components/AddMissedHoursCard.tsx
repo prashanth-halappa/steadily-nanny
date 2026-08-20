@@ -30,11 +30,10 @@ import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { Button } from '@/src/components/ui/button';
 import { DateTimeField } from '@/src/components/ui/date-time-field';
 import { LoadingButton } from '@/src/components/ui/loading-button';
-import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
 import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
 import { isEndAfterStart } from '@/src/components/ui/time-range-picker.utils';
-import { Body, Small } from '@/src/components/ui/typography';
+import { Body, MetadataLabel, Small } from '@/src/components/ui/typography';
 import {
   formatDate,
   parseDate,
@@ -342,9 +341,9 @@ export function AddMissedHoursCard({
             <Body className="text-muted-foreground">
               {t('missedHours.sheetHint')}
             </Body>
-            <Text className="font-medium text-muted-foreground text-xs">
+            <MetadataLabel className="text-muted-foreground">
               {t('missedHours.dateLabel')}
-            </Text>
+            </MetadataLabel>
             <DateTimeField
               testID="today-missed-hours-date"
               mode="date"
@@ -370,7 +369,7 @@ export function AddMissedHoursCard({
             {refusal ? (
               <Small
                 testID="today-missed-hours-error"
-                className="text-destructive"
+                className="text-error-inline-text"
               >
                 {refusal}
               </Small>

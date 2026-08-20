@@ -5,6 +5,7 @@ import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { cn } from '@/lib/utils';
 import { buttonTextVariants, buttonVariants } from '@/src/components/ui/button';
 import { TextClassContext } from '@/src/components/ui/text';
+import { H4 } from '@/src/components/ui/typography';
 import { useElevation } from '~/lib/design-tokens/elevation';
 
 const AlertDialog = AlertDialogPrimitive.Root;
@@ -51,8 +52,8 @@ function AlertDialogOverlayNative({
       asChild
     >
       <Animated.View
-        entering={FadeIn.duration(150)}
-        exiting={FadeOut.duration(150)}
+        entering={FadeIn.duration(250)}
+        exiting={FadeOut.duration(250)}
       >
         {children}
       </Animated.View>
@@ -86,8 +87,8 @@ function AlertDialogContent({
           className={cn(
             'z-50 max-w-lg gap-4 bg-background p-6 web:duration-200 rounded-3xl',
             open
-              ? 'web:animate-in web:fade-in-0 web:zoom-in-95'
-              : 'web:animate-out web:fade-out-0 web:zoom-out-95',
+              ? 'web:animate-in web:fade-in-0'
+              : 'web:animate-out web:fade-out-0',
             className
           )}
           {...props}
@@ -117,13 +118,9 @@ function AlertDialogTitle({
   ref?: React.RefObject<AlertDialogPrimitive.TitleRef>;
 }) {
   return (
-    <AlertDialogPrimitive.Title
-      className={cn(
-        'text-lg native:text-xl text-foreground font-semibold',
-        className
-      )}
-      {...props}
-    />
+    <H4 asChild className={className}>
+      <AlertDialogPrimitive.Title {...props} />
+    </H4>
   );
 }
 

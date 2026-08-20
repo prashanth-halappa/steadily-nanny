@@ -206,7 +206,7 @@ export function DraftHomeScreen() {
     <Card testID="draft-terms-card" tone={hasTerms ? 'default' : 'attention'}>
       <CardContent className="gap-3">
         <View className="flex-row items-center gap-2">
-          <IconChip tone="hours" icon={Wallet} />
+          <IconChip tone={hasTerms ? 'hours' : 'brand'} icon={Wallet} />
           {hasTerms ? <H4>{t('terms.title')}</H4> : <H3>{t('terms.title')}</H3>}
         </View>
         {arrangement && proposal ? (
@@ -435,7 +435,9 @@ export function DraftHomeScreen() {
               variant="ghost"
               onPress={() => setArchiveOpen(true)}
             >
-              <Text className="text-destructive">{t('archive.button')}</Text>
+              <Text className="text-error-inline-text">
+                {t('archive.button')}
+              </Text>
             </Button>
           </View>
         )}

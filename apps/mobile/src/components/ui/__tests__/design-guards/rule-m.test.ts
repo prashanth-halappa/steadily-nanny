@@ -84,7 +84,11 @@ function findOpeningTagEnd(content: string, openStart: number): number {
   return -1;
 }
 
-function isSelfClosingTag(content: string, openStart: number, openEnd: number): boolean {
+function isSelfClosingTag(
+  content: string,
+  openStart: number,
+  openEnd: number
+): boolean {
   let i = openEnd - 1;
   while (i > openStart && /\s/u.test(content.charAt(i))) {
     i -= 1;
@@ -105,7 +109,10 @@ function classifyCardTone(openingTag: string): 'tinted' | 'plain' | 'skip' {
   return 'plain';
 }
 
-function findMatchingCloseIndex(content: string, openTagEnd: number): number | null {
+function findMatchingCloseIndex(
+  content: string,
+  openTagEnd: number
+): number | null {
   let depth = 1;
   let pos = openTagEnd + 1;
 

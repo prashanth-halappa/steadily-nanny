@@ -40,6 +40,7 @@ import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { Button } from '@/src/components/ui/button';
+import { ListGroup, ListRow } from '@/src/components/ui/list-group';
 import { Text } from '@/src/components/ui/text';
 import { H4, MetadataLabel, Small } from '@/src/components/ui/typography';
 import { AmountRow } from '@/src/domains/pay/components/AmountRow';
@@ -48,7 +49,6 @@ import {
   formatEarningsSpanDate,
 } from '@/src/domains/timesheet/utils/earningsFormat';
 import { formatMoney } from '@/src/lib/money';
-import { useElevation } from '~/lib/design-tokens/elevation';
 import type { Expense } from '../types';
 
 interface ReimbursementsCardProps {
@@ -108,7 +108,6 @@ export function ReimbursementsCard({
   testID = 'reimbursements-card',
 }: ReimbursementsCardProps) {
   const { t } = useTranslation('expenses');
-  const elevation = useElevation();
 
   if (approvedExpenses.length === 0) return null;
 
@@ -126,45 +125,36 @@ export function ReimbursementsCard({
         </Small>
       ) : null}
 
-      {approvedExpenses.map(expense => (
-        <View
-          key={expense.id}
-          className="rounded-row bg-card px-4 py-3"
-          style={elevation.row}
-        >
-          <AmountRow
-            testID={`${testID}-line-${expense.id}`}
-            label={expense.description}
-            value={
-              expense.amount_minor !== null
-                ? formatMoney(expense.amount_minor, currency)
-                : null
-            }
-            subLine={formatEarningsSpanDate(expense.local_date)}
-          />
-        </View>
-      ))}
-
-      {totalMinor !== null ? (
-        <View className="rounded-row bg-card px-4 py-3" style={elevation.row}>
-          <View className="flex-row items-baseline justify-between gap-3">
-            <H4>{t('reimbursements.totalLabel')}</H4>
-            <H4 testID={`${testID}-total`} tabular>
-              {formatMoney(totalMinor, currency)}
-            </H4>
-          </View>
-        </View>
-      ) : (
-        <View
-          testID={`${testID}-total-unavailable`}
-          className="rounded-row bg-card px-4 py-3"
-          style={elevation.row}
-        >
-          <Small className="text-muted-foreground">
-            {t('reimbursements.totalUnavailable')}
-          </Small>
-        </View>
-      )}
+      <ListGroup>
+        {approvedExpenses.map(expense => (
+          <ListRow key={expense.id} testID={`${testID}-row-${expense.id}`}>
+            <AmountRow
+              testID={`${testID}-line-${expense.id}`}
+              label={expense.description}
+              value={
+                expense.amount_minor !== null
+                  ? formatMoney(expense.amount_minor, currency)
+                  : null
+              }
+              subLine={formatEarningsSpanDate(expense.local_date)}
+            />
+          </ListRow>
+        ))}
+        {totalMinor !== null ? (
+          <ListRow testID={`${testID}-total-row`}>
+            <View className="flex-row items-baseline justify-between gap-3">
+              <H4>{t('reimbursements.totalLabel')}</H4>
+              <H4 testID={`${testID}-total`} tabular>
+                {formatMoney(totalMinor, currency)}
+              </H4>
+            </View>
+          </ListRow>
+        ) : (
+          <ListRow testID={`${testID}-total-unavailable`}>
+            <Small>{t('reimbursements.totalUnavailable')}</Small>
+          </ListRow>
+        )}
+      </ListGroup>
 
       {/* State words on the figure, both roles, always (docs/11-MONEY.md §1):
           a total with no state says nothing about whether she has her money
@@ -206,7 +196,7 @@ export function ReimbursementsCard({
               {markReimbursedError ? (
                 <Small
                   testID={`${testID}-mark-reimbursed-error`}
-                  className="text-destructive"
+                  className="text-error-inline-text"
                 >
                   {markReimbursedError}
                 </Small>

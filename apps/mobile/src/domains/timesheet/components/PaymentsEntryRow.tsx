@@ -17,7 +17,7 @@ import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { Icon } from '@/lib/icons/iconWithClassName';
 import { Body, Small } from '@/src/components/ui/typography';
-import { useElevation } from '~/lib/design-tokens/elevation';
+import { spacing } from '~/lib/design-tokens/spacing';
 import { CHEVRON_SLOT } from './TimeEntryRow';
 
 interface PaymentsEntryRowProps {
@@ -32,7 +32,6 @@ export function PaymentsEntryRow({
   testID = 'hours-payments-link',
 }: PaymentsEntryRowProps) {
   const { t } = useTranslation('hours');
-  const elevation = useElevation();
 
   return (
     <Pressable
@@ -40,15 +39,15 @@ export function PaymentsEntryRow({
       accessibilityRole="button"
       accessibilityLabel={t('payments.entryLink')}
       onPress={onPress}
-      className="mt-4 gap-1 rounded-row bg-card px-4 py-3"
-      style={elevation.row}
+      className="mt-4 gap-1"
+      style={{ minHeight: spacing.minTouchTarget }}
     >
       <View className="flex-row items-center justify-between gap-3">
-        <Body className="flex-1">{t('payments.screenTitle')}</Body>
+        <Body className="flex-1 text-primary">{t('payments.screenTitle')}</Body>
         <Icon
           icon={ChevronRight}
           size={CHEVRON_SLOT}
-          className="text-muted-foreground"
+          className="text-primary"
         />
       </View>
       <Small testID={`${testID}-subtitle`} className="text-muted-foreground">
