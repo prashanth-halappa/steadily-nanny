@@ -498,10 +498,7 @@ export function NannyWeekView({
     weekDates,
     timeZone,
   });
-  const weekHoursLabel =
-    entries.length > 0 && totalMinutes === 0
-      ? formatDuration(60).replace('1', '0')
-      : formatDuration(totalMinutes);
+  const weekHoursLabel = formatDuration(totalMinutes);
   const scheduledMinutes = scheduledMinutesFor(entries);
   const overtimeLabel = formatOvertimeDelta(totalMinutes, scheduledMinutes);
   const todayISO = localDateInZone(timeZone, new Date(nowMs));

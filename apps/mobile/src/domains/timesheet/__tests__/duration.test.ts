@@ -28,16 +28,16 @@ describe('formatDuration', () => {
     expect(formatDuration(45)).toBe('45m');
   });
 
-  it('formats zero as 0m', () => {
-    expect(formatDuration(0)).toBe('0m');
+  it('formats zero as 0h (hour unit — "0m" reads like the word Om)', () => {
+    expect(formatDuration(0)).toBe('0h');
   });
 
   it('floors fractional minutes rather than rounding', () => {
     expect(formatDuration(90.9)).toBe('1h 30m');
   });
 
-  it('treats a negative duration as 0m (defensive — never shown in real data)', () => {
-    expect(formatDuration(-5)).toBe('0m');
+  it('treats a negative duration as 0h (defensive — never shown in real data)', () => {
+    expect(formatDuration(-5)).toBe('0h');
   });
 
   // "8h 52m" is not Spanish, it is untranslated English, and it was leaking
@@ -53,7 +53,7 @@ describe('formatDuration', () => {
       expect(formatDuration(532)).toBe('8 h 52 min');
       expect(formatDuration(120)).toBe('2 h');
       expect(formatDuration(45)).toBe('45 min');
-      expect(formatDuration(0)).toBe('0 min');
+      expect(formatDuration(0)).toBe('0 h');
     });
 
     it('falls back to the English units for an unknown language', async () => {
@@ -70,10 +70,10 @@ describe('formatElapsedSince', () => {
     expect(formatElapsedSince(start, now)).toBe('6h 12m');
   });
 
-  it('formats a just-started clock-in as 0m, not negative', () => {
+  it('formats a just-started clock-in as 0h, not negative', () => {
     const start = '2026-08-01T07:58:00.000Z';
     const now = new Date('2026-08-01T07:58:30.000Z').getTime();
-    expect(formatElapsedSince(start, now)).toBe('0m');
+    expect(formatElapsedSince(start, now)).toBe('0h');
   });
 });
 

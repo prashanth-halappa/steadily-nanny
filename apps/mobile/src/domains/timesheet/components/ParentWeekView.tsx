@@ -553,13 +553,7 @@ export function ParentWeekView({
   }
 
   const totalMinutes = sumEntryMinutes(entries, nowMs);
-  // A week with visible rows that bank nothing (every entry voided) is not an
-  // empty week — "0h" keeps the worked-week frame; "0m" reads like no hours
-  // were ever logged.
-  const weekHoursLabel =
-    entries.length > 0 && totalMinutes === 0
-      ? formatDuration(60).replace('1', '0')
-      : formatDuration(totalMinutes);
+  const weekHoursLabel = formatDuration(totalMinutes);
   const scheduledMinutes = scheduledMinutesFor(entries);
   const overtimeLabel = formatOvertimeDelta(totalMinutes, scheduledMinutes);
   // The selected TAB is the identity — not `carer_id`, which is NULL on every
