@@ -360,9 +360,9 @@
     "expired": "Caducado"
   },
   "cover": {
-    "weekSummaryTitle_one": "{{count}} momento esta semana sin nadie reservado",
-    "weekSummaryTitle_other": "{{count}} momentos esta semana sin nadie reservado",
-    "rowPill": "Nadie reservado",
+    "weekSummaryTitle_one": "¿Quién cubre 1 turno esta semana?",
+    "weekSummaryTitle_other": "¿Quién cubre {{count}} turnos esta semana?",
+    "rowPill": "Aún sin reservar",
     "rowMeta": "{{childName}} · {{cause}}",
     "askToCover": "Pide a {{carerName}} que empiece a las {{start}}",
     "askSomeoneToCover": "Pide a una niñera que cubra {{start}} – {{end}}",
@@ -375,20 +375,20 @@
     "withdrawAskConfirmBody": "El hueco sigue abierto. Ya no se le pedirá a {{carerName}} que cubra este turno.",
     "withdrawAskConfirmKeep": "Mantener la solicitud",
     "withdrawAskConfirmWithdraw": "Retirar",
-    "iveGotIt": "Yo me encargo",
+    "iveGotIt": "Me encargo yo de esto",
     "parentCoveringRow": "Te encargas tú",
     "parentCoveringBy": "Se encarga {{parentName}}",
     "undoCovering": "Deshacer",
     "coveringToast": "Marcado como cubierto por ti",
     "undoneToast": "Quitado: ese rato vuelve a estar sin cubrir.",
-    "hoursWrong": "Estas horas no son correctas",
+    "hoursWrong": "Cambiar nuestras horas de cuidado",
     "allCovered": "Todo lo que pediste está reservado.",
     "cause": {
       "cancelled": "Se canceló un turno",
       "declined": "Se rechazó un turno",
       "needsAdded": "Añadiste estas horas",
       "closureRemoved": "Cambiaron tus días fuera",
-      "nothingScheduled": "Nadie ha reservado estas horas"
+      "nothingScheduled": "Marcaste estas horas de cuidado. Todavía nadie las ha reservado."
     },
     "causeNamed": {
       "cancelled": "Se canceló el turno de {{carerName}} de {{start}} – {{end}}",
@@ -400,6 +400,13 @@
       "expired": "{{start}} – {{end}} sigue sin cubrir. La solicitud a {{carerName}} venció el {{expiredDay}}."
     },
     "loadFailed": "No pudimos cargar las horas de cuidado de esta familia, así que la cobertura de esta semana es desconocida."
+  },
+  "recipient": {
+    "askCover": "Abre una solicitud. No se envía nada hasta que la envíes.",
+    "sendExtra": "{{name}} recibe la solicitud y puede aceptarla o rechazarla.",
+    "parentCover": "Marca estas horas como cubiertas por ti. No se avisa a nadie.",
+    "parentCoverAdjacent": "Marca estas horas como cubiertas por ti. Se avisa a {{name}} de que su día sigue empezando a las {{time}}.",
+    "careHours": "Abre tus horas de cuidado en ajustes. No se avisa a nadie."
   },
   "lead": {
     "nanny_one": "{{count}} turno esta semana.",

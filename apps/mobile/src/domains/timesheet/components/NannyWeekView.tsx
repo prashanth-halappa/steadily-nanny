@@ -60,6 +60,7 @@ import { ErrorState } from '@/src/components/custom/ErrorState';
 import { Button } from '@/src/components/ui/button';
 import { ReceiptCard } from '@/src/components/ui/receipt-card';
 import { Text } from '@/src/components/ui/text';
+import { Caption } from '@/src/components/ui/typography';
 import { ExpenseAddSheet } from '@/src/domains/expenses/components/ExpenseAddSheet';
 import { ExpensesListCard } from '@/src/domains/expenses/components/ExpensesListCard';
 import { ReimbursementsCard } from '@/src/domains/expenses/components/ReimbursementsCard';
@@ -825,15 +826,28 @@ export function NannyWeekView({
                 the money card and reimbursements with no card and no
                 owner. */}
             {!readOnly && (timesheet?.status === 'submitted' || isApproved) ? (
-              <Button
-                testID="hours-flag-link"
-                variant="ghost"
-                onPress={() => setFlagSheet({ prefix: flagPrefix })}
-                size="default"
-                className="mb-4 self-start"
-              >
-                <Text className="text-foreground">{t('thread.flagLink')}</Text>
-              </Button>
+              <View className="mb-4 gap-1 self-start">
+                <Button
+                  testID="hours-flag-link"
+                  variant="ghost"
+                  onPress={() => setFlagSheet({ prefix: flagPrefix })}
+                  size="default"
+                  className="self-start"
+                >
+                  <Text className="text-foreground">
+                    {t('thread.flagLink')}
+                  </Text>
+                </Button>
+                {/* C — "who hears this when I tap it", below the button. */}
+                <Caption
+                  testID="hours-flag-link-recipient"
+                  className="text-muted-foreground"
+                >
+                  {t('recipient.flag', {
+                    household: activeHousehold.household?.name ?? '',
+                  })}
+                </Caption>
+              </View>
             ) : null}
             <WeekQueryThread
               messages={threadQuery.data?.messages ?? []}
@@ -841,6 +855,8 @@ export function NannyWeekView({
               timeZone={timeZone}
               timesheetStatus={timesheetStatusForDisplay}
               viewerRole="nanny"
+              // C — a nanny's reply goes to the household.
+              recipientName={activeHousehold.household?.name ?? ''}
               composerReopened={composerReopened}
               onSend={handleSendThreadMessage}
               isSending={addThreadMessage.isPending}

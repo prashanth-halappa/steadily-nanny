@@ -830,6 +830,41 @@ describe('NannyWeekView — the statement blocks own the right facts', () => {
     expect(hero.getByTestId('hours-lead').props.children).toBe('lead.nanny');
   });
 
+  // C — "who hears this when I tap it": "This doesn't look right" names the
+  // household directly beneath itself, and a reply through the thread
+  // composer names the household too (the OTHER party, per
+  // `addThreadMessage`).
+  it('C: names the household beneath "This doesn\'t look right" and beneath the thread composer\'s Send', async () => {
+    getThreadMock.mockImplementation(() =>
+      Promise.resolve({
+        messages: [
+          {
+            id: 'msg-1',
+            kind: 'query',
+            author_id: 'parent-1',
+            author_name: 'The Smiths',
+            body: 'Was Thursday a full day?',
+            created_at: '2026-08-10T09:00:00.000Z',
+          },
+        ],
+      })
+    );
+
+    const { getByTestId } = renderNannyView();
+
+    await waitFor(() => expect(getByTestId('hours-flag-link')).toBeTruthy());
+    expect(getByTestId('hours-flag-link-recipient').props.children).toBe(
+      'recipient.flag'
+    );
+
+    await waitFor(() =>
+      expect(getByTestId('hours-week-thread-send')).toBeTruthy()
+    );
+    expect(getByTestId('hours-week-thread-send-recipient').props.children).toBe(
+      'recipient.threadSend'
+    );
+  });
+
   it('shows the skeleton, not a full-screen spinner, while the hours load', async () => {
     let releaseEntries: (entries: unknown[]) => void = () => {};
     listEntriesMock.mockImplementation(

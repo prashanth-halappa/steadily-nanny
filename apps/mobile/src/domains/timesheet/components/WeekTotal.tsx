@@ -82,6 +82,7 @@ import { IconChip } from '@/src/components/ui/icon-chip';
 import { Text } from '@/src/components/ui/text';
 import {
   Body,
+  Caption,
   Figure28,
   H3,
   MetadataLabel,
@@ -100,6 +101,14 @@ interface WeekTotalAction {
   disabled?: boolean;
   /** Tints the label text with the inline-error ink token (the ghost Query button). */
   destructive?: boolean;
+  /**
+   * C — "who hears this when I tap it": one `Caption` (14/21/400), rendered
+   * directly below this action's own button, naming who receives it (and
+   * what it holds up, when something does). Omit to render nothing —
+   * withdraw/reopen have no recipient line in the spec, and never fabricate
+   * one. `${testID}-recipient` is the caption's own testID.
+   */
+  recipient?: string | null;
 }
 
 interface WeekTotalProps {
@@ -478,51 +487,81 @@ export function WeekTotal({
           </Body>
         ) : null}
         {primaryAction ? (
-          <Button
-            testID={primaryAction.testID}
-            size="lg"
-            className="mt-1"
-            disabled={primaryAction.disabled}
-            onPress={primaryAction.onPress}
-          >
-            <Text>{primaryAction.label}</Text>
-          </Button>
+          <>
+            <Button
+              testID={primaryAction.testID}
+              size="lg"
+              className="mt-1"
+              disabled={primaryAction.disabled}
+              onPress={primaryAction.onPress}
+            >
+              <Text>{primaryAction.label}</Text>
+            </Button>
+            {primaryAction.recipient ? (
+              <Caption
+                testID={`${primaryAction.testID}-recipient`}
+                className={smallToneClass}
+              >
+                {primaryAction.recipient}
+              </Caption>
+            ) : null}
+          </>
         ) : null}
         {secondaryAction ? (
-          <Button
-            testID={secondaryAction.testID}
-            variant="ghost"
-            disabled={secondaryAction.disabled}
-            onPress={secondaryAction.onPress}
-          >
-            <Text
-              className={
-                secondaryAction.destructive
-                  ? 'text-error-inline-text'
-                  : undefined
-              }
+          <>
+            <Button
+              testID={secondaryAction.testID}
+              variant="ghost"
+              disabled={secondaryAction.disabled}
+              onPress={secondaryAction.onPress}
             >
-              {secondaryAction.label}
-            </Text>
-          </Button>
+              <Text
+                className={
+                  secondaryAction.destructive
+                    ? 'text-error-inline-text'
+                    : undefined
+                }
+              >
+                {secondaryAction.label}
+              </Text>
+            </Button>
+            {secondaryAction.recipient ? (
+              <Caption
+                testID={`${secondaryAction.testID}-recipient`}
+                className={smallToneClass}
+              >
+                {secondaryAction.recipient}
+              </Caption>
+            ) : null}
+          </>
         ) : null}
         {tertiaryAction ? (
-          <Button
-            testID={tertiaryAction.testID}
-            variant="ghost"
-            disabled={tertiaryAction.disabled}
-            onPress={tertiaryAction.onPress}
-          >
-            <Text
-              className={
-                tertiaryAction.destructive
-                  ? 'text-error-inline-text'
-                  : undefined
-              }
+          <>
+            <Button
+              testID={tertiaryAction.testID}
+              variant="ghost"
+              disabled={tertiaryAction.disabled}
+              onPress={tertiaryAction.onPress}
             >
-              {tertiaryAction.label}
-            </Text>
-          </Button>
+              <Text
+                className={
+                  tertiaryAction.destructive
+                    ? 'text-error-inline-text'
+                    : undefined
+                }
+              >
+                {tertiaryAction.label}
+              </Text>
+            </Button>
+            {tertiaryAction.recipient ? (
+              <Caption
+                testID={`${tertiaryAction.testID}-recipient`}
+                className={smallToneClass}
+              >
+                {tertiaryAction.recipient}
+              </Caption>
+            ) : null}
+          </>
         ) : null}
       </CardContent>
     </Card>

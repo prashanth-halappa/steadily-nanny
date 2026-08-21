@@ -360,9 +360,9 @@
     "expired": "Expired"
   },
   "cover": {
-    "weekSummaryTitle_one": "{{count}} time this week with no one booked",
-    "weekSummaryTitle_other": "{{count}} times this week with no one booked",
-    "rowPill": "No one booked",
+    "weekSummaryTitle_one": "Who's covering 1 window this week?",
+    "weekSummaryTitle_other": "Who's covering {{count}} windows this week?",
+    "rowPill": "Not booked yet",
     "rowMeta": "{{childName}} · {{cause}}",
     "askToCover": "Ask {{carerName}} to start at {{start}}",
     "askSomeoneToCover": "Ask a nanny to cover {{start}} – {{end}}",
@@ -375,20 +375,20 @@
     "withdrawAskConfirmBody": "The gap stays open. {{carerName}} won't be asked to cover this shift anymore.",
     "withdrawAskConfirmKeep": "Keep the ask",
     "withdrawAskConfirmWithdraw": "Withdraw",
-    "iveGotIt": "I've got it",
+    "iveGotIt": "I'm covering this",
     "parentCoveringRow": "You're covering",
     "parentCoveringBy": "{{parentName}} is covering",
     "undoCovering": "Undo",
     "coveringToast": "Marked as covered by you",
     "undoneToast": "Removed — that time isn't covered again.",
-    "hoursWrong": "These hours are wrong",
+    "hoursWrong": "Change our care hours",
     "allCovered": "Everything you asked for is booked.",
     "cause": {
       "cancelled": "A shift was cancelled",
       "declined": "A shift was declined",
       "needsAdded": "You added these hours",
       "closureRemoved": "Your away dates changed",
-      "nothingScheduled": "No one's booked for these hours"
+      "nothingScheduled": "You set these as care hours. Nobody's booked yet."
     },
     "causeNamed": {
       "cancelled": "{{carerName}}'s {{start}} – {{end}} shift was cancelled",
@@ -400,6 +400,13 @@
       "expired": "{{start}} – {{end}} is still uncovered. The ask to {{carerName}} expired {{expiredDay}}."
     },
     "loadFailed": "We couldn't load this family's care hours, so this week's cover is unknown."
+  },
+  "recipient": {
+    "askCover": "Opens a request. Nothing is sent until you send it.",
+    "sendExtra": "{{name}} gets the request and can accept or turn it down.",
+    "parentCover": "Marks these hours as covered by you. No one is told.",
+    "parentCoverAdjacent": "Marks these hours as covered by you. {{name}} is told their day still starts at {{time}}.",
+    "careHours": "Opens your care hours in settings. No one is told."
   },
   "lead": {
     "nanny_one": "{{count}} shift this week.",

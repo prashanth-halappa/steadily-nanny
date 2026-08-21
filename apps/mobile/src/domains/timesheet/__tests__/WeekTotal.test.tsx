@@ -1084,6 +1084,50 @@ describe('WeekTotal', () => {
       expect(queryByTestId('hours-withdraw-query-button')).toBeNull();
     });
 
+    // C — "who hears this when I tap it": an action slot may carry a
+    // `recipient` caption, rendered directly below its own button.
+    it('renders a recipient caption below an action when one is supplied', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          primaryAction={{
+            testID: 'hours-approve-button',
+            label: 'Approve the week',
+            onPress: () => {},
+            recipient: 'Priya is told the week is approved.',
+          }}
+          secondaryAction={{
+            testID: 'hours-query-button',
+            label: 'Ask about this week',
+            onPress: () => {},
+            recipient: 'Sends your question to Priya and holds off approval.',
+          }}
+        />
+      );
+
+      expect(getByTestId('hours-approve-button-recipient').props.children).toBe(
+        'Priya is told the week is approved.'
+      );
+      expect(getByTestId('hours-query-button-recipient').props.children).toBe(
+        'Sends your question to Priya and holds off approval.'
+      );
+    });
+
+    it('renders no recipient caption when an action omits one', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          primaryAction={{
+            testID: 'hours-approve-button',
+            label: 'Approve the week',
+            onPress: () => {},
+          }}
+        />
+      );
+
+      expect(queryByTestId('hours-approve-button-recipient')).toBeNull();
+    });
+
     it('disables the tertiary action while its mutation is in flight', () => {
       const { getByTestId } = render(
         <WeekTotal

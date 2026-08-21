@@ -2148,6 +2148,53 @@ describe('ParentWeekView — Daylight v2 statement layout', () => {
     expect(hero.queryByTestId('hours-query-button')).toBeNull();
   });
 
+  // C — "who hears this when I tap it": Approve and Ask about this week
+  // each grow a recipient caption directly beneath their own button.
+  // `hours-query-button`'s testID and the wire status `queried` are
+  // untouched — only the label and this caption are new.
+  it('C: names who hears Approve and Ask about this week, directly under each button', async () => {
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() => expect(getByTestId('hours-week-total')).toBeTruthy());
+    expect(getByTestId('hours-approve-button-recipient').props.children).toBe(
+      'recipient.approve'
+    );
+    expect(getByTestId('hours-query-button-recipient').props.children).toBe(
+      'recipient.query'
+    );
+  });
+
+  // C — the composer both roles share names its recipient too, directly
+  // under Send: the carer, for the parent viewer.
+  it('C: names who a reply through the thread composer goes to', async () => {
+    getByIdMock.mockImplementation(() =>
+      Promise.resolve(makeTimesheetWeek({ status: 'queried' }))
+    );
+    getThreadMock.mockImplementation(() =>
+      Promise.resolve({
+        messages: [
+          {
+            id: 'msg-1',
+            kind: 'query',
+            author_id: PARENT_ID,
+            author_name: 'Jo',
+            body: 'Was Thursday a full day?',
+            created_at: '2026-08-10T09:00:00.000Z',
+          },
+        ],
+      })
+    );
+
+    const { getByTestId } = renderParentView();
+
+    await waitFor(() =>
+      expect(getByTestId('hours-week-thread-send')).toBeTruthy()
+    );
+    expect(getByTestId('hours-week-thread-send-recipient').props.children).toBe(
+      'recipient.threadSend'
+    );
+  });
+
   it('renders the money line inside the money card, never inside the status card', async () => {
     const { getByTestId, queryByTestId } = renderParentView();
 

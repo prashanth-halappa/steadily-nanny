@@ -1123,6 +1123,11 @@ export function ParentWeekView({
                       label: isApproved ? t('approved') : t('approveWeek'),
                       disabled: !isActionable || approveTimesheet.isPending,
                       onPress: () => setIsApproveDialogOpen(true),
+                      // C — the highest-stakes button in the app and it used
+                      // to say nothing about who hears it.
+                      recipient: t('recipient.approve', {
+                        name: approveDialogCarerName,
+                      }),
                     }
               }
               secondaryAction={
@@ -1134,6 +1139,9 @@ export function ParentWeekView({
                       disabled: !isActionable,
                       destructive: true,
                       onPress: () => setIsQuerySheetVisible(true),
+                      recipient: t('recipient.query', {
+                        name: approveDialogCarerName,
+                      }),
                     }
               }
               // D-19: the parent's exit from `queried`, beside Approve. Not
@@ -1228,6 +1236,8 @@ export function ParentWeekView({
               timeZone={timeZone}
               timesheetStatus={timesheetStatusForDisplay}
               viewerRole="parent"
+              // C — a parent's reply goes to the carer.
+              recipientName={approveDialogCarerName}
               onSend={handleSendThreadMessage}
               isSending={addThreadMessage.isPending}
               sendError={
