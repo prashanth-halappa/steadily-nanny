@@ -54,7 +54,22 @@ interface AuthState {
   isPlayServicesUnavailable: boolean;
 
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string) => Promise<void>;
+  /**
+   * Resolves to what actually happened, because the two success shapes need
+   * different screens. Supabase returns `session: null` on a successful
+   * sign-up when the project requires email confirmation — no error, no auth
+   * event, nothing to navigate on. Callers MUST branch on this, or a
+   * confirmation-enabled project strands every new user on the form with the
+   * spinner switched off and no message.
+   *
+   * `confirm-email` also covers the already-registered case, where Supabase
+   * deliberately returns a session-less success rather than leaking that the
+   * address exists. Saying "check your inbox" is the right answer to both.
+   */
+  signUp: (
+    email: string,
+    password: string
+  ) => Promise<'signed-in' | 'confirm-email' | 'failed'>;
   /** Sends a Supabase password-reset email. Resolves on success; sets `error` on failure. */
   resetPasswordForEmail: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -99,13 +114,19 @@ export const useAuthStore = createPersistedStore<AuthState>(
     signUp: async (email, password) => {
       set({ isLoading: true, error: null });
       try {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({ email, password });
         if (error) {
           set({ error: authErrorMessage(error) });
-          throw error;
+          return 'failed';
         }
+        // A session means the project auto-confirms: `onAuthStateChange`
+        // fires SIGNED_IN below and routes into the wizard, so there is
+        // nothing for the caller to do. No session means the confirmation
+        // mail is the next step, and only the caller can say so.
+        return data.session ? 'signed-in' : 'confirm-email';
       } catch (error) {
         set({ error: authErrorMessage(error) });
+        return 'failed';
       } finally {
         set({ isLoading: false });
       }

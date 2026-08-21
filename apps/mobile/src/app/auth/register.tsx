@@ -52,11 +52,59 @@ export default function Register() {
   const passwordTooShort = isPasswordTooShort(password);
   const showPasswordError = attemptedSubmit && passwordTooShort;
 
+  // `signUp` resolving is NOT the same as being signed in. A project that
+  // requires email confirmation returns a successful, session-less sign-up:
+  // no error, no auth event, nothing to navigate on. Without this branch the
+  // screen just stops — spinner off, no message — and the only feedback the
+  // person ever gets is "Confirm your email before signing in." on some later
+  // sign-in attempt. Currently the hosted project auto-confirms, so this arm
+  // is dormant; it arms itself the moment confirmations are turned on.
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
+
   const submit = () => {
     setAttemptedSubmit(true);
     if (isPasswordTooShort(password)) return;
-    void signUp(email, password);
+    void signUp(email, password).then(outcome => {
+      if (outcome === 'confirm-email') setAwaitingConfirmation(true);
+    });
   };
+
+  if (awaitingConfirmation) {
+    return (
+      <SafeAreaView
+        style={{ flex: 1 }}
+        className="bg-background"
+        testID="register-confirm-email"
+      >
+        <View
+          style={{
+            flex: 1,
+            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingTop: SCREEN_CONTENT_STYLE.padding,
+            paddingBottom: SCREEN_CONTENT_STYLE.padding,
+          }}
+          className="justify-start gap-3"
+        >
+          <H1>{t('confirmEmailTitle')}</H1>
+          <Small testID="register-confirm-email-body">
+            {t('confirmEmailBody', { email })}
+          </Small>
+          <Small
+            testID="register-confirm-email-hint"
+            className="text-muted-foreground"
+          >
+            {t('confirmEmailHint')}
+          </Small>
+          <Button
+            testID="register-confirm-email-back"
+            onPress={() => router.back()}
+          >
+            <Text>{t('backToSignIn')}</Text>
+          </Button>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView
