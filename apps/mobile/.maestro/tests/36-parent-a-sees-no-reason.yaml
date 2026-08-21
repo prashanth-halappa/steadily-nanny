@@ -1,0 +1,138 @@
+# S4 gap — the anonymity promise: parent A may learn the nanny is
+# unavailable, but NEVER why, and no trace of household B leaks into parent
+# A's session anywhere.
+#
+# `scripts/seed-second-household.ts`'s header: "the Reyes may learn Nia is
+# unavailable, never that she is with the Coles." `OTHER_HOUSEHOLD_NAME`
+# ("LEAKCANARY the Cole household") and `OTHER_CHILD_NAME` ("LEAKCANARY-Ada")
+# are deliberately distinctive canary strings — if either ever renders on a
+# parent-A surface, the promise is broken and this flow's screenshot proves
+# it. Model for the sweep: `22-audit-two-family-nanny.yaml` (nanny side,
+# same canary string; this is the parent-A mirror).
+#
+# FIXTURES: same as `35-cross-household-overlap-advisory.yaml` — the nanny
+# (NANNY_EMAIL) works both "Our household" (PHASE4_HOUSEHOLD_ID, household
+# A) and "LEAKCANARY the Cole household" (household B), which has a
+# CONFIRMED shift 2026-09-10T08:00–17:00 Europe/London. This flow reuses
+# 35's same wide local-day window (00:00–23:59 on 2026-09-10) to trigger the
+# SAME cross-household busy advisory — see 35's header for why that window,
+# not 08:00–17:00, is timezone-safe. It CANCELS out of the dialog rather
+# than creating the shift: this flow's job is what parent A can READ, not
+# another create (35 already proves the write path).
+appId: com.jetto.steadily.nanny
+tags:
+  - scheduling
+  - cross-household
+  - privacy
+---
+- runFlow: ../flows/login.yaml
+
+# === B1: Today — no leak =====================================================
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'today-header'
+- assertNotVisible: 'LEAKCANARY'
+- takeScreenshot: ${OUT}/36-b1-today-no-leak
+
+# === B2: Schedule agenda — no leak, AND CrossFamilyRhythmView is absent ====
+# `CalendarViewSwitcher`'s `nannyOnly` flag (ScheduleShiftsScreen.tsx:579,
+# comment at :451) hides the cross-family-view option from a parent
+# entirely, so there is no tap path to it — the correct assertion is that it
+# never renders, matching the regression guard already in
+# `ScheduleShiftsScreen.test.tsx` ("a parent NEVER sees
+# CrossFamilyRhythmView... even if the persisted view preference is somehow
+# already 'cross_family'") at the E2E layer.
+- openLink: steadilynanny:///(private)/schedule/shifts
+- runFlow: cx-dismiss-open-alert.yaml
+- assertVisible:
+    id: 'schedule-shifts-screen'
+- assertNotVisible: 'LEAKCANARY'
+- assertNotVisible:
+    id: 'calendar-cross-family-view'
+- takeScreenshot: ${OUT}/36-b2-schedule-agenda-no-leak
+
+# === B3: extra-shift screen + the busy dialog names the CARER, never the ===
+# === other family ===========================================================
+- openLink: steadilynanny:///(private)/schedule/shifts/extra?date=2026-09-10&start=00:00&end=23:59&carerId=${PHASE4_NANNY_ID}
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-extra-shift-screen'
+    timeout: 15000
+- assertNotVisible: 'LEAKCANARY'
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-extra-submit'
+    timeout: 10000
+- assertVisible:
+    id: 'schedule-extra-submit'
+    enabled: true
+- tapOn:
+    id: 'schedule-extra-submit'
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-extra-clash-confirm'
+    timeout: 10000
+# THE ASSERTION: `shifts.extraClashTitle` = "{{name}} is already busy then."
+# (apps/mobile/src/i18n/locales/en/schedule.json) — a carer-forward sentence
+# with no household name slot at all, structurally incapable of naming
+# household B. Confirmed by BOTH a positive (the template rendered) and a
+# negative (the canary string is absent) check.
+- assertVisible: '.*is already busy then.*'
+- assertNotVisible: 'LEAKCANARY'
+- takeScreenshot: ${OUT}/36-b3-busy-dialog-names-carer-not-family
+# Cancel — this flow proves what parent A can READ, not another create (35
+# already proves "create anyway" succeeds).
+- tapOn:
+    id: 'schedule-extra-clash-cancel'
+- extendedWaitUntil:
+    notVisible:
+      id: 'schedule-extra-clash-confirm'
+    timeout: 8000
+- assertVisible:
+    id: 'schedule-extra-shift-screen'
+- takeScreenshot: ${OUT}/36-b4-dialog-cancelled
+
+# === B5: Hours — no leak =====================================================
+- tapOn:
+    id: 'tab-hours'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-screen'
+- assertNotVisible: 'LEAKCANARY'
+- takeScreenshot: ${OUT}/36-b5-hours-no-leak
+
+# === B6: Inbox — no leak =====================================================
+- openLink: steadilynanny:///inbox
+- runFlow: cx-dismiss-open-alert.yaml
+- assertVisible:
+    id: 'inbox-screen'
+- assertNotVisible: 'LEAKCANARY'
+- takeScreenshot: ${OUT}/36-b6-inbox-no-leak
+
+# === B7: carer availability (settings) — no leak ============================
+# `CarerAvailabilityScreen` reads only the carer's OWN availability windows
+# (`useAvailabilityForCarer`) — structurally no household field ever reaches
+# this screen, so the canary check here is a regression net, not a live
+# risk today. `?carerId=` disambiguates which carer per the screen's own
+# header (S9 item 3 fix).
+- openLink: steadilynanny:///(private)/settings/carer-availability?carerId=${PHASE4_NANNY_ID}
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'settings-carer-availability-screen'
+    timeout: 10000
+- assertNotVisible: 'LEAKCANARY'
+- takeScreenshot: ${OUT}/36-b7-carer-availability-no-leak
+
+# GAP (report this, do not silently work around it): ShiftDetailScreen's
+# `crossFamilyClashParent` copy fork
+# (`apps/mobile/src/domains/schedule/components/ShiftDetailScreen.tsx`,
+# `CROSS_FAMILY_CLASH_EVENT_TYPE = 'cross_family_clash'`) only ever renders
+# for a `shift_events` row that `crossHouseholdClashes.ts` writes from the
+# SCHEDULED `scheduleHorizonJob`, not synchronously from this flow's create.
+# Not reachable without invoking `POST /api/jobs/schedule-horizon`
+# out-of-band, which is out of scope for an authoring-only pass — see flow
+# 35's matching GAP note and this pass's report.

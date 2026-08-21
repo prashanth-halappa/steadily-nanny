@@ -1,0 +1,182 @@
+# S5 gap — a household closure ("We're away") suppresses uncovered-care
+# detection for the days it spans, and removing the closure re-raises it
+# (docs/12-NEED-COVERAGE.md §2 "Closures", §5 trigger table's
+# `closureRemoved` row).
+#
+# SCOPE CUT FROM THE ORIGINAL ASK, STATED HONESTLY — the brief asked for a
+# closure "over a BOOKED day" and for it to be "reflected... in pay". Neither
+# half of that is what this app currently does:
+#   - `apps/api/src/domains/pay/services/weekEarningsService.ts` exports
+#     `closureDatesInWeek` (household-local dates a closure spans, within a
+#     week) but grep confirms ZERO callers anywhere outside its own unit
+#     test and `localDateSpan.ts` (which only extracted its date-math
+#     helper). It is dead code — a closure has NO wired effect on
+#     `computeWeekEarnings`, cancellation pay, or anything else "in pay".
+#     There is nothing to assert there; asserting it anyway would be
+#     asserting a claim the code does not make.
+#   - A closure does not touch existing shifts at all (no cancel, no flag,
+#     no "Away" band — `schedule-away-*` on AgendaView is CARER time off,
+#     an unrelated feature). Its only wired effect is as a cover-suppressor
+#     in `computeUncovered` (docs/12-NEED-COVERAGE.md §2). So this flow
+#     proves THAT — closure over an uncovered NEED WINDOW, not over a booked
+#     shift, because "booked day" has no separate closure behaviour to prove
+#     beyond the coverage maths this already exercises.
+#
+# SECOND FINDING, ALSO STATED HONESTLY — the brief's own assertion
+# (`cover.cause.closureRemoved`, "Your away dates changed") does not render
+# on the agenda after removing a closure, even though that copy key exists
+# in schedule.json and the API correctly tags the resulting `shift_events`
+# row `cause: 'closureRemoved'`. The agenda's cause line is inferred
+# CLIENT-SIDE from live shift rows
+# (`apps/mobile/src/domains/schedule/utils/uncoveredDisplay.ts`,
+# `inferUncoveredCauseDetail`), which only ever returns `'cancelled'`,
+# `'declined'`, or falls through to `'nothingScheduled'` — there is no
+# branch that can produce `'closureRemoved'` (or `'needsAdded'`) from shift
+# rows alone, because neither cause is derivable by looking at shifts; both
+# require history the live recompute deliberately doesn't keep (§4's whole
+# point). So `cover.cause.closureRemoved` is DEAD on this surface — reachable
+# only in the push-notification body the server composes from the stored
+# event, never in the agenda row a parent actually looks at. This flow
+# asserts what ACTUALLY renders (`cover.cause.nothingScheduled`) and flags
+# the gap rather than writing an assertion that would fail for the wrong
+# reason.
+#
+# FIXTURES — same as flow 38/40: no seeder creates an uncovered window, so
+# this flow adds its own commitment via `ManageCommitmentsSection`
+# (defaults: Mon–Fri 09:00–17:00). ASSUMES the household has ≥1 child.
+# `HouseholdClosuresScreen`'s date fields default to TODAY for both start
+# and end (`HouseholdClosuresScreen.tsx`: `useState(todayISO(...))` twice),
+# so the closure form is submitted UNTOUCHED — a same-day closure needs no
+# date entry at all.
+#
+# HYGIENE CAVEAT — the delete step below addresses the row by the regex
+# `household-closures-delete-.*`, i.e. WHICHEVER closure row Maestro finds
+# first. On a first run that is the only row and unambiguous. On a RE-RUN
+# (no seeder clears `household_closures` either — same gap flow 38/40 flag
+# for `child_commitments`) there could be more than one, and the list's
+# sort order is not verified here, so this may delete a stale prior-run
+# closure instead of the one this run just added. The suppression assertion
+# just above it is unaffected either way (it only needs A closure covering
+# today to exist), but the re-raise half could pass for the wrong reason on
+# a dirty household. Worth a seeder-side cleanup if this joins the batch.
+appId: com.jetto.steadily.nanny
+tags:
+  - scheduling
+---
+# --- Parent: manufacture an uncovered window for today --------------------
+- runFlow: ../flows/login.yaml
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
+- openLink: steadilynanny:///(private)/settings/children
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'manage-children-screen'
+    timeout: 15000
+- tapOn:
+    id: 'commitment-add-.*'
+- extendedWaitUntil:
+    visible:
+      id: 'commitment-form-sheet'
+    timeout: 10000
+- tapOn:
+    id: 'commitment-form-submit'
+- extendedWaitUntil:
+    notVisible:
+      id: 'commitment-form-sheet'
+    timeout: 15000
+- takeScreenshot: ${OUT}/s5-39-a-care-hours-added
+
+- tapOn:
+    id: 'tab-today'
+- extendedWaitUntil:
+    visible:
+      id: 'today-coverage-gap-card'
+    timeout: 15000
+- takeScreenshot: ${OUT}/s5-39-b-gap-before-closure
+
+# --- Parent: add a closure covering today (defaults, untouched) -----------
+- openLink: steadilynanny:///(private)/settings/household-closures
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'household-closures-screen'
+    timeout: 15000
+- assertVisible:
+    id: 'household-closures-form'
+- assertVisible:
+    id: 'household-closures-dates'
+- tapOn:
+    id: 'household-closures-submit'
+- extendedWaitUntil:
+    visible:
+      id: 'household-closures-row-.*'
+    timeout: 15000
+- takeScreenshot: ${OUT}/s5-39-c-closure-added
+
+# --- The closure suppresses the gap ---------------------------------------
+- tapOn:
+    id: 'tab-today'
+- extendedWaitUntil:
+    notVisible:
+      id: 'today-coverage-gap-card'
+    timeout: 15000
+- takeScreenshot: ${OUT}/s5-39-d-gap-suppressed-by-closure
+
+- tapOn:
+    id: 'tab-schedule'
+- waitForAnimationToEnd
+- assertNotVisible:
+    id: 'schedule-uncovered-.*'
+- takeScreenshot: ${OUT}/s5-39-e-agenda-clear-during-closure
+
+# --- Remove the closure — the gap comes back ------------------------------
+- openLink: steadilynanny:///(private)/settings/household-closures
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'household-closures-screen'
+    timeout: 15000
+- tapOn:
+    id: 'household-closures-delete-.*'
+- extendedWaitUntil:
+    visible:
+      id: 'household-closures-delete-confirm'
+    timeout: 10000
+- tapOn:
+    id: 'household-closures-delete-confirm'
+- extendedWaitUntil:
+    notVisible:
+      id: 'household-closures-delete-confirm'
+    timeout: 15000
+- takeScreenshot: ${OUT}/s5-39-f-closure-removed
+
+- tapOn:
+    id: 'tab-today'
+- extendedWaitUntil:
+    visible:
+      id: 'today-coverage-gap-card'
+    timeout: 15000
+- takeScreenshot: ${OUT}/s5-39-g-gap-reraised
+
+- tapOn:
+    id: 'tab-schedule'
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      id: 'schedule-uncovered-.*'
+    direction: DOWN
+    timeout: 15000
+- assertVisible:
+    id: 'schedule-uncovered-.*'
+# THE CAUSE-COPY FINDING. `cover.cause.closureRemoved` ("Your away dates
+# changed") is what the header above documents as unreachable client-side —
+# what actually renders is the generic `cover.cause.nothingScheduled` line,
+# identical to a need window that was never covered by anything. If this
+# assertion ever starts failing because `closureRemoved` DOES appear, that
+# is `inferUncoveredCauseDetail` having grown the missing branch — a real
+# improvement, and this flow (and its header) should be updated to match.
+- assertVisible: "Nobody's booked yet"
+- takeScreenshot: ${OUT}/s5-39-h-agenda-cause-after-removal

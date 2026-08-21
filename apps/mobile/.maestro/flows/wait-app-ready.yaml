@@ -1,0 +1,25 @@
+# Burn the cold-start bundle load somewhere that is not inside a scored flow.
+#
+# WHY: reset-to-welcome.yaml budgets 15s for the tabs and 3s for the welcome
+# wall. A cold launch has to fetch and evaluate the JS bundle first, which takes
+# longer than that — so both waits expire, the flow decides it is in neither
+# state, falls through to the live-session arm, deep-links to Settings and dies
+# on `settings-screen` with the welcome wall plainly on screen. That reads
+# exactly like an app defect and is not one.
+#
+# Both waits are optional and nothing is asserted: this flow has no verdict, it
+# only returns as soon as the app has painted either of its two entry states.
+appId: com.jetto.steadily.nanny
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'welcome-screen'
+    timeout: 90000
+    optional: true
+- extendedWaitUntil:
+    visible:
+      id: 'tab-today'
+    timeout: 10000
+    optional: true
+- waitForAnimationToEnd

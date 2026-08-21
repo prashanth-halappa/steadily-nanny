@@ -1,0 +1,67 @@
+# S2 gap — a parent-role invite really mints `role: parent`.
+#
+# WHAT IT PROVES: picking "Co-parent" in the role picker and then minting
+# produces a co-parent code, not a nanny one.
+#
+# WHY IT IS WORTH A FLOW: this exact thing was silently wrong once. From
+# InviteScreen.tsx's header — "The auto-mint version fired a single `useEffect`
+# the moment `householdId` was present — which, in the wizard, is before the
+# parent has touched the role picker — so EVERY wizard invite was silently
+# `role: 'nanny'` regardless of what was picked, and the `hasRequestedInvite`
+# ref blocked any later re-mint." The fix was to mint on an explicit tap. There
+# is nothing guarding the fix, and the failure is invisible: the parent sees a
+# code, sends it, and the co-parent joins as a nanny.
+#
+# The assertion is on the RENDERED role, not on a request body: `invite.codeMeta`
+# is "{{role}} invite · expires {{date}}" and `invite.roles.parent.title` is
+# "Co-parent", so a nanny-role regression reads "Nanny invite · …" here and
+# fails. That is the same string the parent reads before hitting share, which
+# is the thing that actually matters.
+#
+# FIXTURES: none beyond the standard cast. Mints one extra pending invite on
+# "Our household" — harmless, and `invites.footnote` says a code stops working
+# once someone joins with it.
+appId: com.jetto.steadily.nanny
+tags:
+  - onboarding
+---
+- runFlow: ../flows/login.yaml
+
+- openLink: steadilynanny:///(private)/settings/invite
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'manage-invite-screen'
+    timeout: 15000
+- assertVisible:
+    id: 'invite-role-picker'
+- takeScreenshot: ${OUT}/s2-28-a-role-picker
+
+- tapOn:
+    id: 'invite-role-parent'
+# The picker is a controlled selection with no state of its own to assert, so
+# the meaningful check is the one after minting. Asserting the CTA is still
+# present at least proves the tap did not navigate away.
+- assertVisible:
+    id: 'manage-invite-screen-cta'
+- takeScreenshot: ${OUT}/s2-28-b-parent-role-selected
+
+# The shell CTA is the mint on first press ("Generate invite code") and turns
+# into "Done" afterwards — there is no separate generate button on this screen.
+- tapOn:
+    id: 'manage-invite-screen-cta'
+- extendedWaitUntil:
+    visible:
+      id: 'invite-code-value'
+    timeout: 20000
+- assertNotVisible:
+    id: 'invite-retry-button'
+- takeScreenshot: ${OUT}/s2-28-c-minted-code
+
+# THE ASSERTION. A regression to the auto-mint behaviour renders
+# "Nanny invite · expires …" here and this line fails.
+- assertVisible:
+    id: 'invite-code-meta'
+- assertVisible: '.*Co-parent invite.*'
+- assertNotVisible: '.*Nanny invite.*'
+- takeScreenshot: ${OUT}/s2-28-d-co-parent-invite-confirmed

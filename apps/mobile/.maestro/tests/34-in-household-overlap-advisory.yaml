@@ -1,0 +1,168 @@
+# S3 gap — booking nanny 2 over one of nanny 1's shifts is an ADVISORY with a
+# confirm, NOT a refusal. Also asserts the contrasting case that IS a hard
+# block: the SAME carer double-booked.
+#
+# `docs/LAUNCH-MANUAL-PASS-MAESTRO.md` §4's S3 row still says "refused" for
+# this gap — that row is STALE, written against a claim that was never true.
+# `docs/DEFECT-LOG.md` D74 records it directly ("An in-household overlap must
+# be refused" was never true, and should not be). The schema agrees:
+# migration 104's `shifts_carer_window_excl` exclusion constraint is keyed on
+# `(household_id, carer_id)`, so it only ever 409s the SAME carer double-
+# booked — a DIFFERENT carer's overlapping window is not a constraint
+# violation at all, only a client-side pre-submit warning
+# (`apps/mobile/src/domains/schedule/utils/extraShiftWarnings.ts` ->
+# `findHouseholdOverlapShift`) surfaced by `ExtraShiftScreen`'s confirm
+# dialog. Copy + testIDs verified directly in `ExtraShiftScreen.tsx` and
+# `apps/mobile/src/i18n/locales/en/schedule.json`:
+#   shifts.extraHouseholdOverlapTitle = "{{name}} is already booked then."
+#   shifts.extraClashDescription      = "Create anyway?"
+#   shifts.extraClashConfirm          = "Create anyway"
+#   shifts.extraClashCancel           = "Go back"
+#   shifts.extraSameCarerConflict     = "{{name}} already has a shift then. Pick another time."
+# (This is the SAME-household counterpart to flow 35's cross-household
+# 'busy' advisory — different warning, `schedule-extra-clash-*` dialog is
+# shared plumbing, same "advisory not refusal" product rule either way.)
+#
+# FIXTURE: none needed beyond the standard preflight. Both shifts this flow
+# tests against are created LIVE, in-flow, through `ExtraShiftScreen` itself
+# — on a fixed date (2026-09-15, months past every other seed's date range,
+# so this flow can never collide with another flow's fixture) that
+# `ExtraShiftScreen` accepts as `?date=`/`?start=`/`?end=`/`?carerId=` query
+# params (see its own module header — a route wrapper for AgendaView's
+# uncovered-slot prefill), which sidesteps the DateTimeField/TimeRangePicker
+# keyboard-occlusion problem entirely — same technique flow 35 already
+# proved for the cross-household case (`hideKeyboard` and
+# `scrollUntilVisible` both no-op on that form; see flow 07 for the measured
+# cost of driving those pickers by hand instead).
+#
+# WHAT IT PROVES, in three arms:
+#   A. Nanny 1 gets a real, confirmed-by-submission shift 10:00-14:00.
+#   B. Booking nanny 2 over 11:00-13:00 of that SAME window shows the
+#      household-overlap dialog, and "Create anyway" actually creates the
+#      shift — advisory, not refusal.
+#   C. Booking nanny 1 AGAIN over her own 10:00-14:00 window is blocked by a
+#      toast before any request is even sent — the one case that IS a hard
+#      conflict.
+appId: com.jetto.steadily.nanny
+tags:
+  - schedule
+---
+# ---------- A. nanny 1 gets a real shift, 2026-09-15 10:00-14:00 ----------
+- runFlow: ../flows/login.yaml
+- openLink: steadilynanny:///(private)/schedule/shifts/extra?date=2026-09-15&start=10:00&end=14:00&carerId=${PHASE4_NANNY_ID}
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-extra-shift-screen'
+    timeout: 15000
+- assertVisible:
+    id: 'schedule-extra-date'
+- assertVisible:
+    id: 'schedule-extra-times'
+- assertVisible:
+    id: 'schedule-extra-carer-${PHASE4_NANNY_ID}'
+- takeScreenshot: ${OUT}/s3-34-a-nanny1-shift-form
+# Submit is gated on `canWriteHousehold` resolving (async) as well as form
+# validity — wait for it enabled rather than assuming it instantly is
+# (matches flow 35's own convention for this exact button).
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-extra-submit'
+    timeout: 10000
+- assertVisible:
+    id: 'schedule-extra-submit'
+    enabled: true
+- tapOn:
+    id: 'schedule-extra-submit'
+- extendedWaitUntil:
+    notVisible:
+      id: 'schedule-extra-shift-screen'
+    timeout: 15000
+- assertVisible:
+    id: 'schedule-shifts-screen'
+
+# ---------- B. nanny 2 over the same window: ADVISORY, not a refusal ------
+- openLink: steadilynanny:///(private)/schedule/shifts/extra?date=2026-09-15&start=11:00&end=13:00&carerId=${NANNY2_ID}
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-extra-shift-screen'
+    timeout: 15000
+- assertVisible:
+    id: 'schedule-extra-carer-${NANNY2_ID}'
+- takeScreenshot: ${OUT}/s3-34-b-nanny2-overlap-form
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-extra-submit'
+    timeout: 10000
+- assertVisible:
+    id: 'schedule-extra-submit'
+    enabled: true
+- tapOn:
+    id: 'schedule-extra-submit'
+# THE ADVISORY ITSELF: names nanny 1, offers "Create anyway?" — never a
+# hard stop. Both negative assertions rule out this being the cross-
+# household ('busy') dialog or the same-carer hard-stop toast (which never
+# opens a dialog at all — see arm C).
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-extra-clash-confirm'
+    timeout: 10000
+- assertVisible: '.*Test Nanny is already booked then\..*'
+- assertVisible: 'Create anyway\?'
+- assertVisible:
+    id: 'schedule-extra-clash-cancel'
+- assertNotVisible: '.*is already busy then.*'
+- assertNotVisible: '.*already has a shift then.*'
+- takeScreenshot: ${OUT}/s3-34-c-household-overlap-dialog
+
+# --- "Create anyway" SUCCEEDS — the load-bearing assertion ----------------
+# ExtraShiftScreen only calls `router.back()` after `createExtra.mutateAsync`
+# resolves (confirmPending -> submitPayload); a thrown/409 response would
+# leave this screen up with an error toast instead. Leaving the screen for
+# the calendar is the proof the write was NOT refused.
+- tapOn:
+    id: 'schedule-extra-clash-confirm'
+- extendedWaitUntil:
+    notVisible:
+      id: 'schedule-extra-shift-screen'
+    timeout: 20000
+- assertVisible:
+    id: 'schedule-shifts-screen'
+# The one error string a genuine SAME-carer 409 would produce
+# (`ShiftOverlapsError`'s message, `apps/api/src/domains/shift/errors/shiftErrors.ts`)
+# — confirms no conflict response ever reached the client for this
+# different-carer create.
+- assertNotVisible: '.*already has a shift overlapping that time.*'
+- takeScreenshot: ${OUT}/s3-34-d-overlap-created-anyway
+
+# ---------- C. contrast: the SAME carer double-booked IS a hard block -----
+- openLink: steadilynanny:///(private)/schedule/shifts/extra?date=2026-09-15&start=11:00&end=12:00&carerId=${PHASE4_NANNY_ID}
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-extra-shift-screen'
+    timeout: 15000
+- takeScreenshot: ${OUT}/s3-34-e-same-carer-form
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-extra-submit'
+    timeout: 10000
+- assertVisible:
+    id: 'schedule-extra-submit'
+    enabled: true
+- tapOn:
+    id: 'schedule-extra-submit'
+# `shifts.extraSameCarerConflict` — a toast, not the confirm dialog: the
+# form NEVER navigates away, and the clash dialog's own buttons never
+# appear, because `handleSubmit` returns before `setClashOpen(true)` on
+# this path.
+- extendedWaitUntil:
+    visible:
+      text: '.*Test Nanny already has a shift then\. Pick another time\..*'
+    timeout: 10000
+- assertVisible:
+    id: 'schedule-extra-shift-screen'
+- assertNotVisible:
+    id: 'schedule-extra-clash-confirm'
+- takeScreenshot: ${OUT}/s3-34-f-same-carer-blocked

@@ -1,0 +1,183 @@
+# S2 gap — `approval_mode = 'owner_only'` refuses a co-parent's write, and
+# refuses it LEGIBLY: the control stays visible and disabled, with a stated
+# reason naming who can act (S4 §7, `useRestrictedAction.ts`), never hidden.
+#
+# PRECONDITION THIS FLOW ASSUMES AND DOES NOT CREATE — READ BEFORE RUNNING:
+# `COPARENT_EMAIL` (coparent@steadilynanny.test) is NOT currently a member of
+# `PHASE4_HOUSEHOLD_ID` ("Our household"). Verified by reading both seeders:
+#   - scripts/seed-test-users.ts:12-14 — "Deliberately does NOT create
+#     households, children, invites, or schedules — those must be created
+#     through the app during the e2e test itself." It only makes the auth
+#     user + `user_profiles` row.
+#   - scripts/seed-launch-pass-bootstrap.ts's `ensureMembers()` (~line 158)
+#     upserts exactly two `household_members` rows for "Our household" —
+#     parent as `owner`, nanny as `nanny`. No co-parent row anywhere in the
+#     seed chain, and no `login-coparent.yaml` flow file exists to pair with
+#     one.
+# Without that membership, `useRestrictedAction` (useRestrictedAction.ts:59-70)
+# resolves `myRole` to `null` for the co-parent — which is not `'parent'`, so
+# the hook returns UNRESTRICTED and this flow's central assertion is simply
+# false, not merely unreachable. THIS FLOW WILL FAIL at "co-parent lands on
+# a tab root" below until a `household_members` row
+# (household_id=${PHASE4_HOUSEHOLD_ID}, user_id=${COPARENT_ID}, role='parent',
+# status='active') exists. Seeding one here via SQL would silently paper over
+# a real gap in the invite path, so this flow deliberately does not do it —
+# see tests/S2-UNWRITABLE.md and the report this flow shipped with for the
+# recommendation (extend `ensureMembers()` with a third row, the same way
+# owner/nanny are wired, OR seed a real invite+accept).
+#
+# WHY `shift-detail-cancel`, not one of TodayCoverage's ask-cover buttons —
+# those are also owner_only-gated (`askCoverRestriction` in TodayCoverage.tsx)
+# but only render behind an uncovered-care window, and flow 13b's own header
+# (SCOPING NOTE, ~line 13) already established "Our household" carries no
+# `child_commitments` need windows — that surface is unreachable with today's
+# fixtures, full stop. `ShiftDetailScreen`'s cancel button IS reachable: it is
+# gated on owner_only via `cancelRestriction` (ShiftDetailScreen.tsx:200-203)
+# whenever the shift is short-notice (`hoursUntilStart(shift.starts_at) <
+# household.short_notice_hours`, line ~442), and `households.short_notice_hours`
+# defaults to 24 (migration 009_households.sql:54, never overridden for this
+# household by any seeder). `PHASE4_TODAY_SHIFT_ID` names a shift confirmed
+# for TODAY's `local_date` (seed-phase4-fixtures.ts:826+), which by
+# definition starts under 24h from whenever this flow runs — so the gate
+# reliably fires without a fragile wall-clock assumption on top of the seed.
+#
+# Reason copy verified against source, not guessed:
+#   common.json:19  "restrictedAction": "Only {{name}} can {{action}} in this
+#                    household."
+#   common.json:20  "restrictedActionOwner": "the household owner" (fallback
+#                    only — unused here, the owner has a real profile name)
+#   schedule.json "detail.restrictedActionCancelShift": "cancel short-notice
+#                    shifts"
+#   -> rendered: "Only Test Parent can cancel short-notice shifts in this
+#      household." ("Test Parent" is seed-test-users.ts's PARENT_EMAIL
+#      profile name, resolved via resolveCarerName -> member.profile_name).
+appId: com.jetto.steadily.nanny
+tags:
+  - s2
+---
+# === Parent (owner): switch "Our household" to owner_only =================
+- runFlow: ../flows/login.yaml
+
+- openLink: steadilynanny:///(private)/settings/household
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'manage-household-screen'
+    timeout: 15000
+# The approval-mode chips sit well down a long settings screen, so a bare
+# assertVisible fails on a perfectly healthy screen — MEASURED: the first run
+# died here with the screen up. `centerElement` puts the chip mid-viewport,
+# clear of both the header and anything pinned at the bottom.
+- scrollUntilVisible:
+    element:
+      id: 'household-approval-mode-owner_only'
+    direction: DOWN
+    centerElement: true
+    timeout: 15000
+- assertVisible:
+    id: 'household-approval-mode-owner_only'
+- takeScreenshot: ${OUT}/s2-29-a-household-screen
+
+- tapOn:
+    id: 'household-approval-mode-owner_only'
+# Selecting the chip is the whole state change here — nothing else renders
+# differently until Save, so the meaningful check is that the CTA is now
+# enabled (the diff is non-empty) rather than a bespoke "chip selected" probe.
+- assertVisible:
+    id: 'manage-household-screen-cta'
+    enabled: true
+- takeScreenshot: ${OUT}/s2-29-b-owner-only-selected
+
+- tapOn:
+    id: 'manage-household-screen-cta'
+# Round trip: PATCH /households/:id, then a refetch reseeds the form and the
+# diff goes empty again, which is what actually disables the CTA — the surest
+# signal the save landed rather than just "the button was tapped".
+- extendedWaitUntil:
+    visible:
+      id: 'manage-household-screen-cta'
+      enabled: false
+    timeout: 15000
+- takeScreenshot: ${OUT}/s2-29-c-owner-only-saved
+
+- openLink: steadilynanny:///(private)/settings
+- runFlow: cx-dismiss-open-alert.yaml
+- runFlow: ../flows/logout.yaml
+
+# === Co-parent: sign in and land somewhere a tab bar exists ================
+# No login-coparent.yaml exists (only login.yaml/login-nanny.yaml, both
+# hardcoded to their own role's env vars) — inlined rather than adding a new
+# reusable flow file, which was out of scope for this task.
+- runFlow: ../flows/reset-to-welcome.yaml
+- tapOn:
+    id: 'welcome-sign-in-email'
+- assertVisible:
+    id: 'login-screen'
+- tapOn:
+    id: 'login-email'
+- inputText: ${COPARENT_EMAIL}
+- tapOn:
+    id: 'login-password'
+- inputText: ${COPARENT_PASSWORD}
+- hideKeyboard
+- tapOn:
+    id: 'login-submit'
+- extendedWaitUntil:
+    notVisible:
+      id: 'welcome-screen'
+    timeout: 20000
+- assertNotVisible:
+    id: 'login-screen'
+- extendedWaitUntil:
+    visible:
+      text: 'Not Now'
+    timeout: 6000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        text: 'Not Now'
+    commands:
+      - tapOn:
+          text: 'Not Now'
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      text: 'Maybe later'
+    timeout: 4000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        text: 'Maybe later'
+    commands:
+      - tapOn:
+          text: 'Maybe later'
+      - waitForAnimationToEnd
+
+# THE PRECONDITION CHECK. If the co-parent membership above does not exist,
+# this account owns no household at all and there is no tab bar to land on —
+# fails loudly here, which is the honest outcome, rather than a confusing
+# failure three steps later on a route that silently rendered something else.
+- assertVisible:
+    id: 'tab-today'
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
+- takeScreenshot: ${OUT}/s2-29-d-coparent-signed-in
+
+# === The refusal itself =====================================================
+- openLink: steadilynanny:///(private)/schedule/shifts/${PHASE4_TODAY_SHIFT_ID}
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'shift-detail-screen'
+    timeout: 15000
+- assertVisible:
+    id: 'shift-detail-cancel'
+    enabled: false
+- assertVisible:
+    id: 'shift-detail-cancel-reason'
+- assertVisible: '.*Only Test Parent can cancel short-notice shifts.*'
+- takeScreenshot: ${OUT}/s2-29-e-cancel-refused-legibly

@@ -1,0 +1,106 @@
+# S5 gap — care hours (a `child_commitments` need window) wider than the
+# booked week produce an UNCOVERED CARE row on the agenda that names the gap
+# (docs/12-NEED-COVERAGE.md §2 detection formula, §5 "Care hours written"
+# trigger row, cause `needsAdded`).
+#
+# Parent adds a need window via `ManageCommitmentsSection` /
+# `CommitmentFormSheet` (`/settings/children`) with NOTHING booked against
+# it, then the agenda's `schedule-uncovered-{key}` row is the assertion.
+# `CommitmentFormSheet`'s defaults — Mon–Fri, 09:00–17:00
+# (`CommitmentFormSheet.tsx` DEFAULT_DAYS/DEFAULT_START/DEFAULT_END) — are
+# used untouched: nothing on `PHASE4_HOUSEHOLD_ID` is booked against that
+# window today, so it is uncovered by construction. `commitment-form-sheet`
+# is a `BottomSheetBase` — its OWN root testID would be invisible if it
+# were an iOS `<Modal>` (it isn't; `BottomSheetBase` is the app's one
+# sanctioned sheet primitive per GOLDEN-FIXES #1), but the assertion below
+# still prefers the visible readback text over the container id, same
+# caution as every other sheet in this suite.
+#
+# CAUSE-COPY NOTE, cross-checked against `inferUncoveredCauseDetail`
+# (`apps/mobile/src/domains/schedule/utils/uncoveredDisplay.ts`): the API
+# tags this window's `shift_events` row `cause: 'needsAdded'`, but the
+# agenda's cause line is inferred live from current shift rows and has no
+# branch for `'needsAdded'` (only `'cancelled'`, `'declined'`, or the
+# `'nothingScheduled'` fallback — see flow 39's header for the fuller
+# writeup of this same client-side gap). It happens to be HARMLESS here
+# specifically because `'nothingScheduled'`'s copy — "You set these as care
+# hours. Nobody's booked yet." — is exactly correct for THIS scenario (hours
+# just added, nothing ever booked against them). Asserted below because it
+# is what actually renders, not because the two causes are the same thing.
+#
+# FIXTURES — no seeder creates a wider-than-booked need window on
+# PHASE4_HOUSEHOLD_ID; this flow creates its own, live. ASSUMES the
+# household already has ≥1 child. CAVEAT: the default Mon–Fri window only
+# produces a gap on a day that is itself Mon–Fri — this flow's assertion is
+# the WEEK's agenda row, not pinned to today's date, so it tolerates a
+# weekend run better than flow 38/39's Today-card assertion does, but a run
+# entirely inside a covered day would still need the scroll below to find
+# it. HYGIENE: nothing deletes the commitment afterwards — same
+# accumulation caveat as flow 38 (no seeder touches `child_commitments`).
+appId: com.jetto.steadily.nanny
+tags:
+  - scheduling
+---
+- runFlow: ../flows/login.yaml
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
+
+- openLink: steadilynanny:///(private)/settings/children
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'manage-children-screen'
+    timeout: 15000
+- tapOn:
+    id: 'commitment-add-.*'
+- extendedWaitUntil:
+    visible:
+      id: 'commitment-form-sheet'
+    timeout: 10000
+- assertVisible:
+    id: 'commitment-form-days'
+- assertVisible:
+    id: 'commitment-form-time'
+# The live readback sentence — proves the defaults (Mon–Fri, 09:00–17:00)
+# actually populated before the tap, not just that the button is enabled.
+- assertVisible:
+    id: 'commitment-form-readback'
+- takeScreenshot: ${OUT}/s5-40-a-commitment-form-defaults
+- tapOn:
+    id: 'commitment-form-submit'
+- extendedWaitUntil:
+    notVisible:
+      id: 'commitment-form-sheet'
+    timeout: 15000
+- assertVisible:
+    id: 'commitment-row-.*'
+- takeScreenshot: ${OUT}/s5-40-b-commitment-saved
+
+# --- The agenda names the gap ---------------------------------------------
+- tapOn:
+    id: 'tab-schedule'
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      id: 'schedule-uncovered-.*'
+    direction: DOWN
+    timeout: 15000
+- assertVisible:
+    id: 'schedule-uncovered-.*'
+- assertVisible:
+    id: 'schedule-uncovered-cover-.*'
+- assertVisible:
+    id: 'schedule-uncovered-ask-.*'
+# THE ASSERTION. `cover.cause.nothingScheduled` — see the header's
+# cause-copy note for why this key, not `needsAdded`, is what renders.
+- assertVisible: "You set these as care hours. Nobody's booked yet."
+- takeScreenshot: ${OUT}/s5-40-c-agenda-uncovered-row
+
+# Today's own coverage card should agree, when today falls inside the
+# window (the header's weekday caveat) — best-effort, not the flow's proof.
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+- takeScreenshot: ${OUT}/s5-40-d-today-card-for-reference

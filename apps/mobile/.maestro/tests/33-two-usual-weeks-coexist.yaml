@@ -1,0 +1,249 @@
+# S3 gap — nanny 2 accepting HER usual week does not supersede, end, or
+# touch nanny 1's already-accepted one.
+#
+# WHAT IT PROVES, in four assertions:
+#   1. Before nanny 2 is even asked, the Schedule tab already shows nanny 1's
+#      week as `accepted` (one banner per carer, S7/S8 — see
+#      `SchedulePatternBanner`'s module header).
+#   2. The parent builds and sends nanny 2 a DIFFERENT usual week (different
+#      days, different hours) through the real wizard.
+#   3. Nanny 2 accepts it on her own device/session.
+#   4. Straight after, the Schedule tab (parent) still shows BOTH banners —
+#      nanny 1's unchanged `accepted` line and nanny 2's now-`accepted` one —
+#      and each carer's OWN "Your usual week" screen shows only their own
+#      hours, never the other's.
+#
+# WHY IT MATTERS: `schedulePatternCommandService.respond`'s accept branch
+# calls `supersedePriorAccepted`, which ends every OTHER accepted pattern for
+# THE SAME carer (see that method's own doc comment) — but a bug that widened
+# the scope from "same carer" to "same household" would silently end nanny
+# 1's week the moment nanny 2 accepted hers, and nothing on the parent's
+# screen would announce it until the calendar quietly went empty. Migration
+# 104's `schedule_patterns_one_accepted_idx` is scoped to `(household_id,
+# carer_id)` for the same reason — this flow is the one place that actually
+# exercises two carers holding that state at once.
+#
+# FIXTURES, in order:
+#   - tests/31-second-nanny-joins.yaml must have run (nanny2 is an active
+#     member of "Our household")
+#   - scripts/seed-s3-second-carer.ts must have run (gives nanny 1 an
+#     ACCEPTED pattern — Mon/Wed/Fri 08:00-14:00 — written straight into
+#     schedule_patterns/schedule_pattern_days; see its module header for why
+#     no shifts row is needed for anything this flow reads)
+# This flow itself builds nanny 2's week live: Tue/Thu, default 09:00-17:00
+# hours — no shared start time with nanny 1's, so a leaked or clobbered row
+# is obvious in a screenshot rather than plausible.
+#
+# NOTE ON RE-RUNS: a second pass (no fresh DB in between) finds nanny 2
+# already `accepted` from the first run. The wizard still opens a brand new
+# draft (no `?patternId=` to resume) and sending it supersedes her OWN prior
+# accepted pattern — correct product behaviour, not a bug — but it means the
+# "step 1" baseline screenshot is no longer "before nanny 2 has anything" on
+# a re-run. The coexistence assertions still hold either way.
+appId: com.jetto.steadily.nanny
+tags:
+  - schedule
+---
+# ---------- 1. baseline: nanny 1's week is accepted, before anything else ----------
+- runFlow: ../flows/login.yaml
+- tapOn:
+    id: 'tab-schedule'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-shifts-screen'
+    timeout: 15000
+# Exact possessive, not a loose `.*Test Nanny.*` — see the identical note at
+# the coexistence assertion below for why (a re-run of this flow leaves
+# nanny 2 already accepted too, and "Test Nanny" is a substring of "Test
+# Nanny Two").
+- scrollUntilVisible:
+    element:
+      text: ".*Test Nanny's usual week is set.*"
+    direction: DOWN
+    timeout: 10000
+- assertVisible: ".*Test Nanny's usual week is set.*"
+- takeScreenshot: ${OUT}/s3-33-a-nanny1-accepted-before
+
+# ---------- 2. parent builds nanny 2's week through the real wizard ----------
+- openLink: steadilynanny:///(private)/schedule/build
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-build-carer'
+    timeout: 15000
+# Both carers must be offered — a household with a real second nanny.
+- assertVisible:
+    id: 'schedule-carer-option-${PHASE4_NANNY_ID}'
+- assertVisible:
+    id: 'schedule-carer-option-${NANNY2_ID}'
+- tapOn:
+    id: 'schedule-carer-option-${NANNY2_ID}'
+- tapOn:
+    id: 'schedule-build-carer-cta'
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-build-days'
+    timeout: 10000
+
+# Tuesday + Thursday — deliberately NOT nanny 1's Mon/Wed/Fri.
+- tapOn:
+    id: 'schedule-day-toggle-day-2'
+- tapOn:
+    id: 'schedule-day-toggle-day-4'
+- tapOn:
+    id: 'schedule-build-days-cta'
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-build-hours'
+    timeout: 10000
+# The effect of both toggles, not the taps themselves: exactly Tue and Thu
+# got a time-range row, Monday (untouched) still reads "day off".
+- assertVisible:
+    id: 'schedule-build-time-range-2-0'
+- assertVisible:
+    id: 'schedule-build-time-range-4-0'
+- assertVisible:
+    id: 'schedule-build-day-off-1'
+- takeScreenshot: ${OUT}/s3-33-b-nanny2-days-selected
+- tapOn:
+    id: 'schedule-build-hours-cta'
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-build-repeat'
+    timeout: 10000
+- tapOn:
+    id: 'schedule-build-repeat-cta'
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-send'
+    timeout: 15000
+- assertVisible:
+    id: 'schedule-review-days-count'
+- assertVisible: '.*2 days a week.*'
+- takeScreenshot: ${OUT}/s3-33-c-nanny2-review
+- tapOn:
+    id: 'schedule-send-cta'
+- extendedWaitUntil:
+    notVisible:
+      id: 'schedule-send'
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-shifts-screen'
+    timeout: 15000
+# Both banners now: nanny 1 still accepted, nanny 2 newly pending — this is
+# the S7/S8 per-carer banner list, not a single household-wide slot.
+- scrollUntilVisible:
+    element:
+      text: '.*Your usual week is with Test Nanny Two.*'
+    direction: DOWN
+    timeout: 10000
+- assertVisible: '.*Your usual week is with Test Nanny Two.*'
+- scrollUntilVisible:
+    element:
+      text: '.*Test Nanny.*usual week is set.*'
+    direction: UP
+    timeout: 10000
+- assertVisible: '.*Test Nanny.*usual week is set.*'
+- takeScreenshot: ${OUT}/s3-33-d-both-banners-nanny2-pending
+
+# ---------- 3. nanny 2 accepts, on her own session ----------
+- runFlow:
+    file: ../flows/login-no-household.yaml
+    env:
+      PARENT_EMAIL: ${NANNY2_EMAIL}
+      PARENT_PASSWORD: ${NANNY2_PASSWORD}
+
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      id: 'today-pending-schedule-card-.*'
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: 'today-pending-schedule-card-.*'
+- takeScreenshot: ${OUT}/s3-33-e-nanny2-pending-card
+- tapOn:
+    id: 'today-pending-schedule-cta-.*'
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-respond-screen'
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      id: 'schedule-respond-accept'
+    direction: DOWN
+    timeout: 10000
+- takeScreenshot: ${OUT}/s3-33-f-nanny2-respond-screen
+- tapOn:
+    id: 'schedule-respond-accept'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-respond-accept'
+    timeout: 15000
+- assertVisible:
+    id: 'schedule-respond-accept'
+    enabled: false
+- takeScreenshot: ${OUT}/s3-33-g-nanny2-accepted
+
+# Nanny 2's own week: only HER hours (9am start — the wizard's default,
+# never touched on the hours step), never nanny 1's.
+- openLink: steadilynanny:///(private)/schedule/usual-week?householdId=${PHASE4_HOUSEHOLD_ID}
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'nanny-usual-week-screen'
+    timeout: 15000
+- assertVisible:
+    id: 'nanny-usual-week-status'
+- assertVisible: '.*9:00 AM.*'
+- assertNotVisible: '.*8:00 AM.*'
+- takeScreenshot: ${OUT}/s3-33-h-nanny2-own-week
+
+# ---------- 4. nanny 1's week is still there, unchanged ----------
+- runFlow: ../flows/login.yaml
+- tapOn:
+    id: 'tab-schedule'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-shifts-screen'
+    timeout: 15000
+# THE COEXISTENCE ASSERTION. Both carers' banners, both accepted, both
+# attributed to the right name — nothing about nanny 1's line changed by
+# nanny 2 having gone through the identical flow moments earlier.
+# "Test Nanny" is a substring of "Test Nanny Two", so nanny 1's own line is
+# anchored on the exact possessive ("Test Nanny's", not "Test Nanny Two's")
+# — a loose `.*Test Nanny.*` would pass even if nanny 1's OWN banner had
+# vanished, as long as nanny 2's was still on screen.
+- scrollUntilVisible:
+    element:
+      text: '.*Test Nanny Two.*usual week is set.*'
+    direction: DOWN
+    timeout: 15000
+- assertVisible: '.*Test Nanny Two.*usual week is set.*'
+- scrollUntilVisible:
+    element:
+      text: ".*Test Nanny's usual week is set.*"
+    direction: UP
+    timeout: 10000
+- assertVisible: ".*Test Nanny's usual week is set.*"
+- takeScreenshot: ${OUT}/s3-33-i-both-accepted-parent-view
+
+- runFlow: ../flows/login-nanny.yaml
+- openLink: steadilynanny:///(private)/schedule/usual-week
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'nanny-usual-week-screen'
+    timeout: 15000
+- assertVisible:
+    id: 'nanny-usual-week-status'
+- assertVisible: '.*8:00 AM.*'
+- assertNotVisible: '.*9:00 AM.*'
+- assertNotVisible: '.*Test Nanny Two.*'
+- takeScreenshot: ${OUT}/s3-33-j-nanny1-unchanged

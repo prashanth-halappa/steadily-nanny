@@ -1,0 +1,14 @@
+# CX capture, parent lens: sign in as the seed parent, then walk every tab top
+# to bottom. Evidence-gathering for the in-character review — see
+# ../flows/capture-tabs.yaml for why each tap is asserted.
+#
+# Needs -e OUT=<absolute dir> (the dir must already exist).
+appId: com.jetto.steadily.nanny
+tags:
+  - cx
+---
+- runFlow: ../flows/login.yaml
+- runFlow:
+    file: ../flows/capture-tabs.yaml
+    env:
+      ROLE: parent

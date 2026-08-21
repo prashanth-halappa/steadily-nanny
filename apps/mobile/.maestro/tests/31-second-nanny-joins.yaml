@@ -1,0 +1,166 @@
+# S3 gap — a household's SECOND nanny joins it.
+#
+# WHAT IT PROVES: a parent can mint a second nanny invite, and a different
+# person can redeem it into the SAME household, ending with two active carers.
+# Everything else in S3 (separate terms, separate usual weeks, one carer never
+# seeing the other's rate) depends on this state existing, and nothing creates
+# it today — S3 is the one scenario with no coverage at all, and the one where
+# a per-carer bug silently pays the wrong person.
+#
+# The join is driven through the app rather than seeded, deliberately: the
+# joining IS the thing under test here. The membership model allows it —
+# `household_members` is unique on (user_id, household_id), so N nannies is
+# just N rows — but no flow has ever produced the second row.
+#
+# FIXTURES: nanny2@steadilynanny.test, created by scripts/seed-test-users.ts
+# with no household, so it lands in the wizard. The invite code is minted
+# in-flow and carried across the session switch in `maestro.copiedText`, which
+# is Maestro-side state and survives the sign-out.
+#
+# NOTE ON RE-RUNS: once nanny2 is a member, the wizard no longer appears for
+# them and this flow fails at the `role-screen` wait. That is correct — it has
+# already proven what it proves, and re-running it needs a fresh DB.
+appId: com.jetto.steadily.nanny
+tags:
+  - onboarding
+---
+# --- parent mints a nanny invite ----------------------------------------
+- runFlow: ../flows/login.yaml
+
+- openLink: steadilynanny:///(private)/settings/invite
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'manage-invite-screen'
+    timeout: 15000
+- tapOn:
+    id: 'invite-role-nanny'
+- assertVisible:
+    id: 'manage-invite-screen-cta'
+- tapOn:
+    id: 'manage-invite-screen-cta'
+- extendedWaitUntil:
+    visible:
+      id: 'invite-code-value'
+    timeout: 20000
+- assertVisible: '.*Nanny invite.*'
+- takeScreenshot: ${OUT}/s3-31-a-second-nanny-code
+- copyTextFrom:
+    id: 'invite-code-value'
+
+# --- nanny 2 signs in and redeems it ------------------------------------
+# login-no-household.yaml reads PARENT_EMAIL/PARENT_PASSWORD from the caller's
+# env block, so it is reused here for a nanny sign-in. It deliberately does NOT
+# call select-household.yaml — nanny2 has no household to select yet.
+- runFlow:
+    file: ../flows/login-no-household.yaml
+    env:
+      PARENT_EMAIL: ${NANNY2_EMAIL}
+      PARENT_PASSWORD: ${NANNY2_PASSWORD}
+
+- extendedWaitUntil:
+    visible:
+      id: 'role-screen'
+    timeout: 25000
+- tapOn:
+    id: 'role-nanny'
+- tapOn:
+    id: 'role-screen-cta'
+- extendedWaitUntil:
+    visible:
+      id: 'start-screen'
+    timeout: 10000
+- tapOn:
+    id: 'start-join'
+- tapOn:
+    id: 'start-screen-cta'
+- extendedWaitUntil:
+    visible:
+      id: 'code-screen'
+    timeout: 10000
+
+- tapOn:
+    id: 'name-input'
+# eraseText first: the simulator's predictive dictionary has been observed
+# autocompleting a previously-typed phrase mid-inputText on a fresh field.
+- eraseText
+- inputText: 'Sam Okafor'
+- tapOn:
+    id: 'code-input'
+- eraseText
+- inputText: ${maestro.copiedText}
+# The CTA is pinned BELOW the scroll body, so the keyboard covers it and
+# scrolling cannot move it (measured in flow 14). Tap the screen title, which
+# is above the keyboard and has no onPress, so the touch falls through and
+# dismisses. Not "Invite code" — that is also code-input's accessibilityLabel.
+- tapOn:
+    text: 'Join your household'
+- waitForAnimationToEnd
+
+# Pressed twice by design: the first press previews the code, the second joins.
+# Waiting for the preview card between them is what makes the second press
+# meaningful rather than a double-tap — and the card is gated on the preview
+# round trip having resolved, which waitForAnimationToEnd does not wait for.
+- tapOn:
+    id: 'code-screen-cta'
+- extendedWaitUntil:
+    visible:
+      id: 'code-preview-card'
+    timeout: 20000
+- assertNotVisible:
+    id: 'code-error'
+# The preview must name the household being joined before anything is
+# committed — S1's checklist item, asserted here because this is the flow that
+# actually reaches the card.
+- assertVisible: '.*Our household.*'
+- takeScreenshot: ${OUT}/s3-31-b-preview-names-household
+- tapOn:
+    id: 'code-screen-cta'
+
+# A nanny joining an existing household has no live household of their own, so
+# the absorption sheet must not appear.
+- assertNotVisible:
+    id: 'absorption-sheet'
+
+# --- the rest of the nanny join path ------------------------------------
+# stepsFor('nanny','join') = ROLE -> START -> CODE -> AVAILABILITY ->
+# NOTIFICATIONS -> CALENDAR. Skip all three: the permission CTAs fire real OS
+# dialogs (flow 27 is the one that answers them), and availability is not what
+# this flow proves.
+- extendedWaitUntil:
+    visible:
+      id: 'availability-screen'
+    timeout: 25000
+- takeScreenshot: ${OUT}/s3-31-c-availability
+- tapOn:
+    id: 'availability-screen-skip'
+- extendedWaitUntil:
+    visible:
+      id: 'notifications-permission-screen'
+    timeout: 10000
+- tapOn:
+    id: 'notifications-permission-screen-skip'
+- extendedWaitUntil:
+    visible:
+      id: 'calendar-permission-screen'
+    timeout: 10000
+- tapOn:
+    id: 'calendar-permission-screen-skip'
+
+# --- landed as the household's second carer -----------------------------
+- extendedWaitUntil:
+    visible:
+      id: 'today-header'
+    timeout: 25000
+- assertVisible:
+    id: 'tab-today'
+- takeScreenshot: ${OUT}/s3-31-d-nanny2-today
+
+# The second carer must see this household's real data, not an empty shell.
+- tapOn:
+    id: 'tab-schedule'
+- extendedWaitUntil:
+    visible:
+      id: 'calendar-agenda-view'
+    timeout: 15000
+- takeScreenshot: ${OUT}/s3-31-e-nanny2-schedule

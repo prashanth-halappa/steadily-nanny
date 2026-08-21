@@ -13,7 +13,8 @@
 #   scripts/dev-local.sh api       # API on :8080, bound 0.0.0.0 (LAN-reachable)
 #   scripts/dev-local.sh mobile    # Metro, EXPO_PUBLIC_* pointed at the LAN IP
 #   scripts/dev-local.sh seed      # (re)create the test cast
-#   scripts/dev-local.sh reset     # wipe the local DB, re-migrate, re-seed
+#   scripts/dev-local.sh reset     # wipe the local DB, replay ALL migrations, re-seed
+#   scripts/dev-local.sh migrate   # apply pending migrations only, keep the data
 #   scripts/dev-local.sh job <name>  # fire a scheduled job by hand
 #
 # Override the LAN address for the physical devices with LAN_IP=192.168.x.y.
@@ -46,6 +47,24 @@ export SUPABASE_SERVICE_KEY="$SERVICE_ROLE_KEY"
 
 LAN_IP="${LAN_IP:-$(ipconfig getifaddr en0)}"
 
+# `supabase db reset` replays every file in supabase/migrations, and
+# `migration up` applies the pending tail — but a migration that half-applies
+# still leaves the CLI reporting success, and a stack that predates a new file
+# looks identical to a healthy one until a screen 404s mid-scenario. Comparing
+# the two counts is the cheapest thing that goes red on either.
+assert_migrations() {
+  local files applied newest
+  files=$(ls supabase/migrations/*.sql | wc -l | tr -d " ")
+  applied=$(psql "$DB_URL" -tAc \
+    "select count(*) from supabase_migrations.schema_migrations" | tr -d " ")
+  newest=$(basename "$(ls supabase/migrations/*.sql | tail -1)")
+  if [ "$files" != "$applied" ]; then
+    echo "migrations: $applied applied, $files on disk — local DB is behind ($newest is the newest file)" >&2
+    exit 1
+  fi
+  echo "migrations: all $applied applied, through $newest"
+}
+
 case "${1:-}" in
   start)
     exec supabase start -x studio
@@ -66,8 +85,18 @@ case "${1:-}" in
     exec bun scripts/seed-test-users.ts
     ;;
   reset)
+    # Destructive and total: drops the local DB and replays 001 → newest, so a
+    # migration added since the stack was created is picked up without any
+    # separate step.
     supabase db reset
+    assert_migrations
     exec bun scripts/seed-test-users.ts
+    ;;
+  migrate)
+    # Non-destructive: applies only the pending tail. Use this when a migration
+    # lands mid-pass and you do not want to lose the households you built.
+    supabase migration up --local
+    assert_migrations
     ;;
   job)
     key="$(grep -E '^JOB_API_KEY=' apps/api/.env | cut -d= -f2- | tr -d '"'"'"'')"
@@ -75,7 +104,7 @@ case "${1:-}" in
       -H "X-Job-Api-Key: $key" && echo
     ;;
   *)
-    echo "usage: $0 start|api|mobile|seed|reset|job <name>" >&2
+    echo "usage: $0 start|api|mobile|seed|reset|migrate|job <name>" >&2
     exit 2
     ;;
 esac

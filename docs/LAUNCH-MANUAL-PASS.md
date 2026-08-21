@@ -9,6 +9,10 @@ four clients. **Not** the store build — see §8 for what this pass cannot tell
 **Time:** roughly a day and a half if nothing is broken. S1–S3 are half a day;
 S5 is the long one.
 
+**Automating part of it:** [`LAUNCH-MANUAL-PASS-MAESTRO.md`](./LAUNCH-MANUAL-PASS-MAESTRO.md)
+maps these scenarios onto the Maestro suite — what the 35 existing flows already
+prove, and what is left for hands.
+
 ---
 
 ## 1. The four clients

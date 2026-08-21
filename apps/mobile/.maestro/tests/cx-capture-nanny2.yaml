@@ -1,0 +1,22 @@
+# CX capture, SECOND nanny's lens. The same walk as cx-capture-nanny, but for
+# the household's other carer — the side of the app nobody has ever looked at,
+# because until flow 31 no second carer existed.
+#
+# Uses login-no-household.yaml (which reads PARENT_EMAIL/PARENT_PASSWORD from
+# this env block) rather than login-nanny.yaml, because nanny 2 belongs to
+# exactly one household and has nothing to switch into.
+#
+# Needs -e OUT=<absolute dir> (the dir must already exist).
+appId: com.jetto.steadily.nanny
+tags:
+  - cx
+---
+- runFlow:
+    file: ../flows/login-no-household.yaml
+    env:
+      PARENT_EMAIL: ${NANNY2_EMAIL}
+      PARENT_PASSWORD: ${NANNY2_PASSWORD}
+- runFlow:
+    file: ../flows/capture-tabs.yaml
+    env:
+      ROLE: nanny2

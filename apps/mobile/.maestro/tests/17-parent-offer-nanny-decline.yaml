@@ -108,13 +108,52 @@ tags:
 - tapOn:
     id: 'child-form-name'
 - inputText: 'Phase4 Kid'
+# HARNESS FIX 2026-08-21. `hideKeyboard` is a no-op on this sheet, exactly as
+# flow 07 records for PaySetupScreen. MEASURED: the `child-form-age` tap landed
+# on the keyboard instead of the field, so focus never left the name input and
+# the age went INTO it — the failure frame showed the name reading
+# "Phase4 Kidy5" with the sheet still open, after which `child-form-submit`
+# also hit a key and `children-screen-cta` was legitimately not in the tree.
+# Tapping the sheet's own title dismisses the keyboard: it is above the
+# keyboard and has no onPress, so the touch falls through (flow 14's technique).
+# Coordinate tap, deliberately. "Add a child" is BOTH this sheet's title AND
+# the label of the add button behind it, so a text tap is ambiguous about which
+# it hits. 50%,48% is inside the sheet, on its title area, which has no onPress
+# — the touch falls through and dismisses the keyboard without closing it.
+# `pressKey: Enter`, not a coordinate tap and not `hideKeyboard`.
+# Three things were tried on this sheet and measured failing:
+#   hideKeyboard          — a no-op here, same as flow 07 records for PaySetup
+#   tapOn: text 'Add a child' — ambiguous; that string is the sheet title AND
+#                           the button behind it
+#   tapOn: point 50%,48%  — missed; the failure frame showed the name field
+#                           containing "4", i.e. the age had been typed into it
+#                           because focus never left the name input
+# The Name input is single-line, so Return fires onSubmitEditing and blurs it,
+# which drops the keyboard and lets the Age field below become reachable.
+- pressKey: Enter
+- waitForAnimationToEnd
 - tapOn:
     id: 'child-form-age'
 - inputText: '6'
-- hideKeyboard
+# The numeric pad has no Return key, so scroll the sheet body instead — it is
+# a real ScrollView (BottomSheetBase.tsx:189), so this actually moves the
+# button clear of the keyboard.
+- scrollUntilVisible:
+    element:
+      id: 'child-form-submit'
+    direction: DOWN
+    centerElement: true
+    timeout: 10000
 - tapOn:
     id: 'child-form-submit'
-- waitForAnimationToEnd
+# Assert on `child-form-name`, which exists ONLY inside the sheet. Asserting
+# `notVisible: "Add a child"` can never pass — that exact string is also the
+# label of the add button on the screen behind, so it stays visible after the
+# sheet closes. (My own first fix did exactly that and failed for that reason.)
+- extendedWaitUntil:
+    notVisible:
+      id: 'child-form-name'
+    timeout: 10000
 - tapOn:
     id: 'children-screen-cta'
 - waitForAnimationToEnd
