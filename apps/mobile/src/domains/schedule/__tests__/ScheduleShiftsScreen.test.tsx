@@ -59,14 +59,15 @@ mock.module('@/src/components/custom/ErrorState', () => {
   };
 });
 
+const mockUseHouseholdTimeOff: ReturnType<typeof mock> = mock(() => ({
+  data: [],
+  isLoading: false,
+  isError: false,
+  error: null,
+  refetch: mock(() => Promise.resolve()),
+}));
 mock.module('@/src/hooks/queries/useHouseholdTimeOff', () => ({
-  useHouseholdTimeOff: () => ({
-    data: [],
-    isLoading: false,
-    isError: false,
-    error: null,
-    refetch: mock(() => Promise.resolve()),
-  }),
+  useHouseholdTimeOff: () => mockUseHouseholdTimeOff(),
 }));
 
 // AgendaView resolves carer names off this — an empty household keeps its
@@ -264,6 +265,13 @@ beforeEach(() => {
     data: [],
     isLoading: false,
     isError: false,
+    refetch: mock(() => Promise.resolve()),
+  }));
+  mockUseHouseholdTimeOff.mockImplementation(() => ({
+    data: [],
+    isLoading: false,
+    isError: false,
+    error: null,
     refetch: mock(() => Promise.resolve()),
   }));
 });
@@ -826,6 +834,103 @@ describe('ScheduleShiftsScreen', () => {
 
       expect(getByText('shifts.parentHeading')).toBeTruthy();
       expect(queryByText('shifts.nannyHeading')).toBeNull();
+    });
+
+    // Away summary sits in gutterlessHeader (week ribbon / cross-family).
+    // Wide time-off range so the week overlap is date-independent.
+    // react-i18next is key-echo mocked — assert keys, not English.
+    it('shows the nanny away-summary key when the viewer is the carer', () => {
+      useCalendarViewStore
+        .getState()
+        .setView('nanny', CALENDAR_VIEWS.WEEK_RIBBON);
+      mockUseIsOnboarded.mockImplementation(() => ({
+        role: 'nanny',
+        status: 'onboarded',
+      }));
+      mockUseShiftsRange.mockImplementation(() => ({
+        data: [],
+        isLoading: false,
+        isError: false,
+        error: null,
+      }));
+      mockUseHouseholdTimeOff.mockImplementation(() => ({
+        data: [
+          {
+            id: 'timeoff-1',
+            user_id: '33333333-3333-4333-8333-333333333333',
+            starts_at: '2020-01-01T00:00:00.000Z',
+            ends_at: '2030-01-01T00:00:00.000Z',
+            all_day: true,
+            message: null,
+            kind: 'personal',
+            status: 'confirmed',
+            ical_uid: 'timeoff-1@steadily',
+            sequence: 0,
+            created_at: '2026-08-01T00:00:00.000Z',
+            updated_at: '2026-08-01T00:00:00.000Z',
+          },
+        ],
+        isLoading: false,
+        isError: false,
+        error: null,
+        refetch: mock(() => Promise.resolve()),
+      }));
+
+      const { getByTestId, queryByText } = render(<ScheduleShiftsScreen />);
+
+      expect(getByTestId('schedule-away-summary').props.children).toBe(
+        'shifts.awaySummaryNanny'
+      );
+      expect(queryByText('shifts.awaySummary')).toBeNull();
+
+      useCalendarViewStore.getState().reset();
+    });
+
+    it('keeps the parent/helper away-summary key for a parent viewer', () => {
+      useCalendarViewStore
+        .getState()
+        .setView('parent', CALENDAR_VIEWS.WEEK_RIBBON);
+      mockUseIsOnboarded.mockImplementation(() => ({
+        role: 'parent',
+        status: 'onboarded',
+      }));
+      mockUseShiftsRange.mockImplementation(() => ({
+        data: [],
+        isLoading: false,
+        isError: false,
+        error: null,
+      }));
+      mockUseHouseholdTimeOff.mockImplementation(() => ({
+        data: [
+          {
+            id: 'timeoff-1',
+            user_id: '33333333-3333-4333-8333-333333333333',
+            starts_at: '2020-01-01T00:00:00.000Z',
+            ends_at: '2030-01-01T00:00:00.000Z',
+            all_day: true,
+            message: null,
+            kind: 'personal',
+            status: 'confirmed',
+            ical_uid: 'timeoff-1@steadily',
+            sequence: 0,
+            created_at: '2026-08-01T00:00:00.000Z',
+            updated_at: '2026-08-01T00:00:00.000Z',
+          },
+        ],
+        isLoading: false,
+        isError: false,
+        error: null,
+        refetch: mock(() => Promise.resolve()),
+      }));
+
+      const { getByTestId, queryByText } = render(<ScheduleShiftsScreen />);
+
+      expect(getByTestId('schedule-away-summary').props.children).toBe(
+        'shifts.awaySummary'
+      );
+      expect(queryByText('shifts.awaySummaryNanny')).toBeNull();
+
+      useCalendarViewStore.getState().reset();
     });
   });
 

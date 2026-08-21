@@ -190,6 +190,7 @@
     "timeOffConflict": "Overlaps time off",
     "awayBand": "Away",
     "awaySummary": "Your carer has time off this week — see Agenda for details.",
+    "awaySummaryNanny": "You have time off this week — see Agenda for details.",
     "axisTime": "Time",
     "legendMultiCarer": "Tap a block to see who's covering it.",
     "usualWeekLink": "Your usual week"
