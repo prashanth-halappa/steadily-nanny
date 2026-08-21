@@ -57,6 +57,7 @@ function renderThread(
       timeZone={ZONE}
       timesheetStatus="queried"
       viewerRole="nanny"
+      recipientName="The Ahmeds"
       onSend={() => {}}
       {...props}
     />
@@ -232,6 +233,19 @@ describe('WeekQueryThread', () => {
     const { queryByTestId } = renderThread({ timesheetStatus: 'approved' });
 
     expect(queryByTestId('hours-week-thread-still-editable')).toBeNull();
+  });
+
+  // C — "who hears this when I tap it": the composer's Send is used by both
+  // roles, and the reply's recipient is the OTHER party — household for the
+  // nanny viewer, carer for the parent viewer (`timesheetCommandService`'s
+  // `addThreadMessage`: a carer reply notifies the household's parents, a
+  // parent reply notifies the carer).
+  it('names who a reply goes to, directly under Send', () => {
+    const { getByTestId } = renderThread({ recipientName: 'The Ahmeds' });
+
+    expect(getByTestId('hours-week-thread-send-recipient').props.children).toBe(
+      'recipient.threadSend'
+    );
   });
 
   it('sends the trimmed message and refuses an empty one', () => {

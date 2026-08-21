@@ -50,7 +50,9 @@
  * 3a. `weekChanged` (D79) — the week changed after it was approved, whether
  *    it kept the approval (paid, 102) or lost it (unpaid, 111). Same
  *    Body/Figure28/Small anatomy as the appreciation block, because it
- *    answers the same question from the other side. `testID="hours-week-changed"`.
+ *    answers the same question from the other side, plus a `MetadataLabel`
+ *    caption between the Body and the Figure28 naming WHICH amount the
+ *    figure is (A3). `testID="hours-week-changed"`.
  * 4. Approved-week slot — the reopen button when `onReopenPress` is
  *    supplied, else the lock caption. Same slot, because they answer the
  *    same question: what can you do about an approved week?
@@ -80,6 +82,7 @@ import { IconChip } from '@/src/components/ui/icon-chip';
 import { Text } from '@/src/components/ui/text';
 import {
   Body,
+  Caption,
   Figure28,
   H3,
   MetadataLabel,
@@ -98,6 +101,14 @@ interface WeekTotalAction {
   disabled?: boolean;
   /** Tints the label text with the inline-error ink token (the ghost Query button). */
   destructive?: boolean;
+  /**
+   * C — "who hears this when I tap it": one `Caption` (14/21/400), rendered
+   * directly below this action's own button, naming who receives it (and
+   * what it holds up, when something does). Omit to render nothing —
+   * withdraw/reopen have no recipient line in the spec, and never fabricate
+   * one. `${testID}-recipient` is the caption's own testID.
+   */
+  recipient?: string | null;
 }
 
 interface WeekTotalProps {
@@ -136,6 +147,14 @@ interface WeekTotalProps {
   parentViewedDateLabel?: string | null;
   /** Nanny-only: the household's name, for the approved appreciation line. */
   householdName?: string | null;
+  /**
+   * A4 — nanny-only, already-formatted date of the approval this week LOST
+   * (`previous_approval.approved_at`). Non-null switches the timeline to its
+   * four-step demoted shape. A demoted week is still `submitted`, so without
+   * this the three hard-coded steps fired and landed grey "Waiting for
+   * approval" directly above a sentence saying the week HAD been approved.
+   */
+  previousApprovalDateLabel?: string | null;
   /** Parent-only: already-formatted "You viewed this on {{date}}" read
    * receipt for the parent's OWN view of the week (P6b) — distinct from
    * `parentViewedDateLabel`, which is the nanny's evidence that the parent
@@ -177,6 +196,17 @@ interface WeekTotalProps {
   weekChanged?: {
     /** `Body`, directly under the headline row. */
     headline: string;
+    /**
+     * A3 — WHAT THE FIGURE BELOW IS, in a `MetadataLabel` between the
+     * headline and the figure. The 28pt tabular slot holds a TOTAL
+     * everywhere else on this screen, and the two shapes that reach this
+     * block put opposite things in it: the demoted shape's figure is the
+     * new WHOLE-WEEK total, the paid shape's is the tail the approved total
+     * does not cover. Unlabelled, a reader has no way to tell which they
+     * are looking at — and reading a delta as a total is the most expensive
+     * misread this product can produce. Omitted with the figure.
+     */
+    amountCaption?: string | null;
     /** `Figure28`, tabular. `null` renders NOTHING. */
     amountLabel: string | null;
     /** `Small`, muted. `null` renders nothing. */
@@ -250,6 +280,7 @@ export function WeekTotal({
   approvedDateLabel = null,
   parentViewedDateLabel = null,
   householdName = null,
+  previousApprovalDateLabel = null,
   parentViewedNote = null,
   primaryAction = null,
   secondaryAction = null,
@@ -313,6 +344,7 @@ export function WeekTotal({
         {showTimeline ? (
           <WeekStatusTimeline
             parentViewedDateLabel={parentViewedDateLabel}
+            previousApprovalDateLabel={previousApprovalDateLabel}
             householdName={householdName}
             reopenReason={earningsReopenReason}
             toneClass={smallToneClass}
@@ -396,6 +428,14 @@ export function WeekTotal({
             <Body testID="hours-week-changed-headline">
               {weekChanged.headline}
             </Body>
+            {weekChanged.amountLabel && weekChanged.amountCaption ? (
+              <MetadataLabel
+                testID="hours-week-changed-amount-caption"
+                className="text-muted-strong"
+              >
+                {weekChanged.amountCaption}
+              </MetadataLabel>
+            ) : null}
             {weekChanged.amountLabel ? (
               <Figure28 testID="hours-week-changed-amount">
                 {weekChanged.amountLabel}
@@ -447,51 +487,81 @@ export function WeekTotal({
           </Body>
         ) : null}
         {primaryAction ? (
-          <Button
-            testID={primaryAction.testID}
-            size="lg"
-            className="mt-1"
-            disabled={primaryAction.disabled}
-            onPress={primaryAction.onPress}
-          >
-            <Text>{primaryAction.label}</Text>
-          </Button>
+          <>
+            <Button
+              testID={primaryAction.testID}
+              size="lg"
+              className="mt-1"
+              disabled={primaryAction.disabled}
+              onPress={primaryAction.onPress}
+            >
+              <Text>{primaryAction.label}</Text>
+            </Button>
+            {primaryAction.recipient ? (
+              <Caption
+                testID={`${primaryAction.testID}-recipient`}
+                className={smallToneClass}
+              >
+                {primaryAction.recipient}
+              </Caption>
+            ) : null}
+          </>
         ) : null}
         {secondaryAction ? (
-          <Button
-            testID={secondaryAction.testID}
-            variant="ghost"
-            disabled={secondaryAction.disabled}
-            onPress={secondaryAction.onPress}
-          >
-            <Text
-              className={
-                secondaryAction.destructive
-                  ? 'text-error-inline-text'
-                  : undefined
-              }
+          <>
+            <Button
+              testID={secondaryAction.testID}
+              variant="ghost"
+              disabled={secondaryAction.disabled}
+              onPress={secondaryAction.onPress}
             >
-              {secondaryAction.label}
-            </Text>
-          </Button>
+              <Text
+                className={
+                  secondaryAction.destructive
+                    ? 'text-error-inline-text'
+                    : undefined
+                }
+              >
+                {secondaryAction.label}
+              </Text>
+            </Button>
+            {secondaryAction.recipient ? (
+              <Caption
+                testID={`${secondaryAction.testID}-recipient`}
+                className={smallToneClass}
+              >
+                {secondaryAction.recipient}
+              </Caption>
+            ) : null}
+          </>
         ) : null}
         {tertiaryAction ? (
-          <Button
-            testID={tertiaryAction.testID}
-            variant="ghost"
-            disabled={tertiaryAction.disabled}
-            onPress={tertiaryAction.onPress}
-          >
-            <Text
-              className={
-                tertiaryAction.destructive
-                  ? 'text-error-inline-text'
-                  : undefined
-              }
+          <>
+            <Button
+              testID={tertiaryAction.testID}
+              variant="ghost"
+              disabled={tertiaryAction.disabled}
+              onPress={tertiaryAction.onPress}
             >
-              {tertiaryAction.label}
-            </Text>
-          </Button>
+              <Text
+                className={
+                  tertiaryAction.destructive
+                    ? 'text-error-inline-text'
+                    : undefined
+                }
+              >
+                {tertiaryAction.label}
+              </Text>
+            </Button>
+            {tertiaryAction.recipient ? (
+              <Caption
+                testID={`${tertiaryAction.testID}-recipient`}
+                className={smallToneClass}
+              >
+                {tertiaryAction.recipient}
+              </Caption>
+            ) : null}
+          </>
         ) : null}
       </CardContent>
     </Card>
@@ -505,11 +575,13 @@ export function WeekTotal({
  * `hours-earnings-line-reopened-note` caption below the card. */
 function WeekStatusTimeline({
   parentViewedDateLabel,
+  previousApprovalDateLabel,
   householdName,
   reopenReason,
   toneClass,
 }: {
   parentViewedDateLabel?: string | null;
+  previousApprovalDateLabel?: string | null;
   householdName?: string | null;
   reopenReason?: string | null;
   toneClass: string;
@@ -517,6 +589,19 @@ function WeekStatusTimeline({
   const { t } = useTranslation('hours');
   const colors = useThemeColors();
   const opened = parentViewedDateLabel != null && parentViewedDateLabel !== '';
+  // A4: a week that was approved and then changed. The `opened` step is
+  // dropped rather than greyed — a household that approved the week
+  // demonstrably opened it, and the approval step says so with a date.
+  const wasApproved =
+    previousApprovalDateLabel != null && previousApprovalDateLabel !== '';
+  // Who owes the next move, named. `timeline.waiting` ("Waiting for
+  // approval") named nobody, which left it reading as HER outstanding task
+  // on a screen where the outstanding task is never hers.
+  const waitingLabel = wasApproved
+    ? t('timeline.waitingAgain', { household: householdName })
+    : householdName
+      ? t('timeline.waitingNamed', { household: householdName })
+      : t('timeline.waiting');
   return (
     <View testID="hours-status-timeline" className="gap-2">
       {reopenReason ? (
@@ -533,23 +618,43 @@ function WeekStatusTimeline({
         label={t('timeline.logged')}
         toneClass={toneClass}
       />
-      <TimelineStep
-        testID="hours-timeline-opened"
-        color={opened ? colors.success : colors.border}
-        label={
-          opened
-            ? t('timeline.opened', {
-                household: householdName,
-                date: parentViewedDateLabel,
-              })
-            : t('timeline.notOpened', { household: householdName })
-        }
-        toneClass={toneClass}
-      />
+      {wasApproved ? (
+        <>
+          <TimelineStep
+            testID="hours-timeline-approved"
+            color={colors.success}
+            label={t('timeline.approved', {
+              household: householdName,
+              date: previousApprovalDateLabel,
+            })}
+            toneClass={toneClass}
+          />
+          <TimelineStep
+            testID="hours-timeline-changed"
+            color={colors.warning}
+            label={t('timeline.changed')}
+            toneClass={toneClass}
+          />
+        </>
+      ) : (
+        <TimelineStep
+          testID="hours-timeline-opened"
+          color={opened ? colors.success : colors.border}
+          label={
+            opened
+              ? t('timeline.opened', {
+                  household: householdName,
+                  date: parentViewedDateLabel,
+                })
+              : t('timeline.notOpened', { household: householdName })
+          }
+          toneClass={toneClass}
+        />
+      )}
       <TimelineStep
         testID="hours-timeline-waiting"
         color={colors.border}
-        label={t('timeline.waiting')}
+        label={waitingLabel}
         toneClass={toneClass}
       />
     </View>

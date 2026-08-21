@@ -139,7 +139,7 @@ describe('ClockInCard', () => {
   // A blanket swap would break the default-tone off-clock card.
   it('hoists card tone and tones the two Smalls that share the receipt ground', () => {
     expect(cardSource).toMatch(
-      /const tone =\s*overdue\s*\?\s*'attention'\s*:\s*entry\s*\?\s*'live'\s*:\s*receiptEntry\s*\?\s*'positive'\s*:\s*'default'/
+      /const tone =\s*overdue\s*\?\s*'attention'\s*:\s*entry\s*\?\s*'live'\s*:\s*receiptEntry\s*&&\s*!missedShift\s*\?\s*'positive'\s*:\s*'default'/
     );
     expect(cardSource).toMatch(/tone=\{tone\}/);
 

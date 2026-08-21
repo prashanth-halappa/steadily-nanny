@@ -3,6 +3,7 @@
  * Pure helpers — does a carer time-off row cover a local calendar date?
  */
 import type { CarerTimeOff } from '@steadily-nanny/shared-types/schemas/availability.schema';
+import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { addLocalDays } from '@/src/lib/localDate';
 import { wallClockToUtcIso } from '@/src/lib/wallClock';
 
@@ -32,4 +33,29 @@ export function timeOffRowsForLocalDate(
   timeZone: string
 ): CarerTimeOff[] {
   return rows.filter(row => timeOffCoversLocalDate(row, localDate, timeZone));
+}
+
+/**
+ * True when `shift` collides with one of its carer's own accepted time-off
+ * rows. `starts_at`/`ends_at` are absolute UTC instants on both sides
+ * (schema-guaranteed, `all_day` included), so this is a plain half-open
+ * interval overlap — no timezone conversion needed, unlike
+ * `timeOffCoversLocalDate` above, which is comparing against a *local
+ * calendar date* instead.
+ */
+export function shiftOverlapsTimeOff(
+  shift: Pick<Shift, 'carer_id' | 'starts_at' | 'ends_at'>,
+  timeOffRows: readonly CarerTimeOff[]
+): boolean {
+  if (!shift.carer_id) return false;
+  const shiftStart = new Date(shift.starts_at).getTime();
+  const shiftEnd = new Date(shift.ends_at).getTime();
+  return timeOffRows.some(row => {
+    if (row.status === 'cancelled' || row.user_id !== shift.carer_id) {
+      return false;
+    }
+    const rowStart = new Date(row.starts_at).getTime();
+    const rowEnd = new Date(row.ends_at).getTime();
+    return shiftStart < rowEnd && shiftEnd > rowStart;
+  });
 }

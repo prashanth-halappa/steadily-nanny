@@ -3,7 +3,7 @@
   "screenSubtitle": "Pending work waiting on you.",
   "loading": "Loading…",
   "emptyTitle": "You're all caught up",
-  "emptyBody": "No change requests, patterns, or queried weeks need you right now.",
+  "emptyBody": "Nothing needs you right now. Schedule changes, usual weeks and questions about hours all show up here.",
   "needsAttentionCard": {
     "moreItems_one": "and {{count}} more thing waiting on you",
     "moreItems_other": "and {{count}} more things waiting on you",

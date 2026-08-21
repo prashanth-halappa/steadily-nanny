@@ -38,6 +38,7 @@
  */
 
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import type { TimeEntry } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { SCHEDULED_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -80,13 +81,14 @@ import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { useIsOnline } from '@/src/lib/network';
 import { showErrorToast } from '@/src/lib/toast';
-import { wallClockToUtcIso } from '@/src/lib/wallClock';
+import { utcIsoToWallClockHHMM, wallClockToUtcIso } from '@/src/lib/wallClock';
 import { useAuthStore } from '@/src/store/auth';
 import { useClockOutReminder } from '../hooks/useClockOutReminder';
 import { useElapsedTimer } from '../hooks/useElapsedTimer';
 import { useOverdueClockOut } from '../hooks/useOverdueClockOut';
 import { resolveDefaultClockOutAt } from '../utils/clockOutReminder';
 import { ClockOutSheet, type ClockOutSheetSubmitInput } from './ClockOutSheet';
+import { MissedHoursSheet } from './MissedHoursSheet';
 
 interface ClockInCardProps {
   householdId: string;
@@ -175,6 +177,31 @@ function formatShiftMetaLine(parts: {
     (segment): segment is string => Boolean(segment?.trim())
   );
   return segments.length > 0 ? segments.join(' · ') : null;
+}
+
+/**
+ * Whether any of today's own entries overlaps `shift`'s window at all —
+ * shift-scoped on purpose. A day-level "did she log anything today" check
+ * would hide a missed MORNING shift the instant she clocks in for an
+ * unrelated EVENING one the same day, which is the exact bug this exists to
+ * avoid. A still-running entry (no `clock_out_at`) counts through to now.
+ */
+function shiftIsCovered(
+  shift: Pick<Shift, 'starts_at' | 'ends_at'>,
+  entries: readonly Pick<TimeEntry, 'clock_in_at' | 'clock_out_at'>[]
+): boolean {
+  const shiftStart = new Date(shift.starts_at).getTime();
+  const shiftEnd = new Date(shift.ends_at).getTime();
+  return entries.some(e => {
+    // No clock-in means she never logged work — must not count as covering
+    // a shift (null would coerce to epoch via `new Date` and mask everything).
+    if (e.clock_in_at === null) return false;
+    const entryStart = new Date(e.clock_in_at).getTime();
+    const entryEnd = e.clock_out_at
+      ? new Date(e.clock_out_at).getTime()
+      : Date.now();
+    return entryStart < shiftEnd && entryEnd > shiftStart;
+  });
 }
 
 type OffClockShiftState =
@@ -287,6 +314,43 @@ export function ClockInCard({
     return todays[0] ?? null;
   }, [weekEntries.data, today, currentUserId, entry]);
 
+  // Today's own live entries — voided doesn't count. Kept separately from
+  // `receiptEntry` above: that one is the single most recent COMPLETED
+  // receipt for the empty-state banner, this is every entry today, used
+  // below to test coverage per shift rather than per day.
+  const todaysEntries = useMemo(
+    () =>
+      (weekEntries.data ?? []).filter(
+        e =>
+          e.local_date === today &&
+          e.carer_id === currentUserId &&
+          e.status !== 'voided'
+      ),
+    [weekEntries.data, today, currentUserId]
+  );
+
+  // A scheduled shift that already ended with nothing covering IT
+  // specifically — see `shiftIsCovered`. Rendered as its own row beneath
+  // the clock-in card (never as the card hero): without this detection, an
+  // upcoming later shift the same day would hide the missed one entirely.
+  const missedShift = useMemo(() => {
+    const now = Date.now();
+    return (shifts.data ?? [])
+      .filter(
+        s =>
+          s.local_date === today &&
+          s.carer_id === currentUserId &&
+          SCHEDULED_STATUS_SET.has(s.status) &&
+          new Date(s.ends_at).getTime() <= now &&
+          !shiftIsCovered(s, todaysEntries)
+      )
+      .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+      .at(-1);
+  }, [shifts.data, today, currentUserId, todaysEntries]);
+
+  // CURRENT or NEXT scheduled shift only — never a past ended one. A missed
+  // past shift has its own row; folding it into this pick put the wrong
+  // window on the clock-in card's heading.
   const relevantScheduledShift = useMemo(() => {
     const todayShifts = (shifts.data ?? [])
       .filter(s => s.local_date === today && s.carer_id === currentUserId)
@@ -295,11 +359,7 @@ export function ClockInCard({
       SCHEDULED_STATUS_SET.has(s.status)
     );
     const now = Date.now();
-    const stillActive = scheduledShifts.find(
-      s => new Date(s.ends_at).getTime() > now
-    );
-    if (stillActive) return stillActive;
-    return scheduledShifts.at(-1);
+    return scheduledShifts.find(s => new Date(s.ends_at).getTime() > now);
   }, [shifts.data, today, currentUserId]);
 
   const offClockShift: OffClockShiftState = useMemo(() => {
@@ -416,6 +476,10 @@ export function ClockInCard({
   const [showClockOutSheet, setShowClockOutSheet] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [isDiscardOpen, setIsDiscardOpen] = useState(false);
+  // Opens the SAME sheet `AddMissedHoursCard` uses, prefilled from
+  // `missedShift`'s own schedule — a suggestion she confirms or edits, never
+  // a write fired on tap. "We record what happened, not what was planned."
+  const [showMissedHoursSheet, setShowMissedHoursSheet] = useState(false);
   // Frozen when the sheet opens so the optimistic clear (and a 409 overlap
   // invalidate) can null the running cache without remounting the sheet or
   // reseeding its draft from shifting props.
@@ -592,24 +656,31 @@ export function ClockInCard({
   const sheetDefaultClockOutAt = sheetDefaultClockOutAtRef.current;
   const sheetShowOverdueHint = sheetShowOverdueHintRef.current;
 
+  // A missed shift outranks a receipt for a DIFFERENT one — "Clocked out at
+  // 7:00 PM" reads as the day being settled, which isn't true while a
+  // missed morning is still sitting there unlogged.
   const tone = overdue
     ? 'attention'
     : entry
       ? 'live'
-      : receiptEntry
+      : receiptEntry && !missedShift
         ? 'positive'
         : 'default';
 
+  // Outer `gap-4` is the feed's card-to-card rhythm. Required here because
+  // this component often mounts inside `PinnedSlot`, which has no gap of its
+  // own — without it the missed Card would butt against the clock-in Card.
   return (
-    <Card testID="today-clock-card" tone={tone} className="gap-4 p-5.5">
-      {entry ? (
-        <>
-          <View className="flex-row items-center gap-2">
-            {/* The apricot dot means "actually working" — overdue has
+    <View className="gap-4">
+      <Card testID="today-clock-card" tone={tone} className="gap-4 p-5.5">
+        {entry ? (
+          <>
+            <View className="flex-row items-center gap-2">
+              {/* The apricot dot means "actually working" — overdue has
                 changed the meaning to "please close this out", so it drops
                 along with the rest of the live signal. */}
-            {overdue ? null : <LiveDot testID="today-live-dot" />}
-            {/* Rule B: sentence text on `surfaceAttention` is `foreground`
+              {overdue ? null : <LiveDot testID="today-live-dot" />}
+              {/* Rule B: sentence text on `surfaceAttention` is `foreground`
                 (the default), never `warningStrong` — that measures 4.07:1
                 there, under AA for 14px semibold.
                 The two states are different RUNGS, not one line with a colour
@@ -618,267 +689,318 @@ export function ClockInCard({
                 smallest title on the screen. `live` is L2 and keeps the
                 apricot Caption: its size is carried by the 44px timer below,
                 and it sits on `surfaceLive`, not this ground. */}
+              {overdue ? (
+                <H3 testID="today-live-caption">{t('stillOnTheClockTitle')}</H3>
+              ) : (
+                <Caption
+                  testID="today-live-caption"
+                  weight="semibold"
+                  className="text-highlight"
+                >
+                  {t('onTheClock')}
+                </Caption>
+              )}
+            </View>
+            <Timer testID="today-live-timer">{elapsed}</Timer>
+            {entry.clock_in_at ? (
+              <Small className="text-muted-strong">
+                {t('since', {
+                  time: formatClockTime(entry.clock_in_at, timeZone),
+                })}
+              </Small>
+            ) : null}
+            {isMultiHousehold && runningEntryHouseholdName ? (
+              <Small className="text-muted-strong">
+                {t('clockedIntoHousehold', {
+                  household: runningEntryHouseholdName,
+                })}
+              </Small>
+            ) : null}
             {overdue ? (
-              <H3 testID="today-live-caption">{t('stillOnTheClockTitle')}</H3>
-            ) : (
-              <Caption
-                testID="today-live-caption"
-                weight="semibold"
-                className="text-highlight"
-              >
-                {t('onTheClock')}
-              </Caption>
-            )}
-          </View>
-          <Timer testID="today-live-timer">{elapsed}</Timer>
-          {entry.clock_in_at ? (
-            <Small className="text-muted-strong">
-              {t('since', {
-                time: formatClockTime(entry.clock_in_at, timeZone),
-              })}
-            </Small>
-          ) : null}
-          {isMultiHousehold && runningEntryHouseholdName ? (
-            <Small className="text-muted-strong">
-              {t('clockedIntoHousehold', {
-                household: runningEntryHouseholdName,
-              })}
-            </Small>
-          ) : null}
-          {overdue ? (
-            // Rule B: sentence text on a tinted `surfaceAttention` ground is
-            // `foreground`, never `warningStrong`/`warning` — those measure
-            // under AA there.
-            <Body testID="today-overdue-hint">{t('stillOnTheClockBody')}</Body>
-          ) : null}
-          <LoadingButton
-            testID="today-clock-out"
-            // The overdue state is the one moment this is the only thing
-            // worth doing on the screen, so it stops being a quiet outline.
-            variant={overdue ? 'default' : 'outline'}
-            label={overdue ? t('clockOutNow') : t('clockOut')}
-            isLoading={clockIn.isPending}
-            disabled={clockOutBlocked}
-            onPress={handleClockOutPress}
-          />
-          {/* Destructive, so it sits BELOW the primary — she must not reach
+              // Rule B: sentence text on a tinted `surfaceAttention` ground is
+              // `foreground`, never `warningStrong`/`warning` — those measure
+              // under AA there.
+              <Body testID="today-overdue-hint">
+                {t('stillOnTheClockBody')}
+              </Body>
+            ) : null}
+            <LoadingButton
+              testID="today-clock-out"
+              // The overdue state is the one moment this is the only thing
+              // worth doing on the screen, so it stops being a quiet outline.
+              variant={overdue ? 'default' : 'outline'}
+              label={overdue ? t('clockOutNow') : t('clockOut')}
+              isLoading={clockIn.isPending}
+              disabled={clockOutBlocked}
+              onPress={handleClockOutPress}
+            />
+            {/* Destructive, so it sits BELOW the primary — she must not reach
               for "Clock out" and land on this. Ghost + destructive text, the
               same treatment as the correction sheet's void trigger; colour
               alone carries the distinction from the outline button above.
               The card's own `gap-4` is the separation: Daylight separates by
               light, not by dividers. */}
-          {canDiscard ? (
-            <Button
-              testID="today-discard-entry"
-              variant="ghost"
-              size="default"
-              onPress={handleDiscardPress}
-            >
-              <Text className="text-error-inline-text">{t('discard.cta')}</Text>
-            </Button>
-          ) : null}
-        </>
-      ) : (
-        <>
-          {receiptEntry?.clock_out_at && receiptEntry.clock_in_at ? (
-            <View testID="today-clock-receipt" className="gap-1">
-              <H3>
-                {t('liveActivity.receiptTitle', {
-                  time: formatClockTime(receiptEntry.clock_out_at, timeZone),
-                })}
-              </H3>
-              <Small className="text-muted-strong">
-                {receiptEntry.break_minutes > 0
-                  ? t('liveActivity.receiptBodyWithBreak', {
-                      duration: formatDuration(
-                        computeWorkedMinutesFromInstants(
-                          receiptEntry.clock_in_at,
-                          new Date(receiptEntry.clock_out_at).getTime(),
+            {canDiscard ? (
+              <Button
+                testID="today-discard-entry"
+                variant="ghost"
+                size="default"
+                onPress={handleDiscardPress}
+              >
+                <Text className="text-error-inline-text">
+                  {t('discard.cta')}
+                </Text>
+              </Button>
+            ) : null}
+          </>
+        ) : (
+          <>
+            {receiptEntry?.clock_out_at &&
+            receiptEntry.clock_in_at &&
+            !missedShift ? (
+              <View testID="today-clock-receipt" className="gap-1">
+                <H3>
+                  {t('liveActivity.receiptTitle', {
+                    time: formatClockTime(receiptEntry.clock_out_at, timeZone),
+                  })}
+                </H3>
+                <Small className="text-muted-strong">
+                  {receiptEntry.break_minutes > 0
+                    ? t('liveActivity.receiptBodyWithBreak', {
+                        duration: formatDuration(
+                          computeWorkedMinutesFromInstants(
+                            receiptEntry.clock_in_at,
+                            new Date(receiptEntry.clock_out_at).getTime(),
+                            receiptEntry.break_minutes
+                          )
+                        ),
+                        breakDuration: formatDuration(
                           receiptEntry.break_minutes
-                        )
-                      ),
-                      breakDuration: formatDuration(receiptEntry.break_minutes),
-                    })
-                  : t('liveActivity.receiptBody', {
-                      duration: formatDuration(
-                        computeWorkedMinutesFromInstants(
-                          receiptEntry.clock_in_at,
-                          new Date(receiptEntry.clock_out_at).getTime(),
-                          receiptEntry.break_minutes
-                        )
-                      ),
-                    })}
-              </Small>
-            </View>
-          ) : (
-            <>
-              {/* Invert what it says: the shift window is the fact, "not on
+                        ),
+                      })
+                    : t('liveActivity.receiptBody', {
+                        duration: formatDuration(
+                          computeWorkedMinutesFromInstants(
+                            receiptEntry.clock_in_at,
+                            new Date(receiptEntry.clock_out_at).getTime(),
+                            receiptEntry.break_minutes
+                          )
+                        ),
+                      })}
+                </Small>
+              </View>
+            ) : (
+              <>
+                {/* Invert what it says: the shift window is the fact, "not on
                   the clock" is just the label under it. */}
-              <MetadataLabel className="text-muted-foreground">
-                {t('notOnTheClock')}
-              </MetadataLabel>
-              {/* Tabular: these are times being read against a clock, and two
+                <MetadataLabel className="text-muted-foreground">
+                  {t('notOnTheClock')}
+                </MetadataLabel>
+                {/* Tabular: these are times being read against a clock, and two
                   of them sit either side of an en dash where a proportional
                   `1` would shuffle the range's width as the minute ticks. */}
-              {offClockShift.kind === 'scheduled' ? (
-                <H3 testID="today-off-clock-scheduled" tabular>
-                  {t('nannyScheduledBody', {
-                    start: offClockShift.start,
-                    end: offClockShift.end,
-                  })}
-                </H3>
-              ) : offClockShift.kind === 'arriving' ? (
-                <H3 testID="today-off-clock-arriving" tabular>
-                  {t('nannyArrivingBody', { start: offClockShift.start })}
-                </H3>
-              ) : offClockShift.kind === 'declined' ? (
-                <H3 testID="today-off-clock-declined" tabular>
-                  {t('declinedToday', {
-                    start: offClockShift.start,
-                    end: offClockShift.end,
-                  })}
-                </H3>
-              ) : (
-                // The hero must never be a negation — "Not on the clock" above
-                // already said the absence once. Nothing scheduled is an
-                // invitation here, not a second void.
-                <H3 testID="today-off-clock-none">{t('readyWhenYouAre')}</H3>
-              )}
-              {shiftMetaLine ? (
-                <Small
-                  testID="today-shift-meta"
-                  className="text-muted-foreground"
-                >
-                  {shiftMetaLine}
-                </Small>
-              ) : null}
-              {/* Only the two states that already lead with a covering shift carry
+                {offClockShift.kind === 'scheduled' ? (
+                  <H3 testID="today-off-clock-scheduled" tabular>
+                    {t('nannyScheduledBody', {
+                      start: offClockShift.start,
+                      end: offClockShift.end,
+                    })}
+                  </H3>
+                ) : offClockShift.kind === 'arriving' ? (
+                  <H3 testID="today-off-clock-arriving" tabular>
+                    {t('nannyArrivingBody', { start: offClockShift.start })}
+                  </H3>
+                ) : offClockShift.kind === 'declined' ? (
+                  <H3 testID="today-off-clock-declined" tabular>
+                    {t('declinedToday', {
+                      start: offClockShift.start,
+                      end: offClockShift.end,
+                    })}
+                  </H3>
+                ) : (
+                  // The hero must never be a negation — "Not on the clock" above
+                  // already said the absence once. Nothing scheduled is an
+                  // invitation here, not a second void.
+                  <H3 testID="today-off-clock-none">{t('readyWhenYouAre')}</H3>
+                )}
+                {shiftMetaLine ? (
+                  <Small
+                    testID="today-shift-meta"
+                    className="text-muted-foreground"
+                  >
+                    {shiftMetaLine}
+                  </Small>
+                ) : null}
+                {/* Only the two states that already lead with a covering shift carry
                   a secondary decline line — the `declined` hero says it itself. */}
-              {(offClockShift.kind === 'scheduled' ||
-                offClockShift.kind === 'arriving') &&
-              offClockShift.declined ? (
+                {(offClockShift.kind === 'scheduled' ||
+                  offClockShift.kind === 'arriving') &&
+                offClockShift.declined ? (
+                  <Small
+                    testID="today-off-clock-declined-secondary"
+                    className="text-muted-foreground"
+                  >
+                    {t('declinedToday', {
+                      start: offClockShift.declined.start,
+                      end: offClockShift.declined.end,
+                    })}
+                  </Small>
+                ) : null}
+              </>
+            )}
+            <LoadingButton
+              testID="today-clock-in"
+              label={t('clockIn')}
+              size="lg"
+              // Never gated on the shifts query. If she is in the house working,
+              // she is working — a slow schedule fetch must not cost her an hour
+              // of pay. Only the LABEL above reacts to shift state.
+              isLoading={clockIn.isPending || running.isLoading}
+              onPress={handleClockIn}
+            />
+            {showRunningLate ? (
+              runningLateSent ? (
                 <Small
-                  testID="today-off-clock-declined-secondary"
-                  className="text-muted-foreground"
+                  testID="today-running-late-sent"
+                  className={
+                    tone === 'positive'
+                      ? 'text-muted-strong'
+                      : 'text-muted-foreground'
+                  }
                 >
-                  {t('declinedToday', {
-                    start: offClockShift.declined.start,
-                    end: offClockShift.declined.end,
-                  })}
+                  {t('runningLateSent')}
                 </Small>
-              ) : null}
-            </>
-          )}
-          <LoadingButton
-            testID="today-clock-in"
-            label={t('clockIn')}
-            size="lg"
-            // Never gated on the shifts query. If she is in the house working,
-            // she is working — a slow schedule fetch must not cost her an hour
-            // of pay. Only the LABEL above reacts to shift state.
-            isLoading={clockIn.isPending || running.isLoading}
-            onPress={handleClockIn}
-          />
-          {showRunningLate ? (
-            runningLateSent ? (
-              <Small
-                testID="today-running-late-sent"
-                className={
-                  tone === 'positive'
-                    ? 'text-muted-strong'
-                    : 'text-muted-foreground'
-                }
-              >
-                {t('runningLateSent')}
-              </Small>
-            ) : (
-              <Button
-                testID="today-running-late"
-                variant="outline"
-                size="default"
-                disabled={sendRunningLate.isPending}
-                onPress={() => {
-                  void sendRunningLate.mutateAsync({
-                    shiftId: relevantScheduledShift.id,
-                  });
-                }}
-              >
-                {t('runningLate')}
-              </Button>
-            )
-          ) : null}
-          {/* Reassurance goes after the action, not in front of it. With no
+              ) : (
+                <Button
+                  testID="today-running-late"
+                  variant="outline"
+                  size="default"
+                  disabled={sendRunningLate.isPending}
+                  onPress={() => {
+                    void sendRunningLate.mutateAsync({
+                      shiftId: relevantScheduledShift.id,
+                    });
+                  }}
+                >
+                  {t('runningLate')}
+                </Button>
+              )
+            ) : null}
+            {/* Reassurance goes after the action, not in front of it. With no
               shift today, fold the absence and the hint into ONE line
               rather than two — a second empty-day mention plus the generic
               hint read as a dead paragraph beneath the button. */}
-          {/* "Nothing's scheduled today" is a CLAIM about the schedule, so it
+            {/* "Nothing's scheduled today" is a CLAIM about the schedule, so it
               waits for the query to actually answer — otherwise a slow or
               failed fetch states it as settled fact. The generic hint is safe
-              in every state, so it is what an unsettled query falls back to. */}
-          <Small
-            className={
-              tone === 'positive'
-                ? 'text-muted-strong'
-                : 'text-muted-foreground'
-            }
-          >
-            {offClockShift.kind === 'none'
-              ? shiftsSettled
-                ? t('clockInHintNoShift')
-                : t('clockInHint')
-              : offClockShift.kind === 'declined'
-                ? t('declinedTodayHint')
-                : t('clockInHint')}
-          </Small>
-        </>
-      )}
-      {/*
+              in every state, so it is what an unsettled query falls back to.
+              A missed past shift alone must not claim "nothing's scheduled". */}
+            <Small
+              className={
+                tone === 'positive'
+                  ? 'text-muted-strong'
+                  : 'text-muted-foreground'
+              }
+            >
+              {offClockShift.kind === 'none'
+                ? shiftsSettled && !missedShift
+                  ? t('clockInHintNoShift')
+                  : t('clockInHint')
+                : offClockShift.kind === 'declined'
+                  ? t('declinedTodayHint')
+                  : t('clockInHint')}
+            </Small>
+          </>
+        )}
+        {/*
         Mounted while the sheet is open (including across useClockOut's
         optimistic clear) so a 409 TIME_ENTRY_OVERLAPS — which invalidates
         rather than rolling back — cannot wipe the typed break/note. Unmounted
         once closed so success still clears `clockout-sheet` from the tree.
       */}
-      {showClockOutSheet ? (
-        <ClockOutSheet
-          visible={showClockOutSheet}
-          onDismiss={() => {
-            setRefusal(null);
-            setShowClockOutSheet(false);
-          }}
-          onSubmit={handleConfirmClockOut}
-          isSubmitting={clockOut.isPending}
-          clockInAt={sheetClockInAt}
-          timeZone={timeZone}
-          // Only pre-filled once overdue. Left undefined for an ordinary
-          // clock-out on purpose: the sheet then sends no finish at all
-          // and the server's own clock records it, keeping the
-          // second-level precision a typed HH:MM would round away.
-          defaultClockOutAt={sheetDefaultClockOutAt}
-          showOverdueHint={sheetShowOverdueHint}
-          submitError={refusal}
-        />
-      ) : null}
+        {showClockOutSheet ? (
+          <ClockOutSheet
+            visible={showClockOutSheet}
+            onDismiss={() => {
+              setRefusal(null);
+              setShowClockOutSheet(false);
+            }}
+            onSubmit={handleConfirmClockOut}
+            isSubmitting={clockOut.isPending}
+            clockInAt={sheetClockInAt}
+            timeZone={timeZone}
+            // Only pre-filled once overdue. Left undefined for an ordinary
+            // clock-out on purpose: the sheet then sends no finish at all
+            // and the server's own clock records it, keeping the
+            // second-level precision a typed HH:MM would round away.
+            defaultClockOutAt={sheetDefaultClockOutAt}
+            showOverdueHint={sheetShowOverdueHint}
+            submitError={refusal}
+          />
+        ) : null}
 
-      <VoidEntryDialog
-        open={isDiscardOpen}
-        onOpenChange={setIsDiscardOpen}
-        onConfirm={handleDiscardConfirm}
-        isSubmitting={voidEntry.isPending}
-        testIDPrefix="today-discard-dialog"
-        title={t('discard.confirmTitle')}
-        // Past ten minutes the body names the duration being thrown away —
-        // "I didn't mean to clock in" is not enough said before discarding
-        // six hours that might have been real work.
-        body={
-          elapsedMs > DISCARD_ELAPSED_HINT_MS
-            ? t('discard.confirmBodyElapsed', {
-                elapsed: formatDuration(Math.round(elapsedMs / 60_000)),
-              })
-            : t('discard.confirmBody')
-        }
-        cancelLabel={t('discard.confirmCancel')}
-        confirmLabel={t('discard.confirmAction')}
-      />
-    </Card>
+        {showMissedHoursSheet && missedShift ? (
+          <MissedHoursSheet
+            householdId={householdId}
+            timeZone={timeZone}
+            onDismiss={() => setShowMissedHoursSheet(false)}
+            initialDate={missedShift.local_date}
+            initialStart={utcIsoToWallClockHHMM(
+              missedShift.starts_at,
+              timeZone
+            )}
+            initialEnd={utcIsoToWallClockHHMM(missedShift.ends_at, timeZone)}
+          />
+        ) : null}
+
+        <VoidEntryDialog
+          open={isDiscardOpen}
+          onOpenChange={setIsDiscardOpen}
+          onConfirm={handleDiscardConfirm}
+          isSubmitting={voidEntry.isPending}
+          testIDPrefix="today-discard-dialog"
+          title={t('discard.confirmTitle')}
+          // Past ten minutes the body names the duration being thrown away —
+          // "I didn't mean to clock in" is not enough said before discarding
+          // six hours that might have been real work.
+          body={
+            elapsedMs > DISCARD_ELAPSED_HINT_MS
+              ? t('discard.confirmBodyElapsed', {
+                  elapsed: formatDuration(Math.round(elapsedMs / 60_000)),
+                })
+              : t('discard.confirmBody')
+          }
+          cancelLabel={t('discard.confirmCancel')}
+          confirmLabel={t('discard.confirmAction')}
+        />
+      </Card>
+
+      {/* Missed shift is its own Card beneath the clock-in card — never the
+        card hero. Same Card vocabulary (`p-5.5`, soft plum elevation via
+        `useElevation` inside Card) so the two read as sibling blocks
+        separated by light, not a floating row on the page wash. Opens the
+        same prefilled MissedHoursSheet. */}
+      {!entry && missedShift ? (
+        <Card testID="today-off-clock-missed" className="gap-2 p-5.5">
+          <Body tabular>
+            {t('missedShiftBody', {
+              start: formatClockTime(missedShift.starts_at, timeZone),
+              end: formatClockTime(missedShift.ends_at, timeZone),
+            })}
+          </Body>
+          <Button
+            testID="today-log-missed-shift"
+            variant="outline"
+            size="default"
+            onPress={() => setShowMissedHoursSheet(true)}
+          >
+            {t('missedHours.cta')}
+          </Button>
+          <Small className="text-muted-foreground">
+            {t('missedShiftHint')}
+          </Small>
+        </Card>
+      ) : null}
+    </View>
   );
 }

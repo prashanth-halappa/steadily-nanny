@@ -820,6 +820,42 @@ describe('NannyWeekView — an approval the roll-up took away', () => {
       'changedAfterApproval.detailNanny'
     );
   });
+
+  // A4 — the test nobody wrote: the timeline and the week-changed block IN
+  // THE SAME RENDER. A demoted week IS `submitted`, so the hard-coded three
+  // steps fired and put grey "Waiting for approval" directly above "the
+  // family approved this week on 10 August, then the hours changed." One
+  // card, two contradictory claims, on her money screen.
+  it('never says waiting-for-approval above a sentence saying it was approved', async () => {
+    getWeekMock.mockImplementation(() =>
+      Promise.resolve([
+        makeTimesheetWeek({
+          status: 'submitted',
+          approved_by: null,
+          approved_at: null,
+          previous_approval: {
+            approved_at: '2026-08-10T09:00:00.000Z',
+            approved_by: 'parent-1',
+            gross_minor: 23_612,
+            currency: 'GBP',
+            worked_minutes: 2460,
+          },
+        }),
+      ])
+    );
+
+    const { getByTestId, queryByTestId, getByText, queryByText } =
+      renderNannyView();
+
+    await waitFor(() => expect(getByTestId('hours-week-changed')).toBeTruthy());
+    expect(getByTestId('hours-status-timeline')).toBeTruthy();
+    expect(getByTestId('hours-timeline-approved')).toBeTruthy();
+    expect(getByTestId('hours-timeline-changed')).toBeTruthy();
+    // Step 4 states who owes the next move, and it is the household.
+    expect(getByText('timeline.waitingAgain')).toBeTruthy();
+    expect(queryByText('timeline.waiting')).toBeNull();
+    expect(queryByTestId('hours-timeline-opened')).toBeNull();
+  });
 });
 
 // The one field that exists purely for trust, in the one window where it is

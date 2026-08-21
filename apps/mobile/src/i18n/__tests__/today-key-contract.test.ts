@@ -52,9 +52,9 @@ const DELETED_TODAY_KEYS = [
 ] as const;
 
 const SCHEDULE_COVER_PINS: Record<string, string> = {
-  'cover.iveGotIt': "I've got it",
+  'cover.iveGotIt': "I'm covering this",
   'cover.allCovered': 'Everything you asked for is booked.',
-  'cover.hoursWrong': 'These hours are wrong',
+  'cover.hoursWrong': 'Change our care hours',
   'cover.undoCovering': 'Undo',
   'cover.coveringToast': 'Marked as covered by you',
   'cover.undoneToast': "Removed — that time isn't covered again.",

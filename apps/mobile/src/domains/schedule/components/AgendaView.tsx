@@ -13,7 +13,7 @@ import {
 } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { uncoveredKey } from '@steadily-nanny/shared-types/uncoveredCare';
 import { type Href, useRouter } from 'expo-router';
-import { AlertCircle, Plane } from 'lucide-react-native';
+import { AlertCircle, HelpCircle, Plane } from 'lucide-react-native';
 import { type ReactElement, type RefObject, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
@@ -25,7 +25,7 @@ import { DayHeader } from '@/src/components/ui/day-header';
 import { IconChip } from '@/src/components/ui/icon-chip';
 import { NowLine } from '@/src/components/ui/now-line';
 import { StatusPill } from '@/src/components/ui/status-pill';
-import { Body, H4, Small } from '@/src/components/ui/typography';
+import { Body, Caption, H4, Small } from '@/src/components/ui/typography';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
 import {
   resolveCarerName,
@@ -34,10 +34,12 @@ import {
 import {
   formatShiftTime,
   localDateToWeekday,
-  RESOLVED_STATUSES,
-  shiftMinutes,
+  totalCoveringMinutes,
 } from '@/src/domains/schedule/utils/shiftGrouping';
-import { timeOffRowsForLocalDate } from '@/src/domains/schedule/utils/timeOffOverlap';
+import {
+  shiftOverlapsTimeOff,
+  timeOffRowsForLocalDate,
+} from '@/src/domains/schedule/utils/timeOffOverlap';
 import {
   describeUncoveredCause,
   inferUncoveredCauseDetail,
@@ -109,6 +111,7 @@ function UncoveredRow({
   window,
   highlighted,
   isPrimary,
+  nowMs,
   householdId,
   displayTimeZone,
   childName,
@@ -125,6 +128,9 @@ function UncoveredRow({
   window: UncoveredWindowDisplay;
   highlighted: boolean;
   isPrimary: boolean;
+  /** Same `Date.now()` the row's "now" line uses — one reference per
+   * render, not a per-row clock read. Feeds B1's 72-hour loudness horizon. */
+  nowMs: number;
   householdId: string;
   displayTimeZone?: string | null;
   childName: string;
@@ -150,6 +156,13 @@ function UncoveredRow({
   const elevation = useElevation();
   const createCover = useCreateParentCover();
   const key = uncoveredKey(window);
+
+  // B1 — loudness earns its place from the SAME 72-hour "act now" horizon
+  // the `uncovered_care_detected` push already uses (docs/12-NEED-COVERAGE.md
+  // §5), not from being earliest in a Monday's list order. A Friday gap on
+  // a Monday morning is real, but it isn't an alarm yet.
+  const isLoud =
+    isPrimary && Date.parse(window.startsAt) - nowMs < 72 * 3600_000;
 
   const formattedStart = formatShiftTime(window.startsAt, displayTimeZone);
   const formattedEnd = formatShiftTime(window.endsAt, displayTimeZone);
@@ -214,12 +227,68 @@ function UncoveredRow({
     return `/(private)/schedule/shifts/extra?${params.toString()}` as Href;
   })();
 
+  // C — "I'm covering this" cannot flatly say nobody hears about it:
+  // `shiftCommandService.notifyCarersParentCover` pushes a carer whose
+  // pending/confirmed shift the same local date starts exactly when this
+  // cover window ends ("Your day starts {{time}} as planned"). Mirrors that
+  // condition exactly rather than guessing — if the two drift, the app
+  // states the wrong recipient, which is worse than stating none.
+  const adjacentCarerShift = shifts.find(
+    s =>
+      s.carer_id &&
+      (s.status === 'pending' || s.status === 'confirmed') &&
+      s.starts_at === window.endsAt
+  );
+  const adjacentCarerName = adjacentCarerShift?.carer_id
+    ? resolveMemberDisplayName(
+        adjacentCarerShift.carer_id,
+        currentUserId,
+        membersByUserId,
+        memberLabels
+      )
+    : null;
+  const coverRecipientLine = adjacentCarerName
+    ? t('recipient.parentCoverAdjacent', {
+        name: adjacentCarerName,
+        time: formatShiftTime(window.endsAt, displayTimeZone),
+      })
+    : t('recipient.parentCover');
+
+  const askLabel = carerFirstName
+    ? t('cover.askToCover', {
+        carerName: carerFirstName,
+        start: formattedStart,
+      })
+    : t('cover.askSomeoneToCover', {
+        start: formattedStart,
+        end: formattedEnd,
+      });
+  // Quiet half-width buttons cannot fit the long time-range labels; the H4
+  // above already states child + window, so drop the range here only.
+  const askLabelQuiet = carerFirstName
+    ? t('cover.askToCoverShort', { carerName: carerFirstName })
+    : t('cover.askSomeoneToCoverShort');
+
+  const handleCoverPress = () => {
+    if (!householdId) return;
+    void createCover.mutateAsync({
+      householdId,
+      starts_at: window.startsAt,
+      ends_at: window.endsAt,
+      child_id: window.childId,
+    });
+  };
+
+  const recipientToneClass = isLoud
+    ? 'text-muted-strong'
+    : 'text-muted-foreground';
+
   return (
     <View
       testID={`schedule-uncovered-${key}`}
       className="mx-5.5 mb-2 gap-3 rounded-row p-4"
       style={[
-        isPrimary ? elevation.cardProminent : elevation.row,
+        isLoud ? elevation.cardProminent : elevation.row,
         {
           // The quiet tier is a WHITE card, not a paler amber: `pill.warning`
           // (#F1E5D5) and `surfaceAttention` (#F4EADC) differ by ~0.02 of a
@@ -228,7 +297,7 @@ function UncoveredRow({
           // alarms. White ground + the amber icon chip and pill carrying the
           // state is the same information in a rung the eye can actually
           // separate (and the pill is invisible on an amber ground).
-          backgroundColor: isPrimary ? colors.surfaceAttention : colors.card,
+          backgroundColor: isLoud ? colors.surfaceAttention : colors.card,
           borderWidth: highlighted ? 2 : 0,
           borderColor: highlighted ? colors.warningStrong : undefined,
         },
@@ -236,65 +305,138 @@ function UncoveredRow({
     >
       <View className="gap-1">
         <View className="flex-row items-center gap-2">
-          <IconChip tone="brand" icon={AlertCircle} />
+          <IconChip
+            tone={isLoud ? 'brand' : 'schedule'}
+            icon={isLoud ? AlertCircle : HelpCircle}
+          />
           <H4 className="flex-1">
             {childName} · {timeLabel}
           </H4>
           <StatusPill variant="uncovered" label={t('cover.rowPill')} />
         </View>
         <Small
-          className={isPrimary ? 'text-muted-strong' : 'text-muted-foreground'}
+          className={isLoud ? 'text-muted-strong' : 'text-muted-foreground'}
         >
           {causeLabel}
         </Small>
       </View>
       {showActions ? (
         <View className="gap-2">
-          <RestrictedActionButton
-            testID={`schedule-uncovered-ask-${key}`}
-            size="sm"
-            label={
-              carerFirstName
-                ? t('cover.askToCover', {
-                    carerName: carerFirstName,
-                    start: formattedStart,
-                  })
-                : t('cover.askSomeoneToCover', {
-                    start: formattedStart,
-                    end: formattedEnd,
-                  })
-            }
-            reason={closedReason}
-            onPress={() => router.push(extraHref)}
-          />
-          <RestrictedActionButton
-            testID={`schedule-uncovered-cover-${key}`}
-            size="sm"
-            variant="secondary"
-            label={t('cover.iveGotIt')}
-            reason={closedReason}
-            disabled={createCover.isPending}
-            onPress={() => {
-              if (!householdId) return;
-              void createCover.mutateAsync({
-                householdId,
-                starts_at: window.startsAt,
-                ends_at: window.endsAt,
-                child_id: window.childId,
-              });
-            }}
-          />
-          {/* A ghost Button, not a bare Pressable wrapping coloured Body
-              text — see SchedulePatternBanner.tsx:222-234. Also fixes a
-              sub-44pt touch target. */}
-          <Button
-            testID={`schedule-uncovered-hours-${key}`}
-            variant="ghost"
-            size="sm"
-            onPress={() => router.push('/settings/children' as Href)}
-          >
-            {t('cover.hoursWrong')}
-          </Button>
+          {isLoud ? (
+            <>
+              <View className="gap-1">
+                <RestrictedActionButton
+                  testID={`schedule-uncovered-ask-${key}`}
+                  size="sm"
+                  label={askLabel}
+                  reason={closedReason}
+                  onPress={() => router.push(extraHref)}
+                />
+                <Caption
+                  testID={`schedule-uncovered-ask-${key}-recipient`}
+                  className={recipientToneClass}
+                >
+                  {t('recipient.askCover')}
+                </Caption>
+              </View>
+              <View className="gap-1">
+                <RestrictedActionButton
+                  testID={`schedule-uncovered-cover-${key}`}
+                  size="sm"
+                  variant="secondary"
+                  label={t('cover.iveGotIt')}
+                  reason={closedReason}
+                  disabled={createCover.isPending}
+                  onPress={handleCoverPress}
+                />
+                <Caption
+                  testID={`schedule-uncovered-cover-${key}-recipient`}
+                  className={recipientToneClass}
+                >
+                  {coverRecipientLine}
+                </Caption>
+              </View>
+              {/* A ghost Button, not a bare Pressable wrapping coloured Body
+                  text — see SchedulePatternBanner.tsx:222-234. Also fixes a
+                  sub-44pt touch target. */}
+              <View className="gap-1">
+                <Button
+                  testID={`schedule-uncovered-hours-${key}`}
+                  variant="ghost"
+                  size="sm"
+                  onPress={() => router.push('/settings/children' as Href)}
+                >
+                  {t('cover.hoursWrong')}
+                </Button>
+                <Caption
+                  testID={`schedule-uncovered-hours-${key}-recipient`}
+                  className={recipientToneClass}
+                >
+                  {t('recipient.careHours')}
+                </Caption>
+              </View>
+            </>
+          ) : (
+            // B2 — the quiet tier's two REAL choices side by side, both
+            // secondary — the H4 above already names the child and time,
+            // so there is no full-width alarm button to earn its own row.
+            // The settings link demotes to a ghost, self-start link rather
+            // than a third equal action.
+            <>
+              <View className="flex-row gap-2">
+                <View className="flex-1 gap-1">
+                  <RestrictedActionButton
+                    testID={`schedule-uncovered-ask-${key}`}
+                    size="sm"
+                    variant="secondary"
+                    label={askLabelQuiet}
+                    reason={closedReason}
+                    onPress={() => router.push(extraHref)}
+                  />
+                  <Caption
+                    testID={`schedule-uncovered-ask-${key}-recipient`}
+                    className={recipientToneClass}
+                  >
+                    {t('recipient.askCover')}
+                  </Caption>
+                </View>
+                <View className="flex-1 gap-1">
+                  <RestrictedActionButton
+                    testID={`schedule-uncovered-cover-${key}`}
+                    size="sm"
+                    variant="secondary"
+                    label={t('cover.iveGotIt')}
+                    reason={closedReason}
+                    disabled={createCover.isPending}
+                    onPress={handleCoverPress}
+                  />
+                  <Caption
+                    testID={`schedule-uncovered-cover-${key}-recipient`}
+                    className={recipientToneClass}
+                  >
+                    {coverRecipientLine}
+                  </Caption>
+                </View>
+              </View>
+              <View className="gap-1 self-start">
+                <Button
+                  testID={`schedule-uncovered-hours-${key}`}
+                  variant="ghost"
+                  size="sm"
+                  className="self-start"
+                  onPress={() => router.push('/settings/children' as Href)}
+                >
+                  {t('cover.hoursWrong')}
+                </Button>
+                <Caption
+                  testID={`schedule-uncovered-hours-${key}-recipient`}
+                  className={recipientToneClass}
+                >
+                  {t('recipient.careHours')}
+                </Caption>
+              </View>
+            </>
+          )}
         </View>
       ) : null}
     </View>
@@ -431,11 +573,7 @@ export function AgendaView({
         a.starts_at.localeCompare(b.starts_at)
       );
       const totalMinutes =
-        dayShifts.length === 0
-          ? null
-          : dayShifts
-              .filter(shift => !RESOLVED_STATUSES.has(shift.status))
-              .reduce((sum, shift) => sum + shiftMinutes(shift), 0);
+        dayShifts.length === 0 ? null : totalCoveringMinutes(dayShifts);
       result.push({
         type: 'header',
         key: `header-${localDate}`,
@@ -607,6 +745,7 @@ export function AgendaView({
                 window={item.window}
                 highlighted={item.highlighted}
                 isPrimary={item.isPrimary}
+                nowMs={nowMs}
                 householdId={householdId}
                 displayTimeZone={displayTimeZone}
                 childName={child?.name ?? ''}
@@ -638,27 +777,49 @@ export function AgendaView({
                 : [];
             }
           );
+          // D77a: a shift keeps rendering as a normally-booked row even when
+          // its own carer has accepted time off across it — nothing on the
+          // row itself said the two collide. `ShiftRow` is shared with the
+          // parent-cover flow and out of scope here, so the flag is a
+          // sibling pill beneath the row rather than a prop threaded into
+          // it — same StatusPill vocabulary (`uncovered`, the "unattended"
+          // hue) the coverage gap rows already use.
+          const hasTimeOffConflict = shiftOverlapsTimeOff(item.shift, timeOff);
           return (
-            <ShiftRow
-              shift={item.shift}
-              displayTimeZone={displayTimeZone}
-              carerName={showCarerNames ? carerFirstName(item.shift) : null}
-              carerColour={
-                showCarerNames && item.shift.carer_id
-                  ? (membersByUserId.get(item.shift.carer_id)?.colour ??
-                    undefined)
-                  : undefined
-              }
-              assignedChildren={assignedChildren}
-              currentUserId={currentUserId}
-              membersByUserId={membersByUserId}
-              memberLabels={memberLabels}
-              showParentCoverUndo={
-                showUncoveredActions &&
-                item.shift.kind === SHIFT_KINDS.PARENT_COVER
-              }
-              coverUndoDisabledReason={closedReason}
-            />
+            <View>
+              <ShiftRow
+                shift={item.shift}
+                displayTimeZone={displayTimeZone}
+                carerName={showCarerNames ? carerFirstName(item.shift) : null}
+                carerColour={
+                  showCarerNames && item.shift.carer_id
+                    ? (membersByUserId.get(item.shift.carer_id)?.colour ??
+                      undefined)
+                    : undefined
+                }
+                assignedChildren={assignedChildren}
+                currentUserId={currentUserId}
+                membersByUserId={membersByUserId}
+                memberLabels={memberLabels}
+                showParentCoverUndo={
+                  showUncoveredActions &&
+                  item.shift.kind === SHIFT_KINDS.PARENT_COVER
+                }
+                coverUndoDisabledReason={closedReason}
+              />
+              {hasTimeOffConflict ? (
+                <View
+                  testID={`schedule-shift-timeoff-conflict-${item.shift.id}`}
+                  className="mx-5.5 mb-2 flex-row items-center"
+                  style={{ marginTop: -8 }}
+                >
+                  <StatusPill
+                    variant="uncovered"
+                    label={t('shifts.timeOffConflict')}
+                  />
+                </View>
+              ) : null}
+            </View>
           );
         }}
       />

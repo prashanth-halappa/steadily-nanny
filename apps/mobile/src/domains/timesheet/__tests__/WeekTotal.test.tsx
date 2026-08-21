@@ -19,6 +19,7 @@ import { join } from 'node:path';
 import { render } from '@testing-library/react-native';
 import { palette } from '~/lib/design-tokens/palette';
 import { WeekTotal } from '../components/WeekTotal';
+import { positionOf, testIDOrder } from './statementOrder';
 
 const SURFACE_ATTENTION = palette.light.surfaceAttention.hex;
 const SURFACE_POSITIVE = palette.light.surfacePositive.hex;
@@ -728,6 +729,63 @@ describe('WeekTotal', () => {
       expect(queryByTestId('hours-timesheet-status')).toBeNull();
     });
 
+    // A4 — a demoted week IS `submitted`, so the hard-coded three steps
+    // fired and landed grey "Waiting for approval" directly above
+    // "{household} approved this week on 19 August, then the hours
+    // changed." The timeline was describing a week that had never been
+    // approved, next to a sentence saying it had been.
+    it('never says waiting-for-approval above a sentence saying it was approved', () => {
+      const { getByTestId, queryByTestId, getByText, queryByText } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="submitted"
+          earningsRole="nanny"
+          householdName="the Smiths"
+          parentViewedDateLabel="16 August"
+          previousApprovalDateLabel="19 August"
+          weekChanged={{
+            headline:
+              'the Smiths approved this week on 19 August, then the hours changed.',
+            amountCaption: null,
+            amountLabel: null,
+            detail: null,
+          }}
+        />
+      );
+
+      expect(getByTestId('hours-week-changed')).toBeTruthy();
+      expect(getByTestId('hours-timeline-approved')).toBeTruthy();
+      expect(getByTestId('hours-timeline-changed')).toBeTruthy();
+      expect(getByText('timeline.waitingAgain')).toBeTruthy();
+      // The household demonstrably opened a week it approved.
+      expect(queryByTestId('hours-timeline-opened')).toBeNull();
+      // Who owes the next move is now STATED, and it is never her.
+      expect(queryByText('timeline.waiting')).toBeNull();
+    });
+
+    // Same defect, ordinary week: "Waiting for approval" names no one.
+    it('names the household in the waiting step of an ordinary submitted week', () => {
+      const named = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="submitted"
+          earningsRole="nanny"
+          householdName="the Smiths"
+        />
+      );
+      expect(named.getByText('timeline.waitingNamed')).toBeTruthy();
+
+      // No name to use — the old unattributed sentence is the fallback.
+      const unnamed = render(
+        <WeekTotal
+          testID="hours-week-total"
+          timesheetStatus="submitted"
+          earningsRole="nanny"
+        />
+      );
+      expect(unnamed.getByText('timeline.waiting')).toBeTruthy();
+    });
+
     it('reads timeline.opened when parentViewedDateLabel is set and timeline.notOpened when it is null', () => {
       const opened = render(
         <WeekTotal
@@ -1026,6 +1084,50 @@ describe('WeekTotal', () => {
       expect(queryByTestId('hours-withdraw-query-button')).toBeNull();
     });
 
+    // C — "who hears this when I tap it": an action slot may carry a
+    // `recipient` caption, rendered directly below its own button.
+    it('renders a recipient caption below an action when one is supplied', () => {
+      const { getByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          primaryAction={{
+            testID: 'hours-approve-button',
+            label: 'Approve the week',
+            onPress: () => {},
+            recipient: 'Priya is told the week is approved.',
+          }}
+          secondaryAction={{
+            testID: 'hours-query-button',
+            label: 'Ask about this week',
+            onPress: () => {},
+            recipient: 'Sends your question to Priya and holds off approval.',
+          }}
+        />
+      );
+
+      expect(getByTestId('hours-approve-button-recipient').props.children).toBe(
+        'Priya is told the week is approved.'
+      );
+      expect(getByTestId('hours-query-button-recipient').props.children).toBe(
+        'Sends your question to Priya and holds off approval.'
+      );
+    });
+
+    it('renders no recipient caption when an action omits one', () => {
+      const { queryByTestId } = render(
+        <WeekTotal
+          testID="hours-week-total"
+          primaryAction={{
+            testID: 'hours-approve-button',
+            label: 'Approve the week',
+            onPress: () => {},
+          }}
+        />
+      );
+
+      expect(queryByTestId('hours-approve-button-recipient')).toBeNull();
+    });
+
     it('disables the tertiary action while its mutation is in flight', () => {
       const { getByTestId } = render(
         <WeekTotal
@@ -1078,6 +1180,58 @@ describe('WeekTotal — the week changed after it was approved', () => {
     expect(getByTestId('hours-week-changed-detail').props.children).toBe(
       '8h 00m on 12 August, not covered by the approved total.'
     );
+  });
+
+  // A3 — the `Figure28` slot holds a TOTAL everywhere else on this screen.
+  // The caption is the only thing that tells the two shapes apart, so it
+  // sits BETWEEN the headline and the figure: a label after the number it
+  // labels is a number read bare.
+  it('renders the caption between the headline and the figure', () => {
+    const view = render(
+      <WeekTotal
+        testID="hours-week-total"
+        timesheetStatus="submitted"
+        earningsRole="parent"
+        weekChanged={{
+          headline: 'You approved this week on 10 August, then it changed.',
+          amountCaption: 'The whole week now comes to',
+          amountLabel: '£306.12',
+          detail: 'Amara logged 8h 00m on 12 August.',
+        }}
+      />
+    );
+
+    expect(
+      view.getByTestId('hours-week-changed-amount-caption').props.children
+    ).toBe('The whole week now comes to');
+
+    const order = testIDOrder(view.toJSON());
+    const caption = positionOf(order, 'hours-week-changed-amount-caption');
+    expect(caption).toBeGreaterThan(
+      positionOf(order, 'hours-week-changed-headline')
+    );
+    expect(caption).toBeLessThan(
+      positionOf(order, 'hours-week-changed-amount')
+    );
+  });
+
+  it('omits the caption along with the figure it labels', () => {
+    const { queryByTestId } = render(
+      <WeekTotal
+        testID="hours-week-total"
+        timesheetStatus="submitted"
+        earningsRole="parent"
+        weekChanged={{
+          headline: 'You approved this week on 10 August, then it changed.',
+          amountCaption: 'The whole week now comes to',
+          amountLabel: null,
+          detail: 'It is being worked out again.',
+        }}
+      />
+    );
+
+    expect(queryByTestId('hours-week-changed-amount')).toBeNull();
+    expect(queryByTestId('hours-week-changed-amount-caption')).toBeNull();
   });
 
   it('omits the figure entirely when the caller could not derive one', () => {

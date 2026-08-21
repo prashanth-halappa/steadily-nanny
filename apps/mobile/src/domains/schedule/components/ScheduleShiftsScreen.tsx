@@ -489,6 +489,14 @@ export function ScheduleShiftsScreen({
               duration: formatDuration(weekTotalMinutes),
             })}
           </Figure28>
+          {!isNannyVoice && carerList.length > 1 ? (
+            <Small
+              testID="schedule-week-total-note"
+              className="text-muted-strong"
+            >
+              {t('shifts.weekTotalAllCarers')}
+            </Small>
+          ) : null}
         </View>
         {/* Tab-root only: Settings is reached from the header now (WP-C),
             and the pushed variant above already has its own back button. */}
@@ -602,7 +610,9 @@ export function ScheduleShiftsScreen({
           testID="schedule-away-summary"
           className="px-5.5 pb-2 text-muted-strong"
         >
-          {t('shifts.awaySummary')}
+          {isNannyVoice
+            ? t('shifts.awaySummaryNanny')
+            : t('shifts.awaySummary')}
         </Small>
       ) : null}
     </View>

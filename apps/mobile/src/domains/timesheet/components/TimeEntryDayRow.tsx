@@ -19,10 +19,27 @@
  * than showing one that will be refused (`onEditEntry` is simply not passed
  * — `NannyWeekView`), and the lock note stays at card level, once, never
  * repeated down the list.
+ *
+ * A5 — A DAY OF MORE THAN TWO PUNCHES COLLAPSES. Seven lines, five of them
+ * under three minutes, two struck through, is the record and must stay
+ * reachable; it must not be the first thing between a reader and everything
+ * below it. Two rules the collapse never breaks:
+ *
+ * 1. A day with a RUNNING entry is always expanded. The live state is the
+ *    one thing that must never be behind a tap.
+ * 2. Nothing two parties could argue about is hidden. The voided and edited
+ *    counts are the two facts a collapse would otherwise bury, so the
+ *    summary PROMOTES them ("7 entries · 2 voided, not counted · 1 edited")
+ *    rather than concealing them.
+ *
+ * The chevron goes INSIDE the already-reserved `CHEVRON_SLOT`, so the day
+ * total lands in the same column whether or not the day can collapse.
  */
+import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { Icon } from '@/lib/icons/iconWithClassName';
 import { cn } from '@/lib/utils';
 import {
   AlertDialog,
@@ -41,7 +58,7 @@ import { useElevation } from '~/lib/design-tokens/elevation';
 import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
 import type { TimeEntry, TimesheetStatus } from '../types';
 import { formatDuration } from '../utils/duration';
-import { isEntryEditable } from '../utils/entryEdited';
+import { isEntryEditable, wasEntryEdited } from '../utils/entryEdited';
 import { computeEntryMinutes } from '../utils/entryMinutes';
 import { formatDisplayDate } from '../utils/week';
 import { CHEVRON_SLOT, TimeEntryRow } from './TimeEntryRow';
@@ -89,10 +106,22 @@ export function TimeEntryDayRow({
     0
   );
   const isRunning = entries.some(entry => entry.status === 'running');
+  const isCollapsible = entries.length > 2 && !isRunning;
+  const [expanded, setExpanded] = useState(false);
+  const showEntries = !isCollapsible || expanded;
   const todayISO = localDateInZone(timeZone, new Date(nowMs));
   const isToday = date === todayISO;
   const isFuture = date > todayISO;
   const isEmpty = entries.length === 0;
+  const voidedCount = entries.filter(e => e.status === 'voided').length;
+  const editedCount = entries.filter(wasEntryEdited).length;
+  const daySummary = [
+    t('daySummaryEntries', { count: entries.length }),
+    voidedCount > 0 ? t('daySummaryVoided', { count: voidedCount }) : null,
+    editedCount > 0 ? t('daySummaryEdited', { count: editedCount }) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <View testID={testID} className="mb-2">
@@ -110,8 +139,11 @@ export function TimeEntryDayRow({
           { minHeight: ROW_MIN_HEIGHT },
         ]}
       >
-        <View
+        <Pressable
           testID={isEmpty ? undefined : 'hours-day-header'}
+          accessibilityRole={isCollapsible ? 'button' : undefined}
+          accessibilityState={isCollapsible ? { expanded } : undefined}
+          onPress={isCollapsible ? () => setExpanded(open => !open) : undefined}
           className="flex-row items-center justify-between gap-3"
         >
           <View className="min-w-0 flex-1 flex-row items-center gap-2">
@@ -142,15 +174,29 @@ export function TimeEntryDayRow({
             >
               {formatDuration(totalMinutes)}
             </Figure>
-            <View style={{ width: CHEVRON_SLOT }} />
+            {/* The slot is reserved either way — the chevron goes in it, so
+                a column of day totals does not shift by 20px depending on
+                whether the day happens to be busy. */}
+            <View
+              testID={isCollapsible ? 'hours-day-chevron' : undefined}
+              style={{ width: CHEVRON_SLOT }}
+            >
+              {isCollapsible ? (
+                <Icon
+                  icon={expanded ? ChevronUp : ChevronDown}
+                  size={CHEVRON_SLOT}
+                  className="text-muted-foreground"
+                />
+              ) : null}
+            </View>
           </View>
-        </View>
+        </Pressable>
 
         {isEmpty ? (
           <Small className="mt-1 text-muted-foreground">
             {isFuture ? t('notYet') : t('noHoursLogged')}
           </Small>
-        ) : (
+        ) : showEntries ? (
           <View className="mt-1.5 gap-2">
             {entries.map(entry => {
               const canEdit =
@@ -170,6 +216,13 @@ export function TimeEntryDayRow({
               );
             })}
           </View>
+        ) : (
+          <Small
+            testID="hours-day-summary"
+            className="mt-1 text-muted-foreground"
+          >
+            {daySummary}
+          </Small>
         )}
       </View>
 

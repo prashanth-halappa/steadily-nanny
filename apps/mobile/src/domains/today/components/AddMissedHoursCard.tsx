@@ -2,22 +2,15 @@
  * @module domains/today/components/AddMissedHoursCard
  *
  * Forgotten clock-in recovery: a slim CTA on the carer's Today screen opens
- * a `BottomSheetBase` sheet with a date (defaults to today, household
- * zone), a start/end `TimeRangePicker` (never free-text HH:MM — same
- * pattern `ExtraShiftScreen` uses), and an optional note, then submits via
- * `useCreateRetroactiveEntry`. GOLDEN: BottomSheetBase, never a bare RN
- * Modal (GOLDEN-FIXES #1).
- *
- * NOT overnight-capable, despite building its instants with
- * `shiftInstantsFromWallClock`: submit is gated on a strict end-after-start
- * range, so the builder's next-day roll is unreachable from here. A forgotten
- * overnight session has to be corrected from Hours instead.
+ * `MissedHoursSheet` (date, start/end, optional note, submits via
+ * `useCreateRetroactiveEntry`) defaulted to today at 09:00–17:00. This file
+ * owns only the CTA and the GATING (`showCta`) — the sheet itself lives in
+ * `MissedHoursSheet` so `ClockInCard`'s specific ended-shift prompt can open
+ * the same one instead of building a second form.
  *
  * Stays open on failure so nothing typed is lost on a retry; closes and
- * resets only after a successful submit. The refusal renders INSIDE the
- * sheet (`describeTimeEntryWriteError`): the hook does toast it, but the
- * toast host is another RN `<Modal>` and this sheet is one, so on iOS that
- * toast is not reliably visible — the carer saw nothing at all.
+ * resets (by unmounting) only after a successful submit — see
+ * `MissedHoursSheet` for why.
  */
 
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
@@ -25,34 +18,18 @@ import type { TimeEntry } from '@steadily-nanny/shared-types/schemas/timesheet.s
 import { SCHEDULED_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
 import { Fragment, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
-import { BottomSheetBase } from '@/src/components/custom/BottomSheetBase';
 import { Button } from '@/src/components/ui/button';
-import { DateTimeField } from '@/src/components/ui/date-time-field';
-import { LoadingButton } from '@/src/components/ui/loading-button';
-import { Textarea } from '@/src/components/ui/textarea';
-import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
-import { isEndAfterStart } from '@/src/components/ui/time-range-picker.utils';
-import { Body, MetadataLabel, Small } from '@/src/components/ui/typography';
-import {
-  formatDate,
-  parseDate,
-} from '@/src/domains/timeOff/components/TimeOffDateRangePicker.utils';
-import { describeTimeEntryWriteError } from '@/src/domains/timesheet/utils/timeEntryWriteError';
+import { Body, Small } from '@/src/components/ui/typography';
 import {
   getWeekDates,
   getWeekStartISO,
 } from '@/src/domains/timesheet/utils/week';
-import { useCreateRetroactiveEntry } from '@/src/hooks/mutations/useCreateRetroactiveEntry';
 import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
-import { useIsOnline } from '@/src/lib/network';
-import {
-  shiftInstantsFromWallClock,
-  wallClockToUtcIso,
-} from '@/src/lib/wallClock';
+import { wallClockToUtcIso } from '@/src/lib/wallClock';
 import { useAuthStore } from '@/src/store/auth';
+import { MissedHoursSheet } from './MissedHoursSheet';
 
 /** "Was this shift on her schedule and did she log nothing against it" — a
  * day she worked on an unanswered ask is still a day of missing hours. */
@@ -145,9 +122,6 @@ export function AddMissedHoursCard({
   arrangementValidFrom = null,
 }: AddMissedHoursCardProps) {
   const { t } = useTranslation('today');
-  const { t: tErrors } = useTranslation('errors');
-  const isOnline = useIsOnline();
-  const createRetroactiveEntry = useCreateRetroactiveEntry();
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
   const weekStart = useMemo(
     () => getWeekStartISO(new Date(), timeZone, weekStartsOn),
@@ -241,56 +215,6 @@ export function AddMissedHoursCard({
   ]);
 
   const [visible, setVisible] = useState(false);
-  const [date, setDate] = useState(() => localDateInZone(timeZone));
-  const [start, setStart] = useState('09:00');
-  const [end, setEnd] = useState('17:00');
-  const [note, setNote] = useState('');
-  const [refusal, setRefusal] = useState<string | null>(null);
-
-  const isRangeValid = isEndAfterStart(start, end);
-
-  const openSheet = () => {
-    setDate(localDateInZone(timeZone));
-    setStart('09:00');
-    setEnd('17:00');
-    setNote('');
-    setRefusal(null);
-    setVisible(true);
-  };
-
-  const handleDateChange = (_event: unknown, next?: Date) => {
-    if (!next) return;
-    setDate(formatDate(next));
-  };
-
-  const handleSubmit = () => {
-    if (createRetroactiveEntry.isPending) return;
-    setRefusal(null);
-    const { starts_at, ends_at } = shiftInstantsFromWallClock(
-      date,
-      start,
-      end,
-      timeZone
-    );
-    const trimmedNote = note.trim();
-    createRetroactiveEntry
-      .mutateAsync({
-        household_id: householdId,
-        clock_in_at: starts_at,
-        clock_out_at: ends_at,
-        ...(trimmedNote ? { note: trimmedNote } : {}),
-      })
-      .then(() => setVisible(false))
-      // An overlap names the clashing entry's day and range; everything else
-      // gets its specific copy. No "open that entry" action — this screen
-      // has no entry list to open one from, unlike NannyWeekView.
-      .catch((error: unknown) => {
-        setRefusal(
-          describeTimeEntryWriteError(error, tErrors, timeZone, isOnline)
-            .message
-        );
-      });
-  };
 
   if (!showCta) {
     return null;
@@ -317,72 +241,19 @@ export function AddMissedHoursCard({
         testID="today-missed-hours-cta"
         variant="ghost"
         className="-mt-2 self-start px-0"
-        onPress={openSheet}
+        onPress={() => setVisible(true)}
       >
         <Small className="text-primary">{t('missedHours.cta')}</Small>
       </Button>
-      {/*
-        Mounted only while open, same as ClockInCard's ClockOutSheet — RN's
-        `Modal` keeps its children in the render tree regardless of its own
-        `visible` prop, so gating the JSX here (not just passing `visible`
-        through) is what actually removes the sheet's contents from the tree
-        when closed.
-      */}
       {visible ? (
-        <BottomSheetBase
-          sheetId="today-missed-hours"
-          visible={visible}
+        <MissedHoursSheet
+          householdId={householdId}
+          timeZone={timeZone}
           onDismiss={() => setVisible(false)}
-          testID="today-missed-hours-sheet"
-          fitContent
-          showCloseButton
-        >
-          <View className="gap-4 px-6 pb-4">
-            <Body className="text-muted-foreground">
-              {t('missedHours.sheetHint')}
-            </Body>
-            <MetadataLabel className="text-muted-foreground">
-              {t('missedHours.dateLabel')}
-            </MetadataLabel>
-            <DateTimeField
-              testID="today-missed-hours-date"
-              mode="date"
-              value={parseDate(date)}
-              onChange={handleDateChange}
-            />
-            <TimeRangePicker
-              testID="today-missed-hours-times"
-              start={start}
-              end={end}
-              onChange={(nextStart, nextEnd) => {
-                setStart(nextStart);
-                setEnd(nextEnd);
-              }}
-            />
-            <Textarea
-              testID="today-missed-hours-note"
-              accessibilityLabel={t('missedHours.noteLabel')}
-              value={note}
-              onChangeText={setNote}
-              placeholder={t('missedHours.notePlaceholder')}
-            />
-            {refusal ? (
-              <Small
-                testID="today-missed-hours-error"
-                className="text-error-inline-text"
-              >
-                {refusal}
-              </Small>
-            ) : null}
-            <LoadingButton
-              testID="today-missed-hours-submit"
-              label={t('missedHours.submit')}
-              isLoading={createRetroactiveEntry.isPending}
-              disabled={!isRangeValid}
-              onPress={handleSubmit}
-            />
-          </View>
-        </BottomSheetBase>
+          initialDate={localDateInZone(timeZone)}
+          initialStart="09:00"
+          initialEnd="17:00"
+        />
       ) : null}
     </Fragment>
   );

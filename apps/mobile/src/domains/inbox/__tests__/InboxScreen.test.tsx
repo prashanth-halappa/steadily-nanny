@@ -6,8 +6,12 @@
  * empty-success copy). Pattern A markers live in InboxScreen.source.test.ts.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import { join } from 'node:path';
 import { fireEvent, render } from '@testing-library/react-native';
 import type { InboxItem } from '../utils/buildInboxItems';
+
+const EN_EMPTY_BODY =
+  'Nothing needs you right now. Schedule changes, usual weeks and questions about hours all show up here.';
 
 let InboxScreen: typeof import('../components/InboxScreen').InboxScreen;
 let mockUseInboxItems: ReturnType<typeof mock>;
@@ -120,6 +124,12 @@ function leadingTestId(node: {
     if (id) return id;
   }
   return undefined;
+}
+
+async function inboxLocale(language: 'en' | 'es') {
+  return Bun.file(
+    join(__dirname, `../../../i18n/locales/${language}/inbox.json`)
+  ).json() as Promise<{ emptyTitle: string; emptyBody: string }>;
 }
 
 describe('InboxScreen', () => {
@@ -394,5 +404,63 @@ describe('InboxScreen', () => {
 
     expect(getByTestId('inbox-empty')).toBeTruthy();
     expect(queryByTestId('inbox-lead')).toBeNull();
+  });
+
+  // Between-us tab: the header contextLine must not contradict the empty
+  // state. react-i18next is key-echo mocked — assert keys / node presence.
+  it('omits screenSubtitle contextLine when there are no items', () => {
+    const { getByTestId, queryByTestId, getByText } = render(<InboxScreen />);
+
+    expect(getByTestId('inbox-empty')).toBeTruthy();
+    expect(getByText('emptyTitle')).toBeTruthy();
+    expect(getByText('emptyBody')).toBeTruthy();
+    expect(queryByTestId('inbox-header-context')).toBeNull();
+    expect(queryByTestId('inbox-lead')).toBeNull();
+  });
+
+  it('keeps screenSubtitle contextLine and the lead when there are items', () => {
+    mockUseInboxItems.mockImplementation(() => ({
+      isLoading: false,
+      isError: false,
+      refetch: mockRefetch,
+      items: [
+        {
+          kind: 'change_request',
+          id: 'cr-1',
+          shiftId: 'shift-1',
+          requestKind: 'time_change',
+          requestedAt: '2026-08-08T09:00:00.000Z',
+          requesterName: null,
+          shiftStartsAt: null,
+        },
+      ] satisfies InboxItem[],
+    }));
+
+    const { getByTestId, queryByTestId, getByText } = render(<InboxScreen />);
+
+    expect(queryByTestId('inbox-empty')).toBeNull();
+    expect(getByTestId('inbox-header-context')).toBeTruthy();
+    expect(getByText('screenSubtitle')).toBeTruthy();
+    expect(getByTestId('inbox-lead')).toBeTruthy();
+  });
+
+  // Locale sentence values are asserted against the JSON files — emptyBody
+  // must name what the surface holds without jargon.
+  it('names what the surface holds without jargon, in en and es', async () => {
+    const en = await inboxLocale('en');
+    const es = await inboxLocale('es');
+
+    expect(en.emptyTitle).toBe("You're all caught up");
+    expect(en.emptyBody).toBe(EN_EMPTY_BODY);
+    expect(en.emptyBody).not.toContain('!');
+    expect(en.emptyBody.toLowerCase()).not.toContain('patterns');
+    expect(en.emptyBody.toLowerCase()).not.toContain('queried');
+
+    expect(es.emptyTitle.length).toBeGreaterThan(0);
+    expect(es.emptyBody.length).toBeGreaterThan(0);
+    expect(es.emptyBody).not.toContain('!');
+    // Must not keep the old jargon framing.
+    expect(es.emptyBody.toLowerCase()).not.toContain('patrones');
+    expect(es.emptyBody.toLowerCase()).not.toContain('consultadas');
   });
 });

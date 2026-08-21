@@ -47,7 +47,13 @@ import { Card, CardContent } from '@/src/components/ui/card';
 import { IconChip } from '@/src/components/ui/icon-chip';
 import { Text } from '@/src/components/ui/text';
 import { Textarea } from '@/src/components/ui/textarea';
-import { Body, H4, MetadataLabel, Small } from '@/src/components/ui/typography';
+import {
+  Body,
+  Caption,
+  H4,
+  MetadataLabel,
+  Small,
+} from '@/src/components/ui/typography';
 import { localDateInZone } from '@/src/lib/localDate';
 import { formatClockTime } from '../utils/duration';
 import { formatEarningsSpanDate } from '../utils/earningsFormat';
@@ -70,6 +76,13 @@ interface WeekQueryThreadProps {
   timesheetStatus: TimesheetStatus | null | undefined;
   /** Who is looking — the composer fork ONLY; never the message list. */
   viewerRole: EarningsRole;
+  /**
+   * C — who a reply through THIS composer goes to: household name for the
+   * nanny viewer, carer name for the parent viewer
+   * (`timesheetCommandService.addThreadMessage` notifies whoever did not
+   * write it). Rendered as the recipient caption directly under Send.
+   */
+  recipientName: string;
   /** §3.1: she opened a thread on an approved week, so the composer comes
    * back for the conversation that resulted. An approved week whose
    * arithmetic is wrong is the one Marisol has actually lived through. */
@@ -114,6 +127,7 @@ export function WeekQueryThread({
   timeZone,
   timesheetStatus,
   viewerRole,
+  recipientName,
   composerReopened = false,
   onSend,
   isSending = false,
@@ -192,6 +206,17 @@ export function WeekQueryThread({
             >
               <Text>{t('thread.send')}</Text>
             </Button>
+            {/* C — "who hears this when I tap it": below Send, never inside
+                it. `addThreadMessage` notifies whoever did NOT write the
+                message, so `recipientName` is the household for a nanny
+                reply and the carer for a parent one — the caller's job, not
+                this component's. */}
+            <Caption
+              testID={`${testID}-send-recipient`}
+              className="text-muted-foreground"
+            >
+              {t('recipient.threadSend', { recipient: recipientName })}
+            </Caption>
             {/* "A thread that lets her argue but not correct the record is
                 P1 with extra steps" — the day rows stay editable while the
                 week is queried, and the card says so. */}
