@@ -64,6 +64,14 @@ Format: **Symptom → Root cause → Where the fix lives in this repo → What n
 - **Root cause:** the guard's `parseTranslationBindings` builds a `Map` keyed by the **destructured variable name**. A second `const { t } = useTranslation('other')` anywhere in the file rebinds `t`, last one wins, and every `t(...)` call in that file — including the ones that were already correct — is then resolved against the second namespace. Writing the key as `t('other:some.key')` does NOT rescue it when a binding for `t` already exists.
 - **Where the fix lives:** the convention — alias every hook after the first: `const { t: tHours } = useTranslation('hours')`. Worked examples: `apps/mobile/src/domains/pay/components/AmountRow.tsx` and `PayTermsGroups.tsx` (`docs/DEFECT-LOG.md` D64), and `apps/mobile/src/domains/schedule/components/ScheduleRespondScreen.tsx` (`t` + `tCommon`).
 - **What not to do:** don't add a bare `const { t }` to a file that already has one, and don't reach for the `ns:key` prefix to work around the failure — fix the binding.
+- **Sibling failure mode — a correctly-aliased call NESTED inside another `t(...)`'s arguments (2026-08-21):** aliasing is necessary but not sufficient. The guard extracts keys by pulling **every string literal out of a `t(...)` call's argument text**, so a perfectly-aliased `tCommon('theFamily')` sitting inside another call's options object —
+  ```tsx
+  const lead = t('lead.nanny', {
+    hours: weekHoursLabel,
+    family: activeHousehold.household?.name ?? tCommon('theFamily'), // <-- attributed to `hours`
+  });
+  ```
+  — is attributed to the OUTER call's namespace, and the guard reports `theFamily` missing from `hours`. The binding map is right; the extraction never sees the inner call as its own. **Fix: hoist the inner call to a variable first**, then pass the variable. Worked example: `apps/mobile/src/domains/timesheet/components/NannyWeekView.tsx`'s `familyName`, which two `t(...)` calls then share. Note the asymmetry that makes this confusing to diagnose — the same `tCommon('theFamily')` in `TodayScreen.tsx` resolves fine, because there it sits in a plain object literal rather than inside another `t(...)`'s arguments.
 
 **8. Test files matching a route-file naming pattern become real routes in expo-router**
 - **Symptom:** a colocated test file named to match a route file (e.g. something like `_layout.test.tsx` sitting next to `_layout.tsx`) gets picked up by expo-router as an actual navigable route.
