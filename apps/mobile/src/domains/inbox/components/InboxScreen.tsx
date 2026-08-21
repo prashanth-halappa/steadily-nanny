@@ -60,7 +60,7 @@ export function InboxScreen() {
         <ScreenHeader
           testID="inbox-header"
           title={t('screenTitle')}
-          contextLine={t('screenSubtitle')}
+          contextLine={items.length > 0 ? t('screenSubtitle') : undefined}
           trailingAction={<SettingsHeaderButton />}
         />
 

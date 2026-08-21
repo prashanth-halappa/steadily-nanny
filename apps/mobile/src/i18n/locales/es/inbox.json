@@ -3,7 +3,7 @@
   "screenSubtitle": "Pendientes que te esperan.",
   "loading": "Cargando…",
   "emptyTitle": "Todo al día",
-  "emptyBody": "No hay solicitudes de cambio, patrones ni semanas consultadas que necesiten tu respuesta.",
+  "emptyBody": "Nada te necesita ahora. Los cambios de horario, las semanas habituales y las preguntas sobre horas aparecen aquí.",
   "needsAttentionCard": {
     "moreItems_one": "y {{count}} cosa más te espera",
     "moreItems_other": "y {{count}} cosas más te esperan",
