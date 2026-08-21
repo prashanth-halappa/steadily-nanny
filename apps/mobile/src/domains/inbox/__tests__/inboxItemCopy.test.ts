@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'bun:test';
 import { join } from 'node:path';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types';
+import { formatDuration } from '@/src/domains/timesheet/utils/duration';
 import { NOTIFICATION_ROUTE_MAP } from '@/src/lib/notificationRouteMap';
 import type { InboxItem } from '../utils/buildInboxItems';
 import {
@@ -164,10 +165,65 @@ describe('hours-tab hrefs carry householdId (HYBRID contract)', () => {
       householdId: 'hh-9',
       weekStart: '2026-07-28',
       carerDisplayName: 'Test Nanny',
+      totalMinutes: 2310,
     };
     expect(hrefForItem(item)).toBe(
       '/(private)/(tabs)/hours?weekStart=2026-07-28&householdId=hh-9'
     );
+  });
+});
+
+// Approval-queue copy must carry hours and a year — "Week of 4 Jan" on
+// 21 Aug is ambiguous; a blank hours line invites a rubber-stamp.
+describe('submitted_week copy', () => {
+  function makeItem(overrides: Partial<InboxItem> = {}): InboxItem {
+    return {
+      kind: 'submitted_week',
+      id: 'ts-sub',
+      householdId: 'hh-1',
+      weekStart: '2026-01-04',
+      carerDisplayName: 'Jamie Carer',
+      totalMinutes: 2310,
+      ...overrides,
+    } as InboxItem;
+  }
+
+  it('title week param includes the year (formatDisplayDateWithYear)', () => {
+    let week: string | undefined;
+    titleForItem(makeItem(), (key, opts) => {
+      week = opts?.week;
+      return key;
+    });
+    expect(week).toContain('2026');
+  });
+
+  it('subtitle passes formatDuration(totalMinutes) as hours', () => {
+    let hours: string | undefined;
+    subtitleForItem(
+      makeItem(),
+      (key, opts) => {
+        hours = opts?.hours;
+        return key;
+      },
+      ZONE
+    );
+    expect(hours).toBe(formatDuration(2310));
+  });
+
+  it('subtitleFallback also carries hours when no carer name', () => {
+    let hours: string | undefined;
+    let keyUsed = '';
+    subtitleForItem(
+      makeItem({ carerDisplayName: null }),
+      (key, opts) => {
+        keyUsed = key;
+        hours = opts?.hours;
+        return key;
+      },
+      ZONE
+    );
+    expect(keyUsed).toBe('items.submittedWeek.subtitleFallback');
+    expect(hours).toBe(formatDuration(2310));
   });
 });
 
@@ -221,6 +277,21 @@ describe('pending_shift copy', () => {
     expect(
       subtitleForItem(makeItem({ coverAskExpiresAt: null }), t, ZONE)
     ).toBe('items.pendingShift.subtitleNoDeadline');
+  });
+
+  // An expired cover ask must not still read as "Answer by <past time>" —
+  // that presents a deadline six hours gone as work she still owes.
+  it('uses subtitleExpired when coverAskExpiresAt is before now', () => {
+    const item = makeItem({ coverAskExpiresAt: '2026-08-25T06:00:00.000Z' });
+    expect(subtitleForItem(item, t, ZONE, NOW)).toBe(
+      'items.pendingShift.subtitleExpired'
+    );
+  });
+
+  it('keeps subtitle when the deadline is still ahead of now', () => {
+    expect(subtitleForItem(makeItem(), t, ZONE, NOW)).toBe(
+      'items.pendingShift.subtitle'
+    );
   });
 
   // M21: `deadlineForItem` is reserved for Rule B's one coloured-text

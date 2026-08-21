@@ -347,6 +347,7 @@ describe('buildInboxItems', () => {
         status: 'submitted',
         query_note: null,
         carer_display_name: 'Jamie Carer',
+        total_minutes: 2310,
       },
       {
         household_id: 'hh-1',
@@ -385,6 +386,7 @@ describe('buildInboxItems', () => {
         weekStart: '2026-08-04',
         carerDisplayName: 'Jamie Carer',
         personName: 'Jamie Carer',
+        totalMinutes: 2310,
       },
     ]);
   });
@@ -404,6 +406,7 @@ describe('buildInboxItems', () => {
           week_start: '2026-08-04',
           status: 'submitted',
           query_note: null,
+          total_minutes: 1200,
         },
       ],
     });
@@ -415,8 +418,35 @@ describe('buildInboxItems', () => {
         householdId: 'hh-1',
         weekStart: '2026-08-04',
         carerDisplayName: null,
+        totalMinutes: 1200,
       },
     ]);
+  });
+
+  it('carries totalMinutes from the sheet row onto submitted_week (same as stale_submitted_week)', () => {
+    const [item] = buildInboxItems({
+      role: SETUP_ROLES.PARENT,
+      currentUserId: ME,
+      todayISO: '2026-08-25',
+      changeRequests: [],
+      patterns: [],
+      timesheets: [
+        {
+          household_id: 'hh-1',
+          id: 'ts-sub-hours',
+          carer_id: OTHER,
+          week_start: '2026-01-04',
+          status: 'submitted',
+          query_note: null,
+          carer_display_name: 'Jamie Carer',
+          total_minutes: 2310,
+        },
+      ],
+    });
+    expect(item).toMatchObject({
+      kind: 'submitted_week',
+      totalMinutes: 2310,
+    });
   });
 
   // D-46 / M13: her pay is late and she cannot move it herself. An inbox
