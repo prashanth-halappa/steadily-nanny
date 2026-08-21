@@ -549,9 +549,13 @@ export function TodayCoverage({
               </Small>
             );
           }
+          // P3: the day thread is already loaded here, and it is the ONLY
+          // source for `closureRemoved` / `needsAdded` — no shift row records
+          // that a parent deleted an away-day or widened care hours.
           const causeDetail = inferUncoveredCauseDetail(
             window,
-            shiftsQuery.data ?? []
+            shiftsQuery.data ?? [],
+            dayThread.data ?? []
           );
           const carerName = causeDetail.shift
             ? resolveCarerName(

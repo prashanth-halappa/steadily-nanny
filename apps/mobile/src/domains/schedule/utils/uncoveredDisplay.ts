@@ -6,7 +6,10 @@
  * shared-types; this is presentation-only.
  */
 
-import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import type {
+  Shift,
+  ShiftEvent,
+} from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { SHIFT_KINDS } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import type { UncoveredWindow } from '@steadily-nanny/shared-types/uncoveredCare';
 import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
@@ -19,6 +22,15 @@ export type UncoveredCause =
   | 'needsAdded'
   | 'closureRemoved'
   | 'nothingScheduled';
+
+/** Runtime guard for the union above — `payload.cause` arrives as `unknown`. */
+const UNCOVERED_CAUSES: ReadonlySet<string> = new Set<UncoveredCause>([
+  'cancelled',
+  'declined',
+  'needsAdded',
+  'closureRemoved',
+  'nothingScheduled',
+]);
 
 export interface UncoveredWindowDisplay extends UncoveredWindow {
   cause: UncoveredCause;
@@ -60,10 +72,53 @@ export function overlappingShifts(
   });
 }
 
-/** Best-effort cause from current shift rows (live computation has no event history). */
+/**
+ * The cause the API actually recorded, from the day thread's `uncovered_care`
+ * rows (P3). `closureRemoved` and `needsAdded` are UNREACHABLE by inference —
+ * no shift row remembers that a parent deleted an away-day or widened care
+ * hours — so without this the app told a parent "nobody's booked yet" in the
+ * one place it had a specific answer to give.
+ *
+ * Matched on child + commitment + overlap rather than on the exact
+ * `payload.key`: the stored window is whatever was uncovered WHEN it was
+ * raised, and a later partial cover narrows the live window without changing
+ * why the gap opened. Most recent matching row wins. Every field is validated
+ * — `payload` is `Record<string, unknown>` on the wire.
+ */
+function serverUncoveredCause(
+  window: UncoveredWindow,
+  events: readonly ShiftEvent[]
+): UncoveredCause | null {
+  const winStart = Date.parse(window.startsAt);
+  const winEnd = Date.parse(window.endsAt);
+  const matches = events.filter(event => {
+    if (event.event_type !== 'uncovered_care') return false;
+    const payload = event.payload ?? {};
+    if (payload.child_id !== window.childId) return false;
+    if (payload.commitment_id !== window.commitmentId) return false;
+    if (typeof payload.cause !== 'string') return false;
+    if (!UNCOVERED_CAUSES.has(payload.cause)) return false;
+    const start = Date.parse(String(payload.starts_at));
+    const end = Date.parse(String(payload.ends_at));
+    if (Number.isNaN(start) || Number.isNaN(end)) return false;
+    return intervalsOverlap(winStart, winEnd, start, end);
+  });
+  const latest = [...matches].sort(
+    (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)
+  )[0];
+  return latest ? (latest.payload.cause as UncoveredCause) : null;
+}
+
+/**
+ * Best-effort cause. A cancelled/declined shift still wins: it is the fresher
+ * fact (the day thread's row is the ORIGINAL cause, kept idempotent) and it
+ * carries a name and times the server row does not. `events` only fills the
+ * hole underneath — pass the day thread where it is already loaded.
+ */
 export function inferUncoveredCauseDetail(
   window: UncoveredWindow,
-  shifts: readonly Shift[]
+  shifts: readonly Shift[],
+  events: readonly ShiftEvent[] = []
 ): { cause: UncoveredCause; shift: Shift | null } {
   const overlapping = overlappingShifts(window, shifts);
   const cancelled = overlapping.find(shift => shift.status === 'cancelled');
@@ -74,14 +129,18 @@ export function inferUncoveredCauseDetail(
   if (declined) {
     return { cause: 'declined', shift: declined };
   }
-  return { cause: 'nothingScheduled', shift: null };
+  return {
+    cause: serverUncoveredCause(window, events) ?? 'nothingScheduled',
+    shift: null,
+  };
 }
 
 export function inferUncoveredCause(
   window: UncoveredWindow,
-  shifts: readonly Shift[]
+  shifts: readonly Shift[],
+  events: readonly ShiftEvent[] = []
 ): UncoveredCause {
-  return inferUncoveredCauseDetail(window, shifts).cause;
+  return inferUncoveredCauseDetail(window, shifts, events).cause;
 }
 
 /**
@@ -228,10 +287,11 @@ export function isFullDayUncovered(
 
 export function withCauses(
   windows: readonly UncoveredWindow[],
-  shifts: readonly Shift[]
+  shifts: readonly Shift[],
+  events: readonly ShiftEvent[] = []
 ): UncoveredWindowDisplay[] {
   return windows.map(window => ({
     ...window,
-    cause: inferUncoveredCause(window, shifts),
+    cause: inferUncoveredCause(window, shifts, events),
   }));
 }
