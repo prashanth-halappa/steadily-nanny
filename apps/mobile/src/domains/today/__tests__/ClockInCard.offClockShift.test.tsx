@@ -488,4 +488,50 @@ describe('ClockInCard — off-clock shift selection', () => {
     await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
     expect(getByTestId('today-off-clock-missed')).toBeTruthy();
   });
+
+  it('does not let a null clock_in_at entry mask an ended, unlogged shift', async () => {
+    // An entry with no clock_in_at never logged work. Feeding null into
+    // `new Date` coerces to epoch, which would overlap every shift and hide
+    // the missed state — the exact bug shiftIsCovered exists to prevent.
+    mockUseShiftsRange.mockReturnValue({
+      data: [
+        makeShift({
+          id: 'shift-missed-null-entry',
+          status: 'confirmed',
+          starts_at: '2026-08-10T02:00:00.000Z',
+          ends_at: '2026-08-10T05:00:00.000Z',
+        }),
+      ],
+      isSuccess: true,
+      isError: false,
+      isLoading: false,
+    });
+    mockUseWeekTimeEntries.mockReturnValue({
+      data: [
+        {
+          id: 'entry-null-clock-in',
+          household_id: HOUSEHOLD_ID,
+          carer_id: NANNY_ID,
+          local_date: TODAY,
+          status: 'submitted',
+          clock_in_at: null,
+          clock_out_at: '2026-08-10T05:00:00.000Z',
+        },
+      ],
+      isSuccess: true,
+      isError: false,
+      isLoading: false,
+    });
+
+    const { getByTestId } = renderWithProviders(
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
+    );
+
+    await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
+    expect(getByTestId('today-off-clock-missed')).toBeTruthy();
+  });
 });

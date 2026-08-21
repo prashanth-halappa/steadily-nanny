@@ -193,6 +193,9 @@ function shiftIsCovered(
   const shiftStart = new Date(shift.starts_at).getTime();
   const shiftEnd = new Date(shift.ends_at).getTime();
   return entries.some(e => {
+    // No clock-in means she never logged work — must not count as covering
+    // a shift (null would coerce to epoch via `new Date` and mask everything).
+    if (e.clock_in_at === null) return false;
     const entryStart = new Date(e.clock_in_at).getTime();
     const entryEnd = e.clock_out_at
       ? new Date(e.clock_out_at).getTime()
