@@ -96,7 +96,13 @@ type ScheduleShiftsScreenProps = {
   /** When false, omits the back affordance (Schedule tab root). */
   showBack?: boolean;
   /** Optional banner above the week nav (accepted-pattern context for parents). */
-  patternBanner?: ReactNode;
+  /**
+   * Rendered above the calendar. Takes this week's uncovered-count node so the
+   * caller can fold it INTO the banner card it owns (one cause, its
+   * consequence, one action) rather than leaving it as a second pill beside
+   * it.
+   */
+  patternBanner?: (coverSummary: ReactNode) => ReactNode;
   /**
    * The household's active (non-ended) schedule pattern, if any — fetched
    * by the tab route for the banner and passed down here too, purely to
@@ -395,6 +401,35 @@ export function ScheduleShiftsScreen({
   // yet" right below it. Fold uncovered-for-this-viewer into showContent
   // and out of showEmpty so the two lines can't disagree.
   const hasUncoveredForViewer = canViewCover && uncoveredWeek.totalCount > 0;
+
+  /**
+   * This week's uncovered count, as a node the pattern banner can fold into
+   * its own card (see `patternBanner`). Still tappable, and still jumps to the
+   * first gap — the complaint was never that it was interactive, it was that a
+   * warning-toned pill beside the banner wore the same skin as this screen's
+   * non-interactive status labels and so read as a second telling of the
+   * banner's own alarm.
+   */
+  const coverSummary = hasUncoveredForViewer ? (
+    <Pressable
+      testID="schedule-cover-week-summary"
+      accessibilityRole="button"
+      className="self-start flex-row items-center rounded-row border-1.5 border-border-strong px-4 py-2.5"
+      style={{ minHeight: spacing.minTouchTarget }}
+      onPress={() => {
+        if (firstUncoveredKey) {
+          setScrollToUncoveredKey(firstUncoveredKey);
+        }
+        if (calendarView !== CALENDAR_VIEWS.AGENDA) {
+          setCalendarView(CALENDAR_VIEWS.AGENDA);
+        }
+      }}
+    >
+      <Small weight="medium">
+        {t('cover.weekSummaryTitle', { count: uncoveredWeek.totalCount })}
+      </Small>
+    </Pressable>
+  ) : null;
   const showEmpty =
     !isLoading &&
     !showUnavailable &&
@@ -539,7 +574,7 @@ export function ScheduleShiftsScreen({
           {t('shifts.usualWeekLink')}
         </Button>
       ) : null}
-      {patternBanner}
+      {patternBanner ? patternBanner(coverSummary) : coverSummary}
       {coverInputsFailed ? (
         <InlineRetry
           testID="schedule-cover-retry"
@@ -551,32 +586,6 @@ export function ScheduleShiftsScreen({
             void carersQuery.refetch();
           }}
         />
-      ) : null}
-      {/* Rule H: the only actionable fact on the screen, so it gets a real
-          affordance — a bordered chip, not a bare warning-coloured caption —
-          and it is never suppressed by the pattern banner above. The banner
-          says "you haven't set the weekly hours"; this says "N windows this
-          week have nobody booked" — different facts, and the no-pattern
-          state is exactly the one with the MOST gaps to report. */}
-      {canViewCover && uncoveredWeek.totalCount > 0 ? (
-        <Pressable
-          testID="schedule-cover-week-summary"
-          accessibilityRole="button"
-          className="self-start flex-row items-center rounded-row bg-pill-warning px-4 py-2.5"
-          style={{ minHeight: spacing.minTouchTarget }}
-          onPress={() => {
-            if (firstUncoveredKey) {
-              setScrollToUncoveredKey(firstUncoveredKey);
-            }
-            if (calendarView !== CALENDAR_VIEWS.AGENDA) {
-              setCalendarView(CALENDAR_VIEWS.AGENDA);
-            }
-          }}
-        >
-          <Small className="text-warning-ink" weight="medium">
-            {t('cover.weekSummaryTitle', { count: uncoveredWeek.totalCount })}
-          </Small>
-        </Pressable>
       ) : null}
       {/* A 16px gap (double the 8px used above) separates the hero band from
           week navigation + view switching — the header visibly ends before
