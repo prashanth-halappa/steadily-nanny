@@ -36,6 +36,14 @@
  * active household. This screen is reached by `patternId` alone, and the
  * pattern always belongs to a specific household regardless of which one a
  * nanny with several currently has selected.
+ *
+ * OWNER_ONLY: this screen carries only `closedReason` (the household-CLOSED
+ * check), deliberately. `respond` on `schedulePatternCommandService` is not
+ * owner_only-gated server-side — that service never calls
+ * `assertApprovalAllows` — and is carer-only by construction, so owner_only
+ * is structurally inapplicable. `owner_only` covers `short_notice_change`,
+ * `cancel` and `extra_shift` only (see `ApprovalGateAction`). Adding
+ * `useRestrictedAction` here would make the client stricter than the server.
  */
 import type { ChildCommitment } from '@steadily-nanny/shared-types/schemas/child.schema';
 import { type Href, useRouter } from 'expo-router';

@@ -57,6 +57,14 @@
  * "build a new week" CTAs below still omit `patternId`: each of those
  * starts a genuinely NEW pattern, since there is no draft to resume in
  * those states.
+ *
+ * OWNER_ONLY: this screen carries only `closedReason` (the household-CLOSED
+ * check), deliberately. Pattern lifecycle actions it triggers (`withdraw` /
+ * `amend` on `schedulePatternCommandService`) are not owner_only-gated
+ * server-side — that service never calls `assertApprovalAllows`. `owner_only`
+ * covers `short_notice_change`, `cancel` and `extra_shift` only (see
+ * `ApprovalGateAction`). Adding `useRestrictedAction` here would make the
+ * client stricter than the server.
  */
 import type {
   AmendSchedulePatternInput,
