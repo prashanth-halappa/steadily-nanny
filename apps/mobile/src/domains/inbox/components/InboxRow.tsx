@@ -10,10 +10,12 @@
  * is why `isFirst` exists — the card already draws the top edge, so the
  * first row must not draw a hairline over it.
  *
- * `timeZone` is a PROP, not something this row resolves. The Inbox is
- * deliberately cross-household: each row formats in its own household's
- * zone, and a row that looked the zone up itself would need the screen's
- * lookup anyway. Passing it in keeps that decision visible at the call site.
+ * `timeZone` and `householdName` are PROPS, not something this row resolves.
+ * The Inbox is deliberately cross-household: each row formats in its own
+ * household's zone and (when the viewer is in more than one) names that
+ * household on the kind overline. A row that looked either up itself would
+ * need the screen's lookup anyway. Passing them in keeps that decision
+ * visible at the call site.
  */
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
@@ -32,12 +34,33 @@ export interface InboxRowProps {
   isFirst: boolean;
   /** This item's OWN household zone, never one zone for the whole list. */
   timeZone: string;
+  /**
+   * When set (including `null`), the kind overline becomes
+   * `kindWithHousehold`. `null`/empty falls back to `common:theFamily`.
+   * Omit (`undefined`) for single-household viewers and kinds with no
+   * household id (`change_request`).
+   */
+  householdName?: string | null;
   onPress: () => void;
 }
 
-export function InboxRow({ item, isFirst, timeZone, onPress }: InboxRowProps) {
+export function InboxRow({
+  item,
+  isFirst,
+  timeZone,
+  householdName,
+  onPress,
+}: InboxRowProps) {
   const { t } = useTranslation('inbox');
   const person = personOf(item);
+  const kindLabel = t(`kinds.${item.kind}`);
+  const kindOverline =
+    householdName !== undefined
+      ? t('kindWithHousehold', {
+          kind: kindLabel,
+          household: householdName || t('common:theFamily'),
+        })
+      : kindLabel;
 
   return (
     <Pressable
@@ -63,7 +86,7 @@ export function InboxRow({ item, isFirst, timeZone, onPress }: InboxRowProps) {
           testID={`inbox-item-kind-${item.kind}`}
           className="text-muted-foreground"
         >
-          {t(`kinds.${item.kind}`)}
+          {kindOverline}
         </MetadataLabel>
         <Body weight="semibold">{titleForItem(item, t, timeZone)}</Body>
         <Small className="text-muted-foreground">

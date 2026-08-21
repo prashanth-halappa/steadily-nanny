@@ -291,6 +291,7 @@ describe('InboxScreen', () => {
           householdId: 'hh-1',
           weekStart: '2026-08-04',
           carerDisplayName: 'Jamie Carer',
+          totalMinutes: 2310,
         },
       ] satisfies InboxItem[],
     }));
@@ -324,6 +325,7 @@ describe('InboxScreen', () => {
           householdId: 'hh-1',
           weekStart: '2026-08-04',
           carerDisplayName: 'Jamie Carer',
+          totalMinutes: 2310,
         },
       ] satisfies InboxItem[],
     }));
@@ -386,6 +388,7 @@ describe('InboxScreen', () => {
           householdId: 'hh-1',
           weekStart: '2026-08-04',
           carerDisplayName: 'Jamie Carer',
+          totalMinutes: 2310,
         },
       ] satisfies InboxItem[],
     }));
