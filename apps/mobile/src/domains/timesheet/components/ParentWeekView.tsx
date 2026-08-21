@@ -1168,28 +1168,17 @@ export function ParentWeekView({
                         : t('waitingForHours', { name: carerName })
               }
             />
-            <WeekQueryThread
-              messages={threadQuery.data?.messages ?? []}
-              currentUserId={currentUserId}
-              timeZone={timeZone}
-              timesheetStatus={timesheetStatusForDisplay}
-              viewerRole="parent"
-              onSend={handleSendThreadMessage}
-              isSending={addThreadMessage.isPending}
-              sendError={
-                addThreadMessage.error
-                  ? getLocalizedErrorMessage(addThreadMessage.error, tErrors)
-                  : null
-              }
-            />
-          </>
-        }
-        ListFooterComponent={
-          <>
-            {/* §7 fixed order item 4 — gross, breakdown link and the
-                settlement that answers it, one card under the day rows
-                (screens-hours.md §5). A helper may SEE that the family has
-                paid, and may never record that they have. */}
+            {/* §7 fixed order item 4 — gross, breakdown link, staged
+                adjustment and the settlement that answers it, one card
+                DIRECTLY UNDER THE STATUS CARD (A1/A2). It used to sit in
+                `ListFooterComponent`, and FlashList always paints
+                header → data → footer — so the figure a parent is about to
+                authorise sat below every one-minute punch of the week.
+                Above the thread, not below it: on a queried week the
+                composer is tall, and thread-first would re-bury the figure
+                on exactly the week where the figure is disputed. A helper
+                may SEE that the family has paid, and may never record that
+                they have. */}
             <WeekMoneyCard
               earnings={earnings ?? null}
               timesheetStatus={timesheetStatusForDisplay}
@@ -1233,6 +1222,24 @@ export function ParentWeekView({
                   : undefined
               }
             />
+            <WeekQueryThread
+              messages={threadQuery.data?.messages ?? []}
+              currentUserId={currentUserId}
+              timeZone={timeZone}
+              timesheetStatus={timesheetStatusForDisplay}
+              viewerRole="parent"
+              onSend={handleSendThreadMessage}
+              isSending={addThreadMessage.isPending}
+              sendError={
+                addThreadMessage.error
+                  ? getLocalizedErrorMessage(addThreadMessage.error, tErrors)
+                  : null
+              }
+            />
+          </>
+        }
+        ListFooterComponent={
+          <>
             {/* §7 fixed order item 3 — after day rows, approved-only,
                 read-only so it renders for a helper too. */}
             <ReimbursementsCard
@@ -1457,6 +1464,8 @@ export function ParentWeekView({
 /** The pre-formatted `WeekTotal.weekChanged` block, or nothing to say. */
 interface WeekChangedBlock {
   headline: string;
+  /** A3 — names WHICH amount `amountLabel` is. Null wherever the figure is. */
+  amountCaption: string | null;
   amountLabel: string | null;
   detail: string | null;
 }
@@ -1489,7 +1498,7 @@ function addedMinutesBetween(after: number, before: number): number {
  * no `revised_earnings` at all (an older API), a non-`ok` revised state, two
  * different currencies, and a week that shrank rather than grew.
  */
-function buildPaidWeekChanged({
+export function buildPaidWeekChanged({
   t,
   name,
   date,
@@ -1505,6 +1514,7 @@ function buildPaidWeekChanged({
   const headline = t('paidWeek.changedHeadline', { name });
   const unpriced: WeekChangedBlock = {
     headline,
+    amountCaption: null,
     amountLabel: null,
     detail: date ? t('paidWeek.changedDetailUnpriced', { name, date }) : null,
   };
@@ -1520,6 +1530,10 @@ function buildPaidWeekChanged({
   if (deltaMinor > 0 && addedMinutes > 0 && date) {
     return {
       headline,
+      // The approval and its payments STAND, so this figure really is a
+      // separate amount still to settle — the caption is what stops it
+      // being read as the whole week.
+      amountCaption: t('paidWeek.changedAmountCaption'),
       amountLabel: t('paidWeek.changedAmountLabel', {
         amount: formatMoney(deltaMinor, frozen.currency),
       }),
@@ -1535,6 +1549,7 @@ function buildPaidWeekChanged({
   // amount slot — a negative in `Figure28` reads as money owed back.
   return {
     headline,
+    amountCaption: null,
     amountLabel: null,
     detail: t('paidWeek.changedDetailLower', {
       approvedAmount: formatMoney(frozen.gross_minor, frozen.currency),
@@ -1553,7 +1568,7 @@ function buildPaidWeekChanged({
  * `no_arrangement` approval) states only that an approval existed and when.
  * That fact alone is the thing this defect was destroying.
  */
-function buildDemotedWeekChanged({
+export function buildDemotedWeekChanged({
   t,
   name,
   date,
@@ -1573,13 +1588,14 @@ function buildDemotedWeekChanged({
   const prevCurrency = previous.currency;
   const prevWorked = previous.worked_minutes;
   if (prevGross === null || prevCurrency === null || prevWorked === null) {
-    return { headline, amountLabel: null, detail: null };
+    return { headline, amountCaption: null, amountLabel: null, detail: null };
   }
   const approvedAmount = formatMoney(prevGross, prevCurrency);
   const approvedHours = formatEarningsDuration(prevWorked);
   if (!live || live.currency !== prevCurrency) {
     return {
       headline,
+      amountCaption: null,
       amountLabel: null,
       detail: date
         ? t('changedAfterApproval.detailUnpriced', {
@@ -1596,10 +1612,15 @@ function buildDemotedWeekChanged({
   const newAmount = formatMoney(live.gross_minor, live.currency);
   const newHours = formatEarningsDuration(live.worked_minutes);
   if (deltaMinor > 0 && addedMinutes > 0 && date) {
-    const amount = formatMoney(deltaMinor, live.currency);
+    const delta = formatMoney(deltaMinor, live.currency);
     return {
       headline,
-      amountLabel: t('changedAfterApproval.amountLabel', { amount }),
+      // A3: the approval was DESTROYED, so the big figure is the whole
+      // week, not the delta. The delta used to sit here — in the same 28pt
+      // tabular slot that holds a total everywhere else on this screen —
+      // and a parent read it as what the week was now worth.
+      amountCaption: t('changedAfterApproval.amountCaption'),
+      amountLabel: t('changedAfterApproval.amountLabel', { amount: newAmount }),
       detail: t('changedAfterApproval.detail', {
         approvedAmount,
         approvedHours,
@@ -1608,12 +1629,15 @@ function buildDemotedWeekChanged({
         date,
         newAmount,
         newHours,
-        amount,
+        delta,
       }),
     };
   }
+  // The week SHRANK. No reassurance here: "it doesn't take anything away"
+  // would be false, and this is a money screen.
   return {
     headline,
+    amountCaption: null,
     amountLabel: null,
     detail: t('changedAfterApproval.detailLower', {
       approvedAmount,

@@ -50,6 +50,12 @@
   "flaggedDescription": "Esta entrada tiene duración cero — suele ser un fichaje accidental. Esta semana ya fue aprobada, así que pide a tu hogar que la consulte si hay que corregirla.",
   "flaggedDismiss": "Entendido",
   "noHoursLogged": "Sin horas registradas",
+  "daySummaryEntries_one": "{{count}} registro",
+  "daySummaryEntries_other": "{{count}} registros",
+  "daySummaryVoided_one": "{{count}} anulado, no cuenta",
+  "daySummaryVoided_other": "{{count}} anulados, no cuentan",
+  "daySummaryEdited_one": "{{count}} editado",
+  "daySummaryEdited_other": "{{count}} editados",
   "notYet": "Todavía no",
   "todayMarker": "Hoy",
   "emptyWeek": "Aún no hay horas registradas esta semana.",
@@ -137,7 +143,7 @@
     "bodyAdjustmentDeducted": "De {{range}}, tras descontar {{adjustment}}. Al aprobar se fijan ambas cifras — si las horas cambian después, la semana se reabre y el total se vuelve a calcular.",
     "cancel": "Todavía no",
     "confirm": "Aprobar la semana",
-    "supersedes": "Esto sustituye los {{amount}} que aprobaste el {{date}}."
+    "supersedes": "Los {{amount}} que aprobaste el {{date}} están incluidos en este total."
   },
   "reopenWeek": "Reabrir la semana",
   "reopenDialogTitle": "¿Reabrir {{range}}?",
@@ -153,6 +159,7 @@
   },
   "paidWeek": {
     "changedHeadline": "{{name}} registró más horas después de que se pagara esta semana.",
+    "changedAmountCaption": "No cubierto por el total aprobado",
     "changedAmountLabel": "{{amount}}",
     "changedDetail": "{{hours}} el {{date}}, que el total aprobado no cubre. El total aprobado y sus pagos se quedan como están — puedes añadir esto cuando apruebes la próxima semana de {{name}}.",
     "changedDetailUnpriced": "{{name}} registró más horas el {{date}}. No podemos calcular a cuánto ascienden en esta semana, así que el total aprobado se liquidó sin ellas.",
@@ -163,8 +170,9 @@
   },
   "changedAfterApproval": {
     "headline": "Aprobaste esta semana el {{approvedDate}} y luego cambió.",
+    "amountCaption": "La semana entera asciende ahora a",
     "amountLabel": "{{amount}}",
-    "detail": "Aprobaste {{approvedAmount}} por {{approvedHours}}. {{name}} registró {{addedHours}} el {{date}}, así que ahora asciende a {{newAmount}} por {{newHours}} — {{amount}} más. Volver a aprobar sustituye el total que aprobaste antes.",
+    "detail": "{{name}} registró {{addedHours}} el {{date}}. Son {{delta}} más que los {{approvedAmount}} que aprobaste por {{approvedHours}}. Volver a aprobar confirma {{newAmount}} por la semana entera; no quita nada.",
     "detailUnpriced": "Aprobaste {{approvedAmount}} por {{approvedHours}}. {{name}} registró más horas el {{date}}, así que la semana necesita aprobarse de nuevo.",
     "detailLower": "Aprobaste {{approvedAmount}} por {{approvedHours}}. Ahora asciende a {{newAmount}} por {{newHours}}.",
     "headlineNanny": "{{household}} aprobó esta semana el {{approvedDate}} y luego las horas cambiaron.",
@@ -294,6 +302,10 @@
     "logged": "Horas registradas",
     "opened": "Abierta por {{household}} el {{date}}",
     "notOpened": "{{household}} aún no la ha abierto",
+    "approved": "{{household}} aprobó esta semana el {{date}}",
+    "changed": "Las horas cambiaron después de eso",
+    "waitingAgain": "Esperando a que {{household}} apruebe el nuevo total",
+    "waitingNamed": "Esperando a que {{household}} apruebe",
     "waiting": "Esperando aprobación"
   },
   "receipts": {

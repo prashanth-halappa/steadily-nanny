@@ -45,6 +45,7 @@ import {
 } from '@testing-library/react-native';
 import type React from 'react';
 import { useAuthStore } from '@/src/store/auth';
+import { positionOf, testIDOrder } from './statementOrder';
 
 // LoadingIndicator's `require('@/assets/splash.png')` breaks bundling under
 // bun:test (see HoursScreen.test.tsx / ManageHouseholdScreen.test.tsx) —
@@ -286,6 +287,11 @@ const approveMock = mock(() =>
 const queryMock = mock(() =>
   Promise.resolve(makeTimesheet({ status: 'queried' }))
 );
+// A clean week has no messages and `WeekQueryThread` renders nothing for it;
+// a test that cares where the thread SITS overrides this with one message.
+const getThreadMock = mock(
+  (): Promise<{ messages: unknown[] }> => Promise.resolve({ messages: [] })
+);
 const markViewedMock = mock(() =>
   Promise.resolve(
     makeTimesheet({ parent_viewed_at: '2026-08-16T12:00:00.000Z' })
@@ -361,7 +367,7 @@ mock.module('@/src/api/endpoints/timesheets', () => {
       // 3-T1: the view reads the thread on every week. Empty is the clean
       // week, and `WeekQueryThread` renders nothing for it — but the call
       // has to resolve, or `invalidateQueries()` below waits on a rejection.
-      getThread: () => Promise.resolve({ messages: [] }),
+      getThread: getThreadMock,
       addThreadMessage: () => Promise.resolve({ messages: [] }),
       withdrawQuery: () => Promise.resolve({}),
       markViewed: markViewedMock,
@@ -417,6 +423,8 @@ beforeEach(() => {
   approveMock.mockReset();
   queryMock.mockReset();
   markViewedMock.mockReset();
+  getThreadMock.mockReset();
+  getThreadMock.mockImplementation(() => Promise.resolve({ messages: [] }));
   listMembersMock.mockReset();
   listExpensesForWeekMock.mockReset();
   listPendingExpensesMock.mockReset();
@@ -2156,6 +2164,42 @@ describe('ParentWeekView — Daylight v2 statement layout', () => {
     // Nothing approved yet, so the settlement half of the merged card stays
     // silent rather than rendering an empty stub under the gross.
     expect(queryByTestId('hours-paid-state')).toBeNull();
+  });
+
+  // A1/A2 — the figure a parent is about to authorise must not sit below
+  // every one-minute punch of the week. FlashList paints
+  // header → data → footer, so this is a claim about WHICH SLOT the money
+  // card is passed in, and `within()` cannot see that.
+  it('paints the money card above the day ledger, under the status card, above the thread', async () => {
+    // A queried week is where the thread is TALLEST — putting it first would
+    // re-bury the figure on exactly the week where the figure is disputed.
+    getThreadMock.mockImplementation(() =>
+      Promise.resolve({
+        messages: [
+          {
+            id: 'msg-1',
+            kind: 'query',
+            author_id: PARENT_ID,
+            author_name: 'Jo',
+            body: 'Was Thursday a full day?',
+            created_at: '2026-08-10T09:00:00.000Z',
+          },
+        ],
+      })
+    );
+
+    const view = renderParentView();
+
+    await waitFor(() =>
+      expect(view.getByTestId('hours-money-card')).toBeTruthy()
+    );
+    const order = testIDOrder(view.toJSON());
+    const money = positionOf(order, 'hours-money-card');
+
+    expect(money).toBeGreaterThan(positionOf(order, 'hours-hero-band'));
+    expect(money).toBeGreaterThan(positionOf(order, 'hours-week-total'));
+    expect(money).toBeLessThan(positionOf(order, 'hours-week-thread'));
+    expect(money).toBeLessThan(positionOf(order, `hours-day-${WEEK_START}`));
   });
 
   it('passes per-day minutes and scheduled minutes into the hero band', async () => {

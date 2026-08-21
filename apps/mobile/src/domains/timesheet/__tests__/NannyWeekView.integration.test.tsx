@@ -29,6 +29,7 @@ import {
 } from '@testing-library/react-native';
 import type React from 'react';
 import { useAuthStore } from '@/src/store/auth';
+import { positionOf, testIDOrder } from './statementOrder';
 
 mock.module('@/src/components/ui/loading-indicator', () => {
   const R = require('react');
@@ -259,6 +260,9 @@ function makeTimesheetWeek(
 }
 
 const listEntriesMock = mock(() => Promise.resolve([makeEntry()]));
+const getThreadMock = mock(
+  (): Promise<{ messages: unknown[] }> => Promise.resolve({ messages: [] })
+);
 const listTimesheetsMock = mock(() => Promise.resolve([makeTimesheet()]));
 // Takes the id the real `getWeek` passes it, so a two-carer week can hand
 // back a DIFFERENT week per timesheet row (F-B1-3).
@@ -379,6 +383,11 @@ mock.module('@/src/api/endpoints/timesheets', () => {
       },
       approve: mock(),
       query: mock(),
+      // The view reads the thread on every week. Empty is the clean week and
+      // `WeekQueryThread` renders nothing for it — but the call has to
+      // resolve. A test that cares where the thread SITS overrides this.
+      getThread: getThreadMock,
+      addThreadMessage: () => Promise.resolve({ messages: [] }),
     },
   };
 });
@@ -438,6 +447,8 @@ function renderNannyView({
 beforeEach(() => {
   listEntriesMock.mockReset();
   listTimesheetsMock.mockReset();
+  getThreadMock.mockReset();
+  getThreadMock.mockImplementation(() => Promise.resolve({ messages: [] }));
   getByIdMock.mockReset();
   updateEntryMock.mockReset();
   voidEntryMock.mockReset();
@@ -766,6 +777,47 @@ describe('NannyWeekView — the statement blocks own the right facts', () => {
       moneyCard.getByTestId('hours-earnings-line-amount').props.children
     ).toBe('£148.00');
     expect(moneyCard.getByTestId('hours-earnings-line-pressable')).toBeTruthy();
+  });
+
+  // A1/A2 — the figure she opens the app to see. FlashList paints
+  // header → data → footer, so this is a claim about WHICH SLOT the money
+  // card is passed in, and `within()` cannot see that. The flag link
+  // travels with it: "this figure is wrong" belongs under the figure it
+  // disputes, not stranded between the money card and reimbursements.
+  it('paints the money card above the day ledger, under the status card, above the thread', async () => {
+    // A queried week is where the composer is TALLEST — putting the thread
+    // first would re-bury the figure on the week where it is disputed.
+    getThreadMock.mockImplementation(() =>
+      Promise.resolve({
+        messages: [
+          {
+            id: 'msg-1',
+            kind: 'query',
+            author_id: 'parent-1',
+            author_name: 'The Smiths',
+            body: 'Was Thursday a full day?',
+            created_at: '2026-08-10T09:00:00.000Z',
+          },
+        ],
+      })
+    );
+
+    const view = renderNannyView();
+
+    await waitFor(() =>
+      expect(view.getByTestId('hours-money-card')).toBeTruthy()
+    );
+    const order = testIDOrder(view.toJSON());
+    const money = positionOf(order, 'hours-money-card');
+
+    expect(money).toBeGreaterThan(positionOf(order, 'hours-hero-band'));
+    expect(money).toBeGreaterThan(positionOf(order, 'hours-week-total'));
+    expect(money).toBeLessThan(positionOf(order, 'hours-week-thread'));
+    expect(money).toBeLessThan(positionOf(order, `hours-day-${WEEK_START}`));
+
+    const flag = positionOf(order, 'hours-flag-link');
+    expect(flag).toBeGreaterThan(money);
+    expect(flag).toBeLessThan(positionOf(order, 'hours-week-thread'));
   });
 
   it('passes per-day minutes and scheduled minutes into the hero band', async () => {

@@ -50,6 +50,12 @@
   "flaggedDescription": "This entry has zero duration — usually from an accidental clock-in and clock-out. This week has already been approved, so ask your household to query it if it needs correcting.",
   "flaggedDismiss": "Got it",
   "noHoursLogged": "No hours logged",
+  "daySummaryEntries_one": "{{count}} entry",
+  "daySummaryEntries_other": "{{count}} entries",
+  "daySummaryVoided_one": "{{count}} voided, not counted",
+  "daySummaryVoided_other": "{{count}} voided, not counted",
+  "daySummaryEdited_one": "{{count}} edited",
+  "daySummaryEdited_other": "{{count}} edited",
   "notYet": "Not yet",
   "todayMarker": "Today",
   "emptyWeek": "No hours logged this week yet.",
@@ -137,7 +143,7 @@
     "bodyAdjustmentDeducted": "For {{range}}, after taking off {{adjustment}}. Approving locks both figures — if hours change later, the week reopens and the total is worked out again.",
     "cancel": "Not yet",
     "confirm": "Approve the week",
-    "supersedes": "This replaces the {{amount}} you approved on {{date}}."
+    "supersedes": "The {{amount}} you approved on {{date}} is included in this total."
   },
   "reopenWeek": "Reopen the week",
   "reopenDialogTitle": "Reopen {{range}}?",
@@ -153,6 +159,7 @@
   },
   "paidWeek": {
     "changedHeadline": "{{name}} logged more hours after this week was paid.",
+    "changedAmountCaption": "Not covered by the approved total",
     "changedAmountLabel": "{{amount}}",
     "changedDetail": "{{hours}} on {{date}}, not covered by the approved total. The approved total and the payments on it stay as they are — you can add this when you approve {{name}}'s next week.",
     "changedDetailUnpriced": "{{name}} logged more hours on {{date}}. We can't work out what they come to for this week, so the approved total was settled without them.",
@@ -163,8 +170,9 @@
   },
   "changedAfterApproval": {
     "headline": "You approved this week on {{approvedDate}}, then it changed.",
+    "amountCaption": "The whole week now comes to",
     "amountLabel": "{{amount}}",
-    "detail": "You approved {{approvedAmount}} for {{approvedHours}}. {{name}} logged {{addedHours}} on {{date}}, so it now comes to {{newAmount}} for {{newHours}} — {{amount}} more. Approving again replaces the total you approved before.",
+    "detail": "{{name}} logged {{addedHours}} on {{date}}. That's {{delta}} more than the {{approvedAmount}} you approved for {{approvedHours}}. Approving again confirms {{newAmount}} for the whole week — it doesn't take anything away.",
     "detailUnpriced": "You approved {{approvedAmount}} for {{approvedHours}}. {{name}} logged more hours on {{date}}, so the week needs approving again.",
     "detailLower": "You approved {{approvedAmount}} for {{approvedHours}}. It now comes to {{newAmount}} for {{newHours}}.",
     "headlineNanny": "{{household}} approved this week on {{approvedDate}}, then the hours changed.",
@@ -294,6 +302,10 @@
     "logged": "Hours logged",
     "opened": "Opened by {{household}} on {{date}}",
     "notOpened": "Not opened by {{household}} yet",
+    "approved": "{{household}} approved this week on {{date}}",
+    "changed": "The hours changed after that",
+    "waitingAgain": "Waiting for {{household}} to approve the new total",
+    "waitingNamed": "Waiting for {{household}} to approve",
     "waiting": "Waiting for approval"
   },
   "receipts": {

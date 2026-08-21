@@ -811,3 +811,139 @@ describe('TimeEntryDayRow — a zero-paid cancellation fragment (C7)', () => {
     expect(queryByTestId('hours-zero-duration-flag')).toBeNull();
   });
 });
+
+/**
+ * A5 — a day with seven punches, five of them under three minutes, was the
+ * first thing between a reader and everything below it. The block is the
+ * record and stays reachable; it stops being the toll.
+ *
+ * Two rules the collapse must never break: a RUNNING day is never behind a
+ * tap, and nothing two parties could argue about is hidden — the voided and
+ * edited counts are promoted INTO the summary rather than concealed by it.
+ */
+describe('TimeEntryDayRow — the busy day collapses', () => {
+  function makeBusyDay(): TimeEntry[] {
+    return [
+      makeEntry({ id: 'e1', clock_out_at: '2026-08-01T09:58:00.000Z' }),
+      makeEntry({ id: 'e2', clock_out_at: '2026-08-01T10:58:00.000Z' }),
+      makeEntry({ id: 'e3', clock_out_at: '2026-08-01T11:58:00.000Z' }),
+    ];
+  }
+
+  function renderDay(entries: TimeEntry[]) {
+    return render(
+      <TimeEntryDayRow
+        date="2026-08-01"
+        entries={entries}
+        nowMs={NOW_MS}
+        timeZone="Europe/London"
+      />
+    );
+  }
+
+  it('collapses a day of more than two entries, keeping the day total in view', () => {
+    const { getByTestId, queryByTestId } = renderDay(makeBusyDay());
+
+    expect(getByTestId('hours-day-summary')).toBeTruthy();
+    expect(getByTestId('hours-day-total')).toBeTruthy();
+    expect(queryByTestId('hours-entry-row-e1')).toBeNull();
+    expect(queryByTestId('hours-entry-row-e3')).toBeNull();
+  });
+
+  it('opens on a tap of the day header, and the header says it is a button', () => {
+    const { getByTestId, queryByTestId } = renderDay(makeBusyDay());
+
+    const header = getByTestId('hours-day-header');
+    expect(header.props.accessibilityRole).toBe('button');
+    expect(header.props.accessibilityState).toEqual({ expanded: false });
+
+    fireEvent.press(header);
+
+    expect(getByTestId('hours-entry-row-e1')).toBeTruthy();
+    expect(getByTestId('hours-entry-row-e3')).toBeTruthy();
+    expect(queryByTestId('hours-day-summary')).toBeNull();
+    expect(getByTestId('hours-day-header').props.accessibilityState).toEqual({
+      expanded: true,
+    });
+  });
+
+  it('never hides a running entry behind a tap', () => {
+    const running = makeBusyDay().concat(
+      makeEntry({ id: 'e4', clock_out_at: null, status: 'running' })
+    );
+    const { getByTestId, queryByTestId } = renderDay(running);
+
+    expect(queryByTestId('hours-day-summary')).toBeNull();
+    expect(queryByTestId('hours-day-chevron')).toBeNull();
+    expect(getByTestId('hours-entry-row-e4')).toBeTruthy();
+    expect(getByTestId('hours-day-header').props.accessibilityRole).toBe(
+      undefined
+    );
+  });
+
+  it('leaves one- and two-entry days exactly as they were', () => {
+    const { getByTestId, queryByTestId } = renderDay(makeBusyDay().slice(0, 2));
+
+    expect(queryByTestId('hours-day-summary')).toBeNull();
+    expect(queryByTestId('hours-day-chevron')).toBeNull();
+    expect(getByTestId('hours-entry-row-e1')).toBeTruthy();
+    expect(getByTestId('hours-entry-row-e2')).toBeTruthy();
+  });
+
+  // The two facts a collapse could otherwise bury. A voided entry is money
+  // NOT counted and an edited one is a record that moved — both are exactly
+  // what a disagreement is about.
+  it('promotes the voided and edited counts into the collapsed summary', () => {
+    const entries = [
+      ...makeBusyDay(),
+      makeEntry({
+        id: 'e4',
+        clock_out_at: '2026-08-01T12:58:00.000Z',
+        status: 'voided',
+      }),
+      makeEntry({
+        id: 'e5',
+        clock_out_at: '2026-08-01T13:58:00.000Z',
+        // Corrected a day later — `wasEntryEdited`'s slack is one minute.
+        updated_at: '2026-08-02T09:00:00.000Z',
+      }),
+    ];
+    const { getByTestId } = renderDay(entries);
+
+    const summary = getByTestId('hours-day-summary').props.children;
+    expect(summary).toBe(
+      'daySummaryEntries · daySummaryVoided · daySummaryEdited'
+    );
+  });
+
+  it('says only the entry count when nothing was voided or edited', () => {
+    const { getByTestId } = renderDay(makeBusyDay());
+
+    expect(getByTestId('hours-day-summary').props.children).toBe(
+      'daySummaryEntries'
+    );
+  });
+
+  // The reserved slot is why the total column does not shift between a
+  // collapsible day and a plain one — the chevron goes IN it, not beside it.
+  it('keeps the total column in place by putting the chevron in the reserved slot', () => {
+    const collapsible = renderDay(makeBusyDay());
+    const plain = renderDay(makeBusyDay().slice(0, 1));
+
+    const slotWidth = (view: ReturnType<typeof renderDay>) => {
+      const header = view.getByTestId('hours-day-header');
+      const children = Array.isArray(header.props.children)
+        ? header.props.children
+        : [header.props.children];
+      const group = children[children.length - 1];
+      const groupChildren = Array.isArray(group.props.children)
+        ? group.props.children
+        : [group.props.children];
+      return groupChildren[groupChildren.length - 1].props.style.width;
+    };
+
+    expect(slotWidth(collapsible)).toBe(CHEVRON_SLOT);
+    expect(slotWidth(collapsible)).toBe(slotWidth(plain));
+    expect(collapsible.getByTestId('hours-day-chevron')).toBeTruthy();
+  });
+});

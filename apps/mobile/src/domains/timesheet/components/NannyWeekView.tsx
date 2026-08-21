@@ -563,6 +563,15 @@ export function NannyWeekView({
   const changedSince = isShapePaid
     ? flaggedAt
     : (previousApproval?.approved_at ?? null);
+  // A4: ONE label, two consumers — the week-changed headline below and the
+  // status timeline's approved step. Two sources for "was this ever
+  // approved" is how the card came to say both at once.
+  const previousApprovalDateLabel =
+    isShapeDemoted && previousApproval
+      ? formatEarningsLongDate(
+          localDateInZone(timeZone, new Date(previousApproval.approved_at))
+        )
+      : null;
   // Which day changed — free, and money-less: her own entries, filtered to
   // those written after the week was settled. Falls back to the settlement
   // stamp when nothing matches (a void is an update, not an insert).
@@ -611,6 +620,13 @@ export function NannyWeekView({
             : t('paidWeek.changedHeadlineNannyUnpriced', {
                 date: changedDateLabel ?? '',
               }),
+        // A3: her approved total and its payments stand, so this figure is
+        // the tail they do not cover — named, not left bare in the slot
+        // that holds a whole-week total everywhere else on the screen.
+        amountCaption:
+          paidDelta && paidDelta.minor > 0
+            ? t('paidWeek.changedAmountCaption')
+            : null,
         amountLabel:
           paidDelta && paidDelta.minor > 0
             ? t('paidWeek.changedAmountLabel', {
@@ -621,16 +637,17 @@ export function NannyWeekView({
           household: activeHousehold.household?.name ?? '',
         }),
       }
-    : isShapeDemoted && previousApproval
+    : // A second `?? ''` inside this `t(` breaks the locale-key extractor's
+      // quote pairing (locale-key-resolution.test.ts) — narrow instead.
+      isShapeDemoted && previousApprovalDateLabel
       ? {
           headline: t('changedAfterApproval.headlineNanny', {
             household: activeHousehold.household?.name ?? '',
-            approvedDate: formatEarningsLongDate(
-              localDateInZone(timeZone, new Date(previousApproval.approved_at))
-            ),
+            approvedDate: previousApprovalDateLabel,
           }),
           // No figure on the unpaid shape: the week is being worked out
           // again, so there is no settled total to state a tail against.
+          amountCaption: null,
           amountLabel: null,
           detail: t('changedAfterApproval.detailNanny'),
         }
@@ -749,6 +766,7 @@ export function NannyWeekView({
               earningsRole="nanny"
               approvedDateLabel={approvedDateLabel}
               parentViewedDateLabel={parentViewedDateLabel}
+              previousApprovalDateLabel={previousApprovalDateLabel}
               householdName={activeHousehold.household?.name ?? null}
               earningsReopened={reopened}
               earningsReopenReason={timesheet?.reopen_reason ?? null}
@@ -766,28 +784,14 @@ export function NannyWeekView({
                 })}
               />
             ) : null}
-            <WeekQueryThread
-              messages={threadQuery.data?.messages ?? []}
-              currentUserId={currentUserId}
-              timeZone={timeZone}
-              timesheetStatus={timesheetStatusForDisplay}
-              viewerRole="nanny"
-              composerReopened={composerReopened}
-              onSend={handleSendThreadMessage}
-              isSending={addThreadMessage.isPending}
-              sendError={
-                addThreadMessage.error
-                  ? getLocalizedErrorMessage(addThreadMessage.error, tErrors)
-                  : null
-              }
-            />
-          </>
-        }
-        ListFooterComponent={
-          <>
-            {/* §7 fixed order item 4 — the money card sits under the day
-                rows it totals: gross, breakdown link and paid state, one
-                card (screens-hours.md §5). */}
+            {/* §7 fixed order item 4 — gross, breakdown link and paid
+                state, one card DIRECTLY UNDER THE STATUS CARD (A1/A2). It
+                used to sit in `ListFooterComponent`, and FlashList always
+                paints header → data → footer — so the figure she opens the
+                app to see sat below every one-minute punch of the week.
+                Above the thread, not below it: on a queried week the
+                composer is tall, and thread-first would re-bury the figure
+                on exactly the week where the figure is disputed. */}
             <WeekMoneyCard
               earnings={earnings ?? null}
               timesheetStatus={timesheetStatusForDisplay}
@@ -815,7 +819,11 @@ export function NannyWeekView({
             {/* §3.1 (M12): the one place a nanny can say a figure is wrong
                 without waiting to be asked. On a `submitted` or `approved`
                 week only — a `queried` week already has the composer open,
-                and an `open` week is still hers to correct directly. */}
+                and an `open` week is still hers to correct directly. It
+                TRAVELS WITH THE MONEY CARD (A1): "this figure is wrong"
+                belongs under the figure it disputes, not stranded between
+                the money card and reimbursements with no card and no
+                owner. */}
             {!readOnly && (timesheet?.status === 'submitted' || isApproved) ? (
               <Button
                 testID="hours-flag-link"
@@ -827,6 +835,25 @@ export function NannyWeekView({
                 <Text className="text-foreground">{t('thread.flagLink')}</Text>
               </Button>
             ) : null}
+            <WeekQueryThread
+              messages={threadQuery.data?.messages ?? []}
+              currentUserId={currentUserId}
+              timeZone={timeZone}
+              timesheetStatus={timesheetStatusForDisplay}
+              viewerRole="nanny"
+              composerReopened={composerReopened}
+              onSend={handleSendThreadMessage}
+              isSending={addThreadMessage.isPending}
+              sendError={
+                addThreadMessage.error
+                  ? getLocalizedErrorMessage(addThreadMessage.error, tErrors)
+                  : null
+              }
+            />
+          </>
+        }
+        ListFooterComponent={
+          <>
             {/* §7 fixed order item 3 — after day rows, approved-only,
                 never rendered when the week has no approved claims. */}
             <ReimbursementsCard
