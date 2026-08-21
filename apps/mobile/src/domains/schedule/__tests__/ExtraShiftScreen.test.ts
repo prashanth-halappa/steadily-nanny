@@ -75,4 +75,17 @@ describe('ExtraShiftScreen', () => {
     expect(source).toContain("t('shifts.extraNotAvailableTitle')");
     expect(source).toContain("t('shifts.extraNotAvailableDescription')");
   });
+
+  it('REGRESSION: submit is gated by useRestrictedAction for owner_only co-parents, not only closedReason', () => {
+    // The bug: ExtraShiftScreen only passed closedReason into the submit
+    // button. Under approval_mode=owner_only the server refuses a co-parent
+    // via assertApprovalAllows(..., 'extra_shift'), but the client stayed
+    // enabled until the 403. Mirror TodayCoverage: useRestrictedAction with
+    // the seeded verb, reason wins over closedReason.
+    expect(source).toContain('useRestrictedAction');
+    expect(source).toContain("t('shifts.restrictedActionAddExtra')");
+    expect(source).toContain(
+      'reason={extraShiftRestriction.reason ?? closedReason}'
+    );
+  });
 });

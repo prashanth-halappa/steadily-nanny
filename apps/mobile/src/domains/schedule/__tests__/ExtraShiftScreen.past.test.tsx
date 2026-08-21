@@ -62,6 +62,9 @@ beforeAll(async () => {
       isLoading: false,
     }),
   }));
+  mock.module('@/src/hooks/queries/useRestrictedAction', () => ({
+    useRestrictedAction: () => ({ disabled: false, reason: null }),
+  }));
   mock.module('@/src/domains/schedule/hooks/useHouseholdCarers', () => ({
     useHouseholdCarers: () => ({
       data: [
