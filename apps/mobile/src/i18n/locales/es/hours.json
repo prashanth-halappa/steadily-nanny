@@ -321,9 +321,10 @@
     }
   },
   "lead": {
-    "nanny": "{{hours}} esta semana con {{family}}.",
-    "parent": "{{name}} tiene {{hours}} esta semana.",
-    "parentNoCarer": "{{hours}} registradas esta semana."
+    "nanny": "{{hours}} registradas esta semana con {{family}}.",
+    "parent": "{{name}} ha registrado {{hours}} esta semana.",
+    "parentNoCarer": "{{hours}} registradas esta semana.",
+    "timeZoneNote": "Horas mostradas en {{zone}}."
   },
   "entryCorrectedToast": "Corrección guardada.",
   "entryRemovedToast": "Entrada eliminada.",

@@ -317,13 +317,14 @@
   "receipts": {
     "weekClosed": {
       "title": "That's your week — {{hours}}.",
-      "body": "With the {{household}} now. You'll see here when they open it."
+      "body": "With {{household}} now. You'll see here when they open it."
     }
   },
   "lead": {
-    "nanny": "{{hours}} so far this week with the {{family}}.",
-    "parent": "{{name}} has {{hours}} this week.",
-    "parentNoCarer": "{{hours}} logged this week."
+    "nanny": "{{hours}} logged so far this week with {{family}}.",
+    "parent": "{{name}} has logged {{hours}} this week.",
+    "parentNoCarer": "{{hours}} logged this week.",
+    "timeZoneNote": "Times shown in {{zone}}."
   },
   "entryCorrectedToast": "Correction saved.",
   "entryRemovedToast": "Entry removed.",

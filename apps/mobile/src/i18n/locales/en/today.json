@@ -282,7 +282,7 @@
       "ctaReviewTerms": "Review their terms"
     },
     "firstClockIn": {
-      "title": "Your first clock-in with the {{family}}!",
+      "title": "Your first clock-in with {{family}}!",
       "body": "From here, every hour you work is yours on the record — timed, saved, and there at the end of the week."
     },
     "firstWeekApproved": {
@@ -298,7 +298,7 @@
     },
     "nanny": {
       "here": "On the clock since {{time}}.",
-      "scheduled": "Today you're with the {{family}}, {{start}} – {{end}}.",
+      "scheduled": "Today you're with {{family}}, {{start}} – {{end}}.",
       "done": "Clocked out {{time}} — {{duration}} today.",
       "quiet": "Nothing scheduled today."
     }
