@@ -203,6 +203,70 @@ describe('ThisWeeksShiftsCard', () => {
     );
   });
 
+  // Agenda ShiftRow uses resolveMemberDisplayName → "You" when the viewer
+  // owns the shift; this card used resolveCarerName and showed her own name.
+  it('two-carer household: viewer sees "You" on her own upcoming shift', () => {
+    mockUseShiftsRange.mockReturnValue({ data: SHIFTS });
+    mockUseHouseholdMembers.mockReturnValue({
+      data: [member(AMARA_ID, 'Amara Okafor'), member(BEA_ID, 'Beatriz Ruiz')],
+    });
+    useAuthStore.setState({ user: { id: AMARA_ID } } as never);
+
+    const { getByTestId } = render(<ThisWeeksShiftsCard />);
+
+    expect(getByTestId('today-next-up-carer-shift-a').props.children).toBe(
+      'detail.you'
+    );
+    expect(getByTestId('today-next-up-carer-shift-b').props.children).toBe(
+      'Beatriz'
+    );
+  });
+
+  // Documented: an unresolvable carer / nameless member contributes no label
+  // at all — not "Someone", not a role word. Empty someone/roleFallback keep
+  // resolveMemberDisplayName while restoring that silence.
+  it('two-carer household: unresolvable or nameless carer renders no row label', () => {
+    const UNKNOWN_ID = '99999999-9999-4999-8999-999999999999';
+    const nameless = {
+      ...member(BEA_ID, ''),
+      profile_name: null,
+      display_name_override: null,
+    };
+    mockUseShiftsRange.mockReturnValue({
+      data: [
+        shift('shift-unknown', UNKNOWN_ID, '2099-08-06'),
+        shift('shift-nameless', BEA_ID, '2099-08-07'),
+      ],
+    });
+    mockUseHouseholdMembers.mockReturnValue({
+      data: [member(AMARA_ID, 'Amara Okafor'), nameless],
+    });
+
+    const { queryByTestId } = render(<ThisWeeksShiftsCard />);
+
+    expect(queryByTestId('today-next-up-carer-shift-unknown')).toBeNull();
+    expect(queryByTestId('today-next-up-carer-shift-nameless')).toBeNull();
+  });
+
+  // Narrow rows used to cap the name at 38% + ellipsize, so "Andrea" became
+  // "A...". Time must yield; the name must keep its full first token.
+  it('does not truncate the carer name — time Figure yields space first', () => {
+    mockUseShiftsRange.mockReturnValue({ data: SHIFTS });
+    mockUseHouseholdMembers.mockReturnValue({
+      data: [member(AMARA_ID, 'Andrea Smith'), member(BEA_ID, 'Beatriz Ruiz')],
+    });
+
+    const { getByTestId } = render(<ThisWeeksShiftsCard />);
+    const name = getByTestId('today-next-up-carer-shift-a');
+    const line = getByTestId('today-next-up-line-shift-a');
+
+    expect(name.props.children).toBe('Andrea');
+    expect(String(name.props.className ?? '')).not.toContain('max-w-[');
+    expect(name.props.numberOfLines).toBeUndefined();
+    expect(name.props.ellipsizeMode).toBeUndefined();
+    expect(String(line.props.className ?? '')).toMatch(/flex-1|shrink/);
+  });
+
   it('rows meet the 44pt touch target, carry hit slop, and take the row surface', () => {
     mockUseShiftsRange.mockReturnValue({ data: SHIFTS });
 

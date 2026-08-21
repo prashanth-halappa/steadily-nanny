@@ -27,7 +27,7 @@ import {
   type StatusPillProps,
 } from '@/src/components/ui/status-pill';
 import { Figure, Small } from '@/src/components/ui/typography';
-import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
+import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { resolveActivePattern } from '@/src/domains/schedule/utils/patternPrecedence';
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
@@ -127,10 +127,27 @@ export function ThisWeeksShiftsCard() {
     () => new Map<string, HouseholdMember>(carers.map(m => [m.user_id, m])),
     [carers]
   );
-  // Empty fallback: an unresolvable carer contributes no label at all rather
-  // than a role word standing in for a name.
+  // Same resolver as Agenda ShiftRow — self-shifts render as "You", not the
+  // viewer's own profile name. Empty someone/roleFallback keep the documented
+  // silence: an unresolvable or nameless carer contributes no label at all
+  // rather than a role word standing in for a name.
+  const memberLabels = useMemo(
+    () => ({
+      you: t('detail.you'),
+      someone: '',
+      roleFallback: () => '',
+    }),
+    [t]
+  );
   const nameFor = (carerId: string | null) =>
-    carerId ? resolveCarerName(carersByUserId.get(carerId), '') : '';
+    carerId
+      ? resolveMemberDisplayName(
+          carerId,
+          currentUserId,
+          carersByUserId,
+          memberLabels
+        )
+      : '';
   // A solo carer viewing her own Today would just be reading her own name
   // back to herself — noise. Only useful to a viewer who ISN'T that carer
   // (the parent/helper view, where it identifies who is covering).
@@ -226,7 +243,9 @@ export function ThisWeeksShiftsCard() {
               >
                 <Figure
                   testID={`today-next-up-line-${shift.id}`}
-                  className="text-foreground"
+                  className="min-w-0 flex-1 shrink text-foreground"
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
                 >
                   {formatShiftLine(shift, timeZone, t)}
                 </Figure>
@@ -241,9 +260,7 @@ export function ThisWeeksShiftsCard() {
                   {carerName ? (
                     <Small
                       testID={`today-next-up-carer-${shift.id}`}
-                      className="max-w-[38%] flex-shrink-0 text-muted-foreground"
-                      numberOfLines={1}
-                      ellipsizeMode="tail"
+                      className="flex-shrink-0 text-muted-foreground"
                     >
                       {carerName}
                     </Small>
