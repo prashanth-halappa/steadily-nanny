@@ -10,16 +10,16 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          'bg-primary web:hover:opacity-90 active:bg-primary-dark disabled:bg-muted disabled:opacity-100',
+          'bg-primary web:hover:opacity-90 active:bg-primary-dark disabled:bg-muted disabled:opacity-60',
         destructive:
-          'bg-destructive web:hover:opacity-90 active:opacity-90 disabled:bg-muted disabled:opacity-100',
+          'bg-destructive web:hover:opacity-90 active:opacity-90 disabled:bg-muted disabled:opacity-60',
         outline:
-          'border-1.5 border-border-strong bg-background web:hover:bg-accent web:hover:text-accent-foreground active:bg-accent disabled:border-muted-foreground/30 disabled:opacity-100',
+          'border-1.5 border-border-strong bg-background web:hover:bg-accent web:hover:text-accent-foreground active:bg-accent disabled:border-muted-foreground/30 disabled:opacity-60',
         secondary:
-          'bg-secondary web:hover:opacity-80 active:opacity-80 disabled:bg-muted disabled:opacity-100',
+          'bg-secondary web:hover:opacity-80 active:opacity-80 disabled:bg-muted disabled:opacity-60',
         ghost:
-          'web:hover:bg-accent web:hover:text-accent-foreground active:bg-accent disabled:opacity-100',
-        link: 'web:underline-offset-4 web:hover:underline web:focus:underline disabled:opacity-100',
+          'web:hover:bg-accent web:hover:text-accent-foreground active:bg-accent disabled:opacity-60',
+        link: 'web:underline-offset-4 web:hover:underline web:focus:underline disabled:opacity-60',
       },
       size: {
         default: 'h-10 px-4 py-2 native:h-12 native:px-5 native:py-3',
