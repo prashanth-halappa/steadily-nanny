@@ -394,6 +394,14 @@ describe('ClockInCard — off-clock shift selection', () => {
     // And she can act on it right here, without a second form to fill in —
     // the shift's own times are already known.
     expect(getByTestId('today-log-missed-shift')).toBeTruthy();
+    // Sibling Card ground (same vocabulary as the clock-in card above) —
+    // not bare text on the page wash.
+    expect(
+      String(getByTestId('today-off-clock-missed').props.className ?? '')
+    ).toContain('rounded-card');
+    expect(
+      String(getByTestId('today-off-clock-missed').props.className ?? '')
+    ).toContain('bg-card');
   });
 
   it('opens a sheet prefilled with the shift times on tap, and never submits on her behalf', async () => {
@@ -435,6 +443,57 @@ describe('ClockInCard — off-clock shift selection', () => {
     );
     // Opening the sheet must never itself be a money write.
     expect(missedShiftMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('keeps the card hero on the current/next shift and renders a missed earlier shift as its own row beneath', async () => {
+    // The bug: a missed morning took the H3 while "Clock in" still started
+    // an entry for the later shift that is actually next. Heading and loudest
+    // button must name the SAME shift; the missed one is a sibling row.
+    mockUseShiftsRange.mockReturnValue({
+      data: [
+        makeShift({
+          id: 'shift-missed-morning',
+          status: 'confirmed',
+          starts_at: '2026-08-10T02:00:00.000Z',
+          ends_at: '2026-08-10T05:00:00.000Z',
+        }),
+        makeShift({
+          id: 'shift-evening',
+          status: 'confirmed',
+          starts_at: '2026-08-10T17:00:00.000Z',
+          ends_at: '2026-08-10T19:00:00.000Z',
+        }),
+      ],
+      isSuccess: true,
+      isError: false,
+      isLoading: false,
+    });
+
+    const { getByTestId, getByText, queryByText } = renderWithProviders(
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
+    );
+
+    await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
+
+    // Hero: the later shift she can still clock into — not the missed morning.
+    expect(getByTestId('today-off-clock-scheduled')).toBeTruthy();
+    expect(
+      getByText(/nannyScheduledBody::\{"start":"5:00 PM","end":"7:00 PM"\}/)
+    ).toBeTruthy();
+    expect(
+      queryByText(/nannyScheduledBody::\{"start":"2:00 AM","end":"5:00 AM"\}/)
+    ).toBeNull();
+
+    // Missed morning is its own surface beneath the card, with its own CTA.
+    expect(getByTestId('today-off-clock-missed')).toBeTruthy();
+    expect(
+      getByText(/missedShiftBody::\{"start":"2:00 AM","end":"5:00 AM"\}/)
+    ).toBeTruthy();
+    expect(getByTestId('today-log-missed-shift')).toBeTruthy();
   });
 
   it('still surfaces a missed morning shift after she clocks in for a later shift the same day', async () => {
