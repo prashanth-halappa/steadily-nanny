@@ -96,6 +96,7 @@ import { useWeekExpenses } from '@/src/hooks/queries/useWeekExpenses';
 import { useWeekPayDueDate } from '@/src/hooks/queries/useWeekPayDueDate';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useWeekTimesheet } from '@/src/hooks/queries/useWeekTimesheet';
+import { shortZoneLabel } from '@/src/lib/displayTime';
 import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { localDateInZone } from '@/src/lib/localDate';
 import { formatMoney } from '@/src/lib/money';
@@ -556,6 +557,7 @@ export function ParentWeekView({
   const weekHoursLabel = formatDuration(totalMinutes);
   const scheduledMinutes = scheduledMinutesFor(entries);
   const overtimeLabel = formatOvertimeDelta(totalMinutes, scheduledMinutes);
+  const zoneLabel = shortZoneLabel(timeZone);
   // The selected TAB is the identity — not `carer_id`, which is NULL on every
   // row of a departed carer's tab. Reading raw ids here left this empty for
   // her, and `resolveWeekCarerHeaderName`'s no-entries branch then named the
@@ -1025,6 +1027,14 @@ export function ParentWeekView({
               todayIndex={todayIndex}
               lead={lead}
             />
+            {zoneLabel ? (
+              <Caption
+                testID="hours-timezone-note"
+                className="mb-3 text-muted-strong"
+              >
+                {t('lead.timeZoneNote', { zone: zoneLabel })}
+              </Caption>
+            ) : null}
             {/* F-B1-3: two carers, two pay records, two approvals. One
                 carer at a time, so the figure above is always the figure
                 the button below approves. A departed carer gets a tab like

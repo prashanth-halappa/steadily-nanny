@@ -31,3 +31,31 @@ export function formatInstantInZone(iso: string, timeZone: string): string {
     return iso;
   }
 }
+
+/**
+ * Short zone label for the household's timezone — "BST", "GMT+1", "PDT".
+ *
+ * P15: every time in the app is rendered in the HOUSEHOLD's zone, which is
+ * correct and deliberate (`GOLDEN-FIXES.md` #29, decision D-10), but nothing
+ * on screen said so. A nanny reading "8:00 AM – 5:00 PM" on a phone showing
+ * 12:26 had no way to learn the shift is quoted in someone else's clock — and
+ * that number is what her pay is computed from. This labels it; it never
+ * changes the conversion.
+ *
+ * Returns null when the zone is unrecognized, so a caller renders nothing
+ * rather than a broken suffix.
+ */
+export function shortZoneLabel(
+  timeZone: string,
+  at: Date = new Date()
+): string | null {
+  try {
+    return (
+      new Intl.DateTimeFormat(undefined, { timeZone, timeZoneName: 'short' })
+        .formatToParts(at)
+        .find(part => part.type === 'timeZoneName')?.value ?? null
+    );
+  } catch {
+    return null;
+  }
+}

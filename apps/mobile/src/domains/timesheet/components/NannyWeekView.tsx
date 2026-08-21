@@ -90,6 +90,7 @@ import { useWeekExpenses } from '@/src/hooks/queries/useWeekExpenses';
 import { useWeekPayDueDate } from '@/src/hooks/queries/useWeekPayDueDate';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useWeekTimesheet } from '@/src/hooks/queries/useWeekTimesheet';
+import { shortZoneLabel } from '@/src/lib/displayTime';
 import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { formatMoney } from '@/src/lib/money';
@@ -502,6 +503,7 @@ export function NannyWeekView({
   const weekHoursLabel = formatDuration(totalMinutes);
   const scheduledMinutes = scheduledMinutesFor(entries);
   const overtimeLabel = formatOvertimeDelta(totalMinutes, scheduledMinutes);
+  const zoneLabel = shortZoneLabel(timeZone);
   const todayISO = localDateInZone(timeZone, new Date(nowMs));
   const dayMinutes = [0, 0, 0, 0, 0, 0, 0];
   for (let i = 0; i < weekDates.length; i++) {
@@ -762,6 +764,14 @@ export function NannyWeekView({
               todayIndex={todayIndex}
               lead={lead}
             />
+            {zoneLabel ? (
+              <Caption
+                testID="hours-timezone-note"
+                className="mb-3 text-muted-strong"
+              >
+                {t('lead.timeZoneNote', { zone: zoneLabel })}
+              </Caption>
+            ) : null}
             <WeekTotal
               testID="hours-week-total"
               timesheetStatus={timesheetStatusForDisplay}
