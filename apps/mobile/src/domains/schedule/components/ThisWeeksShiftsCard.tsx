@@ -119,6 +119,17 @@ export function ThisWeeksShiftsCard() {
       .slice(0, 2);
   }, [shiftsQuery.data]);
 
+  // P11: `nextShifts` keeps a shift whose window straddles now (it filters on
+  // `ends_at >= now`), so "Next up" led with the shift she was standing in.
+  // No clock-in check needed — the window IS now, and that is what the
+  // eyebrow now says.
+  const firstIsNow = useMemo(() => {
+    const first = nextShifts[0];
+    if (!first) return false;
+    const now = Date.now();
+    return new Date(first.starts_at).getTime() <= now;
+  }, [nextShifts]);
+
   const carers = useMemo(
     () => (membersQuery.data ?? []).filter(m => m.role === 'nanny'),
     [membersQuery.data]
@@ -215,8 +226,17 @@ export function ThisWeeksShiftsCard() {
       <Section
         title={
           soleCarerName
-            ? t('todayCard.nextUpTitleWithCarer', { name: soleCarerName })
-            : t('todayCard.nextUpTitle')
+            ? t(
+                firstIsNow
+                  ? 'todayCard.nextUpTitleNowWithCarer'
+                  : 'todayCard.nextUpTitleWithCarer',
+                { name: soleCarerName }
+              )
+            : t(
+                firstIsNow
+                  ? 'todayCard.nextUpTitleNow'
+                  : 'todayCard.nextUpTitle'
+              )
         }
         // No `first`: "Next up" is a sub-section of "This week", so it takes
         // the full 32px above to read as its own group rather than as a

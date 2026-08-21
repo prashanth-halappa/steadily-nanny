@@ -106,6 +106,13 @@ mock.module('@/src/hooks/queries/useHouseholdClosures', () => ({
   }),
 }));
 
+// P11: the screen reads the household's week of time entries so apricot
+// follows the clock, not the calendar. Another real `useQuery` in a file that
+// renders without a QueryClientProvider.
+mock.module('@/src/hooks/queries/useWeekTimeEntries', () => ({
+  useWeekTimeEntries: () => ({ data: [], isLoading: false, isError: false }),
+}));
+
 // AgendaView and ShiftRow now ask whether this household still takes writes
 // (a removed member's cover actions must not sit there live). That is a real
 // `useQuery`, and this file renders without a QueryClientProvider.

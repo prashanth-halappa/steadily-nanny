@@ -83,6 +83,7 @@ import {
   useShiftsRange,
 } from '@/src/hooks/queries/useShiftsRange';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
+import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useDeepLinkHousehold } from '@/src/hooks/useDeepLinkHousehold';
 import { wallClockToUtcIso } from '@/src/lib/wallClock';
 import { CALENDAR_VIEWS } from '@/src/store/calendarViewStore';
@@ -201,6 +202,23 @@ export function ScheduleShiftsScreen({
   const commitmentsQuery = useHouseholdCommitments(activeHousehold.householdId);
   const closuresQuery = useHouseholdClosures(activeHousehold.householdId);
   const carersQuery = useHouseholdCarers(activeHousehold.householdId);
+  // P11: apricot means "on the clock", so the rows need the clock, not just
+  // the calendar. One query for the whole screen — the CURRENT week, since
+  // that's the only week a running entry can live in, regardless of which
+  // week the reader has paged to.
+  const weekTimeEntries = useWeekTimeEntries(
+    activeHousehold.householdId,
+    currentWeekStartISO
+  );
+  const runningShiftIds = useMemo(
+    () =>
+      new Set(
+        (weekTimeEntries.data ?? [])
+          .filter(e => e.status === 'running' && e.shift_id)
+          .map(e => e.shift_id as string)
+      ),
+    [weekTimeEntries.data]
+  );
   const timeOff = timeOffQuery.data ?? [];
 
   // Folding commitments/pattern loading in for cover-viewing roles only —
@@ -688,6 +706,7 @@ export function ScheduleShiftsScreen({
           focusUncoveredKey={scrollToUncoveredKey ?? focusUncoveredKey}
           commitments={commitmentsQuery.data ?? []}
           listHeader={header}
+          runningShiftIds={runningShiftIds}
         />
       ) : null}
 

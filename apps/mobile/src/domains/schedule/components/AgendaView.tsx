@@ -76,6 +76,9 @@ interface AgendaViewProps {
   listRef?: RefObject<FlashListRef<AgendaItem> | null>;
   /** Scrolls with the list instead of sitting frozen above it. */
   listHeader?: ReactElement;
+  /** Ids of shifts someone is clocked into right now — threaded straight to
+   * `ShiftRow`, resolved once per screen rather than queried per row. */
+  runningShiftIds?: ReadonlySet<string>;
 }
 
 export type AgendaItem =
@@ -456,6 +459,7 @@ export function AgendaView({
   commitments = [],
   listRef,
   listHeader,
+  runningShiftIds,
 }: AgendaViewProps) {
   const { t } = useTranslation('schedule');
   const { t: tCommon } = useTranslation('common');
@@ -806,6 +810,7 @@ export function AgendaView({
                   item.shift.kind === SHIFT_KINDS.PARENT_COVER
                 }
                 coverUndoDisabledReason={closedReason}
+                runningShiftIds={runningShiftIds}
               />
               {hasTimeOffConflict ? (
                 <View
