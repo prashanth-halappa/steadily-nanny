@@ -83,6 +83,8 @@ function makeOverlapRepo(
 ): any {
   return {
     listConfirmedForCarerInRange: mock(async () => shifts),
+    // D77a: not under test here — no shift ever transitions.
+    demoteConfirmedToPending: mock(async () => false),
   };
 }
 

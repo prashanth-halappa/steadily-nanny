@@ -71,6 +71,8 @@ function makeTimeOffRepo() {
 function makeOverlapRepo() {
   return {
     listConfirmedForCarerInRange: mock(async () => []),
+    // D77a: not under test here — no shift ever transitions.
+    demoteConfirmedToPending: mock(async () => false),
   };
 }
 
@@ -132,6 +134,8 @@ describe('TimeOffCommandService.create — time_off_requested', () => {
       listConfirmedForCarerInRange: mock(async () => [
         { id: 's1', household_id: 'hh-reyes' },
       ]),
+      // D77a: not under test here — no shift ever transitions.
+      demoteConfirmedToPending: mock(async () => false),
     };
     const svc = new TimeOffCommandService(
       makeTimeOffRepo() as never,

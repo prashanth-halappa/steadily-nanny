@@ -18,6 +18,10 @@ import { HouseholdMemberRepository } from '../../household';
 import { notifyHouseholdParents, type PushPayload } from '../../notification';
 import { ptoCommandService } from '../../pay/services/ptoCommandService';
 import { ShiftChangeRequestRepository } from '../../shift/repositories/shiftChangeRequestRepository';
+// Imported by concrete path, not through the shift barrel — same
+// cycle-avoidance convention this module already uses for
+// ShiftChangeRequestRepository above (D77a).
+import { ShiftEventRepository } from '../../shift/repositories/shiftEventRepository';
 import { CarerTimeOffRepository } from '../repositories/carerTimeOffRepository';
 import {
   type OverlappingBookedShift,
@@ -43,6 +47,8 @@ export interface OverlappingShiftLookup {
     from: string,
     to: string
   ): Promise<OverlappingBookedShift[]>;
+  /** D77a — see `OverlappingShiftRepository.demoteConfirmedToPending`. */
+  demoteConfirmedToPending(shiftId: string): Promise<boolean>;
 }
 
 /** Fire-and-forget parent notify — injectable for tests. */
@@ -222,7 +228,9 @@ export class TimeOffCommandService {
         p_proposed_starts_at: null,
         p_proposed_ends_at: null,
         p_message: 'Reported sick',
-      })
+      }),
+    // D77a: audit trail for the demote-on-time-off transition below.
+    private readonly eventRepo: ShiftEventRepository = new ShiftEventRepository()
   ) {}
 
   /**
@@ -247,6 +255,15 @@ export class TimeOffCommandService {
       kind: input.kind ?? CARER_TIME_OFF_KINDS.PERSONAL,
       user_id: userId,
     });
+    // D77a: demote every confirmed shift this time off overlaps, BEFORE the
+    // kind branch below — both personal and sick absences leave a shift with
+    // nobody coming, so both demote. See `safeDemoteOverlapping`.
+    await this.safeDemoteOverlapping(
+      userId,
+      carer_time_off.starts_at,
+      carer_time_off.ends_at,
+      carer_time_off.kind
+    );
     // D-23 / S10: a sick day is not a note, it is an absence with consequences
     // for booked shifts. Handled on its own path so the planned-time-off flow
     // below is untouched.
@@ -486,6 +503,16 @@ export class TimeOffCommandService {
       ...input,
       sequence: row.sequence + 1,
     });
+    // D77a: a range widened by this PATCH can newly overlap shifts that were
+    // untouched by the original create — re-run the demote against the
+    // EFFECTIVE (post-update) range on every update, same as the push scan
+    // below it.
+    await this.safeDemoteOverlapping(
+      userId,
+      carer_time_off.starts_at,
+      carer_time_off.ends_at,
+      carer_time_off.kind
+    );
     const affected_shift_count = await this.safeScanAndNotify(
       userId,
       carer_time_off.starts_at,
@@ -493,6 +520,98 @@ export class TimeOffCommandService {
       carer_time_off.kind
     );
     return { carer_time_off, affected_shift_count };
+  }
+
+  /**
+   * D77a — demote every overlapping CONFIRMED shift to `pending`. `pending`
+   * is already excluded from `COVERING_SHIFT_STATUSES`
+   * (`packages/shared-types/src/uncoveredCare.ts`), so the shift falls out
+   * of the covering set with ZERO changes to `computeUncovered` — no stored
+   * coverage flag, per `docs/12-NEED-COVERAGE.md` §4.
+   *
+   * Applies for BOTH `kind`s. A sick day is the likeliest to leave care
+   * uncovered, and a `pending` shift next to an open sick-day cancel request
+   * (`safeOpenSickCancellations`) is coherent — nobody has agreed to work
+   * it.
+   *
+   * Best-effort like the push scan below it: a failure here must not fail
+   * the time-off write. Each demote is its own conditional UPDATE
+   * (`OverlappingShiftRepository.demoteConfirmedToPending`) — atomic and
+   * idempotent, never read-then-write — so a shift already moved off
+   * `confirmed` (by a concurrent write, or a shift this same range already
+   * demoted) is silently skipped, no audit row written.
+   *
+   * Consequence, accepted on purpose: cancelling the time off later does
+   * NOT re-confirm the shift. It stays `pending` and the carer re-confirms
+   * — the same consent-parity direction as migration 034's parent-time-edit
+   * demote (re-establishing consent is the safe direction, not the risky
+   * one).
+   */
+  private async safeDemoteOverlapping(
+    carerId: string,
+    startsAt: string,
+    endsAt: string,
+    kind: CarerTimeOffKind
+  ): Promise<void> {
+    let shifts: OverlappingBookedShift[];
+    try {
+      shifts = await this.overlapRepo.listConfirmedForCarerInRange(
+        carerId,
+        startsAt,
+        endsAt
+      );
+    } catch (error) {
+      logger.error('Overlap scan for shift demotion failed after write', {
+        carerId,
+        startsAt,
+        endsAt,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return;
+    }
+
+    for (const shift of shifts) {
+      let demoted: boolean;
+      try {
+        demoted = await this.overlapRepo.demoteConfirmedToPending(shift.id);
+      } catch (error) {
+        logger.error('Failed to demote overlapping shift to pending', {
+          carerId,
+          shiftId: shift.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        continue;
+      }
+      if (!demoted) {
+        continue; // already off `confirmed` — nothing transitioned, nothing to audit
+      }
+
+      try {
+        await this.eventRepo.insertMany([
+          {
+            household_id: shift.household_id,
+            shift_id: shift.id,
+            local_date: shift.local_date,
+            actor_id: carerId,
+            event_type: 'shift_demoted_time_off',
+            payload: {
+              previous_status: 'confirmed',
+              status: 'pending',
+              kind,
+            },
+          },
+        ]);
+      } catch (error) {
+        logger.warn(
+          'Failed to record shift_demoted_time_off event; shift is still pending',
+          {
+            shiftId: shift.id,
+            householdId: shift.household_id,
+            error: error instanceof Error ? error.message : String(error),
+          }
+        );
+      }
+    }
   }
 
   /**

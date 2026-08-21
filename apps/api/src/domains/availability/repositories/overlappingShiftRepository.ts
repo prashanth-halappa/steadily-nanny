@@ -55,4 +55,31 @@ export class OverlappingShiftRepository {
 
     return (data ?? []) as OverlappingBookedShift[];
   }
+
+  /**
+   * D77a — demote one CONFIRMED shift to pending. A single conditional
+   * UPDATE (`.eq('status', 'confirmed')`), never read-then-write: atomic and
+   * idempotent under concurrency, and a no-op (returns `false`) if the shift
+   * already moved off `confirmed` by the time this runs — including a shift
+   * this same call already demoted on a retry. Callers must only audit a
+   * transition THIS call actually made, never assume one happened.
+   */
+  async demoteConfirmedToPending(shiftId: string): Promise<boolean> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .update({ status: SHIFT_STATUSES.PENDING })
+      .eq('id', shiftId)
+      .eq('status', SHIFT_STATUSES.CONFIRMED)
+      .select('id');
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to demote overlapping shift to pending',
+        'DATABASE_ERROR',
+        { details: error.message, shiftId }
+      );
+    }
+
+    return (data ?? []).length > 0;
+  }
 }
