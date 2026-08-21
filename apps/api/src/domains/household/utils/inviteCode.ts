@@ -32,6 +32,28 @@ export function generateInviteCode(): string {
   return `${randomSegment(SEGMENT_LENGTH)}-${randomSegment(SEGMENT_LENGTH)}`;
 }
 
+/**
+ * Coerce however a human typed or pasted a code into the stored `XXX-XXX`
+ * shape. Case, spaces, a missing hyphen, a hyphen in the wrong place, the
+ * invisible characters a messaging app adds around a copied token — all of it
+ * describes the same code, and the person typing it has no way to know which
+ * spelling the database holds.
+ *
+ * Six characters is what the copy promises ("six characters like R4K-92T"), so
+ * six characters is what this accepts. Anything that is not code-alphabet is
+ * dropped rather than rejected; the lookup still says no to a genuinely wrong
+ * code.
+ */
+export function normalizeInviteCode(code: string): string {
+  const cleaned = code
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 6);
+  return cleaned.length > 3
+    ? `${cleaned.slice(0, 3)}-${cleaned.slice(3)}`
+    : cleaned;
+}
+
 /** Whether a string matches the XXX-XXX invite code shape. */
 export function isValidInviteCodeFormat(code: string): boolean {
   return CODE_FORMAT.test(code);

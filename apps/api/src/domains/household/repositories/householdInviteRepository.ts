@@ -14,6 +14,7 @@ import { DatabaseError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
 import { HOUSEHOLD_INVITE_STATUSES } from '../schemas';
 import type { HouseholdInvite, HouseholdMember } from '../types';
+import { normalizeInviteCode } from '../utils/inviteCode';
 
 /**
  * Every `outcome` 094's `redeem_draft_household_invite` can answer with.
@@ -49,12 +50,21 @@ export class HouseholdInviteRepository extends BaseRepository<HouseholdInvite> {
     super('household_invites');
   }
 
-  /** Look up an invite by its human-transcribable code. */
+  /**
+   * Look up an invite by its human-transcribable code.
+   *
+   * Normalises here rather than in each caller: preview, redeem and the
+   * generation uniqueness check all reach this, and a code that works on one
+   * path but not another is the worst version of this bug. `R4K92T`,
+   * `r4k-92t` and `R4K 92T` are the same code to everyone except a string
+   * comparison.
+   */
   async findByCode(code: string): Promise<HouseholdInvite | null> {
+    const normalized = normalizeInviteCode(code);
     const { data, error } = await supabaseService
       .from(this.table)
       .select('*')
-      .eq('code', code)
+      .eq('code', normalized)
       .maybeSingle();
 
     if (error) {
