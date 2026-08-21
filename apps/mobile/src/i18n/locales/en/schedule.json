@@ -345,10 +345,8 @@
     "noClashes": "No clashes in the next two weeks",
     "clashCount_one": "1 clash in the next two weeks",
     "clashCount_other": "{{count}} clashes in the next two weeks",
-    "workingDaysThisFamily_one": "{{count}} day with this family",
-    "workingDaysThisFamily_other": "{{count}} days with this family",
-    "workingDaysOtherFamily_one": "{{count}} day with the other family",
-    "workingDaysOtherFamily_other": "{{count}} days with the other family"
+    "workingDaysNamed_one": "{{count}} day with {{family}}",
+    "workingDaysNamed_other": "{{count}} days with {{family}}"
   },
   "changeRequestKind": {
     "time_change": "Time change",

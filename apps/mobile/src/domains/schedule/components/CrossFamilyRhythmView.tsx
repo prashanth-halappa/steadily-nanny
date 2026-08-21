@@ -169,6 +169,7 @@ export function CrossFamilyRhythmView({
   listHeader,
 }: CrossFamilyRhythmViewProps) {
   const { t } = useTranslation('schedule');
+  const { t: tCommon } = useTranslation('common');
   const colors = useThemeColors();
   // Same tab-bar dead-zone fix as Settings (BUG1) — this is one of the
   // Schedule tab's own scrollable views, so it needs the same real
@@ -197,11 +198,9 @@ export function CrossFamilyRhythmView({
   const slots = slotsFromShifts(meShifts.data ?? [], timeZoneFor);
   const index = buildSlotIndex(slots);
 
-  // Which household is the switcher's current selection — used for the
-  // working-days summary copy ("this family"/"the other family") and the
-  // dot colour order. The legend itself names every household by `h.name`
-  // (this screen is nanny-only, see module doc).
-  const isActive = (householdId: string) => householdId === activeHouseholdId;
+  // Dot colour order follows the caller's household list. Working-days
+  // summary and legend both name every household by `h.name` (this screen
+  // is nanny-only, see module doc).
   const householdIds = households.map(h => h.id);
   const dotColours = [
     colors.category.accent1,
@@ -250,13 +249,10 @@ export function CrossFamilyRhythmView({
           testID={`cross-family-working-days-${h.id}`}
           className="text-muted-foreground"
         >
-          {isActive(h.id)
-            ? t('crossFamily.workingDaysThisFamily', {
-                count: countWorkingDays(index, h.id, dates),
-              })
-            : t('crossFamily.workingDaysOtherFamily', {
-                count: countWorkingDays(index, h.id, dates),
-              })}
+          {t('crossFamily.workingDaysNamed', {
+            count: countWorkingDays(index, h.id, dates),
+            family: h.name || tCommon('theFamily'),
+          })}
         </Small>
       ))}
 
