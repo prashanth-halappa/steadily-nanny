@@ -198,6 +198,7 @@ export function TodayScreen() {
   const { t } = useTranslation('today');
   const { t: tSchedule } = useTranslation('schedule');
   const { t: tErrors } = useTranslation('errors');
+  const { t: tCommon } = useTranslation('common');
   // Server-derived role, NOT the local setupProgress store — that's
   // in-flight wizard UI state and can be empty/stale for a parent whose
   // household was seeded directly, or who signed in on a fresh device. See
@@ -292,9 +293,7 @@ export function TodayScreen() {
     activeNanny,
     mood: heroMood,
     rows: coverRows.rows,
-    family: household
-      ? (household.name ?? t('household:untitledDraft'))
-      : undefined,
+    family: household ? (household.name ?? tCommon('theFamily')) : undefined,
     time:
       clockInAt && household
         ? formatClockTime(clockInAt, household.timezone)
@@ -683,7 +682,7 @@ export function TodayScreen() {
             ) : null}
             {showFirstClockInMoment ? (
               <FirstClockInMomentCard
-                family={household.name ?? t('household:untitledDraft')}
+                family={household.name ?? tCommon('theFamily')}
                 momentKey={firstClockInKey}
               />
             ) : null}

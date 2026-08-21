@@ -168,6 +168,7 @@ export function NannyWeekView({
   openBreakdownSignal = 0,
 }: NannyWeekViewProps) {
   const { t } = useTranslation('hours');
+  const { t: tCommon } = useTranslation('common');
   const { t: tExpenses } = useTranslation('expenses');
   const { t: tErrors } = useTranslation('errors');
   const { t: tSchedule } = useTranslation('schedule');
@@ -514,9 +515,13 @@ export function NannyWeekView({
   const todayOffset = weekDates.indexOf(todayISO);
   const todayIndex =
     todayOffset === -1 ? null : (weekStartsOn + todayOffset) % 7;
+  // Hoisted out of the t() args on purpose: a tCommon() call nested inside
+  // another t() call's arguments gets attributed to the OUTER namespace by
+  // the i18n key-resolution guard (GOLDEN-FIXES #7c's sibling failure mode).
+  const familyName = activeHousehold.household?.name ?? tCommon('theFamily');
   const lead = t('lead.nanny', {
     hours: weekHoursLabel,
-    family: activeHousehold.household?.name ?? '',
+    family: familyName,
   });
 
   const dayRows = weekDates
@@ -778,7 +783,7 @@ export function NannyWeekView({
                   hours: weekHoursLabel,
                 })}
                 body={t('receipts.weekClosed.body', {
-                  household: activeHousehold.household?.name ?? '',
+                  household: familyName,
                 })}
               />
             ) : null}
