@@ -105,6 +105,29 @@ describe('AgendaView source', () => {
     expect(agendaSource).toContain('className="self-start"');
   });
 
+  // Quiet side-by-side ask buttons are half-width; the long cover.ask* keys
+  // truncate mid-time ("…6:0("). Short keys omit the range — the H4 above
+  // already states child + window. Loud keeps the long keys (room + useful).
+  it('quiet ask uses the short cover keys; loud ask keeps the long ones', () => {
+    expect(enSchedule.cover?.askSomeoneToCoverShort).toBe('Ask a nanny');
+    expect(enSchedule.cover?.askToCoverShort).toBe('Ask {{carerName}}');
+    // Loud branch: long keys only (askLabel / cover.askToCover|askSomeoneToCover).
+    expect(agendaSource).toMatch(
+      /isLoud \? \([\s\S]*?label=\{askLabel\}[\s\S]*?\) : \([\s\S]*?label=\{askLabelQuiet\}/
+    );
+    expect(agendaSource).toContain("t('cover.askToCoverShort'");
+    expect(agendaSource).toContain("t('cover.askSomeoneToCoverShort'");
+    expect(agendaSource).toContain("t('cover.askToCover'");
+    expect(agendaSource).toContain("t('cover.askSomeoneToCover'");
+    // Same named-carer condition for both long and short pairs.
+    expect(agendaSource).toMatch(
+      /carerFirstName\s*\?\s*t\('cover\.askToCover'/
+    );
+    expect(agendaSource).toMatch(
+      /carerFirstName\s*\?\s*t\('cover\.askToCoverShort'/
+    );
+  });
+
   // B3 — the reframe from alarm to question. Values only; the keys are
   // unchanged (`cover.rowPill` etc. above stay in the source).
   it('B3: the row pill, cause line and action labels read as a question, not an accusation', () => {

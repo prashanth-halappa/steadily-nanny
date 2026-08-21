@@ -366,6 +366,8 @@
     "rowMeta": "{{childName}} · {{cause}}",
     "askToCover": "Ask {{carerName}} to start at {{start}}",
     "askSomeoneToCover": "Ask a nanny to cover {{start}} – {{end}}",
+    "askToCoverShort": "Ask {{carerName}}",
+    "askSomeoneToCoverShort": "Ask a nanny",
     "askAgain": "Ask {{carerName}} again",
     "askSomeoneElse": "Ask another nanny",
     "restrictedActionAskCover": "ask another nanny to cover this shift",

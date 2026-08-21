@@ -263,6 +263,11 @@ function UncoveredRow({
         start: formattedStart,
         end: formattedEnd,
       });
+  // Quiet half-width buttons cannot fit the long time-range labels; the H4
+  // above already states child + window, so drop the range here only.
+  const askLabelQuiet = carerFirstName
+    ? t('cover.askToCoverShort', { carerName: carerFirstName })
+    : t('cover.askSomeoneToCoverShort');
 
   const handleCoverPress = () => {
     if (!householdId) return;
@@ -384,7 +389,7 @@ function UncoveredRow({
                     testID={`schedule-uncovered-ask-${key}`}
                     size="sm"
                     variant="secondary"
-                    label={askLabel}
+                    label={askLabelQuiet}
                     reason={closedReason}
                     onPress={() => router.push(extraHref)}
                   />

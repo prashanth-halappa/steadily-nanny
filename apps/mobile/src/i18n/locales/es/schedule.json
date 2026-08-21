@@ -366,6 +366,8 @@
     "rowMeta": "{{childName}} · {{cause}}",
     "askToCover": "Pide a {{carerName}} que empiece a las {{start}}",
     "askSomeoneToCover": "Pide a una niñera que cubra {{start}} – {{end}}",
+    "askToCoverShort": "Pide a {{carerName}}",
+    "askSomeoneToCoverShort": "Pide a una niñera",
     "askAgain": "Pide de nuevo a {{carerName}}",
     "askSomeoneElse": "Pide a otra niñera",
     "restrictedActionAskCover": "pedir a otra niñera que cubra este turno",
