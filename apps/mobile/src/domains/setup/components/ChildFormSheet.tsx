@@ -100,7 +100,6 @@ export function ChildFormSheet({
             value={name}
             onChangeText={setName}
             placeholder={t('children.formNamePlaceholder')}
-            autoFocus
           />
         </View>
 
