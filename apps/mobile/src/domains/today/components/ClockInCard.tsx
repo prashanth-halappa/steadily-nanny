@@ -38,6 +38,7 @@
  */
 
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import type { TimeEntry } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { SCHEDULED_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -80,13 +81,14 @@ import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { useIsOnline } from '@/src/lib/network';
 import { showErrorToast } from '@/src/lib/toast';
-import { wallClockToUtcIso } from '@/src/lib/wallClock';
+import { utcIsoToWallClockHHMM, wallClockToUtcIso } from '@/src/lib/wallClock';
 import { useAuthStore } from '@/src/store/auth';
 import { useClockOutReminder } from '../hooks/useClockOutReminder';
 import { useElapsedTimer } from '../hooks/useElapsedTimer';
 import { useOverdueClockOut } from '../hooks/useOverdueClockOut';
 import { resolveDefaultClockOutAt } from '../utils/clockOutReminder';
 import { ClockOutSheet, type ClockOutSheetSubmitInput } from './ClockOutSheet';
+import { MissedHoursSheet } from './MissedHoursSheet';
 
 interface ClockInCardProps {
   householdId: string;
@@ -177,6 +179,28 @@ function formatShiftMetaLine(parts: {
   return segments.length > 0 ? segments.join(' · ') : null;
 }
 
+/**
+ * Whether any of today's own entries overlaps `shift`'s window at all —
+ * shift-scoped on purpose. A day-level "did she log anything today" check
+ * would hide a missed MORNING shift the instant she clocks in for an
+ * unrelated EVENING one the same day, which is the exact bug this exists to
+ * avoid. A still-running entry (no `clock_out_at`) counts through to now.
+ */
+function shiftIsCovered(
+  shift: Pick<Shift, 'starts_at' | 'ends_at'>,
+  entries: readonly Pick<TimeEntry, 'clock_in_at' | 'clock_out_at'>[]
+): boolean {
+  const shiftStart = new Date(shift.starts_at).getTime();
+  const shiftEnd = new Date(shift.ends_at).getTime();
+  return entries.some(e => {
+    const entryStart = new Date(e.clock_in_at).getTime();
+    const entryEnd = e.clock_out_at
+      ? new Date(e.clock_out_at).getTime()
+      : Date.now();
+    return entryStart < shiftEnd && entryEnd > shiftStart;
+  });
+}
+
 type OffClockShiftState =
   | {
       kind: 'scheduled';
@@ -190,6 +214,10 @@ type OffClockShiftState =
       declined?: { start: string; end: string };
     }
   | { kind: 'declined'; start: string; end: string }
+  // Already ended, and nothing was logged against today at all — outranks
+  // an upcoming shift the same day, which is why it is checked first in
+  // `offClockShift` rather than folded into `scheduled`'s past case.
+  | { kind: 'missed'; start: string; end: string }
   | { kind: 'none' };
 
 export function ClockInCard({
@@ -287,6 +315,41 @@ export function ClockInCard({
     return todays[0] ?? null;
   }, [weekEntries.data, today, currentUserId, entry]);
 
+  // Today's own live entries — voided doesn't count. Kept separately from
+  // `receiptEntry` above: that one is the single most recent COMPLETED
+  // receipt for the empty-state banner, this is every entry today, used
+  // below to test coverage per shift rather than per day.
+  const todaysEntries = useMemo(
+    () =>
+      (weekEntries.data ?? []).filter(
+        e =>
+          e.local_date === today &&
+          e.carer_id === currentUserId &&
+          e.status !== 'voided'
+      ),
+    [weekEntries.data, today, currentUserId]
+  );
+
+  // A scheduled shift that already ended with nothing covering IT
+  // specifically — see `shiftIsCovered`. Checked ahead of everything else
+  // in `offClockShift`: without this, an upcoming later shift the same day
+  // (`stillActive` below) would hide the missed one entirely, and this is
+  // the one thing on the card she actually needs to act on.
+  const missedShift = useMemo(() => {
+    const now = Date.now();
+    return (shifts.data ?? [])
+      .filter(
+        s =>
+          s.local_date === today &&
+          s.carer_id === currentUserId &&
+          SCHEDULED_STATUS_SET.has(s.status) &&
+          new Date(s.ends_at).getTime() <= now &&
+          !shiftIsCovered(s, todaysEntries)
+      )
+      .sort((a, b) => a.starts_at.localeCompare(b.starts_at))
+      .at(-1);
+  }, [shifts.data, today, currentUserId, todaysEntries]);
+
   const relevantScheduledShift = useMemo(() => {
     const todayShifts = (shifts.data ?? [])
       .filter(s => s.local_date === today && s.carer_id === currentUserId)
@@ -303,6 +366,14 @@ export function ClockInCard({
   }, [shifts.data, today, currentUserId]);
 
   const offClockShift: OffClockShiftState = useMemo(() => {
+    if (missedShift) {
+      return {
+        kind: 'missed',
+        start: formatClockTime(missedShift.starts_at, timeZone),
+        end: formatClockTime(missedShift.ends_at, timeZone),
+      };
+    }
+
     const todayShifts = (shifts.data ?? [])
       .filter(s => s.local_date === today && s.carer_id === currentUserId)
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
@@ -355,7 +426,14 @@ export function ClockInCard({
       end: formatClockTime(next.ends_at, timeZone),
       ...declinedSecondary,
     };
-  }, [shifts.data, today, timeZone, currentUserId, relevantScheduledShift]);
+  }, [
+    shifts.data,
+    today,
+    timeZone,
+    currentUserId,
+    relevantScheduledShift,
+    missedShift,
+  ]);
 
   const runningLateSent = useMemo(() => {
     if (!relevantScheduledShift) return false;
@@ -416,6 +494,10 @@ export function ClockInCard({
   const [showClockOutSheet, setShowClockOutSheet] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [isDiscardOpen, setIsDiscardOpen] = useState(false);
+  // Opens the SAME sheet `AddMissedHoursCard` uses, prefilled from
+  // `missedShift`'s own schedule — a suggestion she confirms or edits, never
+  // a write fired on tap. "We record what happened, not what was planned."
+  const [showMissedHoursSheet, setShowMissedHoursSheet] = useState(false);
   // Frozen when the sheet opens so the optimistic clear (and a 409 overlap
   // invalidate) can null the running cache without remounting the sheet or
   // reseeding its draft from shifting props.
@@ -592,11 +674,14 @@ export function ClockInCard({
   const sheetDefaultClockOutAt = sheetDefaultClockOutAtRef.current;
   const sheetShowOverdueHint = sheetShowOverdueHintRef.current;
 
+  // A missed shift outranks a receipt for a DIFFERENT one — "Clocked out at
+  // 7:00 PM" reads as the day being settled, which isn't true while a
+  // missed morning is still sitting there unlogged.
   const tone = overdue
     ? 'attention'
     : entry
       ? 'live'
-      : receiptEntry
+      : receiptEntry && !missedShift
         ? 'positive'
         : 'default';
 
@@ -680,7 +765,9 @@ export function ClockInCard({
         </>
       ) : (
         <>
-          {receiptEntry?.clock_out_at && receiptEntry.clock_in_at ? (
+          {receiptEntry?.clock_out_at &&
+          receiptEntry.clock_in_at &&
+          !missedShift ? (
             <View testID="today-clock-receipt" className="gap-1">
               <H3>
                 {t('liveActivity.receiptTitle', {
@@ -738,6 +825,13 @@ export function ClockInCard({
                     end: offClockShift.end,
                   })}
                 </H3>
+              ) : offClockShift.kind === 'missed' ? (
+                <H3 testID="today-off-clock-missed" tabular>
+                  {t('missedShiftBody', {
+                    start: offClockShift.start,
+                    end: offClockShift.end,
+                  })}
+                </H3>
               ) : (
                 // The hero must never be a negation — "Not on the clock" above
                 // already said the absence once. Nothing scheduled is an
@@ -766,6 +860,20 @@ export function ClockInCard({
                     end: offClockShift.declined.end,
                   })}
                 </Small>
+              ) : null}
+              {/* Opens the SAME sheet `AddMissedHoursCard` uses, prefilled
+                  from the shift's own schedule — a suggestion, not a fact:
+                  she confirms or adjusts the times before anything is
+                  recorded. Same copy (`missedHours.cta`) either way. */}
+              {offClockShift.kind === 'missed' ? (
+                <Button
+                  testID="today-log-missed-shift"
+                  variant="outline"
+                  size="default"
+                  onPress={() => setShowMissedHoursSheet(true)}
+                >
+                  {t('missedHours.cta')}
+                </Button>
               ) : null}
             </>
           )}
@@ -828,7 +936,9 @@ export function ClockInCard({
                 : t('clockInHint')
               : offClockShift.kind === 'declined'
                 ? t('declinedTodayHint')
-                : t('clockInHint')}
+                : offClockShift.kind === 'missed'
+                  ? t('missedShiftHint')
+                  : t('clockInHint')}
           </Small>
         </>
       )}
@@ -856,6 +966,17 @@ export function ClockInCard({
           defaultClockOutAt={sheetDefaultClockOutAt}
           showOverdueHint={sheetShowOverdueHint}
           submitError={refusal}
+        />
+      ) : null}
+
+      {showMissedHoursSheet && missedShift ? (
+        <MissedHoursSheet
+          householdId={householdId}
+          timeZone={timeZone}
+          onDismiss={() => setShowMissedHoursSheet(false)}
+          initialDate={missedShift.local_date}
+          initialStart={utcIsoToWallClockHHMM(missedShift.starts_at, timeZone)}
+          initialEnd={utcIsoToWallClockHHMM(missedShift.ends_at, timeZone)}
         />
       ) : null}
 

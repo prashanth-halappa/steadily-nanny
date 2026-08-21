@@ -34,6 +34,8 @@
   "saveCorrection": "Save changes",
   "nannyScheduledBody": "Today, {{start}} – {{end}}",
   "nannyArrivingBody": "Starts at {{start}}",
+  "missedShiftBody": "{{start}} – {{end}} · not logged yet",
+  "missedShiftHint": "That happens — add the hours you worked whenever you're ready.",
   "awaitingYourAnswer": "Waiting on you",
   "clockedIntoHousehold": "At {{household}}",
   "weekLine": "{{duration}} this week",

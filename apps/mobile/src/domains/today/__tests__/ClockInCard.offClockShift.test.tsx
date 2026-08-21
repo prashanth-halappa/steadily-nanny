@@ -19,7 +19,7 @@ import {
   TIME_ENTRY_KINDS,
   TIME_ENTRY_STATUSES,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
-import { waitFor } from '@testing-library/react-native';
+import { fireEvent, waitFor } from '@testing-library/react-native';
 import { useAuthStore } from '@/src/store/auth';
 import { renderWithProviders } from '@/src/test-utils';
 
@@ -101,6 +101,8 @@ const BUG_SCENARIO_SHIFTS = [
 
 let ClockInCard: typeof import('../components/ClockInCard').ClockInCard;
 let mockUseShiftsRange: ReturnType<typeof mock>;
+let mockUseWeekTimeEntries: ReturnType<typeof mock>;
+const missedShiftMutateAsync = mock(() => Promise.resolve({}));
 const getRunningMock = mock(() => Promise.resolve(null as unknown));
 const clockInMock = mock(() => Promise.resolve(RUNNING_ENTRY));
 const clockOutMock = mock(() =>
@@ -150,6 +152,23 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useShiftsRange', () => ({
     useShiftsRange: mockUseShiftsRange,
   }));
+  mockUseWeekTimeEntries = mock(() => ({
+    data: [],
+    isSuccess: true,
+    isError: false,
+    isLoading: false,
+  }));
+  mock.module('@/src/hooks/queries/useWeekTimeEntries', () => ({
+    useWeekTimeEntries: mockUseWeekTimeEntries,
+  }));
+  // MissedHoursSheet's own mutation — a spy so a test can assert the sheet
+  // opened WITHOUT submitting anything on her behalf.
+  mock.module('@/src/hooks/mutations/useCreateRetroactiveEntry', () => ({
+    useCreateRetroactiveEntry: () => ({
+      mutateAsync: missedShiftMutateAsync,
+      isPending: false,
+    }),
+  }));
 
   const mod = await import('../components/ClockInCard');
   ClockInCard = mod.ClockInCard;
@@ -170,6 +189,14 @@ beforeEach(() => {
     isError: false,
     isLoading: false,
   });
+  mockUseWeekTimeEntries.mockReturnValue({
+    data: [],
+    isSuccess: true,
+    isError: false,
+    isLoading: false,
+  });
+  missedShiftMutateAsync.mockReset();
+  missedShiftMutateAsync.mockImplementation(() => Promise.resolve({}));
   useAuthStore.setState({
     session: { user: { id: NANNY_ID } } as unknown as never,
     user: { id: NANNY_ID } as unknown as never,
@@ -329,5 +356,136 @@ describe('ClockInCard — off-clock shift selection', () => {
     // The label renders (rather than the loading dots) only when the button
     // is genuinely actionable.
     expect(getByTestId('today-clock-in-label')).toBeTruthy();
+  });
+
+  it('distinguishes an already-ended, unclocked shift from an upcoming one', async () => {
+    // Ends at 05:00 — before "now" (05:30) — and nothing was ever clocked
+    // against it (no time-entry mock is wired for this file, so
+    // useWeekTimeEntries resolves with no data either way).
+    mockUseShiftsRange.mockReturnValue({
+      data: [
+        makeShift({
+          id: 'shift-missed',
+          status: 'confirmed',
+          starts_at: '2026-08-10T02:00:00.000Z',
+          ends_at: '2026-08-10T05:00:00.000Z',
+        }),
+      ],
+      isSuccess: true,
+      isError: false,
+      isLoading: false,
+    });
+
+    const { getByTestId, queryByTestId } = renderWithProviders(
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
+    );
+
+    await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
+
+    // A distinct past-tense state, not the same "scheduled" hero an upcoming
+    // shift renders through.
+    expect(getByTestId('today-off-clock-missed')).toBeTruthy();
+    expect(queryByTestId('today-off-clock-scheduled')).toBeNull();
+    expect(queryByTestId('today-off-clock-arriving')).toBeNull();
+    // And she can act on it right here, without a second form to fill in —
+    // the shift's own times are already known.
+    expect(getByTestId('today-log-missed-shift')).toBeTruthy();
+  });
+
+  it('opens a sheet prefilled with the shift times on tap, and never submits on her behalf', async () => {
+    mockUseShiftsRange.mockReturnValue({
+      data: [
+        makeShift({
+          id: 'shift-missed-prefill',
+          status: 'confirmed',
+          starts_at: '2026-08-10T02:00:00.000Z',
+          ends_at: '2026-08-10T05:00:00.000Z',
+        }),
+      ],
+      isSuccess: true,
+      isError: false,
+      isLoading: false,
+    });
+
+    const { getByTestId } = renderWithProviders(
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
+    );
+
+    await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
+    fireEvent.press(getByTestId('today-log-missed-shift'));
+
+    await waitFor(() =>
+      expect(getByTestId('today-missed-hours-sheet')).toBeTruthy()
+    );
+    // Prefilled from the shift's own schedule — the scheduled window is a
+    // suggestion here, never a fact recorded without her confirming it.
+    expect(getByTestId('today-missed-hours-times-start').props.value).toEqual(
+      new Date(2000, 0, 1, 2, 0, 0, 0)
+    );
+    expect(getByTestId('today-missed-hours-times-end').props.value).toEqual(
+      new Date(2000, 0, 1, 5, 0, 0, 0)
+    );
+    // Opening the sheet must never itself be a money write.
+    expect(missedShiftMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('still surfaces a missed morning shift after she clocks in for a later shift the same day', async () => {
+    mockUseShiftsRange.mockReturnValue({
+      data: [
+        makeShift({
+          id: 'shift-missed-morning',
+          status: 'confirmed',
+          starts_at: '2026-08-10T02:00:00.000Z',
+          ends_at: '2026-08-10T05:00:00.000Z',
+        }),
+        makeShift({
+          id: 'shift-evening',
+          status: 'confirmed',
+          starts_at: '2026-08-10T17:00:00.000Z',
+          ends_at: '2026-08-10T19:00:00.000Z',
+        }),
+      ],
+      isSuccess: true,
+      isError: false,
+      isLoading: false,
+    });
+    // A real, submitted entry for TODAY — but it covers the evening shift,
+    // not the missed morning one. Day-scoping alone would hide the missed
+    // shift the instant this exists; the check has to be per-shift.
+    mockUseWeekTimeEntries.mockReturnValue({
+      data: [
+        {
+          id: 'entry-evening',
+          household_id: HOUSEHOLD_ID,
+          carer_id: NANNY_ID,
+          local_date: TODAY,
+          status: 'submitted',
+          clock_in_at: '2026-08-10T17:00:00.000Z',
+          clock_out_at: '2026-08-10T19:00:00.000Z',
+        },
+      ],
+      isSuccess: true,
+      isError: false,
+      isLoading: false,
+    });
+
+    const { getByTestId } = renderWithProviders(
+      <ClockInCard
+        householdId={HOUSEHOLD_ID}
+        timeZone={TIME_ZONE}
+        weekStartsOn={1}
+      />
+    );
+
+    await waitFor(() => expect(getByTestId('today-clock-in')).toBeTruthy());
+    expect(getByTestId('today-off-clock-missed')).toBeTruthy();
   });
 });
