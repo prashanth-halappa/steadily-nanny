@@ -104,7 +104,8 @@ export type InboxTimesheetInput = {
   query_note: string | null;
   /** Snapshotted carer name — optional so pre-existing fixtures still type-check. */
   carer_display_name?: string;
-  /** The week's banked minutes, for `stale_submitted_week`'s subtitle. */
+  /** The week's banked minutes, for `submitted_week` /
+   * `stale_submitted_week` subtitles. */
   total_minutes?: number;
   /**
    * Stand-in for a submission timestamp, which the wire does not carry.
@@ -253,6 +254,7 @@ export type InboxItem =
       householdId: string;
       weekStart: string;
       carerDisplayName: string | null;
+      totalMinutes: number;
       /** Present when the week names a carer the parent can recognise. */
       personName?: string;
       personColour?: string;
@@ -528,6 +530,7 @@ export function buildInboxItems(input: {
         householdId: sheet.household_id,
         weekStart: sheet.week_start,
         carerDisplayName: sheet.carer_display_name ?? null,
+        totalMinutes: sheet.total_minutes ?? 0,
         ...(sheet.carer_display_name
           ? { personName: sheet.carer_display_name }
           : {}),

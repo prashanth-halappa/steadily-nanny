@@ -801,7 +801,12 @@ export function PayArrangementScreen() {
       <H1 testID="pay-title" className="mt-1">
         {t('title')}
       </H1>
-      <Small className="mt-1 text-muted-foreground">{t('subtitle')}</Small>
+      <Small
+        testID="pay-arrangement-subtitle"
+        className="mt-1 text-muted-foreground"
+      >
+        {nannies.length > 1 ? t('subtitleMultiCarer') : t('subtitle')}
+      </Small>
 
       {!resolvedCarerId ? (
         nannies.length === 0 ? (

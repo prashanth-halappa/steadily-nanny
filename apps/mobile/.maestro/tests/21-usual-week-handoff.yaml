@@ -50,8 +50,17 @@ tags:
     id: 'schedule-pattern-banner'
 - assertVisible:
     id: 'schedule-pattern-banner-action'
-# The core fix: no second, quieter telling of the same fact next to it.
-- assertNotVisible:
+# INVERTED 2026-08-21. This asserted `assertNotVisible` from 2026-08-17, one
+# day before the product deliberately decided the opposite: the count is never
+# suppressed by the banner, because "you haven't set the weekly hours" and
+# "N windows have nobody booked" are different facts and the no-pattern state
+# has the MOST gaps to report. The flow was never updated, so for three days it
+# failed by design and read as a product regression.
+#
+# The resolution went further than either side: the count is now folded INSIDE
+# the banner card rather than sitting beside it as a second warning-toned pill.
+# So it must be visible, and it must be visible WITHIN the banner.
+- assertVisible:
     id: 'schedule-cover-week-summary'
 
 - scrollUntilVisible:

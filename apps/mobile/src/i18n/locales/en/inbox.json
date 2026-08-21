@@ -39,8 +39,8 @@
     },
     "submittedWeek": {
       "title": "Week of {{week}} submitted — review and approve",
-      "subtitle": "Submitted by {{carer}}.",
-      "subtitleFallback": "Tap to review this week's hours.",
+      "subtitle": "{{hours}} · Submitted by {{carer}}.",
+      "subtitleFallback": "{{hours}} · Tap to review this week's hours.",
       "cta": "Approve week"
     },
     "staleSubmittedWeek": {
@@ -52,6 +52,7 @@
       "title": "Can you cover {{date}}, {{start}} – {{end}}?",
       "subtitle": "Asked {{askedDate}} · Answer by {{deadlineDate}}, {{deadlineTime}}",
       "subtitleNoDeadline": "Asked {{askedDate}}",
+      "subtitleExpired": "Asked {{askedDate}} · Was due {{deadlineDate}}, {{deadlineTime}}",
       "deadline": "Answer by {{deadlineDate}}, {{deadlineTime}}",
       "cta": "Open the shift"
     },
@@ -125,6 +126,7 @@
   },
   "lead_one": "{{count}} thing waiting on you.",
   "lead_other": "{{count}} things waiting on you.",
+  "kindWithHousehold": "{{kind}} · {{household}}",
   "kinds": {
     "change_request": "Schedule change",
     "pending_pattern": "Proposed schedule",

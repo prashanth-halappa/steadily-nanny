@@ -2767,3 +2767,41 @@ the class must be conditional or it is wrong on one branch. The same blind spot
 in the opposite direction left two real Rule M defects in `WeekTotal.tsx`
 (L376, L571) in a file that already computes the correct conditional at L290.
 See `audit-cx/GAPS.md` G3 and `RECOMMENDATIONS.md` R1.
+
+## D82 — The cross-family clash sentence waits for a scheduled job — ACCEPTED RISK, not fixed
+
+Found in the 2026-08-21 launch pass as product finding P4. Recorded here rather
+than fixed, by owner decision on the day.
+
+**What a person experiences.** Two families book the same nanny for overlapping
+hours. `ShiftDetailScreen` has role-forked copy for exactly this
+(`detail.eventType.crossFamilyClashParent` / `…Nanny`) — the one surface in the
+whole product where the anonymity promise is stated out loud, in words chosen
+for who is reading. Neither side sees it when the clash is created. They see it
+after a scheduled job has run.
+
+**Why.** That copy renders only for a `cross_family_clash` row in
+`shift_events`, and those rows are written **exclusively** by
+`apps/api/src/jobs/scheduleHorizonJob.ts`. Nothing writes one synchronously on
+the shift-create path, so the detection is batch-shaped while the experience it
+serves is immediate.
+
+**Why it is not being fixed now.** A synchronous write means detecting the
+clash inside shift creation across household boundaries, and then deduping
+against the job's own later write for the same pair — the keyed-unique index on
+`shift_events` makes that survivable but not free (see GOLDEN-FIXES #31 for how
+that index behaves under a bulk insert). It is the largest API-side change in
+the launch-pass set and the least evidenced: no capture in the pass actually
+shows a person hitting it, because the pass never produced a live cross-family
+overlap. Every other finding in the set is smaller and better evidenced.
+
+**What it costs while open.** Both sides. Not money, and not correctness — the
+sentence is right when it arrives. It arrives late, on the one surface whose
+whole job is to say what the other family is not being told.
+
+**The shape of a fix, when it is taken.** Raise the `cross_family_clash` event
+from the same service that creates the overlapping shift, keyed identically to
+the job's row so the two can never double-write, and leave the job in place as
+the backstop for clashes created before the synchronous path existed. Do not
+"fix" it by having the client detect the clash — it cannot see the other
+household, and that is the guarantee, not an oversight.

@@ -1,0 +1,180 @@
+# Read-only CX capture: every tab, scrolled top to bottom, for one role.
+#
+# WHAT IT PROVES: nothing. This is an evidence-gathering flow, not an
+# assertion flow — but every tap still gets an assertion after it, because a
+# tap that lands on the tab bar or the dev-menu gear reports COMPLETED and
+# would otherwise leave a screenshot of the wrong screen labelled as the right
+# one.
+#
+# NEVER clears state. Call it AFTER a role flow (login.yaml / login-nanny.yaml),
+# which is what puts the session on the right side of the app.
+#
+# Params (both required, passed with -e):
+#   OUT   absolute directory for the PNGs. Maestro does NOT mkdir — create it.
+#         config.yaml's screenshotDirectory is ignored by Maestro 2.0.10, and a
+#         bare name would resolve against the CLI's cwd.
+#   ROLE  filename prefix, e.g. parent / nanny / nanny2 / coparent
+#
+# The scroll slices run past the bottom on short screens, so the tail slices
+# come back byte-identical. That is expected — dedupe by hash afterwards
+# rather than making this flow smarter about scroll extents.
+appId: com.jetto.steadily.nanny
+---
+- launchApp
+- waitForAnimationToEnd
+
+# Post-launch overlays hide the entire a11y tree, so nothing below would be
+# tappable. Both are soft-asks that can appear on any launch, not just the first.
+- runFlow:
+    when:
+      visible:
+        text: 'Not Now'
+    commands:
+      - tapOn:
+          text: 'Not Now'
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible:
+        text: 'Maybe later'
+    commands:
+      - tapOn:
+          text: 'Maybe later'
+      - waitForAnimationToEnd
+
+# ---------- TODAY ----------
+- tapOn:
+    id: 'tab-today'
+- extendedWaitUntil:
+    visible:
+      id: 'today-header'
+    timeout: 15000
+- takeScreenshot: ${OUT}/${ROLE}-1-today-a-top
+- scroll
+- waitForAnimationToEnd
+- takeScreenshot: ${OUT}/${ROLE}-1-today-b
+- scroll
+- waitForAnimationToEnd
+- takeScreenshot: ${OUT}/${ROLE}-1-today-c
+- scroll
+- waitForAnimationToEnd
+- takeScreenshot: ${OUT}/${ROLE}-1-today-d-bottom
+
+# ---------- SCHEDULE ----------
+- tapOn:
+    id: 'tab-schedule'
+# The chosen calendar view is STICKY (`calendarViewStore`), so the Schedule tab
+# reopens in whatever view this user last used — measured: a re-run landed in
+# week-ribbon and a bare wait on `calendar-agenda-view` failed on a perfectly
+# healthy screen. Wait for the switcher (always present), then select agenda
+# explicitly so the capture always starts from the same view.
+- extendedWaitUntil:
+    visible:
+      id: 'calendar-view-switcher'
+    timeout: 15000
+- runFlow:
+    when:
+      visible:
+        id: 'calendar-view-agenda'
+    commands:
+      - tapOn:
+          id: 'calendar-view-agenda'
+      - extendedWaitUntil:
+          visible:
+            id: 'calendar-agenda-view'
+          timeout: 8000
+- takeScreenshot: ${OUT}/${ROLE}-2-schedule-a-top
+- scroll
+- waitForAnimationToEnd
+- takeScreenshot: ${OUT}/${ROLE}-2-schedule-b
+- scroll
+- waitForAnimationToEnd
+- takeScreenshot: ${OUT}/${ROLE}-2-schedule-c
+- scroll
+- waitForAnimationToEnd
+- takeScreenshot: ${OUT}/${ROLE}-2-schedule-d-bottom
+
+# Segmented control. Tap the switcher by id, never by its label — the dev-menu
+# gear used to overlay the right end of the control and swallow the tap while
+# Maestro reported COMPLETED (that gear is now switched off in sim-prep.sh, but
+# selecting by id is still the honest way to do it). Each tap is followed by a
+# wait on the view it should have produced, so a swallowed tap fails here
+# instead of silently producing a duplicate screenshot two lines later.
+#
+# Getting back to the top: re-tapping the active tab resets the scroll position.
+# Three bare `swipe: direction: DOWN` used to be here and it HUNG — measured,
+# deterministically, at exactly this step in both the parent and the nanny
+# capture, costing the Hours and Inbox screens on both runs.
+- tapOn:
+    id: 'tab-schedule'
+- extendedWaitUntil:
+    visible:
+      id: 'calendar-view-switcher'
+    timeout: 10000
+- runFlow:
+    when:
+      visible:
+        id: 'calendar-view-week_ribbon'
+    commands:
+      - tapOn:
+          id: 'calendar-view-week_ribbon'
+      - extendedWaitUntil:
+          visible:
+            id: 'calendar-week-ribbon-view'
+          timeout: 8000
+      - takeScreenshot: ${OUT}/${ROLE}-2-schedule-e-weekview
+# Rhythm is the nanny's two-family view and does not exist for a parent.
+- runFlow:
+    when:
+      visible:
+        id: 'calendar-view-cross_family'
+    commands:
+      - tapOn:
+          id: 'calendar-view-cross_family'
+      - extendedWaitUntil:
+          visible:
+            id: 'calendar-cross-family-view'
+          timeout: 8000
+      - takeScreenshot: ${OUT}/${ROLE}-2-schedule-f-rhythm
+
+# ---------- HOURS (the money screen — scroll deep) ----------
+- tapOn:
+    id: 'tab-hours'
+- extendedWaitUntil:
+    visible:
+      id: 'hours-screen'
+    timeout: 15000
+- takeScreenshot: ${OUT}/${ROLE}-3-hours-a-top
+- scroll
+- waitForAnimationToEnd
+- takeScreenshot: ${OUT}/${ROLE}-3-hours-b
+- scroll
+- waitForAnimationToEnd
+- takeScreenshot: ${OUT}/${ROLE}-3-hours-c
+- scroll
+- waitForAnimationToEnd
+- takeScreenshot: ${OUT}/${ROLE}-3-hours-d
+- scroll
+- waitForAnimationToEnd
+- takeScreenshot: ${OUT}/${ROLE}-3-hours-e
+- scroll
+- waitForAnimationToEnd
+- takeScreenshot: ${OUT}/${ROLE}-3-hours-f-bottom
+
+# ---------- BETWEEN US / INBOX ----------
+- tapOn:
+    id: 'tab-inbox'
+- extendedWaitUntil:
+    visible:
+      id: 'inbox-screen'
+    timeout: 15000
+- takeScreenshot: ${OUT}/${ROLE}-4-inbox-a-top
+# ONE scroll, and nothing after it. MEASURED: both the parent and the nanny run
+# stalled here — after every screenshot that matters had already been taken —
+# and the watchdog then burned its full 180s twice per capture. The Inbox is
+# short enough that a second and third slice were duplicates anyway, and the
+# "leave the app where we found it" tab-tap at the end was courtesy, not
+# evidence. Cutting both removes the stall instead of waiting it out.
+- scroll
+- waitForAnimationToEnd
+- takeScreenshot: ${OUT}/${ROLE}-4-inbox-b-bottom

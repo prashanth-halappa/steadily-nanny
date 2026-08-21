@@ -1,0 +1,256 @@
+# S5 gap — a nanny clocking hours into an ALREADY-PAID week is FLAGGED, not
+# silently re-priced: the approved total and the payments on it survive
+# unchanged (migration 102_paid_week_guards.sql, function
+# `roll_up_timesheet_hours` — docs/AS-BUILT-PAYMENT.md §7 P1).
+#
+# WHY THIS CANNOT USE A PAST SEED WEEK. The obvious fixture would be
+# PHASE4_SEED_WEEK_START (2026-01-05, already approved+paid by flows
+# 11/12/23a) plus a new time entry on it. Both app-driven ways to add hours
+# to a week refuse once that week is `approved`:
+#   - `hours-edit-entry-*` only renders while `isEntryEditable` is true
+#     (apps/mobile/src/domains/timesheet/utils/entryEdited.ts:
+#     `entry.status === 'submitted' && timesheetStatus !== 'approved'`);
+#   - "Add missed hours" (`createRetroactiveEntry`,
+#     apps/api/.../timesheetCommandService.ts:1059) explicitly throws
+#     `TimeEntryNotEditableError('new', 'week_approved')` when the week's
+#     timesheet is already `approved`.
+# The ONLY app path into this state is `clockOut` finishing a RUNNING entry —
+# `rollUpIntoTimesheet` (called unconditionally from `clockOut`, no
+# approved-week guard before it) is where migration 102's branch lives. So
+# this flow uses TODAY's real current week and TWO real clock sessions:
+# complete one first (so the week has hours to approve+pay), then start a
+# SECOND session, approve+pay while it's running, and clock it out last.
+#
+# FIXTURES: none beyond the standard cast — no new seeder needed. Reuses
+# `PHASE4_TODAY_SHIFT_ID` (a confirmed shift for TODAY, reseeded fresh every
+# `seed-phase4-fixtures.ts` run) purely as a plausible clock-in target; the
+# assertions do not depend on shift association. REQUIRES flow
+# `07-terms-setup-and-ca-ot-week.yaml` to have already run in this batch (or
+# an equivalent already-existing arrangement) — the current week needs a
+# priced `pay_arrangement` valid through today or `hours-approve-button`
+# has nothing to approve against. `PHASE4_ARRANGEMENT_VALID_FROM` is
+# 2026-01-01 with no end date, so a prior 07 run covers today too.
+#
+# TIMING NOTE — `computeWorkedMinutesFromInstants` rounds elapsed minutes
+# (`apps/mobile/src/domains/timesheet/utils/entryMinutes.ts`:
+# `Math.round(rawMinutes)`), so a clock-in/out pair completed within the same
+# real minute can round to a ZERO-length session and trip
+# `clockout-zero-length-error`. Both sessions below force a genuine ~70s gap
+# via `extendedWaitUntil` on a testID that will never appear — the timeout
+# itself is the delay, not the (always-false) wait condition. This is
+# deliberate idle time, not a bug in the wait.
+appId: com.jetto.steadily.nanny
+tags:
+  - money
+---
+# --- Nanny: FIRST session — completed hours to make the week submitted ----
+- runFlow: ../flows/login-nanny.yaml
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'today-clock-card'
+- tapOn:
+    id: 'today-clock-in'
+- extendedWaitUntil:
+    visible:
+      id: 'today-clock-out'
+    timeout: 15000
+- assertVisible:
+    id: 'today-clock-receipt'
+- takeScreenshot: ${OUT}/s5-37-a-first-session-running
+
+# Force a real gap so this session's duration cannot round to zero.
+- extendedWaitUntil:
+    visible:
+      id: 'this-id-never-renders-anywhere-37'
+    timeout: 70000
+    optional: true
+
+- tapOn:
+    id: 'today-clock-out'
+- extendedWaitUntil:
+    visible:
+      id: 'clockout-sheet'
+    timeout: 10000
+- assertNotVisible:
+    id: 'clockout-zero-length-error'
+- tapOn:
+    id: 'clockout-confirm'
+- extendedWaitUntil:
+    notVisible:
+      id: 'clockout-sheet'
+    timeout: 15000
+- extendedWaitUntil:
+    visible:
+      id: 'today-clock-in'
+    timeout: 15000
+- takeScreenshot: ${OUT}/s5-37-b-first-session-clocked-out
+
+# --- Nanny: SECOND session — start it now, before approval ----------------
+- tapOn:
+    id: 'today-clock-in'
+- extendedWaitUntil:
+    visible:
+      id: 'today-clock-out'
+    timeout: 15000
+- takeScreenshot: ${OUT}/s5-37-c-second-session-running
+
+# --- Parent: approve + pay the current week WHILE the second session runs -
+- runFlow: ../flows/login.yaml
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
+- openLink: steadilynanny:///(private)/(tabs)/hours
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'hours-screen'
+    timeout: 15000
+- assertVisible:
+    id: 'hours-earnings-line'
+# The approved-total figure this flow's whole claim rests on staying put —
+# copied now, asserted unchanged after the paid-week clock-out below.
+- copyTextFrom:
+    id: 'hours-earnings-line'
+- tapOn:
+    id: 'hours-approve-button'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-approve-dialog'
+- tapOn:
+    id: 'hours-approve-dialog-confirm'
+- extendedWaitUntil:
+    visible:
+      id: 'hours-approve-button'
+    timeout: 15000
+- assertVisible:
+    id: 'hours-approve-button'
+    enabled: false
+- takeScreenshot: ${OUT}/s5-37-d-current-week-approved
+
+- scrollUntilVisible:
+    element:
+      id: 'hours-mark-paid-button'
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: 'hours-mark-paid-button'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'hours-record-payment-sheet'
+# A DELIBERATELY TINY amount, not a round test figure. This week's gross is
+# whatever the FIRST ~70s session prices out to at PHASE4_HOURLY_RATE (a
+# single rounded minute or two — a fraction of a dollar), so a payment as
+# large as the other flows' "$40.00" would trip
+# `hours-record-payment-overpayment-error`. $0.05 is safely under any
+# nonzero gross this session can produce.
+- tapOn:
+    id: 'hours-record-payment-amount-input'
+- eraseText
+- inputText: '0.05'
+- tapOn:
+    id: 'hours-record-payment-date-chip-today'
+- tapOn:
+    id: 'hours-record-payment-method-input'
+- inputText: 'Bank transfer'
+- assertNotVisible:
+    id: 'hours-record-payment-overpayment-error'
+- tapOn:
+    id: 'hours-record-payment-submit'
+- extendedWaitUntil:
+    notVisible:
+      id: 'hours-record-payment-sheet'
+    timeout: 15000
+- takeScreenshot: ${OUT}/s5-37-e-current-week-paid
+
+# --- Nanny: finish the second session — rolls into the paid week ----------
+- runFlow: ../flows/login-nanny.yaml
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'today-clock-out'
+
+- extendedWaitUntil:
+    visible:
+      id: 'this-id-never-renders-anywhere-37'
+    timeout: 70000
+    optional: true
+
+- tapOn:
+    id: 'today-clock-out'
+- extendedWaitUntil:
+    visible:
+      id: 'clockout-sheet'
+    timeout: 10000
+- assertNotVisible:
+    id: 'clockout-zero-length-error'
+- tapOn:
+    id: 'clockout-confirm'
+- extendedWaitUntil:
+    notVisible:
+      id: 'clockout-sheet'
+    timeout: 15000
+- takeScreenshot: ${OUT}/s5-37-f-nanny-clocked-out-into-paid-week
+
+# Nanny's own Hours screen should already carry the flag (`weekChanged` is
+# wired in NannyWeekView.tsx:774 off the same `hours_changed_after_payment_at`
+# column).
+- openLink: steadilynanny:///(private)/(tabs)/hours
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'hours-screen'
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      id: 'hours-week-changed'
+    direction: DOWN
+    timeout: 15000
+- assertVisible:
+    id: 'hours-week-changed'
+- assertVisible:
+    id: 'hours-week-changed-headline'
+- takeScreenshot: ${OUT}/s5-37-g-nanny-sees-flag
+
+# --- Parent: the flag renders, and the approved total is UNCHANGED --------
+- runFlow: ../flows/login.yaml
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
+- openLink: steadilynanny:///(private)/(tabs)/hours
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'hours-screen'
+    timeout: 15000
+# THE ASSERTION. A regression that let the paid-week roll-up demote/clear the
+# snapshot (the pre-102 unconditional write) would either make this figure
+# move or make the approve controls come back — either fails here.
+- assertVisible: ${maestro.copiedText}
+- assertVisible:
+    id: 'hours-approve-button'
+    enabled: false
+- scrollUntilVisible:
+    element:
+      id: 'hours-week-changed'
+    direction: DOWN
+    timeout: 15000
+- assertVisible:
+    id: 'hours-week-changed'
+- assertVisible:
+    id: 'hours-week-changed-headline'
+- assertVisible:
+    id: 'hours-week-changed-detail'
+- takeScreenshot: ${OUT}/s5-37-h-parent-sees-flag-total-unchanged

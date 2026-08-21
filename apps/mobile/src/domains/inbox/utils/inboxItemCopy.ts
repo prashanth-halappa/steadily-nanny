@@ -142,7 +142,7 @@ export function titleForItem(
       });
     case 'submitted_week':
       return t('items.submittedWeek.title', {
-        week: formatDisplayDate(item.weekStart),
+        week: formatDisplayDateWithYear(item.weekStart),
       });
     // "Week of 4 Aug — submitted 21 days ago, not approved". It says how
     // long and stops: a fact about a date, not a verdict about a family.
@@ -227,7 +227,8 @@ export function titleForItem(
 export function subtitleForItem(
   item: InboxItem,
   t: InboxItemT,
-  timeZone: string
+  timeZone: string,
+  nowMs: number = Date.now()
 ): string {
   switch (item.kind) {
     // "Asked 24 Aug" — the date it was opened, same day/month convention
@@ -248,30 +249,44 @@ export function subtitleForItem(
           });
     case 'submitted_week':
       return item.carerDisplayName
-        ? t('items.submittedWeek.subtitle', { carer: item.carerDisplayName })
-        : t('items.submittedWeek.subtitleFallback');
+        ? t('items.submittedWeek.subtitle', {
+            carer: item.carerDisplayName,
+            hours: formatDuration(item.totalMinutes),
+          })
+        : t('items.submittedWeek.subtitleFallback', {
+            hours: formatDuration(item.totalMinutes),
+          });
     case 'stale_submitted_week':
       return t('items.staleSubmittedWeek.subtitle', {
         hours: formatDuration(item.totalMinutes),
       });
     // "Asked 24 Aug · Answer by 27 Aug, 6:00 PM" — never invents a deadline
     // for a legacy/pre-088 row with no `cover_ask_expires_at` stamped.
-    case 'pending_shift':
-      return item.coverAskExpiresAt
-        ? t('items.pendingShift.subtitle', {
-            askedDate: formatDisplayDate(
-              localDateInZone(timeZone, new Date(item.createdAt))
-            ),
-            deadlineDate: formatDisplayDate(
-              localDateInZone(timeZone, new Date(item.coverAskExpiresAt))
-            ),
-            deadlineTime: formatClockTime(item.coverAskExpiresAt, timeZone),
+    // Past the stamp, swap to subtitleExpired so a nanny does not read a
+    // deadline already gone as work she still owes.
+    case 'pending_shift': {
+      const askedDate = formatDisplayDate(
+        localDateInZone(timeZone, new Date(item.createdAt))
+      );
+      if (!item.coverAskExpiresAt) {
+        return t('items.pendingShift.subtitleNoDeadline', { askedDate });
+      }
+      const deadlineDate = formatDisplayDate(
+        localDateInZone(timeZone, new Date(item.coverAskExpiresAt))
+      );
+      const deadlineTime = formatClockTime(item.coverAskExpiresAt, timeZone);
+      return Date.parse(item.coverAskExpiresAt) < nowMs
+        ? t('items.pendingShift.subtitleExpired', {
+            askedDate,
+            deadlineDate,
+            deadlineTime,
           })
-        : t('items.pendingShift.subtitleNoDeadline', {
-            askedDate: formatDisplayDate(
-              localDateInZone(timeZone, new Date(item.createdAt))
-            ),
+        : t('items.pendingShift.subtitle', {
+            askedDate,
+            deadlineDate,
+            deadlineTime,
           });
+    }
     // The figures live here, never in the title. The weekly equivalent is the
     // server's (`weekly_equivalent_minor`) — a client-side rate x hours prints
     // $1,400 where the truth is $1,540 once overtime applies (§17, D23) — and

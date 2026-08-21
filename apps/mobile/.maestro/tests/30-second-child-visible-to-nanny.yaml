@@ -1,0 +1,117 @@
+# S2 gap — a parent adding a SECOND child makes that child appear on the
+# nanny's side. "Our household" already has one seeded child, "Nia"
+# (scripts/seed-launch-pass-bootstrap.ts's `ensureChild()`, CHILD_NAME); this
+# flow adds a second, "Jet", through the app and checks the nanny sees both.
+#
+# ROUTES verified by reading source, not guessed:
+#   - Parent adds via `/settings/children` -> `ManageChildrenScreen` ->
+#     `ChildrenManager` (settings/children.tsx delegates to
+#     ManageChildrenScreen.tsx, which renders ChildrenManager unchanged — the
+#     SAME component the onboarding wizard's `ChildrenScreen` uses, so these
+#     are not just similarly-named testIDs, they are the same JSX:
+#     `children-add-button` (ChildrenManager.tsx:168), and inside the sheet
+#     it opens, `ChildFormSheet.tsx`'s `child-form-name` (:98),
+#     `child-form-age` (:110), `child-form-submit` (:132).
+#   - Nanny reads it on `/settings/this-family` -> `ThisFamilyScreen`, the
+#     one nanny-reachable surface that actually renders child names
+#     (`this-family-children` container, `this-family-child-${id}` rows,
+#     `{child.name}` text — ThisFamilyScreen.tsx:173-197). TodayScreen and
+#     AgendaView also read `useChildren`, but only to label existing shift
+#     chips/commitments, not to list every child in the household — a new
+#     child with no shift yet would render nowhere on those screens. This
+#     screen has no addressed role gate in its own body (comment at :13-17
+#     restricts what it renders FROM the members list, not who reaches the
+#     screen) — the Settings entry point is nanny/helper-only, but the route
+#     is reachable by URL like every other settings screen in this app.
+#
+# FIXTURE: mints one real child row on "Our household" — harmless, matches
+# this flow's whole purpose, and nothing downstream keys off "exactly one
+# child" that this would break (checked: PHASE4 fixtures reference "Nia" by
+# looking her up, not by asserting she's the only row).
+appId: com.jetto.steadily.nanny
+tags:
+  - s2
+---
+# === Parent: add "Jet" via Settings -> Children ============================
+- runFlow: ../flows/login.yaml
+
+- openLink: steadilynanny:///(private)/settings/children
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'manage-children-screen'
+    timeout: 15000
+- assertVisible:
+    id: 'children-add-button'
+# The existing seed child is on screen too — confirms this is "Our
+# household"'s real list, not an empty/wrong one.
+- assertVisible: 'Nia'
+- takeScreenshot: ${OUT}/s2-30-a-children-screen-before
+
+- tapOn:
+    id: 'children-add-button'
+- extendedWaitUntil:
+    visible:
+      id: 'child-form-sheet'
+    timeout: 8000
+- tapOn:
+    id: 'child-form-name'
+- eraseText
+- inputText: 'Jet'
+# Return blurs a single-line input and drops the keyboard. `hideKeyboard` is a
+# no-op on this sheet (measured), and with the keyboard up the Age field below
+# is unreachable — taps aimed at it land on keys, so the age gets typed into
+# the NAME field and submit stays disabled because neither value is valid.
+- pressKey: Enter
+- waitForAnimationToEnd
+- tapOn:
+    id: 'child-form-age'
+- eraseText
+- inputText: '4'
+# The Age field uses a numeric pad, which has no Return key, so Enter cannot be
+# relied on to clear it. The sheet body IS a real ScrollView
+# (BottomSheetBase.tsx:189, `keyboardShouldPersistTaps="handled"`), unlike
+# PaySetupScreen's pinned CTA — so scrolling genuinely moves the submit button
+# out from under the keyboard here.
+- scrollUntilVisible:
+    element:
+      id: 'child-form-submit'
+    direction: DOWN
+    centerElement: true
+    timeout: 10000
+- assertVisible:
+    id: 'child-form-submit'
+    enabled: true
+- takeScreenshot: ${OUT}/s2-30-b-jet-form-filled
+
+- tapOn:
+    id: 'child-form-submit'
+# Success closes the sheet (ChildrenManager.tsx's `onSuccess: () =>
+# setFormVisible(false)`) — that's the network round trip's real signal, not
+# just the tap.
+- extendedWaitUntil:
+    notVisible:
+      id: 'child-form-sheet'
+    timeout: 15000
+- assertVisible: 'Jet'
+- assertVisible: 'Nia'
+- takeScreenshot: ${OUT}/s2-30-c-jet-added
+
+- openLink: steadilynanny:///(private)/settings
+- runFlow: cx-dismiss-open-alert.yaml
+- runFlow: ../flows/logout.yaml
+
+# === Nanny: both children show on This Family =============================
+- runFlow: ../flows/login-nanny.yaml
+
+- openLink: steadilynanny:///(private)/settings/this-family
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'settings-this-family-screen'
+    timeout: 15000
+- assertVisible:
+    id: 'this-family-children'
+- assertVisible: 'Jet'
+- assertVisible: 'Nia'
+- takeScreenshot: ${OUT}/s2-30-d-nanny-sees-both-children

@@ -44,10 +44,11 @@ function durationUnits(): DurationUnits {
 }
 
 /**
- * "6h 14m" / "2h" (no trailing "0m") / "45m" / "0m", in the app's current
- * language ("6 h 14 min" / "2 h" / "45 min" in es). Negative input is
- * clamped to 0 — it should never happen with real data, but a display
- * helper must not print a negative duration.
+ * "6h 14m" / "2h" (no trailing "0m") / "45m" / "0h", in the app's current
+ * language ("6 h 14 min" / "2 h" / "45 min" / "0 h" in es). Zero uses the
+ * hour unit so it reads as a figure next to "13h"/"9h" — "0m" was misread
+ * as the word "Om". Negative input is clamped to 0 — it should never happen
+ * with real data, but a display helper must not print a negative duration.
  */
 export function formatDuration(totalMinutes: number): string {
   const minutes = Math.max(0, Math.floor(totalMinutes));
@@ -55,6 +56,8 @@ export function formatDuration(totalMinutes: number): string {
   const remainder = minutes % MINUTES_PER_HOUR;
   const units = durationUnits();
 
+  // Zero → hour unit ("0h" / "0 h"). Sub-hour non-zero stays minutes-only.
+  if (minutes === 0) return `0${units.hour}`;
   if (hours === 0) return `${remainder}${units.minute}`;
   if (remainder === 0) return `${hours}${units.hour}`;
   return `${hours}${units.hour} ${remainder}${units.minute}`;

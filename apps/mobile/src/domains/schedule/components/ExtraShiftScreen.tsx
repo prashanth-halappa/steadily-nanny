@@ -50,6 +50,7 @@ import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { useRestrictedAction } from '@/src/hooks/queries/useRestrictedAction';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { showErrorToast } from '@/src/lib/toast';
 import { wallClockToUtcIso } from '@/src/lib/wallClock';
@@ -81,6 +82,12 @@ export function ExtraShiftScreen() {
     !canWriteHousehold.isLoading && !canWriteHousehold.canWrite
       ? tCommon('householdClosedReason')
       : null;
+  // Same server gate `createExtraShift` consults for a co-parent under
+  // `approval_mode='owner_only'` (`ApprovalGateAction: 'extra_shift'`).
+  const extraShiftRestriction = useRestrictedAction({
+    householdId: active.householdId,
+    action: t('shifts.restrictedActionAddExtra'),
+  });
 
   const [date, setDate] = useState(
     () =>
@@ -412,7 +419,7 @@ export function ExtraShiftScreen() {
           testID="schedule-extra-submit"
           className="mt-2"
           label={t('shifts.extraSubmit')}
-          reason={closedReason}
+          reason={extraShiftRestriction.reason ?? closedReason}
           disabled={!canSubmit || canWriteHousehold.isLoading}
           onPress={() => void handleSubmit()}
         />

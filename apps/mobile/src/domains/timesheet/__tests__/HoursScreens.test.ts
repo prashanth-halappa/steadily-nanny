@@ -332,3 +332,27 @@ describe('QueryNoteSheet', () => {
     expect(queryNoteSheetSource).toMatch(/beforeYouSend[\s\S]*?<Textarea/);
   });
 });
+
+/**
+ * A name slot with no fallback renders a sentence with a hole in it. Caught on
+ * the simulator during the launch-pass remediation: the parent's Hours screen
+ * read "Approve unlocks once  has logged hours this week." — two spaces, no
+ * name — whenever `resolveWeekCarerHeaderName` had nobody to name.
+ *
+ * The lead line in the same file already forks for this (`lead.parent` /
+ * `lead.parentNoCarer`). These two status sentences did not. Source-text
+ * assertion, matching this file's existing approach.
+ */
+describe('ParentWeekView status copy never interpolates an empty name', () => {
+  it('forks both waiting sentences on carerName', () => {
+    expect(parentWeekViewSource).toContain('waitingForHoursNoCarer');
+    expect(parentWeekViewSource).toContain('waitingAfterQueryNoCarer');
+    // Neither may be reached without a name in hand.
+    expect(parentWeekViewSource).toMatch(
+      /carerName\s*\?\s*t\('waitingForHours',/
+    );
+    expect(parentWeekViewSource).toMatch(
+      /carerName\s*\?\s*t\('waitingAfterQuery',/
+    );
+  });
+});

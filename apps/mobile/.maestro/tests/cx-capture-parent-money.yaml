@@ -1,0 +1,46 @@
+# The parent's Hours and Between-us screens, captured on their own.
+#
+# WHY SEPARATE: `capture-tabs.yaml` reaches these fine as the NANNY but hangs
+# for the PARENT immediately after the week-ribbon view — measured twice, at the
+# same step, costing the parent's Hours and Inbox screens both times. Hours is
+# the money screen and the single most important surface for a parent read, so
+# it gets a flow that cannot be starved by anything upstream of it: no
+# segmented control, no scroll-to-top, nothing between login and the tab.
+#
+# Needs -e OUT=<absolute dir> (the dir must already exist).
+appId: com.jetto.steadily.nanny
+tags:
+  - cx
+---
+- runFlow: ../flows/login.yaml
+
+- tapOn:
+    id: 'tab-hours'
+- extendedWaitUntil:
+    visible:
+      id: 'hours-screen'
+    timeout: 20000
+- takeScreenshot: ${OUT}/parent-3-hours-a-top
+- scroll
+- waitForAnimationToEnd
+- takeScreenshot: ${OUT}/parent-3-hours-b
+- scroll
+- waitForAnimationToEnd
+- takeScreenshot: ${OUT}/parent-3-hours-c
+- scroll
+- waitForAnimationToEnd
+- takeScreenshot: ${OUT}/parent-3-hours-d
+- scroll
+- waitForAnimationToEnd
+- takeScreenshot: ${OUT}/parent-3-hours-e-bottom
+
+- tapOn:
+    id: 'tab-inbox'
+- extendedWaitUntil:
+    visible:
+      id: 'inbox-screen'
+    timeout: 20000
+- takeScreenshot: ${OUT}/parent-4-inbox-a-top
+- scroll
+- waitForAnimationToEnd
+- takeScreenshot: ${OUT}/parent-4-inbox-b-bottom

@@ -66,7 +66,9 @@
   "todayMarker": "Hoy",
   "emptyWeek": "Aún no hay horas registradas esta semana.",
   "waitingForHours": "La aprobación se desbloquea cuando {{name}} registre horas esta semana.",
+  "waitingForHoursNoCarer": "La aprobación se desbloquea cuando se registren horas esta semana.",
   "waitingAfterQuery": "Esperando a que {{name}} ajuste las horas tras tu consulta.",
+  "waitingAfterQueryNoCarer": "Esperando a que se ajusten las horas tras tu consulta.",
   "couldntLoadHours": "No pudimos cargar las horas de esta semana. Inténtalo de nuevo.",
   "overScheduled": "{{duration}} por encima de lo previsto",
   "underScheduled": "{{duration}} por debajo de lo previsto",
@@ -321,9 +323,10 @@
     }
   },
   "lead": {
-    "nanny": "{{hours}} esta semana con {{family}}.",
-    "parent": "{{name}} tiene {{hours}} esta semana.",
-    "parentNoCarer": "{{hours}} registradas esta semana."
+    "nanny": "{{hours}} registradas esta semana con {{family}}.",
+    "parent": "{{name}} ha registrado {{hours}} esta semana.",
+    "parentNoCarer": "{{hours}} registradas esta semana.",
+    "timeZoneNote": "Horas mostradas en {{zone}}."
   },
   "entryCorrectedToast": "Corrección guardada.",
   "entryRemovedToast": "Entrada eliminada.",

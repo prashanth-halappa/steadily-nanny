@@ -95,6 +95,7 @@ import { useShift } from '@/src/hooks/queries/useShift';
 import { useShiftChangeRequests } from '@/src/hooks/queries/useShiftChangeRequests';
 import { useShiftEvents } from '@/src/hooks/queries/useShiftEvents';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
+import { shortZoneLabel } from '@/src/lib/displayTime';
 import { httpStatusOf } from '@/src/lib/errorLocalization';
 import { localDateInZone } from '@/src/lib/localDate';
 import { showSuccessToast } from '@/src/lib/toast';
@@ -444,6 +445,8 @@ export function ShiftDetailScreen() {
     hoursUntilStart(shift.starts_at) < household.short_notice_hours
       ? cancelRestriction.reason
       : null;
+  // Label only — never converts times. Null when the zone is unrecognized.
+  const shiftZoneLabel = shortZoneLabel(shift.timezone);
 
   return (
     <KeyboardAvoidingView
@@ -567,11 +570,29 @@ export function ShiftDetailScreen() {
             new Map((childrenQuery.data ?? []).map(child => [child.id, child]))
           }
           timeZone={shift.timezone}
+          isParent={isParent}
         />
 
         {isParent ? (
           <View className="mt-6 gap-4" testID="shift-detail-edit">
-            <FieldLabel>{t('detail.startLabel')}</FieldLabel>
+            {shift.status === 'confirmed' ? (
+              <Small
+                testID="shift-detail-edit-consent"
+                className="text-muted-foreground"
+              >
+                {t('detail.editConsentNote', {
+                  name: nameFor(shift.carer_id),
+                })}
+              </Small>
+            ) : null}
+            {shiftZoneLabel ? (
+              <Small
+                testID="shift-detail-timezone-note"
+                className="text-muted-foreground"
+              >
+                {t('detail.timeZoneNote', { zone: shiftZoneLabel })}
+              </Small>
+            ) : null}
             <TimeRangePicker
               testID="shift-detail-times"
               start={startTime}
@@ -664,7 +685,6 @@ export function ShiftDetailScreen() {
               her why; the form simply does not render. */}
             {isAssignedCarer && !isAskExpired && !isAskWithdrawn ? (
               <View className="mt-4 gap-3" testID="shift-detail-counter-form">
-                <FieldLabel>{t('detail.startLabel')}</FieldLabel>
                 <TimeRangePicker
                   testID="shift-detail-counter-times"
                   start={startTime}
@@ -1040,10 +1060,12 @@ function ShiftChildrenBlock({
   shiftChildren,
   childrenById,
   timeZone,
+  isParent,
 }: {
   shiftChildren: ShiftChild[];
   childrenById: Map<string, { name: string; colour: string | null }>;
   timeZone: string;
+  isParent: boolean;
 }) {
   const { t } = useTranslation('schedule');
 
@@ -1052,7 +1074,9 @@ function ShiftChildrenBlock({
       <FieldLabel>{t('detail.childrenTitle')}</FieldLabel>
       {shiftChildren.length === 0 ? (
         <Small className="text-muted-foreground">
-          {t('detail.childrenEmpty')}
+          {isParent
+            ? t('detail.childrenEmptyParent')
+            : t('detail.childrenEmpty')}
         </Small>
       ) : (
         shiftChildren.map(link => {

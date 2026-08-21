@@ -1,0 +1,123 @@
+# S3 — a household's SECOND nanny joins it. Join half only.
+#
+# WHY THIS EXISTS ALONGSIDE 31: flow 31 minted the code through the UI and then
+# switched session to redeem it, and that mid-flow sign-out stalled twice at
+# exactly the same point. The mint is not what S3 needs proved — flow 28
+# already covers minting a role-correct invite through the real picker. What S3
+# uniquely needs is that a SECOND nanny can redeem into a household that
+# already has one, producing two active carers.
+#
+# So the code is minted out-of-band and passed in, and this flow starts already
+# signed out. No session switch, nothing to stall.
+#
+# FIXTURES:
+#   -e S3_INVITE_CODE=XXX-XXX   a pending nanny invite on PHASE4_HOUSEHOLD_ID
+#   nanny2@steadilynanny.test exists with no household (seed-test-users.ts)
+#
+# NOT RE-RUNNABLE: once nanny 2 is a member the wizard never appears again and
+# this fails at the `role-screen` wait. That is correct — it has proven what it
+# proves, and re-proving it needs a fresh database.
+appId: com.jetto.steadily.nanny
+tags:
+  - onboarding
+---
+- runFlow:
+    file: ../flows/login-no-household.yaml
+    env:
+      PARENT_EMAIL: ${NANNY2_EMAIL}
+      PARENT_PASSWORD: ${NANNY2_PASSWORD}
+
+- extendedWaitUntil:
+    visible:
+      id: 'role-screen'
+    timeout: 30000
+- takeScreenshot: ${OUT}/s3-31b-a-role-fork
+- tapOn:
+    id: 'role-nanny'
+- tapOn:
+    id: 'role-screen-cta'
+- extendedWaitUntil:
+    visible:
+      id: 'start-screen'
+    timeout: 10000
+- tapOn:
+    id: 'start-join'
+- tapOn:
+    id: 'start-screen-cta'
+- extendedWaitUntil:
+    visible:
+      id: 'code-screen'
+    timeout: 10000
+- takeScreenshot: ${OUT}/s3-31b-b-code-screen
+
+- tapOn:
+    id: 'name-input'
+- eraseText
+- inputText: 'Sam Okafor'
+# Return blurs the single-line input and drops the keyboard. `hideKeyboard` is
+# unreliable here, and the CTA is pinned BELOW the scroll body so scrolling
+# cannot lift it clear of the keyboard either (measured in flow 14).
+- pressKey: Enter
+- waitForAnimationToEnd
+- tapOn:
+    id: 'code-input'
+- eraseText
+- inputText: ${S3_INVITE_CODE}
+# Tapping the screen title dismisses the keyboard: it sits far above it and has
+# no onPress, so the touch falls through. Deliberately NOT "Invite code" —
+# that string is also code-input's own accessibilityLabel and would refocus it.
+- tapOn:
+    text: 'Join your household'
+- waitForAnimationToEnd
+
+# Pressed twice by design: the first press previews the code, the second joins.
+# Waiting for the preview between them is what makes the second press
+# meaningful rather than a double-tap.
+- tapOn:
+    id: 'code-screen-cta'
+- extendedWaitUntil:
+    visible:
+      id: 'code-preview-card'
+    timeout: 20000
+- assertNotVisible:
+    id: 'code-error'
+# The preview must name the household before anything is committed.
+- assertVisible: '.*Our household.*'
+- takeScreenshot: ${OUT}/s3-31b-c-preview-names-household
+- tapOn:
+    id: 'code-screen-cta'
+
+# A nanny joining an existing household has no live household of their own.
+- assertNotVisible:
+    id: 'absorption-sheet'
+
+# stepsFor('nanny','join') = ROLE -> START -> CODE -> AVAILABILITY ->
+# NOTIFICATIONS -> CALENDAR. Skip all three: the permission CTAs fire real OS
+# dialogs, and availability is not what this flow proves.
+- extendedWaitUntil:
+    visible:
+      id: 'availability-screen'
+    timeout: 30000
+- takeScreenshot: ${OUT}/s3-31b-d-availability
+- tapOn:
+    id: 'availability-screen-skip'
+- extendedWaitUntil:
+    visible:
+      id: 'notifications-permission-screen'
+    timeout: 12000
+- tapOn:
+    id: 'notifications-permission-screen-skip'
+- extendedWaitUntil:
+    visible:
+      id: 'calendar-permission-screen'
+    timeout: 12000
+- tapOn:
+    id: 'calendar-permission-screen-skip'
+
+- extendedWaitUntil:
+    visible:
+      id: 'today-header'
+    timeout: 30000
+- assertVisible:
+    id: 'tab-today'
+- takeScreenshot: ${OUT}/s3-31b-e-nanny2-today

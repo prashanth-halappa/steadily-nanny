@@ -90,6 +90,7 @@ import { useWeekExpenses } from '@/src/hooks/queries/useWeekExpenses';
 import { useWeekPayDueDate } from '@/src/hooks/queries/useWeekPayDueDate';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useWeekTimesheet } from '@/src/hooks/queries/useWeekTimesheet';
+import { shortZoneLabel } from '@/src/lib/displayTime';
 import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { formatMoney } from '@/src/lib/money';
@@ -168,6 +169,7 @@ export function NannyWeekView({
   openBreakdownSignal = 0,
 }: NannyWeekViewProps) {
   const { t } = useTranslation('hours');
+  const { t: tCommon } = useTranslation('common');
   const { t: tExpenses } = useTranslation('expenses');
   const { t: tErrors } = useTranslation('errors');
   const { t: tSchedule } = useTranslation('schedule');
@@ -498,12 +500,10 @@ export function NannyWeekView({
     weekDates,
     timeZone,
   });
-  const weekHoursLabel =
-    entries.length > 0 && totalMinutes === 0
-      ? formatDuration(60).replace('1', '0')
-      : formatDuration(totalMinutes);
+  const weekHoursLabel = formatDuration(totalMinutes);
   const scheduledMinutes = scheduledMinutesFor(entries);
   const overtimeLabel = formatOvertimeDelta(totalMinutes, scheduledMinutes);
+  const zoneLabel = shortZoneLabel(timeZone);
   const todayISO = localDateInZone(timeZone, new Date(nowMs));
   const dayMinutes = [0, 0, 0, 0, 0, 0, 0];
   for (let i = 0; i < weekDates.length; i++) {
@@ -517,9 +517,13 @@ export function NannyWeekView({
   const todayOffset = weekDates.indexOf(todayISO);
   const todayIndex =
     todayOffset === -1 ? null : (weekStartsOn + todayOffset) % 7;
+  // Hoisted out of the t() args on purpose: a tCommon() call nested inside
+  // another t() call's arguments gets attributed to the OUTER namespace by
+  // the i18n key-resolution guard (GOLDEN-FIXES #7c's sibling failure mode).
+  const familyName = activeHousehold.household?.name ?? tCommon('theFamily');
   const lead = t('lead.nanny', {
     hours: weekHoursLabel,
-    family: activeHousehold.household?.name ?? '',
+    family: familyName,
   });
 
   const dayRows = weekDates
@@ -760,6 +764,14 @@ export function NannyWeekView({
               todayIndex={todayIndex}
               lead={lead}
             />
+            {zoneLabel ? (
+              <Caption
+                testID="hours-timezone-note"
+                className="mb-3 text-muted-strong"
+              >
+                {t('lead.timeZoneNote', { zone: zoneLabel })}
+              </Caption>
+            ) : null}
             <WeekTotal
               testID="hours-week-total"
               timesheetStatus={timesheetStatusForDisplay}
@@ -781,7 +793,7 @@ export function NannyWeekView({
                   hours: weekHoursLabel,
                 })}
                 body={t('receipts.weekClosed.body', {
-                  household: activeHousehold.household?.name ?? '',
+                  household: familyName,
                 })}
               />
             ) : null}

@@ -269,6 +269,7 @@ describe('resolveCrossFamilyAlerts — ordinary inbox noise never qualifies', ()
       householdId: OTHER_A,
       weekStart: '2026-08-10',
       carerDisplayName: 'Test Carer',
+      totalMinutes: 0,
     },
     {
       kind: 'pending_pattern',

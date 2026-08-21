@@ -1,0 +1,130 @@
+# S5 gap — "I'm covering this" clears the uncovered-care warning and is NOT
+# payable (docs/12-NEED-COVERAGE.md §6). `parent_cover` writes a real shift
+# (`kind=parent_cover`, `carer_id=null`) so it drops out of `computeUncovered`
+# like any other confirmed cover, but `weekEarningsService` only sums shifts
+# where `shift.carer_id === carerId` — a carer-less row never enters pay.
+#
+# FIXTURES — no seeder creates an uncovered window on PHASE4_HOUSEHOLD_ID
+# today, so this flow manufactures one the same way flow 40 does: adds a
+# recurring care-hours commitment via `ManageCommitmentsSection`
+# (`/settings/children`), whose defaults (Mon–Fri 09:00–17:00,
+# `CommitmentFormSheet.tsx` DEFAULT_DAYS/DEFAULT_START/DEFAULT_END) are used
+# untouched. ASSUMES the household already has at least one child (every
+# other launch-pass flow that reads children assumes the same); if it has
+# none, `commitment-add-.*` will not exist and this flow fails at that step
+# rather than silently no-op'ing.
+#
+# CAVEAT — this depends on TODAY being a weekday for the default Mon–Fri
+# window to produce a gap ON today specifically; the assertion is written
+# against Today's card, not a fixed date, so it is honest about that
+# dependency rather than hiding it.
+#
+# HYGIENE — nothing deletes this commitment afterwards (deliberate: the
+# household closure removal in flow 39 wants a window to still exist too).
+# Re-running this flow across sessions accumulates need windows on
+# PHASE4_HOUSEHOLD_ID; there is no seeder-side cleanup for `child_commitments`
+# today (`seed-phase4-fixtures.ts` never touches that table) — worth adding
+# if these flows join the batch runner.
+appId: com.jetto.steadily.nanny
+tags:
+  - money
+  - scheduling
+---
+# --- Parent: manufacture an uncovered window for today --------------------
+- runFlow: ../flows/login.yaml
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
+- openLink: steadilynanny:///(private)/settings/children
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'manage-children-screen'
+    timeout: 15000
+- tapOn:
+    id: 'commitment-add-.*'
+- extendedWaitUntil:
+    visible:
+      id: 'commitment-form-sheet'
+    timeout: 10000
+# Defaults only — Mon–Fri 09:00–17:00, per the sheet's own DEFAULT_* constants.
+- assertVisible:
+    id: 'commitment-form-readback'
+- tapOn:
+    id: 'commitment-form-submit'
+- extendedWaitUntil:
+    notVisible:
+      id: 'commitment-form-sheet'
+    timeout: 15000
+- takeScreenshot: ${OUT}/s5-38-a-care-hours-added
+
+# --- Parent: the gap shows on Today, and pay is untouched before acting ---
+- tapOn:
+    id: 'tab-today'
+- extendedWaitUntil:
+    visible:
+      id: 'today-coverage-gap-card'
+    timeout: 15000
+- assertVisible:
+    id: 'today-coverage-gap-headline'
+- assertVisible:
+    id: 'today-coverage-parent-cover'
+- takeScreenshot: ${OUT}/s5-38-b-today-gap-before-cover
+
+- openLink: steadilynanny:///(private)/(tabs)/hours
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'hours-screen'
+    timeout: 15000
+- assertVisible:
+    id: 'hours-earnings-line'
+# Baseline the current week's payable total BEFORE covering — this is the
+# figure the whole claim rests on staying put.
+- copyTextFrom:
+    id: 'hours-earnings-line'
+- takeScreenshot: ${OUT}/s5-38-c-week-total-before-cover
+
+# --- Parent: "I've got it" ------------------------------------------------
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'today-coverage-gap-card'
+- tapOn:
+    id: 'today-coverage-parent-cover'
+# THE COVERAGE ASSERTION. `parent_cover` recomputes `computeUncovered` on the
+# next fetch — no compensating event, no manual clear (docs/12-NEED-COVERAGE
+# §4) — so the gap card must be gone, not just disabled.
+- extendedWaitUntil:
+    notVisible:
+      id: 'today-coverage-gap-card'
+    timeout: 15000
+- takeScreenshot: ${OUT}/s5-38-d-today-gap-cleared
+
+# --- Parent: the resulting row is on the agenda, muted, undoable ----------
+- tapOn:
+    id: 'tab-schedule'
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      id: 'schedule-parent-cover-undo-.*'
+    direction: DOWN
+    timeout: 15000
+- assertVisible:
+    id: 'schedule-parent-cover-undo-.*'
+# `cover.parentCoveringRow` — the SAME parent who covered it viewing their
+# own row (ShiftRow.tsx: `parentId === currentUserId`).
+- assertVisible: "You're covering"
+- takeScreenshot: ${OUT}/s5-38-e-agenda-parent-cover-row
+
+# --- THE MONEY ASSERTION. The payable total did not move. ----------------
+- openLink: steadilynanny:///(private)/(tabs)/hours
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'hours-screen'
+    timeout: 15000
+- assertVisible: ${maestro.copiedText}
+- takeScreenshot: ${OUT}/s5-38-f-week-total-unchanged-after-cover

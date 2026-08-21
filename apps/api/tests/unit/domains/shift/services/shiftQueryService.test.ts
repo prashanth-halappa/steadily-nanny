@@ -225,4 +225,62 @@ describe('ShiftQueryService.listDayThread', () => {
     ).rejects.toBeInstanceOf(ShiftNotFoundError);
     expect(eventRepo.listForHouseholdDate).not.toHaveBeenCalled();
   });
+
+  /**
+   * P3 — the client's only route to the REAL cause. `closureRemoved` and
+   * `needsAdded` cannot be inferred from shift rows, so if this read drops
+   * `payload.cause` the app is left guessing "nobody's booked yet" after a
+   * parent deletes an away-day.
+   */
+  it('hands the parent the recorded uncovered cause untouched', async () => {
+    const eventRepo = makeEventRepo({
+      listForHouseholdDate: mock(async () => [
+        {
+          id: 'e2',
+          household_id: 'h1',
+          shift_id: null,
+          actor_id: null,
+          event_type: 'uncovered_care',
+          payload: { child_id: 'c1', cause: 'closureRemoved' },
+        },
+      ]),
+    });
+    const svc = new ShiftQueryService(
+      makeShiftRepo(),
+      eventRepo,
+      makeMemberRepo()
+    );
+
+    const result = await svc.listDayThread('u1', 'h1', '2026-08-03');
+
+    expect(result[0]?.payload?.cause).toBe('closureRemoved');
+  });
+
+  /** …and the day-level row stays parents-only: a carer never sees it. */
+  it('withholds the day-level uncovered row from a carer', async () => {
+    const svc = new ShiftQueryService(
+      makeShiftRepo({ findByIds: mock(async () => []) }),
+      makeEventRepo({
+        listForHouseholdDate: mock(async () => [
+          {
+            id: 'e2',
+            household_id: 'h1',
+            shift_id: null,
+            actor_id: null,
+            event_type: 'uncovered_care',
+            payload: { cause: 'closureRemoved' },
+          },
+        ]),
+      }),
+      makeMemberRepo({
+        findActiveMembership: mock(async () => ({
+          ...membership,
+          user_id: 'carer-1',
+          role: 'nanny',
+        })),
+      })
+    );
+
+    expect(await svc.listDayThread('carer-1', 'h1', '2026-08-03')).toEqual([]);
+  });
 });

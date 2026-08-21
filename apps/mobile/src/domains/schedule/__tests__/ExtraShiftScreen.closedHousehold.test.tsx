@@ -76,6 +76,9 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useCanWriteHousehold', () => ({
     useCanWriteHousehold: useCanWriteHouseholdMock,
   }));
+  mock.module('@/src/hooks/queries/useRestrictedAction', () => ({
+    useRestrictedAction: () => ({ disabled: false, reason: null }),
+  }));
   mock.module('@/src/domains/schedule/hooks/useHouseholdCarers', () => ({
     useHouseholdCarers: () => ({
       data: [

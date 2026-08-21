@@ -31,6 +31,9 @@ import { useElevation } from '~/lib/design-tokens/elevation';
 
 type ShiftStatusVariant = NonNullable<StatusPillProps['variant']>;
 
+/** Module-level so the default prop is referentially stable across renders. */
+const EMPTY_RUNNING_SHIFT_IDS: ReadonlySet<string> = new Set<string>();
+
 const STATUS_TO_VARIANT: Record<Shift['status'], ShiftStatusVariant> = {
   draft: 'pending',
   pending: 'pending',
@@ -66,6 +69,7 @@ export function ShiftRow({
   memberLabels,
   showParentCoverUndo,
   coverUndoDisabledReason,
+  runningShiftIds = EMPTY_RUNNING_SHIFT_IDS,
 }: {
   shift: Shift;
   displayTimeZone?: string | null;
@@ -92,6 +96,14 @@ export function ShiftRow({
    * compact text-link, not a `Button`, so it doesn't fit `RestrictedActionButton`;
    * this reproduces that component's disabled+reason-beneath contract by hand. */
   coverUndoDisabledReason?: string | null;
+  /** Ids of shifts someone is actually clocked into right now, resolved once
+   * per screen (`ScheduleShiftsScreen`) from the household's week of time
+   * entries. Apricot is the design system's reservation for "on the clock",
+   * so the calendar alone must never spend it — P11: a nanny who was blocked
+   * from clocking in watched her row go live anyway. Defaults to empty, i.e.
+   * nobody is on the clock: a caller with no clock reading gets the honest
+   * answer, not the loud one. */
+  runningShiftIds?: ReadonlySet<string>;
 }) {
   const { t } = useTranslation('schedule');
   const router = useRouter();
@@ -101,7 +113,7 @@ export function ShiftRow({
   const variant = STATUS_TO_VARIANT[shift.status];
   const isResolved = !isParentCover && RESOLVED_STATUSES.has(shift.status);
   // "Shift in progress" (L2) — a currently-confirmed shift whose window
-  // straddles now. Computed once per render, not a ticking clock: the row
+  // straddles now AND that someone is clocked into (`runningShiftIds`). Computed once per render, not a ticking clock: the row
   // is close enough to live the moment any refetch/refocus re-renders it,
   // and a per-second timer here would be a stopwatch nobody asked for.
   const startMs = new Date(shift.starts_at).getTime();
@@ -111,7 +123,8 @@ export function ShiftRow({
     !isParentCover &&
     shift.status === 'confirmed' &&
     startMs <= nowMs &&
-    nowMs < endMs;
+    nowMs < endMs &&
+    runningShiftIds.has(shift.id);
   // StatusPill only when the row isn't already a settled fact (L3 rule) —
   // a confirmed/completed row showing "Confirmed" on every single row is
   // the noise the pill was invented to avoid, not information.

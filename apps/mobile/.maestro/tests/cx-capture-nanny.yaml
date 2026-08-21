@@ -1,0 +1,14 @@
+# CX capture, nanny lens. Same walk as cx-capture-parent, other side of the app.
+# The nanny additionally has the cross-family "Rhythm" view, which the capture
+# flow picks up via its own visibility guard.
+#
+# Needs -e OUT=<absolute dir> (the dir must already exist).
+appId: com.jetto.steadily.nanny
+tags:
+  - cx
+---
+- runFlow: ../flows/login-nanny.yaml
+- runFlow:
+    file: ../flows/capture-tabs.yaml
+    env:
+      ROLE: nanny

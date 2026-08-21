@@ -24,6 +24,7 @@ import { Body } from '@/src/components/ui/typography';
 import { useInboxItems } from '@/src/domains/inbox/hooks/useInboxItems';
 import { householdIdOf } from '@/src/domains/inbox/utils/buildInboxItems';
 import { hrefForItem } from '@/src/domains/inbox/utils/inboxItemCopy';
+import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useHouseholdLookup } from '@/src/hooks/queries/useHouseholdById';
 import { InboxRow } from './InboxRow';
 
@@ -38,13 +39,18 @@ const CONTENT_STYLE = {
 export function InboxScreen() {
   const { t } = useTranslation('inbox');
   const router = useRouter();
-  const { timeZoneFor } = useHouseholdLookup();
+  const { households, pastHouseholds } = useActiveHousehold();
+  const { timeZoneFor, nameFor } = useHouseholdLookup();
   const { items, isLoading, isError, refetch } = useInboxItems();
   const { refreshControl } = usePullToRefresh();
   // A tab root now (WP-C), so the floating tab bar overlays the last rows
   // unless the scroll reserves its height — same reason every other tab
   // root does this.
   const tabBarScrollPadding = useTabBarScrollPadding();
+  // Same multi-household count TodayScreen uses for its header suffix —
+  // inverted here: name the household on a row only when more than one
+  // would otherwise make identical rows look like a glitch (P8).
+  const showHouseholdOnKind = households.length + pastHouseholds.length > 1;
 
   return (
     <ScrollView
@@ -102,18 +108,28 @@ export function InboxScreen() {
             {/* The group card owns the lift via Card's internal useElevation;
                 rows stay flat inside it per Rule D. */}
             <Card className="overflow-hidden p-0">
-              {items.map((item, index) => (
-                <InboxRow
-                  key={`${item.kind}-${item.id}`}
-                  item={item}
-                  isFirst={index === 0}
-                  // Deliberately cross-household (module doc) — each row
-                  // formats in ITS OWN household's zone, never a single one
-                  // applied to the whole list.
-                  timeZone={timeZoneFor(householdIdOf(item))}
-                  onPress={() => router.push(hrefForItem(item))}
-                />
-              ))}
+              {items.map((item, index) => {
+                const householdId = householdIdOf(item);
+                return (
+                  <InboxRow
+                    key={`${item.kind}-${item.id}`}
+                    item={item}
+                    isFirst={index === 0}
+                    // Deliberately cross-household (module doc) — each row
+                    // formats in ITS OWN household's zone, never a single one
+                    // applied to the whole list.
+                    timeZone={timeZoneFor(householdId)}
+                    // `change_request` has no household id — keep the plain
+                    // kind label even for a multi-household viewer.
+                    householdName={
+                      showHouseholdOnKind && householdId !== undefined
+                        ? nameFor(householdId)
+                        : undefined
+                    }
+                    onPress={() => router.push(hrefForItem(item))}
+                  />
+                );
+              })}
             </Card>
           </View>
         )}

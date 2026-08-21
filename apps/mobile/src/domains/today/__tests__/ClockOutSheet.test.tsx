@@ -175,7 +175,7 @@ describe('ClockOutSheet', () => {
 
       fireEvent.press(getByTestId('clockout-break-60'));
 
-      expect(getByTestId('clockout-summary-total').props.children).toBe('0m');
+      expect(getByTestId('clockout-summary-total').props.children).toBe('0h');
     });
 
     it('reads a same-minute finish as 0m, not a 24-hour shift', () => {
@@ -187,7 +187,7 @@ describe('ClockOutSheet', () => {
 
       fireEvent.changeText(getByTestId('clockout-finish-time'), '08:15');
 
-      expect(getByTestId('clockout-summary-total').props.children).toBe('0m');
+      expect(getByTestId('clockout-summary-total').props.children).toBe('0h');
     });
 
     it('still rolls a genuinely earlier finish onto the next day (overnight)', () => {

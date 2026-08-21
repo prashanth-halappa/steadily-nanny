@@ -1,0 +1,112 @@
+# S3 gap — two carers' pay terms stay separate, and neither can read the
+# other's rate.
+#
+# WHAT IT PROVES, in three assertions:
+#   1. The parent's pay hub lists BOTH carers and shows each a DIFFERENT rate.
+#   2. Nanny 1's own pay screen shows nanny 1's rate and never nanny 2's.
+#   3. Nanny 2's own pay screen shows nanny 2's rate and never nanny 1's.
+#
+# WHY IT MATTERS: S3 is the only scenario where a per-carer bug silently pays
+# the wrong person, and the gate is one function —
+# `payArrangementQueryService.assertCanReadPay`, whose module header spells out
+# that another nanny of the SAME household is refused. Every denial raises the
+# same `PayArrangementNotFoundError`, so a leak would not announce itself; it
+# would simply render a number. The rates are deliberately chosen to share no
+# digits (1500 vs 2250 minor) so a leak is unmistakable in a screenshot rather
+# than plausible.
+#
+# FIXTURES, in order:
+#   - tests/31-second-nanny-joins.yaml must have run (nanny2 is an active member)
+#   - scripts/seed-s3-second-carer.ts must have run (nanny2's £22.50 arrangement)
+#   - tests/07-terms-setup-and-ca-ot-week.yaml gives nanny 1 their £15.00
+# The seed script REFUSES if flow 31 has not run, rather than inventing the
+# membership — otherwise flow 31 would be untested and still look green.
+appId: com.jetto.steadily.nanny
+tags:
+  - money
+---
+# ---------- 1. the parent sees two carers, two different rates ----------
+- runFlow: ../flows/login.yaml
+
+- openLink: steadilynanny:///(private)/settings/pay
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'pay-screen'
+    timeout: 15000
+# Both carers must be offered. `useHouseholdCarers` filters to role=nanny,
+# status=active, so a missing row here means the membership never took.
+- assertVisible:
+    id: 'pay-carer-picker-${PHASE4_NANNY_ID}'
+- assertVisible:
+    id: 'pay-carer-picker-${NANNY2_ID}'
+- takeScreenshot: ${OUT}/s3-32-a-two-carers-listed
+
+- tapOn:
+    id: 'pay-carer-picker-${PHASE4_NANNY_ID}'
+- extendedWaitUntil:
+    visible:
+      id: 'pay-detail-${PHASE4_NANNY_ID}'
+    timeout: 10000
+- assertVisible:
+    id: 'pay-current-rate'
+- assertVisible: '.*15\.00.*'
+- assertNotVisible: '.*22\.50.*'
+- takeScreenshot: ${OUT}/s3-32-b-carer1-rate
+
+# Selecting a carer expands their detail below the picker, which pushes the
+# picker itself out of view — MEASURED: the second carer's chip was reported
+# "Element not found" immediately after the first carer's rate rendered, on a
+# screen where both chips are plainly present. Scroll back to it rather than
+# assuming the list stayed put.
+- scrollUntilVisible:
+    element:
+      id: 'pay-carer-picker-${NANNY2_ID}'
+    direction: UP
+    centerElement: true
+    timeout: 12000
+- tapOn:
+    id: 'pay-carer-picker-${NANNY2_ID}'
+- extendedWaitUntil:
+    visible:
+      id: 'pay-detail-${NANNY2_ID}'
+    timeout: 10000
+- assertVisible:
+    id: 'pay-current-rate'
+- assertVisible: '.*22\.50.*'
+- assertNotVisible: '.*15\.00.*'
+- takeScreenshot: ${OUT}/s3-32-c-carer2-rate
+
+# ---------- 2. nanny 1 sees only their own ----------
+- runFlow: ../flows/login-nanny.yaml
+
+- openLink: steadilynanny:///(private)/settings/my-pay
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'my-pay-screen'
+    timeout: 15000
+- assertVisible: '.*15\.00.*'
+# THE LEAK ASSERTION. MyPayScreen is keyed by household, never by another
+# carer, so nanny 2's rate has no route onto this screen. If it ever appears,
+# the anonymity between carers is broken and this screenshot proves it.
+- assertNotVisible: '.*22\.50.*'
+- assertNotVisible: '.*Sam Okafor.*'
+- takeScreenshot: ${OUT}/s3-32-d-nanny1-own-pay-only
+
+# ---------- 3. nanny 2 sees only their own ----------
+- runFlow:
+    file: ../flows/login-no-household.yaml
+    env:
+      PARENT_EMAIL: ${NANNY2_EMAIL}
+      PARENT_PASSWORD: ${NANNY2_PASSWORD}
+
+- openLink: steadilynanny:///(private)/settings/my-pay
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'my-pay-screen'
+    timeout: 15000
+- assertVisible: '.*22\.50.*'
+- assertNotVisible: '.*15\.00.*'
+- takeScreenshot: ${OUT}/s3-32-e-nanny2-own-pay-only

@@ -106,9 +106,67 @@ describe('ShiftRow', () => {
       starts_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
       ends_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
     });
-    const liveRender = render(<ShiftRow {...defaultProps} shift={live} />);
+    const liveRender = render(
+      <ShiftRow
+        {...defaultProps}
+        shift={live}
+        runningShiftIds={new Set(['live-1'])}
+      />
+    );
     expect(liveRender.getByTestId('schedule-shift-live-live-1')).toBeTruthy();
     expect(liveRender.queryByTestId('schedule-shift-status-live-1')).toBeNull();
+  });
+
+  // P11: apricot is the design system's reservation for "on the clock". The
+  // calendar saying the window straddles now is not the clock — a nanny
+  // blocked from clocking in watched her row go apricot anyway.
+  describe('apricot follows the clock, not the calendar', () => {
+    function inProgress() {
+      return makeShift({
+        id: 'live-1',
+        status: 'confirmed',
+        starts_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        ends_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      });
+    }
+
+    it('no running entry: no live dot, no live ground', () => {
+      const { getByTestId, queryByTestId } = render(
+        <ShiftRow {...defaultProps} shift={inProgress()} />
+      );
+      expect(queryByTestId('schedule-shift-live-live-1')).toBeNull();
+      expect(getByTestId('schedule-shift-live-1').props.className).toContain(
+        'bg-card'
+      );
+    });
+
+    it('running entry for this shift: live dot and live ground', () => {
+      const { getByTestId, queryByTestId } = render(
+        <ShiftRow
+          {...defaultProps}
+          shift={inProgress()}
+          runningShiftIds={new Set(['live-1'])}
+        />
+      );
+      expect(getByTestId('schedule-shift-live-live-1')).toBeTruthy();
+      const row = getByTestId('schedule-shift-live-1');
+      expect(row.props.className).not.toContain('bg-card');
+      expect(row.props.style).toBeTruthy();
+    });
+
+    it('running entry for a DIFFERENT shift leaves this row cold', () => {
+      const { getByTestId, queryByTestId } = render(
+        <ShiftRow
+          {...defaultProps}
+          shift={inProgress()}
+          runningShiftIds={new Set(['some-other-shift'])}
+        />
+      );
+      expect(queryByTestId('schedule-shift-live-live-1')).toBeNull();
+      expect(getByTestId('schedule-shift-live-1').props.className).toContain(
+        'bg-card'
+      );
+    });
   });
 
   it('renders a chip per child on the shift, coloured by the child', () => {

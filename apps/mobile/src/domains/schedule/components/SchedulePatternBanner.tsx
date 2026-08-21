@@ -28,6 +28,7 @@
  */
 import type { SchedulePattern } from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import { type Href, useRouter } from 'expo-router';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { Button } from '@/src/components/ui/button';
@@ -54,6 +55,23 @@ type SchedulePatternBannerProps = {
   carerId?: string | null;
   /** While the owning patterns query is loading, render nothing. */
   isLoading?: boolean;
+  /**
+   * This week's CONSEQUENCE of the state this banner names — the uncovered
+   * count. Rendered INSIDE the attention card, between the cause and its
+   * action, never beside it.
+   *
+   * They are two facts, not one told twice: the banner says "you haven't set
+   * the weekly hours", this says "N windows have nobody booked", and the
+   * no-pattern state is exactly the one with the MOST gaps to report. But
+   * rendered as a separate warning-toned pill it wore the same skin as this
+   * screen's NON-interactive "Pending" / "Not booked yet" labels, so a parent
+   * read one alarm printed twice. Folding it in keeps both facts and leaves
+   * one card to answer.
+   *
+   * Ignored by the settled (accepted) arm, which is a bare line with no card
+   * to fold anything into — that caller renders it standalone instead.
+   */
+  consequence?: ReactNode;
 };
 
 export function SchedulePatternBanner({
@@ -61,6 +79,7 @@ export function SchedulePatternBanner({
   householdId,
   carerId,
   isLoading = false,
+  consequence,
 }: SchedulePatternBannerProps) {
   const { t } = useTranslation('schedule');
   const { t: tCommon } = useTranslation('common');
@@ -232,6 +251,7 @@ export function SchedulePatternBanner({
             {sentAgo}
           </MetadataLabel>
         ) : null}
+        {consequence}
         {canEdit ? (
           <View>
             <Button

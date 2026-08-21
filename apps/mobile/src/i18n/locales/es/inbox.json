@@ -39,8 +39,8 @@
     },
     "submittedWeek": {
       "title": "Semana del {{week}} enviada — revisar y aprobar",
-      "subtitle": "Enviada por {{carer}}.",
-      "subtitleFallback": "Toca para revisar las horas de esta semana.",
+      "subtitle": "{{hours}} · Enviada por {{carer}}.",
+      "subtitleFallback": "{{hours}} · Toca para revisar las horas de esta semana.",
       "cta": "Aprobar semana"
     },
     "staleSubmittedWeek": {
@@ -52,6 +52,7 @@
       "title": "¿Puedes cubrir el {{date}}, {{start}} – {{end}}?",
       "subtitle": "Solicitado el {{askedDate}} · Responde antes del {{deadlineDate}}, {{deadlineTime}}",
       "subtitleNoDeadline": "Solicitado el {{askedDate}}",
+      "subtitleExpired": "Solicitado el {{askedDate}} · Venció el {{deadlineDate}}, {{deadlineTime}}",
       "deadline": "Responde antes del {{deadlineDate}}, {{deadlineTime}}",
       "cta": "Abrir el turno"
     },
@@ -125,6 +126,7 @@
   },
   "lead_one": "{{count}} cosa te espera.",
   "lead_other": "{{count}} cosas te esperan.",
+  "kindWithHousehold": "{{kind}} · {{household}}",
   "kinds": {
     "change_request": "Cambio de horario",
     "pending_pattern": "Horario propuesto",

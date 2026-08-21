@@ -1,0 +1,233 @@
+# S1 gap — the parent-first journey from Register, end to end.
+#
+# WHAT IT PROVES: a brand-new person can create an account, choose the parent
+# role, create a household, add a child, mint a nanny invite, and land on
+# Today — the sequence `stepsFor('parent','create')` describes and that no flow
+# has ever executed. `cx-onboarding-tour` walks some of these screens but
+# deliberately stops before `household-screen`'s CTA and creates nothing.
+#
+# WHY IT IS NEWLY POSSIBLE: flow 14's header records that Register was
+# undrivable because `auth.signUp` navigates nowhere and there is no
+# check-your-inbox screen, so landing in a session depended on the project's
+# confirmation setting. Locally `supabase/config.toml` sets
+# `enable_confirmations = false`, so sign-up returns a live session and the
+# un-onboarded user falls straight into the wizard. This flow is therefore
+# LOCAL-ONLY by construction; against a stack with confirmations on it will
+# fail at the `role-screen` wait, and that failure is correct.
+#
+# FIXTURES: none seeded. Needs one unused email, passed in — reusing
+# PHASE4_NEW_PARENT_EMAIL would consume the account flows 14/15 depend on
+# being fresh.
+#   -e S1_EMAIL=s1-onboard-<unique>@steadilynanny.test
+#   -e S1_PASSWORD=SteadilyTest!2026
+#
+# NAVIGATION: Register is reached by deep link, not by tapping login's
+# "Create account" — that pressable (auth/login.tsx:125) carries no testID, and
+# a text tap on a signed-out screen is exactly the occlusion risk rule 3 warns
+# about. The route file is `src/app/auth/register.tsx`.
+appId: com.jetto.steadily.nanny
+tags:
+  - onboarding
+---
+- runFlow: ../flows/reset-to-welcome.yaml
+
+- openLink: steadilynanny:///auth/register
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'register-screen'
+    timeout: 15000
+- takeScreenshot: ${OUT}/s1-26-a-register
+
+- tapOn:
+    id: 'register-email'
+- eraseText
+- inputText: ${S1_EMAIL}
+- tapOn:
+    id: 'register-password'
+- eraseText
+- inputText: ${S1_PASSWORD}
+# The submit button is pinned below the scroll body, so the keyboard covers it
+# and no amount of scrolling moves it (flow 14 measured this exact geometry on
+# the sibling code screen). Tapping the screen's own title dismisses the
+# keyboard: it is far above it and has no onPress, so the touch falls through.
+- tapOn:
+    text: 'Create account'
+- waitForAnimationToEnd
+- tapOn:
+    id: 'register-submit'
+
+# Sign-up returns a session; the un-onboarded user lands on the role fork.
+# A long timeout because this is a network round trip plus a root re-render.
+- extendedWaitUntil:
+    visible:
+      id: 'role-screen'
+    timeout: 30000
+- assertNotVisible:
+    id: 'register-error'
+- takeScreenshot: ${OUT}/s1-26-b-role-fork
+
+# --- role: parent -------------------------------------------------------
+- tapOn:
+    id: 'role-parent'
+- assertVisible:
+    id: 'role-screen-cta'
+- tapOn:
+    id: 'role-screen-cta'
+- extendedWaitUntil:
+    visible:
+      id: 'start-screen'
+    timeout: 10000
+- takeScreenshot: ${OUT}/s1-26-c-start-fork
+
+# --- start: create a new family (not join) ------------------------------
+- tapOn:
+    id: 'start-create'
+- tapOn:
+    id: 'start-screen-cta'
+- extendedWaitUntil:
+    visible:
+      id: 'household-screen'
+    timeout: 10000
+- takeScreenshot: ${OUT}/s1-26-d-household-empty
+
+# --- household: name, your name, phone ----------------------------------
+# The CTA is gated on household name AND display name; the phone is validated
+# only on press, so a bad number leaves the CTA enabled and surfaces
+# `phone-error`. Assert the error's ABSENCE after the transition, not before.
+- tapOn:
+    id: 'parent-name-input'
+- eraseText
+- inputText: 'Ana Halappa'
+- tapOn:
+    id: 'phone-input'
+- eraseText
+- inputText: '07700900123'
+- tapOn:
+    id: 'household-name-input'
+- eraseText
+- inputText: 'The Halappa family'
+- tapOn:
+    text: 'Name your family'
+- waitForAnimationToEnd
+- takeScreenshot: ${OUT}/s1-26-e-household-filled
+- tapOn:
+    id: 'household-screen-cta'
+- extendedWaitUntil:
+    visible:
+      id: 'children-screen'
+    timeout: 15000
+- assertNotVisible:
+    id: 'phone-error'
+- takeScreenshot: ${OUT}/s1-26-f-children-empty
+
+# --- children: one child ------------------------------------------------
+- tapOn:
+    id: 'children-add-button'
+# Assert on text inside the sheet, never on the sheet's own testID (rule 7).
+- extendedWaitUntil:
+    visible:
+      text: 'Add a child'
+    timeout: 8000
+- takeScreenshot: ${OUT}/s1-26-g-child-sheet
+- tapOn:
+    id: 'child-form-name'
+- eraseText
+- inputText: 'Nia'
+# Coordinate tap into the sheet's own title area to drop the keyboard: the
+# string "Add a child" is the sheet title AND the button behind it, so a text
+# tap is ambiguous, and `hideKeyboard` is a no-op on this sheet.
+# `pressKey: Enter`, not a coordinate tap and not `hideKeyboard`.
+# Three things were tried on this sheet and measured failing:
+#   hideKeyboard          — a no-op here, same as flow 07 records for PaySetup
+#   tapOn: text 'Add a child' — ambiguous; that string is the sheet title AND
+#                           the button behind it
+#   tapOn: point 50%,48%  — missed; the failure frame showed the name field
+#                           containing "4", i.e. the age had been typed into it
+#                           because focus never left the name input
+# The Name input is single-line, so Return fires onSubmitEditing and blurs it,
+# which drops the keyboard and lets the Age field below become reachable.
+- pressKey: Enter
+- waitForAnimationToEnd
+- tapOn:
+    id: 'child-form-age'
+- eraseText
+- inputText: '4'
+# The numeric pad has no Return key, so scroll the sheet body instead — it is
+# a real ScrollView (BottomSheetBase.tsx:189), so this actually moves the
+# button clear of the keyboard.
+- scrollUntilVisible:
+    element:
+      id: 'child-form-submit'
+    direction: DOWN
+    centerElement: true
+    timeout: 10000
+- tapOn:
+    id: 'child-form-submit'
+# `child-form-name` exists only inside the sheet, so it is the honest signal
+# that the sheet closed. "Add a child" never stops being visible.
+- extendedWaitUntil:
+    notVisible:
+      id: 'child-form-name'
+    timeout: 10000
+- assertNotVisible:
+    id: 'children-empty'
+- takeScreenshot: ${OUT}/s1-26-h-child-added
+- tapOn:
+    id: 'children-screen-cta'
+- extendedWaitUntil:
+    visible:
+      id: 'invite-screen'
+    timeout: 15000
+- takeScreenshot: ${OUT}/s1-26-i-invite-before-generate
+
+# --- invite: pick nanny, then mint --------------------------------------
+# The code is minted by an EXPLICIT tap. The auto-mint version fired before the
+# role picker had been touched and silently stamped every wizard invite
+# `role: 'nanny'` (InviteScreen.tsx header). Flow 28 is the guard for the
+# parent-role arm; here the picker's default is what we take.
+- assertVisible:
+    id: 'invite-role-picker'
+- tapOn:
+    id: 'invite-role-nanny'
+- tapOn:
+    id: 'invite-generate-button'
+- extendedWaitUntil:
+    visible:
+      id: 'invite-code-value'
+    timeout: 20000
+- takeScreenshot: ${OUT}/s1-26-j-invite-code
+
+- tapOn:
+    id: 'invite-screen-cta'
+- extendedWaitUntil:
+    visible:
+      id: 'notifications-permission-screen'
+    timeout: 10000
+- takeScreenshot: ${OUT}/s1-26-k-notifications
+
+# --- permissions: skip both ---------------------------------------------
+# `-skip`, never `-cta`: the CTAs fire real OS permission dialogs. Flow 27 is
+# the one that answers them; keeping them out of here means a system alert can
+# never wedge the happy path.
+- tapOn:
+    id: 'notifications-permission-screen-skip'
+- extendedWaitUntil:
+    visible:
+      id: 'calendar-permission-screen'
+    timeout: 10000
+- takeScreenshot: ${OUT}/s1-26-l-calendar
+- tapOn:
+    id: 'calendar-permission-screen-skip'
+
+# --- landed ---------------------------------------------------------------
+# The last permission screen's advance() calls resetSetupProgress() then
+# replaces the route with the tabs. Waiting on `today-header` (not merely the
+# tab bar) is what proves the wizard actually released.
+- extendedWaitUntil:
+    visible:
+      id: 'today-header'
+    timeout: 25000
+- assertVisible:
+    id: 'tab-today'
+- takeScreenshot: ${OUT}/s1-26-m-today-brand-new-household

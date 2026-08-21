@@ -958,7 +958,7 @@ describe('NannyWeekView — a second carer in the same household (F-B1-3)', () =
     const { getByTestId, queryByTestId } = renderNannyView();
 
     await waitFor(() => expect(getByTestId('hours-total')).toBeTruthy());
-    expect(getByTestId('hours-total').props.children).toBe('0m');
+    expect(getByTestId('hours-total').props.children).toBe('0h');
     // …and no money either: `find(t => t.carer_id === undefined-ish)` must
     // not land on a DEPARTED carer's row (carer_id null) and show her pay.
     expect(queryByTestId('hours-earnings-line-amount')).toBeNull();

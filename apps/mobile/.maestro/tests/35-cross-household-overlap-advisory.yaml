@@ -1,0 +1,123 @@
+# S4 gap — a clash with the nanny's OTHER family is an ADVISORY, never a
+# refusal. This is an architectural invariant stated in three places:
+#
+#   - `apps/api/src/domains/me/services/clashWarning.ts` module header:
+#     "CROSS-HOUSEHOLD NEVER 409s... a nanny may accept a shift that clashes
+#     with ANOTHER FAMILY or falls outside her marked availability, and
+#     neither may block her... write paths... must NEVER translate a
+#     cross-household overlap into a thrown ConflictError / 409."
+#   - `supabase/migrations/104_schedule_invariants.sql` §3 (S4a): the new
+#     `shifts_carer_window_excl` exclusion constraint that DOES refuse an
+#     overlap is keyed on `household_id with =`, "precisely so that it can
+#     never reach the case this module exists to keep advisory."
+#   - `apps/api/src/domains/shift/errors/shiftErrors.ts`'s `ShiftOverlapsError`
+#     doc: "SCOPED TO ONE HOUSEHOLD, deliberately. A clash with ANOTHER
+#     family stays advisory and never 409s."
+#
+# FIXTURES: the nanny (NANNY_EMAIL) is an active member of both
+# "Our household" (PHASE4_HOUSEHOLD_ID, this flow's household A — logged
+# into via login.yaml) and "LEAKCANARY the Cole household" (household B,
+# scripts/seed-second-household.ts), which has a CONFIRMED shift
+# 2026-09-10T08:00–17:00 Europe/London for that same nanny.
+#
+# DRIVE: parent A opens the extra-shift form pre-filled via URL params
+# (`ExtraShiftScreen`'s `useLocalSearchParams` reads `date`/`start`/`end`/
+# `carerId` directly into its initial state — see the component's
+# `useState` initializers) for a window on 2026-09-10 that must overlap
+# household B's 08:00–17:00 booking. The form is driven by URL params
+# rather than the native date/time wheel pickers deliberately — see the
+# GAP note at the bottom of this file.
+#
+# WHY 00:00–23:59, NOT 08:00–17:00: household A's actual `timezone` is
+# whatever was set when "Our household" was created (not necessarily
+# Europe/London — `scripts/seed-phase4-fixtures.ts` reads it live rather
+# than assuming, see its own header). A near-full local day on 2026-09-10
+# converts to a UTC window that overlaps household B's 07:00–16:00 UTC
+# booking for any real-world UTC offset (-12..+14), so the clash fires
+# regardless of household A's actual zone — narrower hours would not.
+#
+# This must produce the CROSS-household ('busy', from `v_busy_blocks` via
+# `availabilityApi.getBusyBlocks`) warning, not the same-household
+# ('householdOverlap') one — `shifts.extraClashTitle` ("{{name}} is already
+# busy then.") vs `shifts.extraHouseholdOverlapTitle` ("{{name}} is already
+# booked then.") in `apps/mobile/src/i18n/locales/en/schedule.json`. Dialog
+# testIDs (`schedule-extra-clash-cancel`/`-confirm`) verified in
+# `apps/mobile/src/domains/schedule/components/ExtraShiftScreen.tsx`.
+appId: com.jetto.steadily.nanny
+tags:
+  - scheduling
+  - cross-household
+---
+- runFlow: ../flows/login.yaml
+
+# --- Open the extra-shift form pre-filled with the clashing window --------
+- openLink: steadilynanny:///(private)/schedule/shifts/extra?date=2026-09-10&start=00:00&end=23:59&carerId=${PHASE4_NANNY_ID}
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-extra-shift-screen'
+    timeout: 15000
+- assertVisible:
+    id: 'schedule-extra-carer-${PHASE4_NANNY_ID}'
+- takeScreenshot: ${OUT}/35-a-form-prefilled
+
+# Submit is gated on `canWriteHousehold` resolving (async) as well as form
+# validity — wait for it enabled rather than asserting instantly.
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-extra-submit'
+    timeout: 10000
+- assertVisible:
+    id: 'schedule-extra-submit'
+    enabled: true
+- tapOn:
+    id: 'schedule-extra-submit'
+
+# --- THE ADVISORY: cross-household busy, not a refusal --------------------
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-extra-clash-confirm'
+    timeout: 10000
+- assertVisible: '.*is already busy then.*'
+- assertVisible:
+    id: 'schedule-extra-clash-cancel'
+- assertVisible: 'Create anyway\?'
+# NOT the same-household variant, and NOT a hard block — proves this really
+# is the cross-household ('busy') path, not 'householdOverlap' or the
+# same-carer hard-stop toast that never opens a dialog at all.
+- assertNotVisible: '.*is already booked then.*'
+- assertNotVisible: '.*already has a shift then.*'
+- takeScreenshot: ${OUT}/35-b-cross-household-advisory-dialog
+
+# --- "Create anyway" SUCCEEDS — the load-bearing assertion ----------------
+# ExtraShiftScreen only calls `router.back()` after `createExtra.mutateAsync`
+# resolves (confirmPending -> submitPayload); a thrown/409 response would
+# leave this screen up with an error toast instead. Leaving the screen is
+# the proof the write was NOT refused, matching flow 07's own convention for
+# "the mutation actually landed."
+- tapOn:
+    id: 'schedule-extra-clash-confirm'
+- extendedWaitUntil:
+    notVisible:
+      id: 'schedule-extra-shift-screen'
+    timeout: 20000
+- assertVisible:
+    id: 'schedule-shifts-screen'
+# The one error string a same-household overlap WOULD produce
+# (`ShiftOverlapsError`'s message, `shiftErrors.ts`) — confirms no 409 ever
+# reached the client for this cross-household create.
+- assertNotVisible: '.*already has a shift overlapping that time.*'
+- takeScreenshot: ${OUT}/35-c-created-not-refused
+
+# GAP (report this, do not silently work around it): `cross_family_clash`
+# `shift_events` rows — the ONLY place ShiftDetailScreen's
+# `CROSS_FAMILY_CLASH_EVENT_TYPE` copy fork
+# (`detail.eventType.crossFamilyClashParent`) is reachable — are written by
+# `apps/api/src/domains/schedule/utils/crossHouseholdClashes.ts`, called
+# from the SCHEDULED `scheduleHorizonJob`
+# (`apps/api/src/jobs/scheduleHorizonJob.ts`), not synchronously on extra-
+# shift create. Nothing this flow does makes that event exist without
+# invoking `POST /api/jobs/schedule-horizon` out-of-band (the same shape as
+# `run-phase4.sh`'s `cover-ask-expiry` curl between flows 13a/13b) — out of
+# scope for an authoring-only pass. See flow 36 and this pass's report for
+# the same gap on the read side.

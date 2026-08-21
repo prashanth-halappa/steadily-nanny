@@ -186,6 +186,44 @@ describe('ThisWeeksShiftsCard', () => {
     expect(queryByTestId('today-next-up-carer-shift-a')).toBeNull();
   });
 
+  // P11: it was Friday lunchtime and "Next up" led with the shift she was
+  // standing in. The window IS now — say so.
+  it('first row in progress: the eyebrow says it is happening now', () => {
+    const now = Date.now();
+    const inProgress = {
+      ...shift('shift-now', AMARA_ID, '2026-08-21'),
+      starts_at: new Date(now - 60 * 60 * 1000).toISOString(),
+      ends_at: new Date(now + 60 * 60 * 1000).toISOString(),
+    };
+    mockUseShiftsRange.mockReturnValue({ data: [inProgress] });
+    mockUseHouseholdMembers.mockReturnValue({
+      data: [member(AMARA_ID, 'Amara Okafor')],
+    });
+
+    const { getByTestId } = render(<ThisWeeksShiftsCard />);
+
+    expect(
+      within(getByTestId('today-next-up-carer')).getByText(
+        'todayCard.nextUpTitleNowWithCarer(Amara Okafor)'
+      )
+    ).toBeTruthy();
+  });
+
+  it('first row still ahead: the eyebrow stays "Next up"', () => {
+    mockUseShiftsRange.mockReturnValue({ data: SHIFTS });
+    mockUseHouseholdMembers.mockReturnValue({
+      data: [member(AMARA_ID, 'Amara Okafor')],
+    });
+
+    const { getByTestId } = render(<ThisWeeksShiftsCard />);
+
+    expect(
+      within(getByTestId('today-next-up-carer')).getByText(
+        'todayCard.nextUpTitleWithCarer(Amara Okafor)'
+      )
+    ).toBeTruthy();
+  });
+
   it('two-carer household: each row carries its own carer first name', () => {
     mockUseShiftsRange.mockReturnValue({ data: SHIFTS });
     mockUseHouseholdMembers.mockReturnValue({

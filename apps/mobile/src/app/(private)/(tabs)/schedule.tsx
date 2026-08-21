@@ -14,6 +14,7 @@
 import { HOUSEHOLD_STATES } from '@steadily-nanny/shared-types/schemas/household.schema';
 import type { SchedulePattern } from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import { type Href, useRouter } from 'expo-router';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
@@ -113,13 +114,14 @@ export default function ScheduleRoute() {
       showBack={false}
       pattern={pattern}
       patternLoading={patterns.isLoading}
-      patternBanner={
+      patternBanner={coverSummary => (
         <ParentPatternBanners
           householdId={onboarding.householdId}
           patterns={patterns.data ?? []}
           patternsLoading={patterns.isLoading}
+          coverSummary={coverSummary}
         />
-      }
+      )}
     />
   );
 }
@@ -139,10 +141,21 @@ function ParentPatternBanners({
   householdId,
   patterns,
   patternsLoading,
+  coverSummary,
 }: {
   householdId: string | null;
   patterns: readonly SchedulePattern[];
   patternsLoading: boolean;
+  /**
+   * This week's uncovered count. Folded into the FIRST banner that is in its
+   * attention arm — one card carrying the cause, its consequence and one
+   * action. The count is household-wide while banners are per-carer, so
+   * "first" is the only honest placement: attaching it to every carer's card
+   * would multiply one fact, and picking a carer would attribute a gap to
+   * someone who may not own it. With no attention banner at all there is no
+   * card to fold into, so it renders on its own below.
+   */
+  coverSummary?: ReactNode;
 }) {
   const carers = useHouseholdCarers(householdId);
   const perCarerPatterns = resolvePerCarerPatterns(patterns);
@@ -155,19 +168,28 @@ function ParentPatternBanners({
       ? [...rowIds, ...extraIds]
       : [null];
 
+  // Only a non-accepted pattern renders the attention CARD; `accepted` is a
+  // bare settled line with nothing to fold into.
+  const patternFor = (carerId: string | null) =>
+    perCarerPatterns.find(cp => cp.carerId === carerId)?.pattern ?? null;
+  const foldIntoCarerId = bannerCarerIds.find(
+    carerId => patternFor(carerId)?.status !== 'accepted'
+  );
+  const folded = foldIntoCarerId !== undefined;
+
   return (
     <View className="gap-4">
       {bannerCarerIds.map(carerId => (
         <SchedulePatternBanner
           key={carerId ?? 'no-carer'}
-          pattern={
-            perCarerPatterns.find(cp => cp.carerId === carerId)?.pattern ?? null
-          }
+          pattern={patternFor(carerId)}
           carerId={carerId}
           householdId={householdId}
           isLoading={patternsLoading || carers.isLoading}
+          consequence={carerId === foldIntoCarerId ? coverSummary : undefined}
         />
       ))}
+      {folded ? null : coverSummary}
     </View>
   );
 }

@@ -67,6 +67,7 @@ const SUBMITTED_WEEK: InboxItem = {
   householdId: 'hh-1',
   weekStart: '2026-08-04',
   carerDisplayName: 'Test Nanny',
+  totalMinutes: 2310,
 };
 
 const QUERIED_WEEK: InboxItem = {
@@ -243,7 +244,7 @@ describe('NeedsAttentionCard', () => {
     const { getByText } = render(<NeedsAttentionCard />);
 
     expect(
-      getByText('items.submittedWeek.title({"week":"4 Aug"})')
+      getByText('items.submittedWeek.title({"week":"Aug 4, 2026"})')
     ).toBeTruthy();
   });
 

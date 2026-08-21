@@ -215,7 +215,7 @@ describe('AgendaView day totals (P0-4)', () => {
     );
   });
 
-  it('shows 0m when every shift that day is cancelled/declined — an honest "no cover" signal', () => {
+  it('shows 0h when every shift that day is cancelled/declined — an honest "no cover" signal', () => {
     const { getByTestId } = render(
       <AgendaView
         shifts={[makeShift({ id: 's-only-cancelled', status: 'cancelled' })]}
@@ -224,7 +224,7 @@ describe('AgendaView day totals (P0-4)', () => {
     );
 
     expect(getByTestId('schedule-day-total-2026-08-03').props.children).toBe(
-      '0m'
+      '0h'
     );
   });
 
