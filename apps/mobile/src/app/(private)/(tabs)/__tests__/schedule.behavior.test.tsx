@@ -89,6 +89,9 @@ mock.module('@/src/domains/schedule', () => {
       pattern,
     }: {
       showBack?: boolean;
+      // Now a render prop: the real screen hands the banner this week's
+      // uncovered-count node so the caller can fold it INTO the banner card.
+      // Passing null here stands in for "no gaps this week".
       patternBanner?: unknown;
       pattern?: { status: string } | null;
     }) =>
@@ -99,7 +102,9 @@ mock.module('@/src/domains/schedule', () => {
           accessibilityLabel: showBack === false ? 'no-back' : 'with-back',
           accessibilityHint: pattern?.status ?? 'none',
         },
-        patternBanner
+        typeof patternBanner === 'function'
+          ? (patternBanner as (n: unknown) => unknown)(null)
+          : patternBanner
       ),
     // A thin stand-in mirroring the real banner's per-state message, so
     // this file can assert the message text without pulling in the real
