@@ -293,4 +293,59 @@ describe('ShiftDetailScreen source', () => {
     );
     expect(source).toContain('testID="shift-detail-title"');
   });
+
+  // Launch-pass P findings: a parent reading an empty children list was told
+  // to "check with a parent". Fork empty-state copy; pass isParent in.
+  it('forks the empty children copy for a parent reader', () => {
+    expect(source).toContain('detail.childrenEmptyParent');
+    expect(source).toMatch(
+      /isParent\s*\?\s*t\('detail\.childrenEmptyParent'\)/
+    );
+    // Prop from the call site — ShiftChildrenBlock must not re-derive role.
+    expect(source).toMatch(/<ShiftChildrenBlock[\s\S]*?isParent=\{isParent\}/);
+    const blockStart = source.indexOf('function ShiftChildrenBlock');
+    expect(blockStart).toBeGreaterThan(-1);
+    const block = source.slice(blockStart, blockStart + 800);
+    expect(block).toContain('isParent');
+    expect(block).not.toContain('isParentEditorRole');
+  });
+
+  // TimeRangePicker already labels Start/End; outer FieldLabels duplicated them.
+  it('does not wrap TimeRangePicker with a redundant Start FieldLabel', () => {
+    expect(source).not.toContain(
+      "<FieldLabel>{t('detail.startLabel')}</FieldLabel>"
+    );
+    // Note label stays — only the Start wrappers go.
+    expect(source).toContain(
+      "<FieldLabel>{t('detail.noteLabel')}</FieldLabel>"
+    );
+  });
+
+  // Confirmed pill + live edit inputs need an explicit "saving changes the
+  // agreed times" note, plus a timezone label for the shift's own zone.
+  it('warns the parent that editing a confirmed shift changes agreed times', () => {
+    expect(source).toContain('detail.editConsentNote');
+    expect(source).toContain('shift-detail-edit-consent');
+    expect(source).toContain("status === 'confirmed'");
+    // Reuse the screen's existing nameFor resolver — never a new one.
+    expect(source).toMatch(
+      /detail\.editConsentNote[\s\S]{0,80}name:\s*nameFor\(shift\.carer_id\)/
+    );
+    const editIdx = source.indexOf('testID="shift-detail-edit"');
+    const consentIdx = source.indexOf('shift-detail-edit-consent');
+    expect(editIdx).toBeGreaterThan(-1);
+    expect(consentIdx).toBeGreaterThan(editIdx);
+  });
+
+  it('labels the parent edit block with the shift timezone via shortZoneLabel', () => {
+    expect(source).toContain('shortZoneLabel');
+    expect(source).toContain("from '@/src/lib/displayTime'");
+    expect(source).toContain('detail.timeZoneNote');
+    expect(source).toContain('shift-detail-timezone-note');
+    expect(source).toContain('shortZoneLabel(shift.timezone)');
+    const editIdx = source.indexOf('testID="shift-detail-edit"');
+    const zoneIdx = source.indexOf('shift-detail-timezone-note');
+    expect(editIdx).toBeGreaterThan(-1);
+    expect(zoneIdx).toBeGreaterThan(editIdx);
+  });
 });
