@@ -180,6 +180,7 @@
     "emptyBuildParentBodyNoCarer": "Shifts will show here once you send a usual week and your nanny accepts it.",
     "emptyBuildParentCta": "Build the usual week",
     "weekTotal": "{{duration}} this week",
+    "weekTotalAllCarers": "Everyone's hours added together.",
     "statusDraft": "Draft",
     "statusPending": "Pending",
     "statusConfirmed": "Confirmed",

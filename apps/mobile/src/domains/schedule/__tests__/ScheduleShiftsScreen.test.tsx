@@ -818,6 +818,120 @@ describe('ScheduleShiftsScreen', () => {
       expect(getByTestId('schedule-lead').props.children).toBe('lead.parent');
     });
 
+    // The week-total note ("Everyone's hours added together") is true only
+    // when the viewer sees every carer's shifts — parent/helper with 2+
+    // carers. A nanny's API scope is her own rows, so the same note would
+    // be a false claim on her pay-facing screen.
+    describe('week-total multi-carer note (parent/helper only)', () => {
+      const twoCarers = [
+        {
+          user_id: 'priya-id',
+          display_name_override: 'Priya',
+          profile_name: null,
+        },
+        {
+          user_id: 'maya-id',
+          display_name_override: 'Maya',
+          profile_name: null,
+        },
+      ];
+      const twoCarerShifts = [
+        makeShift({
+          id: 's1',
+          carer_id: 'priya-id',
+          local_date: '2026-08-03',
+        }),
+        makeShift({
+          id: 's2',
+          carer_id: 'maya-id',
+          local_date: '2026-08-04',
+        }),
+      ];
+
+      it('parent voice + 2 carers: shows the week-total note', () => {
+        mockUseIsOnboarded.mockImplementation(() => ({
+          role: 'parent',
+          status: 'onboarded',
+        }));
+        mockUseHouseholdCarers.mockImplementation(() => ({
+          data: twoCarers,
+          isLoading: false,
+          isError: false,
+          refetch: mock(() => Promise.resolve()),
+        }));
+        mockUseShiftsRange.mockImplementation(() => ({
+          data: twoCarerShifts,
+          isLoading: false,
+          isError: false,
+          error: null,
+        }));
+
+        const { getByTestId } = render(<ScheduleShiftsScreen />);
+
+        expect(getByTestId('schedule-week-total-note').props.children).toBe(
+          'shifts.weekTotalAllCarers'
+        );
+      });
+
+      it('parent voice + 1 carer: does not show the week-total note', () => {
+        mockUseIsOnboarded.mockImplementation(() => ({
+          role: 'parent',
+          status: 'onboarded',
+        }));
+        mockUseHouseholdCarers.mockImplementation(() => ({
+          data: [
+            {
+              user_id: 'priya-id',
+              display_name_override: 'Priya',
+              profile_name: null,
+            },
+          ],
+          isLoading: false,
+          isError: false,
+          refetch: mock(() => Promise.resolve()),
+        }));
+        mockUseShiftsRange.mockImplementation(() => ({
+          data: [
+            makeShift({
+              id: 's1',
+              carer_id: 'priya-id',
+              local_date: '2026-08-03',
+            }),
+          ],
+          isLoading: false,
+          isError: false,
+          error: null,
+        }));
+
+        const { queryByTestId } = render(<ScheduleShiftsScreen />);
+
+        expect(queryByTestId('schedule-week-total-note')).toBeNull();
+      });
+
+      it('nanny voice + 2 carers: does not show the week-total note (her hours are scoped to her own)', () => {
+        mockUseIsOnboarded.mockImplementation(() => ({
+          role: 'nanny',
+          status: 'onboarded',
+        }));
+        mockUseHouseholdCarers.mockImplementation(() => ({
+          data: twoCarers,
+          isLoading: false,
+          isError: false,
+          refetch: mock(() => Promise.resolve()),
+        }));
+        mockUseShiftsRange.mockImplementation(() => ({
+          data: twoCarerShifts,
+          isLoading: false,
+          isError: false,
+          error: null,
+        }));
+
+        const { queryByTestId } = render(<ScheduleShiftsScreen />);
+
+        expect(queryByTestId('schedule-week-total-note')).toBeNull();
+      });
+    });
+
     it('gives a helper the PARENT voice, not a third one — helper sees the household schedule same as a parent', () => {
       mockUseIsOnboarded.mockImplementation(() => ({
         role: 'helper',

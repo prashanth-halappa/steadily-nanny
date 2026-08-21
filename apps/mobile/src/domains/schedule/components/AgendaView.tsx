@@ -34,8 +34,7 @@ import {
 import {
   formatShiftTime,
   localDateToWeekday,
-  RESOLVED_STATUSES,
-  shiftMinutes,
+  totalCoveringMinutes,
 } from '@/src/domains/schedule/utils/shiftGrouping';
 import {
   shiftOverlapsTimeOff,
@@ -434,11 +433,7 @@ export function AgendaView({
         a.starts_at.localeCompare(b.starts_at)
       );
       const totalMinutes =
-        dayShifts.length === 0
-          ? null
-          : dayShifts
-              .filter(shift => !RESOLVED_STATUSES.has(shift.status))
-              .reduce((sum, shift) => sum + shiftMinutes(shift), 0);
+        dayShifts.length === 0 ? null : totalCoveringMinutes(dayShifts);
       result.push({
         type: 'header',
         key: `header-${localDate}`,

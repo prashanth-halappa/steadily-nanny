@@ -180,6 +180,7 @@
     "emptyBuildParentBodyNoCarer": "Los turnos aparecerán aquí en cuanto envíes una semana habitual y tu niñera la acepte.",
     "emptyBuildParentCta": "Construir la semana habitual",
     "weekTotal": "{{duration}} esta semana",
+    "weekTotalAllCarers": "Las horas de todos sumadas.",
     "statusDraft": "Borrador",
     "statusPending": "Pendiente",
     "statusConfirmed": "Confirmado",
