@@ -23,7 +23,6 @@ import {
   HOLIDAY_COUNTRIES,
   observedHolidayDates,
 } from '@steadily-nanny/shared-types/holidayPacks';
-import type { HouseholdClosure } from '@steadily-nanny/shared-types/schemas/availability.schema';
 import type { Expense } from '@steadily-nanny/shared-types/schemas/expense.schema';
 import { EXPENSE_STATUSES } from '@steadily-nanny/shared-types/schemas/expense.schema';
 import type {
@@ -50,7 +49,7 @@ import { PayArrangementRepository } from '../repositories/payArrangementReposito
 import { PtoLedgerRepository } from '../repositories/ptoLedgerRepository';
 import type { PayArrangement } from '../types';
 import { allocateMinutes } from '../utils/allocateMinutes';
-import { addDays, localDatesCovered } from '../utils/localDateSpan';
+import { addDays } from '../utils/localDateSpan';
 import {
   type ApprovedExpenseInput,
   type ComputeWeekEarningsInput,
@@ -60,38 +59,6 @@ import {
 } from './earningsService';
 
 const DAYS_PER_WEEK = 7;
-
-/**
- * The household-local dates in `[weekStart, weekStart+7)` that a closure
- * covers, ascending and deduped.
- *
- * The span rule itself — `ends_at` EXCLUSIVE, a sub-day span still counting
- * as one date, resolved in the household's timezone — lives in
- * `localDatesCovered` (`utils/localDateSpan.ts`), because a PTO marking now
- * needs the identical answer for a time off (Phase 3/4 review, finding 15b)
- * and two copies of a date rule this subtle drift apart. This function is
- * only the week window on top of it.
- */
-export function closureDatesInWeek(
-  closures: readonly HouseholdClosure[],
-  weekStart: string,
-  timeZone: string
-): string[] {
-  const weekEnd = addDays(weekStart, DAYS_PER_WEEK); // exclusive
-  const dates = new Set<string>();
-  for (const closure of closures) {
-    for (const date of localDatesCovered(
-      closure.starts_at,
-      closure.ends_at,
-      timeZone
-    )) {
-      if (date >= weekStart && date < weekEnd) {
-        dates.add(date);
-      }
-    }
-  }
-  return [...dates].sort();
-}
 
 /** Rows the engine input is assembled from — all already fetched and scoped. */
 export interface WeekEarningsSources {

@@ -14,7 +14,6 @@
 import { describe, expect, it, mock } from 'bun:test';
 import {
   buildWeekEarningsInput,
-  closureDatesInWeek,
   WeekEarningsService,
 } from '../../../../../src/domains/pay/services/weekEarningsService';
 import type { PayArrangement } from '../../../../../src/domains/pay/types';
@@ -71,22 +70,6 @@ function entry(over: Record<string, unknown> = {}): any {
     status: 'submitted',
     local_date: '2026-08-03',
     timezone: 'Europe/London',
-    created_at: 't',
-    updated_at: 't',
-    ...over,
-  };
-}
-
-function closure(over: Record<string, unknown> = {}): any {
-  return {
-    id: 'c1',
-    household_id: HOUSEHOLD_ID,
-    // All-day convention: exclusive local-midnight end (see
-    // apps/mobile/src/domains/timeOff/utils/timeOffDate.ts `toAllDayRange`).
-    starts_at: '2026-08-05T00:00:00.000+01:00',
-    ends_at: '2026-08-06T00:00:00.000+01:00',
-    message: null,
-    created_by: null,
     created_at: 't',
     updated_at: 't',
     ...over,
@@ -213,114 +196,6 @@ function makeCustomHolidayRepo(overrides: Record<string, unknown> = {}): any {
     ...overrides,
   };
 }
-
-// =============================================================================
-// closureDatesInWeek — instants in, household-local dates out
-// =============================================================================
-
-describe('closureDatesInWeek', () => {
-  it('expands an all-day closure to its local dates, treating ends_at as EXCLUSIVE', () => {
-    const dates = closureDatesInWeek(
-      [
-        closure({
-          starts_at: '2026-08-05T00:00:00.000+01:00',
-          ends_at: '2026-08-07T00:00:00.000+01:00',
-        }),
-      ],
-      WEEK_START,
-      'Europe/London'
-    );
-    expect(dates).toEqual(['2026-08-05', '2026-08-06']);
-  });
-
-  it('clips a closure that overhangs the week to the week itself', () => {
-    const dates = closureDatesInWeek(
-      [
-        closure({
-          starts_at: '2026-08-01T00:00:00.000+01:00',
-          ends_at: '2026-08-20T00:00:00.000+01:00',
-        }),
-      ],
-      WEEK_START,
-      'Europe/London'
-    );
-    expect(dates).toEqual([
-      '2026-08-03',
-      '2026-08-04',
-      '2026-08-05',
-      '2026-08-06',
-      '2026-08-07',
-      '2026-08-08',
-      '2026-08-09',
-    ]);
-  });
-
-  it('ignores a closure entirely outside the week', () => {
-    expect(
-      closureDatesInWeek(
-        [
-          closure({
-            starts_at: '2026-09-01T00:00:00.000+01:00',
-            ends_at: '2026-09-03T00:00:00.000+01:00',
-          }),
-        ],
-        WEEK_START,
-        'Europe/London'
-      )
-    ).toEqual([]);
-  });
-
-  it('still counts a sub-day closure as one closure date', () => {
-    expect(
-      closureDatesInWeek(
-        [
-          closure({
-            starts_at: '2026-08-05T09:00:00.000+01:00',
-            ends_at: '2026-08-05T17:00:00.000+01:00',
-          }),
-        ],
-        WEEK_START,
-        'Europe/London'
-      )
-    ).toEqual(['2026-08-05']);
-  });
-
-  it('resolves the local date in the HOUSEHOLD timezone, not UTC', () => {
-    // 23:30 UTC on Tue 4th is already Wed 5th in Auckland.
-    expect(
-      closureDatesInWeek(
-        [
-          closure({
-            starts_at: '2026-08-04T23:30:00.000Z',
-            ends_at: '2026-08-05T23:30:00.000Z',
-          }),
-        ],
-        WEEK_START,
-        'Pacific/Auckland'
-      )
-    ).toEqual(['2026-08-05']);
-  });
-
-  it('dedupes overlapping closures and returns dates ascending', () => {
-    expect(
-      closureDatesInWeek(
-        [
-          closure({
-            id: 'c2',
-            starts_at: '2026-08-06T00:00:00.000+01:00',
-            ends_at: '2026-08-08T00:00:00.000+01:00',
-          }),
-          closure({
-            starts_at: '2026-08-05T00:00:00.000+01:00',
-            ends_at: '2026-08-07T00:00:00.000+01:00',
-          }),
-        ],
-        WEEK_START,
-        'Europe/London'
-      )
-    ).toEqual(['2026-08-05', '2026-08-06', '2026-08-07']);
-  });
-});
 
 // =============================================================================
 // buildWeekEarningsInput — rows in, engine input out. No arithmetic of its own
