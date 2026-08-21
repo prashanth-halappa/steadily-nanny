@@ -1176,8 +1176,18 @@ export function ParentWeekView({
                     : isActionable || isApproved
                       ? null
                       : isQueried
-                        ? t('waitingAfterQuery', { name: carerName })
-                        : t('waitingForHours', { name: carerName })
+                        ? // A null carerName interpolated into a name slot
+                          // renders a sentence with a hole in it — "Approve
+                          // unlocks once  has logged hours this week." The
+                          // lead line above already forks for exactly this
+                          // (`lead.parent` / `lead.parentNoCarer`); these two
+                          // did not.
+                          carerName
+                          ? t('waitingAfterQuery', { name: carerName })
+                          : t('waitingAfterQueryNoCarer')
+                        : carerName
+                          ? t('waitingForHours', { name: carerName })
+                          : t('waitingForHoursNoCarer')
               }
             />
             {/* §7 fixed order item 4 — gross, breakdown link, staged
