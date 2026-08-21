@@ -73,6 +73,10 @@ import {
   SETUP_ROLES,
   SETUP_STEPS,
 } from '@/src/domains/setup/types';
+import {
+  formatInviteCodeInput,
+  INVITE_CODE_INPUT_MAX_LENGTH,
+} from '@/src/domains/setup/utils/inviteCodeInput';
 import { useCreateInvite } from '@/src/hooks/mutations/useCreateInvite';
 import { useRedeemInvite } from '@/src/hooks/mutations/useRedeemInvite';
 import { useUpdateName } from '@/src/hooks/mutations/useUpdateName';
@@ -580,13 +584,23 @@ export function CodeEntryScreen({
           accessibilityLabel={t('onboarding.code.inviteCodeLabel')}
           value={code}
           onChangeText={text => {
-            setCode(text);
+            setCode(formatInviteCodeInput(text));
             setSubmittedCode(null);
             setHasRedeemed(false);
             setPostRedeemError(null);
           }}
           placeholder={t('onboarding.code.placeholder')}
           autoCapitalize="characters"
+          // A six-character code is not prose, and the default TextInput
+          // treats it as prose: autocorrect on, QuickType offering
+          // completions. The simulator was caught inserting the literal word
+          // "THE" into this field, and a real phone will do the same to a
+          // carer typing a code from a text message. `oneTimeCode` also lets
+          // iOS offer the code straight from the message it arrived in.
+          autoCorrect={false}
+          spellCheck={false}
+          textContentType="oneTimeCode"
+          maxLength={INVITE_CODE_INPUT_MAX_LENGTH}
           // Never read-only, even when pre-filled: a wrong or stale code has
           // to be correctable in place (§3.4), or the only recovery from a
           // mis-routed link is reinstalling the app. `autoFocus` only when
