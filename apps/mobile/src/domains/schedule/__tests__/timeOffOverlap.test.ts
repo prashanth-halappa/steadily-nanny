@@ -3,6 +3,7 @@
  */
 import { describe, expect, it } from 'bun:test';
 import {
+  shiftOverlapsTimeOff,
   timeOffCoversLocalDate,
   timeOffRowsForLocalDate,
 } from '../utils/timeOffOverlap';
@@ -52,5 +53,65 @@ describe('timeOffOverlap', () => {
         'UTC'
       )
     ).toHaveLength(0);
+  });
+});
+
+describe('shiftOverlapsTimeOff', () => {
+  const carerId = 'carer-1';
+  const timeOffRow = {
+    id: 'row-1',
+    user_id: carerId,
+    starts_at: '2026-08-21T00:00:00.000Z',
+    ends_at: '2026-08-24T00:00:00.000Z',
+    all_day: true,
+    status: 'confirmed',
+  } as never;
+
+  it('flags a shift fully inside an accepted time-off window', () => {
+    const shift = {
+      carer_id: carerId,
+      starts_at: '2026-08-21T09:00:00.000Z',
+      ends_at: '2026-08-21T17:00:00.000Z',
+    };
+    expect(shiftOverlapsTimeOff(shift, [timeOffRow])).toBe(true);
+  });
+
+  it('flags a shift that only partially overlaps the window', () => {
+    const shift = {
+      carer_id: carerId,
+      // Starts a day before the time off and ends inside it.
+      starts_at: '2026-08-20T09:00:00.000Z',
+      ends_at: '2026-08-21T02:00:00.000Z',
+    };
+    expect(shiftOverlapsTimeOff(shift, [timeOffRow])).toBe(true);
+  });
+
+  it('does not flag a shift on an adjacent day outside the window', () => {
+    const shift = {
+      carer_id: carerId,
+      starts_at: '2026-08-25T09:00:00.000Z',
+      ends_at: '2026-08-25T17:00:00.000Z',
+    };
+    expect(shiftOverlapsTimeOff(shift, [timeOffRow])).toBe(false);
+  });
+
+  it('flags a shift inside an all-day time-off row', () => {
+    // `timeOffRow` above is already `all_day: true` — a shift landing on
+    // the middle day of the window still needs to be flagged.
+    const shift = {
+      carer_id: carerId,
+      starts_at: '2026-08-22T09:00:00.000Z',
+      ends_at: '2026-08-22T17:00:00.000Z',
+    };
+    expect(shiftOverlapsTimeOff(shift, [timeOffRow])).toBe(true);
+  });
+
+  it('does not flag a shift when the time off belongs to a different carer', () => {
+    const shift = {
+      carer_id: 'carer-2',
+      starts_at: '2026-08-21T09:00:00.000Z',
+      ends_at: '2026-08-21T17:00:00.000Z',
+    };
+    expect(shiftOverlapsTimeOff(shift, [timeOffRow])).toBe(false);
   });
 });

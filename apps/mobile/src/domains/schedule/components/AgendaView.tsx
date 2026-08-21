@@ -37,7 +37,10 @@ import {
   RESOLVED_STATUSES,
   shiftMinutes,
 } from '@/src/domains/schedule/utils/shiftGrouping';
-import { timeOffRowsForLocalDate } from '@/src/domains/schedule/utils/timeOffOverlap';
+import {
+  shiftOverlapsTimeOff,
+  timeOffRowsForLocalDate,
+} from '@/src/domains/schedule/utils/timeOffOverlap';
 import {
   describeUncoveredCause,
   inferUncoveredCauseDetail,
@@ -638,27 +641,49 @@ export function AgendaView({
                 : [];
             }
           );
+          // D77a: a shift keeps rendering as a normally-booked row even when
+          // its own carer has accepted time off across it — nothing on the
+          // row itself said the two collide. `ShiftRow` is shared with the
+          // parent-cover flow and out of scope here, so the flag is a
+          // sibling pill beneath the row rather than a prop threaded into
+          // it — same StatusPill vocabulary (`uncovered`, the "unattended"
+          // hue) the coverage gap rows already use.
+          const hasTimeOffConflict = shiftOverlapsTimeOff(item.shift, timeOff);
           return (
-            <ShiftRow
-              shift={item.shift}
-              displayTimeZone={displayTimeZone}
-              carerName={showCarerNames ? carerFirstName(item.shift) : null}
-              carerColour={
-                showCarerNames && item.shift.carer_id
-                  ? (membersByUserId.get(item.shift.carer_id)?.colour ??
-                    undefined)
-                  : undefined
-              }
-              assignedChildren={assignedChildren}
-              currentUserId={currentUserId}
-              membersByUserId={membersByUserId}
-              memberLabels={memberLabels}
-              showParentCoverUndo={
-                showUncoveredActions &&
-                item.shift.kind === SHIFT_KINDS.PARENT_COVER
-              }
-              coverUndoDisabledReason={closedReason}
-            />
+            <View>
+              <ShiftRow
+                shift={item.shift}
+                displayTimeZone={displayTimeZone}
+                carerName={showCarerNames ? carerFirstName(item.shift) : null}
+                carerColour={
+                  showCarerNames && item.shift.carer_id
+                    ? (membersByUserId.get(item.shift.carer_id)?.colour ??
+                      undefined)
+                    : undefined
+                }
+                assignedChildren={assignedChildren}
+                currentUserId={currentUserId}
+                membersByUserId={membersByUserId}
+                memberLabels={memberLabels}
+                showParentCoverUndo={
+                  showUncoveredActions &&
+                  item.shift.kind === SHIFT_KINDS.PARENT_COVER
+                }
+                coverUndoDisabledReason={closedReason}
+              />
+              {hasTimeOffConflict ? (
+                <View
+                  testID={`schedule-shift-timeoff-conflict-${item.shift.id}`}
+                  className="mx-5.5 mb-2 flex-row items-center"
+                  style={{ marginTop: -8 }}
+                >
+                  <StatusPill
+                    variant="uncovered"
+                    label={t('shifts.timeOffConflict')}
+                  />
+                </View>
+              ) : null}
+            </View>
           );
         }}
       />

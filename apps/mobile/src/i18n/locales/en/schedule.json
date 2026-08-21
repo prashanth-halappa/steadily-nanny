@@ -187,6 +187,7 @@
     "statusCancelled": "Cancelled",
     "statusCompleted": "Completed",
     "shortNotice": "Short notice",
+    "timeOffConflict": "Overlaps time off",
     "awayBand": "Away",
     "awaySummary": "Your carer has time off this week — see Agenda for details.",
     "axisTime": "Time",

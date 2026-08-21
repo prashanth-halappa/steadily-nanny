@@ -187,6 +187,7 @@
     "statusCancelled": "Cancelado",
     "statusCompleted": "Completado",
     "shortNotice": "Última hora",
+    "timeOffConflict": "Se solapa con tiempo libre",
     "awayBand": "Ausente",
     "awaySummary": "Tu cuidador tiene tiempo libre esta semana — mira Agenda para los detalles.",
     "axisTime": "Hora",
