@@ -186,6 +186,32 @@ mock.module('@/src/api/endpoints/household', () => ({
     leave: leaveMock,
   },
 }));
+// The VIEWER's own membership. `useHouseholdMembers` waits for it now — the
+// roster read 404s for a past member, so the client stops asking instead of
+// looping on the refusal. Both households she is in are active here; the
+// leave-specific gating is asserted from the ROSTER, which is what the screen
+// actually reads its own row from.
+const listMembershipsMock = mock(() =>
+  Promise.resolve([
+    {
+      id: 'membership-1',
+      household_id: HOUSEHOLD_ID,
+      user_id: VIEWER_ID,
+      role: 'nanny',
+      status: 'active',
+    },
+    {
+      id: 'membership-2',
+      household_id: OTHER_HOUSEHOLD_ID,
+      user_id: VIEWER_ID,
+      role: 'nanny',
+      status: 'active',
+    },
+  ])
+);
+mock.module('@/src/api/endpoints/user', () => ({
+  userApi: { listMemberships: listMembershipsMock },
+}));
 mock.module('@/src/api/endpoints/children', () => ({
   childrenApi: { list: mock(() => Promise.resolve([])) },
 }));
@@ -237,6 +263,10 @@ beforeEach(() => {
   useAuthStore.setState({
     session: { user: { id: VIEWER_ID } } as unknown as never,
     isInitialized: true,
+    // `useCanWriteHousehold` reads the viewer from `store.user`, not from
+    // `store.session.user`. Both, or the membership lookup finds nobody and
+    // the roster this screen is built from never loads.
+    user: { id: VIEWER_ID } as unknown as never,
   } as never);
 });
 

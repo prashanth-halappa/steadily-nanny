@@ -266,6 +266,24 @@ const listMembersMock = mock(
 mock.module('@/src/api/endpoints/household', () => ({
   householdApi: { listMembers: listMembersMock },
 }));
+// Her own membership. `useHouseholdMembers` waits on it now — the roster read
+// 404s for someone who is not an active member, so the client stops asking
+// rather than looping on the refusal. This suite reads the roster to name the
+// person who recorded a payment, so without it that name never resolves.
+const listMembershipsMock = mock(() =>
+  Promise.resolve([
+    {
+      id: 'membership-1',
+      household_id: HOUSEHOLD_ID,
+      user_id: CARER_ID,
+      role: 'nanny',
+      status: 'active',
+    },
+  ])
+);
+mock.module('@/src/api/endpoints/user', () => ({
+  userApi: { listMemberships: listMembershipsMock },
+}));
 
 let NannyWeekView: typeof import('../components/NannyWeekView').NannyWeekView;
 let getWeekDates: typeof import('../utils/week').getWeekDates;

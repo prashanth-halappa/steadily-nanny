@@ -335,6 +335,23 @@ mock.module('@/src/api/endpoints/expenses', () => {
     },
   };
 });
+// Her own membership. `useHouseholdMembers` waits on it now — the roster read
+// 404s for someone who is not an active member of the household, so the client
+// stops asking instead of looping on the refusal.
+const listMembershipsMock = mock(() =>
+  Promise.resolve([
+    {
+      id: 'membership-1',
+      household_id: HOUSEHOLD_ID,
+      user_id: NANNY_ID,
+      role: 'nanny',
+      status: 'active',
+    },
+  ])
+);
+mock.module('@/src/api/endpoints/user', () => ({
+  userApi: { listMemberships: listMembershipsMock },
+}));
 mock.module('@/src/api/endpoints/household', () => ({
   householdApi: {
     list: listHouseholdsMock,

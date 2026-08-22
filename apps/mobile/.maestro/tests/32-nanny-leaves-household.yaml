@@ -1,0 +1,65 @@
+# 32 — a nanny leaves a household, by herself, from her own screen.
+#
+# Until this shipped the ONLY "Leave household" button lived on
+# ManageHouseholdScreen, which is parent-only — so the member the action exists
+# for could not reach it, and a nanny had to ask the family to remove her.
+#
+# NOT RE-RUNNABLE without re-seeding. It ends a membership; the second run
+# finds no leave button because the nanny is already a past member of
+# HOUSEHOLD_ID. Same constraint 31-second-nanny-joins.yaml carries.
+#
+# Requires ONE booted simulator (two make Maestro drive the wrong one and
+# --udid does not help), Metro on :8081 and the API on :8080.
+#
+# Env, all passed with an explicit `-e` per pair — a single word-split ENV
+# string does not survive zsh into `maestro test`:
+#   NANNY_EMAIL, NANNY_PASSWORD, HOUSEHOLD_ID
+appId: com.jetto.steadily.nanny
+---
+- runFlow:
+    file: ../flows/login-nanny.yaml
+    env:
+      PHASE4_HOUSEHOLD_ID: ${HOUSEHOLD_ID}
+
+# --- reach her own map of where she works -----------------------------------
+- tapOn:
+    id: 'header-settings'
+- assertVisible:
+    id: 'settings-screen'
+- tapOn:
+    id: 'settings-this-family'
+- assertVisible:
+    id: 'settings-this-family-screen'
+
+# --- the action, which is the whole point of the flow -----------------------
+# Scrolled to, not tapped blind: it sits last on a scrolling screen, and
+# Maestro's visibility is a11y-tree-based rather than occlusion-based, so a
+# tap on an off-screen element reports COMPLETED without hitting anything.
+- scrollUntilVisible:
+    element:
+      id: 'this-family-leave-button'
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: 'this-family-leave-button'
+- tapOn:
+    id: 'this-family-leave-button'
+
+# The confirm is an AlertDialog, so it must appear only after the tap.
+- assertVisible:
+    id: 'this-family-leave-consequences'
+- tapOn:
+    id: 'this-family-leave-confirm'
+
+# --- where she lands --------------------------------------------------------
+# Back through the entry router, so the destination depends on what she has
+# left: another active household's Today, or the past household with the
+# membership-ended card. Either is a pass; being stranded on This family is
+# not, and neither is the leave button still being offered.
+- extendedWaitUntil:
+    notVisible:
+      id: 'this-family-leave-button'
+    timeout: 20000
+- assertVisible:
+    id: 'today-header'
+- takeScreenshot: nanny-left-household

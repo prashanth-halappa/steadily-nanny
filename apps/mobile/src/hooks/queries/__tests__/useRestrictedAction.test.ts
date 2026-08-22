@@ -104,9 +104,20 @@ beforeEach(() => {
     m.mockReset();
     m.mockResolvedValue([]);
   }
+  // The VIEWER's own membership, which every case here assumes and none used
+  // to state. `useHouseholdMembers` now waits for it: the roster read 404s for
+  // someone who is not an active member, so the client stops asking once
+  // memberships resolve to `removed` — and waits while they are unknown. An
+  // empty memberships list is "not a member", so without this the roster never
+  // loads and the owner's name is unresolvable.
+  membershipsListMock.mockResolvedValue([member()]);
   useAuthStore.setState({
     session: { user: { id: USER_ID } } as never,
     isInitialized: true,
+    // `useCanWriteHousehold` resolves the viewer from `store.user`, NOT from
+    // `store.session.user` — set both or the membership lookup finds nobody
+    // and every household-scoped read stays disabled.
+    user: { id: USER_ID } as never,
   });
 });
 
@@ -146,7 +157,13 @@ describe('useRestrictedAction', () => {
     useAuthStore.setState({
       session: { user: { id: OWNER_ID } } as never,
       isInitialized: true,
+      user: { id: OWNER_ID } as never,
     });
+    // The viewer is the OWNER here, so her membership is the one that has to
+    // be on file — the shared `beforeEach` puts the co-parent's there.
+    membershipsListMock.mockResolvedValue([
+      member({ user_id: OWNER_ID, role: 'owner' }),
+    ]);
     householdsListMock.mockResolvedValue([household()]);
     listMembersMock.mockResolvedValue([
       member({ user_id: OWNER_ID, role: 'owner' }),

@@ -83,6 +83,25 @@ describe('useHouseholdCarers member select', () => {
     mock.module('@/src/api/endpoints/household', () => ({
       householdApi: { listMembers },
     }));
+    // The viewer's own membership. This hook now waits on it: the roster read
+    // 404s for someone who is not an active member, and it shares a query key
+    // with `useHouseholdMembers`, so both have to be gated or one keeps
+    // refetching what the other disabled.
+    mock.module('@/src/api/endpoints/user', () => ({
+      userApi: {
+        listMemberships: mock(() =>
+          Promise.resolve([
+            {
+              id: 'membership-1',
+              household_id: HOUSEHOLD_ID,
+              user_id: 'user-1',
+              role: 'parent',
+              status: 'active',
+            },
+          ])
+        ),
+      },
+    }));
     useHouseholdCarers = (await import('../hooks/useHouseholdCarers'))
       .useHouseholdCarers;
     useAuthStore = (await import('@/src/store/auth')).useAuthStore;
@@ -98,6 +117,8 @@ describe('useHouseholdCarers member select', () => {
     useAuthStore.setState({
       session: { user: { id: 'user-1' } } as unknown as never,
       isInitialized: true,
+      // `useCanWriteHousehold` reads the viewer from `store.user`.
+      user: { id: 'user-1' } as unknown as never,
     } as never);
   });
 

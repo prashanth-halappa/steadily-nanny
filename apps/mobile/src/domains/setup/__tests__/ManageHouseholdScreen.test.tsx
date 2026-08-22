@@ -325,6 +325,10 @@ beforeEach(() => {
   useAuthStore.setState({
     session: { user: { id: PARENT_USER_ID } } as unknown as never,
     isInitialized: true,
+    // `useCanWriteHousehold` reads the viewer from `store.user`, not from
+    // `store.session.user`, and `useHouseholdMembers` now waits on it — the
+    // roster read 404s for a non-member, so the client stops asking.
+    user: { id: PARENT_USER_ID } as unknown as never,
   } as never);
 });
 
@@ -604,6 +608,7 @@ describe('ManageHouseholdScreen', () => {
     useAuthStore.setState({
       session: { user: { id: NANNY_USER_ID } } as unknown as never,
       isInitialized: true,
+      user: { id: NANNY_USER_ID } as unknown as never,
     } as never);
     listMock.mockImplementation(() => Promise.resolve([baseHousehold]));
     childrenListMock.mockImplementation(() => Promise.resolve([]));
@@ -629,6 +634,7 @@ describe('ManageHouseholdScreen', () => {
     useAuthStore.setState({
       session: { user: { id: NANNY_USER_ID } } as unknown as never,
       isInitialized: true,
+      user: { id: NANNY_USER_ID } as unknown as never,
     } as never);
     listMock.mockImplementation(() => Promise.resolve([baseHousehold]));
     childrenListMock.mockImplementation(() => Promise.resolve([]));
@@ -803,6 +809,7 @@ describe('ManageHouseholdScreen', () => {
       useAuthStore.setState({
         session: { user: { id: COPARENT_USER_ID } } as unknown as never,
         isInitialized: true,
+        user: { id: COPARENT_USER_ID } as unknown as never,
       } as never);
       membershipsListMock.mockImplementation(() =>
         Promise.resolve([coparentMember])

@@ -113,6 +113,24 @@ const getForUserMock = mock(() => Promise.resolve([]));
 mock.module('@/src/api/endpoints/household', () => ({
   householdApi: { list: listMock, listMembers: listMembersMock },
 }));
+// The VIEWER's own membership. `useHouseholdMembers` waits for it now — the
+// roster read 404s for someone who is not an active member of the household,
+// so the client stops asking rather than looping on the refusal. Unstubbed,
+// this reached the real endpoint and the roster never arrived.
+const listMembershipsMock = mock(() =>
+  Promise.resolve([
+    {
+      id: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      household_id: HOUSEHOLD_ID,
+      user_id: PARENT_ID,
+      role: 'owner',
+      status: HOUSEHOLD_MEMBER_STATUSES.ACTIVE,
+    },
+  ])
+);
+mock.module('@/src/api/endpoints/user', () => ({
+  userApi: { listMemberships: listMembershipsMock },
+}));
 mock.module('@/src/api/endpoints/availability', () => ({
   availabilityApi: { getForUser: getForUserMock },
 }));
@@ -136,6 +154,9 @@ beforeEach(() => {
   useAuthStore.setState({
     session: { user: { id: PARENT_ID } } as unknown as never,
     isInitialized: true,
+    // `useCanWriteHousehold` reads the viewer from `store.user`, not from
+    // `store.session.user`. Both, or the membership lookup finds nobody.
+    user: { id: PARENT_ID } as unknown as never,
   } as never);
 });
 

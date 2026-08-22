@@ -154,6 +154,9 @@ beforeEach(() => {
   useAuthStore.setState({
     session: { user: { id: PARENT_USER_ID } } as unknown as never,
     isInitialized: true,
+    // `useCanWriteHousehold` reads the viewer from `store.user`, not from
+    // `store.session.user`, and `useHouseholdMembers` now waits on it.
+    user: { id: PARENT_USER_ID } as unknown as never,
   } as never);
 });
 

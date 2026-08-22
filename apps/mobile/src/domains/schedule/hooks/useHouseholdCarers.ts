@@ -27,6 +27,7 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { householdApi } from '@/src/api/endpoints/household';
 import { queryKeys } from '@/src/api/queryKeys';
+import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { isValidId, QUERY_TIMING } from '@/src/hooks/queries/utils';
 import { useAuthStore } from '@/src/store/auth';
 
@@ -39,6 +40,7 @@ function isCarerRole(role: HouseholdMember['role']): boolean {
 export function useHouseholdCarers(householdId: string | null | undefined) {
   const session = useAuthStore(s => s.session);
   const isInitialized = useAuthStore(s => s.isInitialized);
+  const { canWrite } = useCanWriteHousehold(householdId);
 
   return useQuery({
     queryKey: queryKeys.household.members(householdId ?? undefined),
@@ -53,6 +55,12 @@ export function useHouseholdCarers(householdId: string | null | undefined) {
           member.status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE
       ),
     staleTime: QUERY_TIMING.STALE_5M,
-    enabled: !!session && isInitialized && isValidId(householdId),
+    // SAME GATE AS `useHouseholdMembers`, and it has to be: both hooks read
+    // the same endpoint under the same query key, so gating one alone leaves
+    // the other refetching the key the first just disabled. The roster 404s
+    // for a member who has been removed — the server keeps payroll readable
+    // for her but not the household's data — and re-asking turns that refusal
+    // into a loop that trips the rate limiter.
+    enabled: !!session && isInitialized && isValidId(householdId) && canWrite,
   });
 }

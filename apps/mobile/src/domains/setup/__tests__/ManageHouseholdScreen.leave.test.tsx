@@ -230,6 +230,11 @@ beforeEach(() => {
   useAuthStore.setState({
     session: { user: { id: VIEWER_ID } } as unknown as never,
     isInitialized: true,
+    // `useCanWriteHousehold` reads the viewer from `store.user`, not from
+    // `store.session.user` — and `useHouseholdMembers` now waits on it, since
+    // the roster read 404s for a non-member. Set both, or the roster this
+    // screen is built from never loads.
+    user: { id: VIEWER_ID } as unknown as never,
   } as never);
 });
 

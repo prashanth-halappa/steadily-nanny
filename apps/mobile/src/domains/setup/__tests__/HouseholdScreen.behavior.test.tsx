@@ -55,8 +55,28 @@ mock.module('@/src/api/endpoints/household', () => ({
     update: updateHouseholdMock,
   },
 }));
+// `listMemberships` is here because `useHouseholdMembers` now waits on the
+// viewer's own membership: the roster read 404s for someone who is not an
+// active member, so the client stops asking rather than looping on the
+// refusal. Without it this mock has no such method and the roster never
+// resolves.
+const listMembershipsMock = mock(() =>
+  Promise.resolve([
+    {
+      id: 'membership-9',
+      household_id: 'household-9',
+      user_id: 'user-1',
+      role: 'owner',
+      status: 'active',
+    },
+  ])
+);
 mock.module('@/src/api/endpoints/user', () => ({
-  userApi: { getProfile: getProfileMock, upsertProfile: upsertProfileMock },
+  userApi: {
+    getProfile: getProfileMock,
+    upsertProfile: upsertProfileMock,
+    listMemberships: listMembershipsMock,
+  },
 }));
 mock.module('@/src/lib/toast', () => ({ showErrorToast: mock(() => {}) }));
 
@@ -90,6 +110,9 @@ beforeEach(() => {
       user: { id: 'user-1', email: 'ana@example.com', user_metadata: {} },
     } as unknown as never,
     isInitialized: true,
+    // `useCanWriteHousehold` reads the viewer from `store.user`, not from
+    // `store.session.user`. Both, or the membership lookup finds nobody.
+    user: { id: 'user-1' } as unknown as never,
   } as never);
 });
 
