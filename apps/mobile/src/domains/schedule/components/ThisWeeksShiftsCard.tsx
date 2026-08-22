@@ -33,6 +33,7 @@ import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { queryState } from '@/src/hooks/queries/queryState';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
+import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useSchedulePatterns } from '@/src/hooks/queries/useSchedulePatterns';
@@ -105,6 +106,7 @@ export function ThisWeeksShiftsCard() {
   const shiftsQuery = useShiftsRange(active.householdId, from, to);
   const membersQuery = useHouseholdMembers(active.householdId);
   const patternsQuery = useSchedulePatterns(active.householdId);
+  const canWriteHousehold = useCanWriteHousehold(active.householdId);
   const onboarding = useIsOnboarded();
 
   const nextShifts = useMemo(() => {
@@ -202,7 +204,23 @@ export function ThisWeeksShiftsCard() {
   // NO loading or error gate at all — `emptyLine` above falls through
   // straight from `?? []`, so a still-loading or failed read used to
   // accuse the parent of never setting up a week she DID set up.
-  const qs = queryState(shiftsQuery, membersQuery, patternsQuery);
+  // All three reads are membership-gated (`enabled: … && canWrite`), and a
+  // DISABLED TanStack v5 query is `isPending` forever — so passing one
+  // straight into `queryState` pins this card at `'loading'` and it shimmers
+  // a skeleton inside "This week" for good. `queryState`'s own PITFALL note
+  // prescribes exactly this: gate at the call site rather than teaching the
+  // helper about enabled-ness, because a caller that passes a disabled query
+  // deliberately must keep getting `'loading'`.
+  //
+  // With nothing to wait on this resolves to `'ready'` and the card falls
+  // through to its ordinary empty line. That is honest for a past member
+  // (there are no shifts to come) if not yet pointed — the past-member copy
+  // is a separate piece of work.
+  const qs = queryState(
+    ...(canWriteHousehold.canWrite
+      ? [shiftsQuery, membersQuery, patternsQuery]
+      : [])
+  );
   if (qs.status === 'loading') {
     return (
       <View testID="today-shifts-skeleton" className="gap-2">

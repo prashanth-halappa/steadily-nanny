@@ -52,6 +52,16 @@ beforeAll(async () => {
   mockCommitments = mock(() => settled(refetchCommitments));
   mockClosures = mock(() => settled(refetchClosures));
 
+  // The hook gates its `queryState` on membership now (a disabled query is
+  // `isPending` forever). These cases are an ACTIVE member whose read failed
+  // — the gate has to be open for the error to reach the assertion.
+  mock.module('@/src/hooks/queries/useCanWriteHousehold', () => ({
+    useCanWriteHousehold: () => ({
+      canWrite: true,
+      isPastMember: false,
+      isLoading: false,
+    }),
+  }));
   mock.module('@/src/hooks/queries/useShiftsRange', () => ({
     useShiftsRange: mockShiftsRange,
   }));

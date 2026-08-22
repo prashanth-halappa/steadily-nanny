@@ -7,6 +7,7 @@
 import {
   afterAll,
   beforeAll,
+  beforeEach,
   describe,
   expect,
   it,
@@ -33,6 +34,7 @@ let pickCoverShift: typeof import('../hooks/useTodayCoverRows').pickCoverShift;
 let mockWeekEntries: ReturnType<typeof mock>;
 let mockShiftsRange: ReturnType<typeof mock>;
 let mockHouseholdMembers: ReturnType<typeof mock>;
+let mockCanWriteHousehold: ReturnType<typeof mock>;
 let refetchEntries: ReturnType<typeof mock>;
 let refetchShifts: ReturnType<typeof mock>;
 let refetchMembers: ReturnType<typeof mock>;
@@ -133,6 +135,11 @@ beforeAll(async () => {
     isError: false,
     refetch: refetchEntries,
   }));
+  mockCanWriteHousehold = mock(() => ({
+    canWrite: true,
+    isPastMember: false,
+    isLoading: false,
+  }));
   mockShiftsRange = mock(() => ({
     data: [] as Shift[],
     isLoading: false,
@@ -158,6 +165,13 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useWeekTimeEntries', () => ({
     useWeekTimeEntries: mockWeekEntries,
   }));
+  // The hook now gates its `queryState` on membership — a disabled query is
+  // `isPending` forever, which used to cost Today its lead line. Every case
+  // here is an active member; the error case below depends on the gate being
+  // open so the failure can actually surface.
+  mock.module('@/src/hooks/queries/useCanWriteHousehold', () => ({
+    useCanWriteHousehold: mockCanWriteHousehold,
+  }));
   mock.module('@/src/hooks/queries/useShiftsRange', () => ({
     useShiftsRange: mockShiftsRange,
   }));
@@ -168,6 +182,19 @@ beforeAll(async () => {
   const mod = await import('../hooks/useTodayCoverRows');
   useTodayCoverRows = mod.useTodayCoverRows;
   pickCoverShift = mod.pickCoverShift;
+});
+
+// The module mocks are built ONCE in `beforeAll`, so a `mockReturnValue` set
+// inside a test persists into every test after it. Re-seat the membership
+// default per test: the past-member case below deliberately flips it, and
+// without this the two error cases that follow inherit a closed gate and stop
+// seeing their own failures.
+beforeEach(() => {
+  mockCanWriteHousehold.mockReturnValue({
+    canWrite: true,
+    isPastMember: false,
+    isLoading: false,
+  });
 });
 
 describe('useTodayCoverRows', () => {
@@ -294,6 +321,32 @@ describe('useTodayCoverRows', () => {
       useTodayCoverRows(HOUSEHOLD_ID, ZONE, 1)
     );
     expect(result.current.status).toBe('ready');
+  });
+
+  // REGRESSION. The membership gate on `useShiftsRange`/`useHouseholdMembers`
+  // leaves those queries DISABLED for a past member, and a disabled TanStack
+  // v5 query is `isPending` forever — so passing them into `queryState`
+  // pinned this hook at 'loading' and Today silently lost its lead line for
+  // good. Nothing to wait on must read as 'ready', never 'loading'.
+  it('is ready, not loading, for a past member whose household reads are disabled', () => {
+    mockShiftsRange.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isPending: true,
+      isError: false,
+      refetch: refetchShifts,
+    });
+    mockCanWriteHousehold.mockReturnValue({
+      canWrite: false,
+      isPastMember: true,
+      isLoading: false,
+    });
+
+    const { result } = renderHook(() =>
+      useTodayCoverRows(HOUSEHOLD_ID, ZONE, 1)
+    );
+
+    expect(result.current.status).not.toBe('loading');
   });
 
   it('exposes status "error" — never a false "nothing scheduled" — when a query has failed', () => {

@@ -42,6 +42,7 @@ import { parseWeeklyDays } from '@/src/domains/setup/utils/commitmentRrule';
 import { useCreateCommitment } from '@/src/hooks/mutations/useCreateCommitment';
 import { useDeleteCommitment } from '@/src/hooks/mutations/useDeleteCommitment';
 import { queryState } from '@/src/hooks/queries/queryState';
+import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useCommitments } from '@/src/hooks/queries/useCommitments';
 import { useSchedulePatterns } from '@/src/hooks/queries/useSchedulePatterns';
 
@@ -104,6 +105,7 @@ export function ManageCommitmentsSection({
   const commitments = useCommitments(householdId, childId);
   const carers = useHouseholdCarers(householdId);
   const patterns = useSchedulePatterns(householdId);
+  const canWriteHousehold = useCanWriteHousehold(householdId);
   const createCommitment = useCreateCommitment(householdId, childId);
   const deleteCommitment = useDeleteCommitment(householdId, childId);
   const [formVisible, setFormVisible] = useState(false);
@@ -125,7 +127,12 @@ export function ManageCommitmentsSection({
   // failed carers/patterns read has `isLoading: false` too, and used to
   // offer "confirm this as your usual week" (or hide a genuinely pending
   // one) off data that never arrived.
-  const gatingQs = queryState(carers, patterns);
+  // Both reads are membership-gated, and a DISABLED TanStack v5 query is
+  // `isPending` forever — see `queryState`'s PITFALL note. Without this a
+  // past member sits on a loading gate that never resolves.
+  const gatingQs = queryState(
+    ...(canWriteHousehold.canWrite ? [carers, patterns] : [])
+  );
   // Both gating queries must have resolved first, or the offer flashes in
   // and then disappears on a household that already has a week.
   const canOfferWeek =

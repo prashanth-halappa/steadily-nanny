@@ -79,6 +79,17 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
     useHouseholdMembers: (...a: unknown[]) => mockUseHouseholdMembers(...a),
   }));
+  // The card now asks whether the viewer may still read this household — the
+  // three reads it gates on are membership-gated, and a disabled query would
+  // otherwise pin `queryState` at 'loading' forever. Every case here is an
+  // active member.
+  mock.module('@/src/hooks/queries/useCanWriteHousehold', () => ({
+    useCanWriteHousehold: () => ({
+      canWrite: true,
+      isPastMember: false,
+      isLoading: false,
+    }),
+  }));
   mock.module('@/src/hooks/queries/useSchedulePatterns', () => ({
     useSchedulePatterns: (...a: unknown[]) => mockUseSchedulePatterns(...a),
   }));

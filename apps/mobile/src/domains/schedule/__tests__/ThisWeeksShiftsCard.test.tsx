@@ -118,6 +118,16 @@ beforeAll(async () => {
     isError: false,
     refetch: refetchPatterns,
   }));
+  // Same new dependency as the quiet-tier suite: the card gates its three
+  // membership-gated reads so a disabled query cannot pin `queryState` at
+  // 'loading'. Every case here is an active member.
+  mock.module('@/src/hooks/queries/useCanWriteHousehold', () => ({
+    useCanWriteHousehold: () => ({
+      canWrite: true,
+      isPastMember: false,
+      isLoading: false,
+    }),
+  }));
   mock.module('@/src/hooks/queries/useSchedulePatterns', () => ({
     useSchedulePatterns: mockUseSchedulePatterns,
   }));

@@ -65,6 +65,16 @@ beforeAll(async () => {
   mock.module('@/src/domains/schedule/hooks/useHouseholdCarers', () => ({
     useHouseholdCarers: mockUseHouseholdCarers,
   }));
+  // Mocked rather than left real: the section now gates its two
+  // membership-gated reads through this hook, and the real one reaches the
+  // api client, which imports more of expo-router than this suite stubs.
+  mock.module('@/src/hooks/queries/useCanWriteHousehold', () => ({
+    useCanWriteHousehold: () => ({
+      canWrite: true,
+      isPastMember: false,
+      isLoading: false,
+    }),
+  }));
   mock.module('@/src/hooks/queries/useSchedulePatterns', () => ({
     useSchedulePatterns: mockUseSchedulePatterns,
   }));

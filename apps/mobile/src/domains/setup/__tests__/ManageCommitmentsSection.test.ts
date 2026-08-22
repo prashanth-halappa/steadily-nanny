@@ -103,7 +103,14 @@ describe('ManageCommitmentsSection — confirm-as-usual-week offer (P3.3)', () =
     // (docs/CROSS-CUTTING-DEFECT-PATTERNS.md §B: `isLoading` alone can't
     // tell "still loading" from "failed").
     expect(sectionSource).toMatch(/canOfferWeek[\s\S]{0,300}gatingQs\.status/);
-    expect(sectionSource).toContain('queryState(carers, patterns)');
+    // Both queries still route through `queryState` — but spread behind the
+    // membership check, because both are `enabled: … && canWrite` and a
+    // DISABLED TanStack v5 query is `isPending` forever. Passing one straight
+    // in would pin `gatingQs` at 'loading' and hide the offer for good
+    // (`queryState`'s own PITFALL note prescribes gating at the call site).
+    expect(sectionSource).toMatch(
+      /queryState\(\s*\.\.\.\(canWriteHousehold\.canWrite\s*\?\s*\[carers, patterns\]\s*:\s*\[\]\)\s*\)/
+    );
   });
 
   it('shows nothing before the child has any care hours at all', () => {

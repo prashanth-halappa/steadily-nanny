@@ -91,6 +91,17 @@ beforeAll(async () => {
     refetch: refetchShifts,
   }));
 
+  // The cover-row and uncovered hooks now gate their `queryState` on
+  // membership, because a disabled query is `isPending` forever. These cases
+  // are an ACTIVE member whose reads FAILED — without this the gate would
+  // short-circuit to 'ready' and the retry under test would never render.
+  mock.module('@/src/hooks/queries/useCanWriteHousehold', () => ({
+    useCanWriteHousehold: () => ({
+      canWrite: true,
+      isPastMember: false,
+      isLoading: false,
+    }),
+  }));
   mock.module('@/src/hooks/queries/useShiftsRange', () => ({
     useShiftsRange: mockShiftsRange,
   }));

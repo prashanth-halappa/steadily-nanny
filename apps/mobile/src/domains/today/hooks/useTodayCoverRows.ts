@@ -27,6 +27,7 @@ import {
 import { sumEntryMinutes } from '@/src/domains/timesheet/utils/entryMinutes';
 import { getWeekStartISO } from '@/src/domains/timesheet/utils/week';
 import { queryState } from '@/src/hooks/queries/queryState';
+import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
@@ -103,6 +104,7 @@ export function useTodayCoverRows(
   const { t } = useTranslation('today');
   const { t: tSchedule } = useTranslation('schedule');
   const membersQuery = useHouseholdMembers(householdId);
+  const canWriteHousehold = useCanWriteHousehold(householdId);
   const weekStart = useMemo(
     () => getWeekStartISO(new Date(), timeZone, weekStartsOn),
     [timeZone, weekStartsOn]
@@ -279,7 +281,17 @@ export function useTodayCoverRows(
     tSchedule,
   ]);
 
-  const qs = queryState(entries, shifts, membersQuery);
+  // `shifts` and `membersQuery` are membership-gated, and a DISABLED
+  // TanStack v5 query is `isPending` forever — passing one straight in pins
+  // this at `'loading'`, which silently costs Today its lead line (no retry
+  // affordance either, since that needs `'error'`). `queryState`'s PITFALL
+  // note prescribes gating at the call site rather than teaching the helper
+  // about enabled-ness. `entries` is user-scoped and always runs.
+  const qs = queryState(
+    ...(canWriteHousehold.canWrite
+      ? [entries, shifts, membersQuery]
+      : [entries])
+  );
 
   return {
     rows,

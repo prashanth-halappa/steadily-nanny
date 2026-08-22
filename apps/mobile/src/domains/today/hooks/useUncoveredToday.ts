@@ -22,6 +22,7 @@ import {
   toNeedWindow,
 } from '@/src/domains/schedule/utils/uncoveredWeek';
 import { queryState } from '@/src/hooks/queries/queryState';
+import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useHouseholdClosures } from '@/src/hooks/queries/useHouseholdClosures';
 import { useHouseholdCommitments } from '@/src/hooks/queries/useHouseholdCommitments';
 import { useShiftsRange } from '@/src/hooks/queries/useShiftsRange';
@@ -110,6 +111,7 @@ export function useUncoveredToday(
   const shiftsQuery = useShiftsRange(householdId, from, to);
   const commitmentsQuery = useHouseholdCommitments(householdId);
   const closuresQuery = useHouseholdClosures(householdId);
+  const canWriteHousehold = useCanWriteHousehold(householdId);
 
   // `isLoading` stays hand-rolled: the three queries are disabled while
   // there is no household, and a disabled query is `isPending` for good
@@ -120,7 +122,15 @@ export function useUncoveredToday(
     shiftsQuery.isLoading ||
     commitmentsQuery.isLoading ||
     closuresQuery.isLoading;
-  const reads = queryState(shiftsQuery, commitmentsQuery, closuresQuery);
+  // All three are membership-gated, and a DISABLED TanStack v5 query is
+  // `isPending` forever — see `queryState`'s PITFALL note. Gated here so a
+  // past member gets `'ready'` with nothing uncovered rather than a
+  // permanent loading state.
+  const reads = queryState(
+    ...(canWriteHousehold.canWrite
+      ? [shiftsQuery, commitmentsQuery, closuresQuery]
+      : [])
+  );
 
   const settled = useMemo((): Exclude<
     UncoveredTodayState,
