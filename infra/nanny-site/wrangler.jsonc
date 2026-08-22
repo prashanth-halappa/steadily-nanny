@@ -29,6 +29,10 @@
 {
   "name": "nanny-getsteadily",
   "main": "worker.js",
+  // Static Assets serve the landing page in front of the Worker. A request
+  // matching a file in ./public is served directly; everything else
+  // (/api/waitlist, /t/:code, /.well-known/*) falls through to worker.js.
+  "assets": { "directory": "./public" },
   "compatibility_date": "2026-08-06",
   "routes": [{ "pattern": "nanny.getsteadily.app", "custom_domain": true }],
   "d1_databases": [

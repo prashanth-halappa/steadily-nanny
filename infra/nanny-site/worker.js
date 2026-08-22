@@ -1,7 +1,11 @@
 // Serves nanny.getsteadily.app: /.well-known/* carries the app-association
-// files, /api/waitlist writes to D1, everything else proxies to the
-// Lovable-hosted landing page.
-const ORIGIN = 'steadily-nanny.lovable.app';
+// files, /api/waitlist writes to D1, /t/:code renders the terms preview.
+//
+// The landing page is NOT here — it is a static file in ./public, served by
+// the Workers Static Assets binding in wrangler.jsonc BEFORE this script runs.
+// So anything reaching the fall-through below matched no asset and no route,
+// and is a genuine 404. (This replaced a reverse proxy to a Lovable-hosted
+// page; that dependency is gone.)
 
 // ---------------------------------------------------------------------------
 // App association (/.well-known/*)
@@ -91,7 +95,9 @@ function assetLinks() {
   );
 }
 
-// CORS is open so the form also works from the *.lovable.app preview/editor.
+// The waitlist form is now same-origin (the page is a static asset on this
+// same Worker), so CORS is no longer load-bearing. Left open so the endpoint
+// stays callable from a local preview or a curl smoke test.
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
@@ -101,11 +107,10 @@ const CORS = {
 // ---------------------------------------------------------------------------
 // /t/:code — the public terms preview (D-37, spec §6.2)
 //
-// WHY THIS IS SERVER-RENDERED HERE AND NOT ON LOVABLE. The page is per-code
-// and its Open Graph tags must be server-rendered, or the link previews as a
-// bare URL in iMessage — which is the exact failure D-37 exists to fix. This
-// route is registered BEFORE the `url.hostname = ORIGIN` proxy fall-through at
-// the end of `fetch()`, so it never reaches Lovable.
+// WHY THIS IS SERVER-RENDERED IN THE WORKER. The page is per-code and its
+// Open Graph tags must be server-rendered, or the link previews as a bare URL
+// in iMessage — which is the exact failure D-37 exists to fix. A static asset
+// could not do this, so /t/:code stays a Worker route.
 //
 // WHY THE WORKER FORMATS NOTHING. Every string on this page — every label,
 // every value, the rate, the weekly line — arrives already rendered from
@@ -406,13 +411,12 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // Answered before anything else so the Lovable proxy can never 404 them.
+    // Answered before anything else so they can never fall through to a 404.
     if (url.pathname === '/.well-known/apple-app-site-association')
       return appleAppSiteAssociation();
     if (url.pathname === '/.well-known/assetlinks.json') return assetLinks();
 
-    // /t/:code — the D-37 terms preview. Registered BEFORE the proxy
-    // fall-through so it never reaches Lovable.
+    // /t/:code — the D-37 terms preview.
     //
     // On iOS, and on Android once the Play App Signing fingerprint is filled
     // in above, a tap on this URL with the app INSTALLED never arrives here at
@@ -439,10 +443,13 @@ export default {
         );
       }
       let email = '';
+      let role = null;
       try {
         const body = await request.json();
         if (typeof body.email === 'string')
           email = body.email.trim().toLowerCase();
+        // Allowlisted, never free text — the column is read as a segment count.
+        if (body.role === 'parent' || body.role === 'nanny') role = body.role;
       } catch {
         // fall through to validation error
       }
@@ -452,13 +459,18 @@ export default {
           { status: 400, headers: CORS }
         );
       }
-      await env.DB.prepare('INSERT OR IGNORE INTO waitlist (email) VALUES (?)')
-        .bind(email)
+      await env.DB.prepare(
+        'INSERT OR IGNORE INTO waitlist (email, role) VALUES (?, ?)'
+      )
+        .bind(email, role)
         .run();
       return Response.json({ ok: true }, { headers: CORS });
     }
 
-    url.hostname = ORIGIN;
-    return fetch(url, request);
+    // No asset matched and no route claimed it.
+    return new Response('Not found', {
+      status: 404,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    });
   },
 };
