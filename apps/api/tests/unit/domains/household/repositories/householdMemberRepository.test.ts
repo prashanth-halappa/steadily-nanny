@@ -608,7 +608,9 @@ describe('HouseholdMemberRepository.listNonRemovedByHousehold', () => {
     const repo = new HouseholdMemberRepository();
     const result = await repo.listNonRemovedByHousehold('h1');
 
-    expect(selectArg).toContain('user_profiles(name, phone)');
+    expect(selectArg).toContain(
+      'user_profiles!household_members_user_id_fkey(name, phone)'
+    );
     expect(result[0].profile_phone).toBe('07700 900123');
     // A member who never gave a number is null, not undefined — the roster
     // says "no number" rather than "field missing".
@@ -679,7 +681,9 @@ describe('HouseholdMemberRepository.listDepartedSince', () => {
       '2026-08-14T00:00:00.000Z'
     );
 
-    expect(selectArg).toContain('user_profiles(name)');
+    expect(selectArg).toContain(
+      'user_profiles!household_members_user_id_fkey(name)'
+    );
     expect(result[0].profile_name).toBe('Priya');
     // The nested embed is an implementation detail of the join, not wire shape.
     expect(result[0]).not.toHaveProperty('user_profiles');

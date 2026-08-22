@@ -142,6 +142,15 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
    * `user_id -> user_profiles(user_id)` FK (migration 009), same shape as
    * `shiftRepository`'s `shift_children` reads.
    *
+   * THE FK IS NAMED, and must stay named. Since 112 added `ended_by`, this
+   * table has TWO foreign keys into `user_profiles` — `user_id` and
+   * `ended_by` — and a bare `user_profiles(...)` embed becomes ambiguous:
+   * PostgREST refuses the whole query with "Could not embed because more than
+   * one relationship was found", a 500 on the roster read every screen makes.
+   * It used to work only because there was one FK to pick. Naming the
+   * constraint says which relationship this is, and survives the next column
+   * that points at `user_profiles`.
+   *
    * ACTIVE ONLY — candidates are deliberately excluded. A `candidate` is a
    * nanny who redeemed a code but whose terms are not accepted yet (D-49); she
    * must not receive household pushes, shift rights, or any other surface that
@@ -151,7 +160,7 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
   async listActiveByHousehold(householdId: string): Promise<HouseholdMember[]> {
     const { data, error } = await supabaseService
       .from(this.table)
-      .select('*, user_profiles(name)')
+      .select('*, user_profiles!household_members_user_id_fkey(name)')
       .eq('household_id', householdId)
       .eq('status', 'active')
       .order('joined_at', { ascending: true });
@@ -199,7 +208,7 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
   ): Promise<HouseholdMember[]> {
     const { data, error } = await supabaseService
       .from(this.table)
-      .select('*, user_profiles(name, phone)')
+      .select('*, user_profiles!household_members_user_id_fkey(name, phone)')
       .eq('household_id', householdId)
       .in('status', [
         HOUSEHOLD_MEMBER_STATUSES.ACTIVE,
@@ -255,7 +264,7 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
   ): Promise<HouseholdMember[]> {
     const { data, error } = await supabaseService
       .from(this.table)
-      .select('*, user_profiles(name)')
+      .select('*, user_profiles!household_members_user_id_fkey(name)')
       .eq('household_id', householdId)
       .eq('status', HOUSEHOLD_MEMBER_STATUSES.REMOVED)
       .gte('ended_at', sinceIso)
