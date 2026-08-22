@@ -224,6 +224,59 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
   }
 
   /**
+   * Everyone REMOVED from this household since `sinceIso`, most recent
+   * departure first, each carrying `profile_name` from the same
+   * `user_id -> user_profiles(user_id)` embed the two roster reads use.
+   *
+   * THIS IS THE FIRST HOUSEHOLD-SCOPED READ THAT SEES A REMOVED ROW.
+   * `listNonRemovedByHousehold` filters them out at the query, and the only
+   * two reads that do see them — `listByUser`, `listRemovedHouseholdIds` —
+   * are self-scoped, so before this the family had no way to be told that
+   * somebody left.
+   *
+   * `findMembershipAnyStatus` could not be reused for it, and not only
+   * because it is per-user and `maybeSingle`: it selects `'*'` with NO embed,
+   * so every row it returns is a name-less id. A departure card that cannot
+   * resolve a name says "somebody left", which is not a card. The embed is
+   * the point of this method, not a decoration on it.
+   *
+   * `gte('ended_at', ...)` also drops every row whose `ended_at` is NULL —
+   * every departure that predates 112 — because a NULL comparison is not
+   * true. That is exactly 112's intent: old departures stay quiet rather than
+   * surfacing as "just now" on the day this ships.
+   *
+   * Deliberately NO gate here. Who may ask this question is
+   * `householdQueryService.listDepartedMembers`' decision, and it is
+   * parent-only for a privacy reason a repository cannot see.
+   */
+  async listDepartedSince(
+    householdId: string,
+    sinceIso: string
+  ): Promise<HouseholdMember[]> {
+    const { data, error } = await supabaseService
+      .from(this.table)
+      .select('*, user_profiles(name)')
+      .eq('household_id', householdId)
+      .eq('status', HOUSEHOLD_MEMBER_STATUSES.REMOVED)
+      .gte('ended_at', sinceIso)
+      .order('ended_at', { ascending: false });
+
+    if (error) {
+      throw new DatabaseError(
+        'Failed to list departed household members',
+        'DATABASE_ERROR',
+        { details: error.message, householdId }
+      );
+    }
+    return ((data ?? []) as MemberRowWithProfile[]).map(
+      ({ user_profiles, ...member }) => ({
+        ...member,
+        profile_name: user_profiles?.name ?? null,
+      })
+    );
+  }
+
+  /**
    * Every active membership row for the user, across every household they
    * belong to — lets the mobile app learn its own role per household without
    * re-listing each household's full member roster.

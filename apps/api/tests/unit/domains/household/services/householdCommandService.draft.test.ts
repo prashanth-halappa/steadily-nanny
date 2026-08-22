@@ -198,15 +198,17 @@ const stubTimesheets: any = { existsForHousehold: mock(async () => false) };
 // above already guards against for its own repository.
 const stubProposals: any = { withdrawOpenForCarer: mock(async () => null) };
 
-// Same hazard, same guard: `removeMember` now ends the carer's accepted
-// patterns, and left defaulted this constructs a REAL SchedulePatternRepository.
+// Same hazard, same guard: both `removeMember` and `leave` end the carer's
+// accepted patterns, and the real default lazily imports the live schedule
+// command service and reaches supabase. Returns the days it emptied.
 const stubPatterns: any = {
-  listAcceptedByHouseholdAndCarer: mock(async () => []),
-  update: mock(async () => ({ id: 'p1', status: 'ended' })),
+  endAcceptedPatternsForCarer: mock(async () => []),
 };
-const stubMaterialisation: any = {
-  cancelFutureShiftsForEndedPattern: mock(async () => 0),
-};
+// Uncovered-care detection, stubbed for the same reason. Void by design: it is
+// fire-and-forget in production and swallows its own failures.
+const stubDetectUncovered: any = mock(
+  (_args: Record<string, unknown>) => undefined
+);
 
 /** The whole ctor, so a positional argument is never miscounted below. */
 function makeService(parts: {
@@ -230,7 +232,7 @@ function makeService(parts: {
     stubProposals,
     undefined,
     stubPatterns,
-    stubMaterialisation
+    stubDetectUncovered
   );
 }
 

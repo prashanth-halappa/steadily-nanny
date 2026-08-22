@@ -317,7 +317,7 @@ export class SchedulePatternCommandService {
     // ended pattern must not leave its future shifts on the calendar, so it
     // goes through `endPattern` rather than writing `status` here.
     const updated = ended
-      ? await this.endPattern(patternId, now, patch)
+      ? (await this.endPattern(patternId, now, patch)).pattern
       : await this.patternRepo.update(patternId, patch);
 
     await this.materialiseAccepted(updated, now);
@@ -448,21 +448,70 @@ export class SchedulePatternCommandService {
    *
    * `extraPatch` lets `amend` write its own fields in the SAME update rather
    * than a second round trip.
+   *
+   * Returns BOTH halves: `amend` wants the updated row, and
+   * `endAcceptedPatternsForCarer` wants the days the cancel emptied. A pair
+   * rather than a second copy of these two lines — the three inlined copies
+   * of this loop are what this method exists to stop.
    */
   private async endPattern(
     patternId: string,
     now: Date,
     extraPatch: Partial<SchedulePattern> = {}
-  ): Promise<SchedulePattern> {
-    const updated = await this.patternRepo.update(patternId, {
+  ): Promise<{ pattern: SchedulePattern; cancelledDates: string[] }> {
+    const pattern = await this.patternRepo.update(patternId, {
       ...extraPatch,
       status: 'ended',
     });
-    await this.materialisation.cancelFutureShiftsForEndedPattern(
-      patternId,
-      now
-    );
-    return updated;
+    const cancelledDates =
+      await this.materialisation.cancelFutureShiftsForEndedPattern(
+        patternId,
+        now
+      );
+    return { pattern, cancelledDates };
+  }
+
+  /**
+   * End EVERY accepted usual week one carer holds in one household, and
+   * withdraw the future shifts they already put on the calendar. The
+   * departure teardown: account deletion (`userService`), removal by a parent
+   * and household closure (`householdCommandService`) all run it.
+   *
+   * BOTH ids go to the read. She may work for two families, and ending the
+   * pattern she still works under is the one mistake here that would be
+   * unrecoverable — never scope this to the household alone.
+   *
+   * Callers must run this BEFORE flipping her membership, not after. The read
+   * `scheduleHorizonJob` iterates (`listAccepted`) has NO membership filter,
+   * so a departed carer left holding an `accepted` pattern keeps getting
+   * shifts materialised to the horizon and "you have a shift tomorrow"
+   * pushes. Running first means a throw refuses the whole operation with
+   * nothing changed.
+   *
+   * One `now` for the whole sweep, forwarded to every cancel: that instant is
+   * what draws the line between a shift already worked (or half-worked today)
+   * and the ones that were never going to happen. A fresh clock per pattern
+   * would move the line mid-teardown.
+   *
+   * Returns the distinct days it emptied, so a caller can re-run
+   * uncovered-care detection for exactly those (`docs/12-NEED-COVERAGE.md`).
+   */
+  async endAcceptedPatternsForCarer(
+    householdId: string,
+    carerId: string,
+    now: Date = new Date()
+  ): Promise<string[]> {
+    const dates = new Set<string>();
+    for (const pattern of await this.patternRepo.listAcceptedByHouseholdAndCarer(
+      householdId,
+      carerId
+    )) {
+      const { cancelledDates } = await this.endPattern(pattern.id, now);
+      for (const date of cancelledDates) {
+        dates.add(date);
+      }
+    }
+    return [...dates].sort();
   }
 
   /**

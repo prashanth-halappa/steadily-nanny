@@ -14,7 +14,6 @@ import {
   PARENT_ROLES,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
-import { SCHEDULE_PATTERN_STATUSES } from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import { SHIFT_CHANGE_REQUEST_STATUSES } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { supabaseService } from '../../../config/supabase';
 import { BaseError, DatabaseError } from '../../../errors';
@@ -37,8 +36,6 @@ import { HouseholdMemberRepository } from '../../household/repositories/househol
 import { HouseholdRepository } from '../../household/repositories/householdRepository';
 import type { HouseholdMember } from '../../household/types';
 import { PayArrangementRepository } from '../../pay/repositories/payArrangementRepository';
-import { SchedulePatternRepository } from '../../schedule/repositories/schedulePatternRepository';
-import { scheduleMaterialisationService } from '../../schedule/services/scheduleMaterialisationService';
 // The REPOSITORY, not the terms-proposal domain barrel — same leaf-import
 // discipline `householdCommandService` documents at its own top: the barrel
 // pulls in `termsProposalCommandService`, which imports `../../household`.
@@ -348,7 +345,6 @@ export class UserService {
     });
 
     const payArrangements = new PayArrangementRepository();
-    const patternRepo = new SchedulePatternRepository();
     const proposalRepo = new TermsProposalRepository();
 
     for (const membership of memberships) {
@@ -374,7 +370,7 @@ export class UserService {
       });
 
       await tearDownStep('end_schedule_patterns', userId, () =>
-        UserService.endAcceptedPatterns(userId, householdId, patternRepo, now)
+        UserService.endAcceptedPatterns(userId, householdId, now)
       );
 
       await tearDownStep('promote_owner', userId, () =>
@@ -393,7 +389,6 @@ export class UserService {
         UserService.closeHouseholdWithoutWriters(userId, membership, {
           memberRepo,
           payArrangements,
-          patternRepo,
           proposalRepo,
           closureDay: localDateOf(
             now,
@@ -475,29 +470,31 @@ export class UserService {
    * `scheduleHorizonJob` keeps finding it in `listAccepted` and keeps
    * materialising shifts nobody is working, out to the horizon, forever.
    *
-   * Mirrors `schedulePatternCommandService.endPattern`, which is private to
-   * that service: the status flip alone stops new ghosts, and the
-   * cancellation clears the ones already on the calendar.
+   * `schedulePatternCommandService.endAcceptedPatternsForCarer` is the one
+   * copy of this — the same method `removeMember` and household closure run,
+   * so the "both ids to the read" and "one `now` for the whole sweep" rules
+   * cannot drift apart per caller again. The days it hands back are dropped
+   * here: this account is going, there is nobody left to show an
+   * uncovered-care card to.
+   *
+   * Loaded lazily for the same reason as `sendNotice`: that service reaches
+   * the household barrel, which constructs `householdCommandService`, whose
+   * default argument is `UserService` — a static import is a "Cannot access
+   * 'UserService' before initialization" at boot.
    */
   private static async endAcceptedPatterns(
     userId: string,
     householdId: string,
-    patternRepo: SchedulePatternRepository,
     now: Date
   ): Promise<void> {
-    const patterns = await patternRepo.listAcceptedByHouseholdAndCarer(
-      householdId,
-      userId
+    const { schedulePatternCommandService } = await import(
+      '../../schedule/services/schedulePatternCommandService'
     );
-    for (const pattern of patterns) {
-      await patternRepo.update(pattern.id, {
-        status: SCHEDULE_PATTERN_STATUSES.ENDED,
-      });
-      await scheduleMaterialisationService.cancelFutureShiftsForEndedPattern(
-        pattern.id,
-        now
-      );
-    }
+    await schedulePatternCommandService.endAcceptedPatternsForCarer(
+      householdId,
+      userId,
+      now
+    );
   }
 
   /**
@@ -628,7 +625,6 @@ export class UserService {
     deps: {
       memberRepo: HouseholdMemberRepository;
       payArrangements: PayArrangementRepository;
-      patternRepo: SchedulePatternRepository;
       proposalRepo: TermsProposalRepository;
       closureDay: string;
       familyName: string;
@@ -694,7 +690,6 @@ export class UserService {
             UserService.endAcceptedPatterns(
               survivor.user_id,
               householdId,
-              deps.patternRepo,
               deps.now
             )
         );
@@ -713,8 +708,18 @@ export class UserService {
             // ponytail: one extra UPDATE on a path that runs once per
             // household closure. Fold it into `removeMembership` as an
             // optional argument when that repository is next touched.
+            // 112's two companions to the reason, stamped by the same write
+            // and for the same audience: `ended_at` so a reader can tell a
+            // closure that happened this morning from one last year, and
+            // `ended_by` — the departing owner, since their account deletion
+            // is what took the household down. Nobody is ever shown a card
+            // about this closure, so the actor here is recorded for the record
+            // rather than to exclude them, but leaving it null would make
+            // `ended_by` mean two different things across the three paths.
             await deps.memberRepo.update(survivor.id, {
               ended_reason: MEMBERSHIP_ENDED_REASONS.HOUSEHOLD_CLOSED,
+              ended_at: deps.now.toISOString(),
+              ended_by: userId,
             });
           }
           // `makeOwnershipValidator` caches `(user, resource)` for an hour

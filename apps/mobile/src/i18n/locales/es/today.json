@@ -315,10 +315,19 @@
   "membershipEnded": {
     "title": "{{familyName}} cerró su cuenta",
     "titleRemoved": "Ya no estás con {{familyName}}",
+    "titleLeft": "Has salido de {{familyName}}",
     "body": "Tu registro de lo que trabajaste con ellos sigue aquí — cada turno, cada hora y las semanas aprobadas.",
     "bodyOnClock": "Sigues fichada. Ficha la salida cuando termines — son horas que trabajaste y quedan en tu registro.",
     "money": "Steadily registra el pago, nunca lo mueve. Lo que quede por saldar es entre tú y {{familyName}}.",
     "hoursCta": "Ver mis horas",
     "joinCta": "Unirme a otra familia"
+  },
+  "memberLeft": {
+    "titleLeft": "{{name}} ha salido de tu hogar",
+    "titleRemoved": "{{name}} ya no está en tu hogar",
+    "bodyCarer": "No queda nada programado con esta persona. Sus horas y las semanas que aprobaste siguen en tu registro.",
+    "bodyMember": "Esta persona ya no tiene acceso a tu hogar.",
+    "dismiss": "Entendido",
+    "dismissLabel": "Descartar el aviso sobre {{name}}"
   }
 }

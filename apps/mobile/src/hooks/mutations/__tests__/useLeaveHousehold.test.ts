@@ -133,4 +133,33 @@ describe('useLeaveHousehold', () => {
       'household:householdSettings.leaveOwnerError'
     );
   });
+
+  it('reads a 404 as "already left" — the generic notFound toast reads like a bug', async () => {
+    // `findActiveMembership` 404s for a membership that is already removed
+    // (two taps, or a parent removing her while the sheet was open) and for a
+    // candidate who was never active. Either way the truthful answer is that
+    // she is not in this household, not "we could not find something".
+    leaveMock.mockImplementationOnce(() =>
+      Promise.reject(
+        Object.assign(new Error('not found'), {
+          response: {
+            status: 404,
+            data: { error: { code: 'NOT_FOUND' } },
+          },
+        })
+      )
+    );
+
+    const { result } = renderHookWithProviders(() => useLeaveHousehold());
+
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync(HOUSEHOLD_ID)
+      ).rejects.toBeDefined();
+    });
+
+    expect(showErrorToastMock).toHaveBeenCalledWith(
+      'household:householdSettings.leaveAlreadyLeftError'
+    );
+  });
 });

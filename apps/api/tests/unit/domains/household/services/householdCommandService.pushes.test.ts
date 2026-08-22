@@ -383,7 +383,10 @@ describe('HouseholdCommandService.leave — parents are told', () => {
     notifyHouseholdParents.mockImplementation(() => undefined);
   });
 
-  function leaveSvc(role: string) {
+  function leaveSvc(
+    role: string,
+    opts: { displayName?: string | null; profileName?: string | null } = {}
+  ) {
     return new HouseholdCommandService(
       makeHouseholdRepo() as never,
       makeMemberRepo() as never,
@@ -396,9 +399,18 @@ describe('HouseholdCommandService.leave — parents are told', () => {
           role,
           can_edit: false,
           status: 'active',
+          display_name_override: opts.displayName ?? null,
         })),
       } as never,
-      { ensureProfile: mock(async () => {}) } as never,
+      {
+        ensureProfile: mock(async () => {}),
+        // `undefined` means "no stub asked for": resolve to a profile with no
+        // name so the chain falls through to the role label, which is the
+        // ordinary case for a member who never set one.
+        getProfileById: mock(async () => ({
+          name: opts.profileName ?? null,
+        })),
+      } as never,
       { findRunningInHousehold: mock(async () => null) } as never,
       { endForCarer: mock(async () => []) } as never,
       makePtoRepo() as never,
@@ -408,7 +420,12 @@ describe('HouseholdCommandService.leave — parents are told', () => {
       // defaulted this constructs a REAL TermsProposalRepository and the test
       // dies on a network call rather than an assertion — same hazard the PTO
       // repo comment above already documents for this file.
-      { withdrawOpenForCarer: mock(async () => null) } as never
+      { withdrawOpenForCarer: mock(async () => null) } as never,
+      undefined,
+      // Same hazard again, for the pattern teardown `leave` now runs: the real
+      // default lazily imports the live schedule service and reaches supabase.
+      { endAcceptedPatternsForCarer: mock(async () => []) } as never,
+      mock(() => undefined) as never
     );
   }
 
@@ -421,22 +438,110 @@ describe('HouseholdCommandService.leave — parents are told', () => {
       'h1',
       expect.objectContaining({
         title: expect.stringContaining('left'),
-        body: expect.stringContaining('left'),
+        // The body says what it COSTS them, not that it happened — the title
+        // already carries the event and the name.
+        body: expect.any(String),
         data: expect.objectContaining({ householdId: 'h1', role: 'parent' }),
       })
     );
   });
 
-  it('names the leaving role in the body, so a parent knows whose cover just vanished', async () => {
-    for (const role of ['nanny', 'parent', 'helper']) {
-      notifyHouseholdParents.mockClear();
-      await leaveSvc(role).leave('u2', 'h1');
+  // `docs/design/02-VOICE.md`'s first rule: name people. "A nanny left the
+  // household" is the wrong answer to the only question a two-carer family
+  // has, and it was what this push said.
+  it('names the person in the title, preferring the household display override', async () => {
+    await leaveSvc('nanny', {
+      displayName: 'Priya',
+      profileName: 'Priyanka Rao',
+    }).leave('u2', 'h1');
 
-      expect(notifyHouseholdParents).toHaveBeenCalledWith(
-        'h1',
-        expect.objectContaining({ body: expect.stringContaining(role) })
-      );
-    }
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({ title: 'Priya left your household' })
+    );
+  });
+
+  it('falls back to the profile name when the household set no override', async () => {
+    await leaveSvc('nanny', { profileName: 'Priyanka Rao' }).leave('u2', 'h1');
+
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({ title: 'Priyanka Rao left your household' })
+    );
+  });
+
+  // A name is decoration on a push; nothing decorative may cost a membership
+  // write. The role label is the floor, never an exception.
+  it('falls back to the role when there is no name anywhere', async () => {
+    await leaveSvc('helper').leave('u2', 'h1');
+
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({ title: 'A helper left your household' })
+    );
+  });
+
+  it('survives a profile lookup that throws, and still sends the push', async () => {
+    const svc = new HouseholdCommandService(
+      makeHouseholdRepo() as never,
+      makeMemberRepo() as never,
+      makeInviteRepo() as never,
+      {
+        getMembership: mock(async () => ({
+          id: 'm1',
+          household_id: 'h1',
+          user_id: 'u2',
+          role: 'nanny',
+          can_edit: false,
+          status: 'active',
+          display_name_override: null,
+        })),
+      } as never,
+      {
+        ensureProfile: mock(async () => {}),
+        getProfileById: mock(async () => {
+          throw new Error('profiles down');
+        }),
+      } as never,
+      { findRunningInHousehold: mock(async () => null) } as never,
+      { endForCarer: mock(async () => []) } as never,
+      makePtoRepo() as never,
+      { existsForHousehold: mock(async () => false) } as never,
+      { seedCountryPack: mock(async () => []) } as never,
+      { withdrawOpenForCarer: mock(async () => null) } as never,
+      undefined,
+      { endAcceptedPatternsForCarer: mock(async () => []) } as never,
+      mock(() => undefined) as never
+    );
+
+    await expect(svc.leave('u2', 'h1')).resolves.toMatchObject({
+      status: 'removed',
+    });
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({ title: 'A nanny left your household' })
+    );
+  });
+
+  // What the departure MEANS differs by what they did here: a carer leaving is
+  // a hole in the week, a co-parent or helper leaving is a loss of access.
+  it('says what the departure costs the family, keyed on the role', async () => {
+    await leaveSvc('nanny').leave('u2', 'h1');
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({
+        body: 'Nothing further is scheduled for them.',
+      })
+    );
+
+    notifyHouseholdParents.mockClear();
+    await leaveSvc('parent').leave('u2', 'h1');
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({
+        body: 'They no longer have access to your household.',
+      })
+    );
   });
 
   it('push failure never fails the leave — the row is already flipped', async () => {
@@ -771,13 +876,10 @@ describe('HouseholdCommandService.removeMember — membership_ended', () => {
       undefined,
       { withdrawOpenForCarer: mock(async () => null) } as never,
       undefined,
-      // Removal now ends her accepted patterns; left defaulted this builds a
-      // REAL SchedulePatternRepository and the test dies on a network call.
-      {
-        listAcceptedByHouseholdAndCarer: mock(async () => []),
-        update: mock(async () => ({ id: 'p1', status: 'ended' })),
-      } as never,
-      { cancelFutureShiftsForEndedPattern: mock(async () => 0) } as never
+      // Removal ends her accepted patterns; left defaulted this lazily imports
+      // the REAL schedule command service and the test dies on a network call.
+      { endAcceptedPatternsForCarer: mock(async () => []) } as never,
+      mock(() => undefined) as never
     );
     return { svc, memberRepo };
   }
@@ -803,9 +905,38 @@ describe('HouseholdCommandService.removeMember — membership_ended', () => {
 
     await svc.removeMember('u1', 'h1', 'm-target');
 
-    expect(memberRepo.update).toHaveBeenCalledWith('m-target', {
+    // 112 stamps three facts: the reason, WHEN (so the family's departure card
+    // can age out) and WHO (so the parent who did it is not shown a card about
+    // their own action). `ended_at` comes from an un-injected clock on this
+    // path, so it is asserted as an instant rather than a value.
+    const patch = memberRepo.update.mock.calls.find(
+      call => call[0] === 'm-target'
+    )?.[1];
+    expect(patch).toMatchObject({
       ended_reason: 'removed_by_parent',
+      ended_by: 'u1',
     });
+    expect(typeof patch?.ended_at).toBe('string');
+  });
+
+  // The gap this closes: in a two-parent household one of them could remove
+  // the nanny and the other would find out when a shift went uncovered. The
+  // exclusion is the point — being told you did the thing you just did reads
+  // as somebody else's decision.
+  it('tells the OTHER parents, naming her, and never the parent who did it', async () => {
+    const { svc } = makeSvcForRemoval();
+
+    await svc.removeMember('u1', 'h1', 'm-target');
+
+    expect(notifyHouseholdParents).toHaveBeenCalledWith(
+      'h1',
+      expect.objectContaining({
+        title: 'A nanny is no longer in your household',
+        body: 'Nothing further is scheduled for them.',
+        data: expect.objectContaining({ householdId: 'h1', role: 'parent' }),
+      }),
+      { excludeUserId: 'u1' }
+    );
   });
 
   it('says nothing when the CAS found nothing to remove', async () => {

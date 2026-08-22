@@ -269,6 +269,47 @@ describe('householdApi.listMembers', () => {
   });
 });
 
+describe('householdApi.listDeparted', () => {
+  // The envelope key is `departed_members`, NOT `household_members`. The
+  // server keeps them apart so a departed row can never be unwrapped as a
+  // current roster row; this test is what stops the client quietly reuniting
+  // them.
+  it('GETs /v1/households/:id/members/departed and unwraps departed_members', async () => {
+    apiClient.get.mockResolvedValue({
+      data: {
+        data: {
+          departed_members: [
+            {
+              ...validMembership,
+              status: 'removed',
+              ended_reason: 'left',
+              ended_at: now,
+              ended_by: validMembership.user_id,
+            },
+          ],
+        },
+      },
+    });
+
+    const result = await householdApi.listDeparted(validHousehold.id);
+
+    expect(apiClient.get).toHaveBeenCalledWith(
+      `/v1/households/${validHousehold.id}/members/departed`
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].ended_reason).toBe('left');
+  });
+
+  it('throws rather than returning [] when the roster key comes back instead', async () => {
+    apiClient.get.mockResolvedValue({
+      data: { data: { household_members: [validMembership] } },
+    });
+    await expect(
+      householdApi.listDeparted(validHousehold.id)
+    ).rejects.toThrow();
+  });
+});
+
 describe('householdApi.createInvite', () => {
   it('POSTs to /v1/households/:id/invites and returns the invite', async () => {
     apiClient.post.mockResolvedValue({

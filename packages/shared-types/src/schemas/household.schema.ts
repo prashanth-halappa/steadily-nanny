@@ -143,16 +143,19 @@ export type HouseholdMemberStatus =
  * by construction rather than by somebody remembering to exclude it.
  */
 /**
- * household_members.ended_reason (migration 110)
+ * household_members.ended_reason (migrations 110, 112)
  *
- * MATCHED PAIR with the CHECK in 110_membership_ended_reason.sql.
+ * MATCHED PAIR with the CHECK in 112_membership_departure.sql, which supersedes
+ * 110's two-value list.
  *
  * WHY a membership ended, which is a different question from `status` and one
  * `status` cannot answer: `household_closed` is the last parent deleting their
  * account out from under a carer nobody removed, `removed_by_parent` is a
- * decision somebody made about her. The `membership_ended` push carries the
- * same fact in its payload, but a push is delivered once — this column is what
- * a reader who missed it can still be told.
+ * decision somebody made about her, `left` is a decision she made herself. The
+ * `membership_ended` push carries the same fact in its payload, but a push is
+ * delivered once — this column is what a reader who missed it can still be
+ * told, and it is what keeps the family's departure card from announcing a
+ * removal as a resignation.
  *
  * NULL means "we don't know" (every row that predates the column, and every
  * membership that has not ended). Render the neutral wording for null; never
@@ -161,6 +164,12 @@ export type HouseholdMemberStatus =
 export const MEMBERSHIP_ENDED_REASONS = {
   HOUSEHOLD_CLOSED: 'household_closed',
   REMOVED_BY_PARENT: 'removed_by_parent',
+  /**
+   * She ended it herself (112). Distinct from `removed_by_parent` because the
+   * two are opposite facts about the same status flip, and the family's
+   * departure card says opposite things about them.
+   */
+  LEFT: 'left',
 } as const;
 export type MembershipEndedReason =
   (typeof MEMBERSHIP_ENDED_REASONS)[keyof typeof MEMBERSHIP_ENDED_REASONS];
@@ -411,6 +420,19 @@ export const HouseholdMemberSchema = z.object({
     .enum(Object.values(MEMBERSHIP_ENDED_REASONS))
     .nullable()
     .optional(),
+  /**
+   * When the membership ended (112), or null while it has not. Deliberately
+   * not derived from `updated_at` — see the migration header. The parent-side
+   * departure card windows on this; treat null as "too old to report", never
+   * as "just now".
+   */
+  ended_at: z.iso.datetime({ offset: true }).nullable().optional(),
+  /**
+   * Who ended it (112) — the parent who removed them, or the member
+   * themselves. Read ONLY to keep the actor from being told about their own
+   * action; never rendered as "X removed Y".
+   */
+  ended_by: z.uuid().nullable().optional(),
   // Joined from `user_profiles` by the members-list read only — absent on
   // rows produced by redeem/patch, and null when the profile row is gone.
   // Clients resolve a label as override -> profile_name -> role fallback.

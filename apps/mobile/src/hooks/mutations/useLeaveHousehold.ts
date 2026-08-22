@@ -46,6 +46,14 @@ function getLeaveErrorKey(error: unknown): string | undefined {
   ) {
     return 'household:householdSettings.leaveClockedInError';
   }
+  // 404 is `findActiveMembership` finding nothing: the membership is already
+  // removed (two taps, or a parent removed her while the confirm was open) or
+  // was never active (a candidate). No reason code to match on — the status
+  // alone says it. The generic `errors:notFound` reads like a broken app for
+  // what is actually the outcome she asked for.
+  if (err.response?.status === 404) {
+    return 'household:householdSettings.leaveAlreadyLeftError';
+  }
   return undefined;
 }
 

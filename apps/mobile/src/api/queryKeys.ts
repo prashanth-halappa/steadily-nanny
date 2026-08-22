@@ -52,6 +52,11 @@ export const queryKeys = {
       [...queryKeys.household.all, 'detail', householdId] as const,
     members: (householdId?: string) =>
       [...queryKeys.household.all, 'members', householdId] as const,
+    // Memberships of THIS household that recently ended — parent-only, and
+    // kept off `members` for the same reason `past` is kept off `list`:
+    // nothing that resolves a live roster should ever see a departed row.
+    departed: (householdId?: string) =>
+      [...queryKeys.household.all, 'departed', householdId] as const,
     invitePreview: (code?: string) =>
       [...queryKeys.household.all, 'invitePreview', code] as const,
     // Every code this household has minted. Shape must stay

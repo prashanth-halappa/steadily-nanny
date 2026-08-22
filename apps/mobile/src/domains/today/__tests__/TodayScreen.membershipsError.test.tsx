@@ -171,6 +171,9 @@ mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
   }),
 }));
 
+mock.module('@/src/hooks/queries/useRecentDepartures', () => ({
+  useRecentDepartures: () => ({ data: [], isSuccess: true, isLoading: false }),
+}));
 mock.module('@/src/hooks/queries/useChildren', () => ({
   useChildren: () => ({ data: [], isLoading: false }),
 }));
@@ -185,6 +188,9 @@ mock.module('@/src/store/auth', () => ({
     selector({ session: { user: { id: 'error-user-1' } } }),
 }));
 mock.module('@/src/store/todayCardDismissalStore', () => ({
+  // MemberLeftCard (112) reads the reactive accessor; every module
+  // mock of this store has to carry it or the import fails.
+  useCardDismissal: () => ({ isDismissed: () => false, dismiss: () => {} }),
   useTodayCardDismissalStore: (
     selector: (s: {
       isDismissed: () => boolean;

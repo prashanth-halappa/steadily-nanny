@@ -178,6 +178,9 @@ mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
 let mockUseChildren: ReturnType<typeof mock>;
 let mockUseHouseholdMembers: ReturnType<typeof mock>;
 
+mock.module('@/src/hooks/queries/useRecentDepartures', () => ({
+  useRecentDepartures: () => ({ data: [], isSuccess: true, isLoading: false }),
+}));
 mock.module('@/src/hooks/queries/useChildren', () => ({
   useChildren: (...args: unknown[]) => mockUseChildren(...args),
 }));
@@ -192,6 +195,9 @@ mock.module('@/src/store/auth', () => ({
     selector({ session: { user: { id: 'skeleton-user-1' } } }),
 }));
 mock.module('@/src/store/todayCardDismissalStore', () => ({
+  // MemberLeftCard (112) reads the reactive accessor; every module
+  // mock of this store has to carry it or the import fails.
+  useCardDismissal: () => ({ isDismissed: () => false, dismiss: () => {} }),
   useTodayCardDismissalStore: (
     selector: (s: {
       isDismissed: () => boolean;

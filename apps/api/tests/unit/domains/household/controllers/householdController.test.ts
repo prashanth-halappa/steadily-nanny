@@ -7,6 +7,7 @@ let listForUser: any;
 let listPastForUser: any;
 let getOwned: any;
 let listMembers: any;
+let listDepartedMembers: any;
 let previewInvite: any;
 let create: any;
 let update: any;
@@ -21,6 +22,7 @@ beforeAll(async () => {
   listPastForUser = mock(async () => []);
   getOwned = mock(async () => ({ id: 'h1', name: 'The Smiths' }));
   listMembers = mock(async () => [{ id: 'm1' }]);
+  listDepartedMembers = mock(async () => [{ id: 'm9', status: 'removed' }]);
   previewInvite = mock(async () => ({
     household_name: 'The Smiths',
     children_first_names: ['Maya'],
@@ -42,6 +44,7 @@ beforeAll(async () => {
         listPastForUser,
         getOwned,
         listMembers,
+        listDepartedMembers,
         previewInvite,
       },
     })
@@ -87,6 +90,7 @@ beforeEach(() => {
     listPastForUser,
     getOwned,
     listMembers,
+    listDepartedMembers,
     previewInvite,
     create,
     update,
@@ -167,6 +171,21 @@ describe('HouseholdController', () => {
       mock()
     );
     expect(update).toHaveBeenCalledWith('u1', 'h1', { name: 'Updated' });
+  });
+
+  it('listDepartedMembers responds with departed_members', async () => {
+    const res = mockRes();
+    await HouseholdController.listDepartedMembers(
+      { user: { id: 'u1' }, params: { householdId: 'h1' } } as any,
+      res,
+      mock()
+    );
+    // No window argument: the service owns the default, so the HTTP layer has
+    // nothing to decide and no query string to validate.
+    expect(listDepartedMembers).toHaveBeenCalledWith('u1', 'h1');
+    expect(res.body.data).toEqual({
+      departed_members: [{ id: 'm9', status: 'removed' }],
+    });
   });
 
   it('listMembers responds with household_members', async () => {

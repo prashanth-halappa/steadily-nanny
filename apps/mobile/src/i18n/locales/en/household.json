@@ -176,15 +176,20 @@
     "removeMemberConfirmConfirm": "Remove",
     "removeMemberSuccessToast": "{{name}} removed from the household",
     "leaveSectionTitle": "Leaving",
-    "leaveButton": "Leave household",
+    "leaveButton": "Leave {{name}}",
     "leaveHint": "Only a parent in this household can add you back.",
     "leaveConfirmTitle": "Leave {{name}}?",
-    "leaveConfirmBody": "You'll lose access to this household's schedule, hours and pay. The hours you've already worked stay on their record, and a parent would have to invite you back.",
+    "leaveConfirmBody": "This takes effect now, and {{name}} is told.",
+    "leaveConsequenceSchedule": "Nothing further is scheduled for you with {{name}}.",
+    "leaveConsequenceRecord": "Your hours, timesheets and pay for {{name}} stay here to read. Anything you haven't clocked can't be added afterwards.",
+    "leaveConsequenceReturn": "Only a parent in {{name}} can invite you back.",
+    "leaveConfirmMoney": "Steadily records pay, it never moves it. Anything still to settle is between you and {{name}}.",
     "leaveConfirmCancel": "Stay",
     "leaveConfirmConfirm": "Leave household",
     "leftToast": "You've left {{name}}",
     "leaveOwnerError": "You created this household, so you can't leave it — someone has to be able to manage it.",
-    "leaveClockedInError": "You're clocked in. Clock out first, then leave."
+    "leaveClockedInError": "You're clocked in with {{name}}. Clock out first, then leave.",
+    "leaveAlreadyLeftError": "You've already left {{name}}."
   },
   "closures": {
     "manageTitle": "We're away",

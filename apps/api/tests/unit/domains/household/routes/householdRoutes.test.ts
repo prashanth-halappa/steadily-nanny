@@ -53,6 +53,8 @@ const OTHER_HOUSEHOLD_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const OTHER_HOUSEHOLD_ID_2 = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 // A THIRD stranger household for the leave route, same reason.
 const OTHER_HOUSEHOLD_ID_3 = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+// A FOURTH, for the departed-members read. Same reason again.
+const OTHER_HOUSEHOLD_ID_4 = '11111111-1111-4111-8111-111111111111';
 const MEMBER_ID = 'bbbbbbbb-bbbb-4bbb-9bbb-bbbbbbbbbbbb';
 const INVITE_ID = 'dddddddd-dddd-4ddd-9ddd-dddddddddddd';
 const AUTH_USER_ID = 'parent-1';
@@ -66,6 +68,7 @@ let redeemInviteMock: ReturnType<typeof mock>;
 let leaveMock: ReturnType<typeof mock>;
 let archiveMock: ReturnType<typeof mock>;
 let getOwnedMock: ReturnType<typeof mock>;
+let listDepartedMembersMock: ReturnType<typeof mock>;
 
 function patch(path: string, body: unknown): Promise<Response> {
   return fetch(`${baseUrl}${path}`, {
@@ -73,6 +76,10 @@ function patch(path: string, body: unknown): Promise<Response> {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
+}
+
+function get(path: string): Promise<Response> {
+  return fetch(`${baseUrl}${path}`);
 }
 
 function post(path: string): Promise<Response> {
@@ -103,6 +110,9 @@ beforeAll(async () => {
   getOwnedMock = mock(async (_userId: string, householdId: string) => ({
     id: householdId,
   }));
+  listDepartedMembersMock = mock(async (..._args: unknown[]) => [
+    { id: 'm-gone', status: 'removed', profile_name: 'Priya' },
+  ]);
 
   mock.module('../../../../../src/middlewares/auth', () => ({
     requireAuth: (req: any, _res: any, next: any) => {
@@ -120,6 +130,8 @@ beforeAll(async () => {
         getOwned: (...args: any[]) => getOwnedMock(...args),
         listForUser: mock(async () => []),
         listMembers: mock(async () => []),
+        listDepartedMembers: (...args: any[]) =>
+          listDepartedMembersMock(...args),
         previewInvite: mock(async () => ({})),
       },
     })
@@ -174,6 +186,7 @@ beforeEach(() => {
   redeemInviteMock.mockClear();
   leaveMock.mockClear();
   archiveMock.mockClear();
+  listDepartedMembersMock.mockClear();
 });
 
 describe('PATCH /households/:householdId/members/:memberId', () => {
@@ -372,5 +385,55 @@ describe('route ordering', () => {
     expect(redeemInviteMock).toHaveBeenCalledWith(AUTH_USER_ID, {
       code: 'ABC-234',
     });
+  });
+});
+
+describe('GET /households/:householdId/members/departed', () => {
+  it('passes the caller and household through, answering with the departures', async () => {
+    const res = await get(`/households/${HOUSEHOLD_ID}/members/departed`);
+
+    expect(res.status).toBe(200);
+    expect(listDepartedMembersMock).toHaveBeenCalledWith(
+      AUTH_USER_ID,
+      HOUSEHOLD_ID
+    );
+    const body = (await res.json()) as {
+      data: { departed_members: { profile_name: string }[] };
+    };
+    expect(body.data.departed_members[0]?.profile_name).toBe('Priya');
+  });
+
+  // ORDERING. 'departed' is a literal segment and must be matched before
+  // `/members/:memberId`; below it, the uuid check on `memberId` would 400
+  // this request. Safe today only because that sibling is a PATCH — a
+  // coincidence of verbs, not a guarantee.
+  it('is not read as a member id', async () => {
+    const res = await get(`/households/${HOUSEHOLD_ID}/members/departed`);
+
+    expect(res.status).toBe(200);
+    expect(removeMemberMock).not.toHaveBeenCalled();
+  });
+
+  it('404s a household the caller is not a member of, BEFORE the service', async () => {
+    getOwnedMock.mockImplementationOnce(async () => {
+      const { HouseholdNotFoundError } = await import(
+        '../../../../../src/domains/household/errors/householdErrors'
+      );
+      throw new HouseholdNotFoundError(OTHER_HOUSEHOLD_ID_4);
+    });
+
+    const res = await get(
+      `/households/${OTHER_HOUSEHOLD_ID_4}/members/departed`
+    );
+
+    expect(res.status).toBe(404);
+    expect(listDepartedMembersMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-uuid householdId with 400 BEFORE the service', async () => {
+    const res = await get('/households/not-a-uuid/members/departed');
+
+    expect(res.status).toBe(400);
+    expect(listDepartedMembersMock).not.toHaveBeenCalled();
   });
 });

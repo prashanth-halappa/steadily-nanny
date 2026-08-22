@@ -747,12 +747,16 @@ export class ScheduleMaterialisationService {
    * business, a clocked-into shift is paid-for reality (017), and a
    * manually-authored shift is not the pattern's to withdraw.
    *
-   * Returns how many rows it cancelled.
+   * Returns the DISTINCT `local_date`s it cancelled on, not a count: a day
+   * that just lost its shifts may now be uncovered care, and the caller has
+   * to re-run detection for exactly those days (`docs/12-NEED-COVERAGE.md`).
+   * A count cannot say which. The dates cost nothing extra —
+   * `findActiveByPattern` already selects the whole row.
    */
   async cancelFutureShiftsForEndedPattern(
     patternId: string,
     now: Date = new Date()
-  ): Promise<number> {
+  ): Promise<string[]> {
     const candidates = (
       await this.shiftRepo.findActiveByPattern(patternId)
     ).filter(
@@ -762,23 +766,26 @@ export class ScheduleMaterialisationService {
         new Date(shift.starts_at).getTime() > now.getTime()
     );
     if (candidates.length === 0) {
-      return 0;
+      return [];
     }
     const paidIds = await this.timeEntryRepo.shiftIdsWithTimeEntries(
       candidates.map(shift => shift.id)
     );
-    const ids = candidates
-      .filter(shift => !paidIds.has(shift.id))
-      .map(shift => shift.id);
-    if (ids.length === 0) {
-      return 0;
+    const cancelled = candidates.filter(shift => !paidIds.has(shift.id));
+    if (cancelled.length === 0) {
+      return [];
     }
-    await this.shiftRepo.updateMany(ids, {
-      status: 'cancelled',
-      reason: 'pattern_ended',
-      cancelled_at: now.toISOString(),
-    });
-    return ids.length;
+    await this.shiftRepo.updateMany(
+      cancelled.map(shift => shift.id),
+      {
+        status: 'cancelled',
+        reason: 'pattern_ended',
+        cancelled_at: now.toISOString(),
+      }
+    );
+    // Sorted, because the set's insertion order is whatever the DB handed
+    // back and a caller iterating days should see them in calendar order.
+    return [...new Set(cancelled.map(shift => shift.local_date))].sort();
   }
 
   /**

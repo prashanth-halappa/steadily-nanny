@@ -89,6 +89,31 @@ export class HouseholdController {
     }
   }
 
+  /**
+   * GET /households/:householdId/members/departed — parent-gated (the role
+   * check lives in the query service, which is the only layer that can see
+   * the roster). No window on the request: the service owns it deliberately,
+   * so there is nothing here to parse and nothing a caller can widen.
+   */
+  static async listDepartedMembers(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ) {
+    try {
+      const householdId = req.params.householdId as string;
+      const departed_members = await householdQueryService.listDepartedMembers(
+        getAuthUserId(req),
+        householdId
+      );
+      return sendSuccessResponse(res, 'Departed members fetched', {
+        departed_members,
+      });
+    } catch (error) {
+      return next(error);
+    }
+  }
+
   /** GET /households/:householdId/holidays — any active member may read. */
   static async listHolidays(req: Request, res: Response, next: NextFunction) {
     try {

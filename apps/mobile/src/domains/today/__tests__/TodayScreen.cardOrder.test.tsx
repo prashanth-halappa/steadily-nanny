@@ -243,6 +243,13 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
     useIsOnboarded: mockUseIsOnboarded,
   }));
+  mock.module('@/src/hooks/queries/useRecentDepartures', () => ({
+    useRecentDepartures: () => ({
+      data: [],
+      isSuccess: true,
+      isLoading: false,
+    }),
+  }));
   mock.module('@/src/hooks/queries/useChildren', () => ({
     useChildren: mock(() => ({ data: [], isLoading: false })),
   }));
@@ -262,6 +269,9 @@ beforeAll(async () => {
   mockIsCardDismissed = mock(() => false);
   mockDismissCard = mock();
   mock.module('@/src/store/todayCardDismissalStore', () => ({
+    // MemberLeftCard (112) reads the reactive accessor; every module
+    // mock of this store has to carry it or the import fails.
+    useCardDismissal: () => ({ isDismissed: () => false, dismiss: () => {} }),
     useTodayCardDismissalStore: (
       selector: (s: {
         isDismissed: typeof mockIsCardDismissed;

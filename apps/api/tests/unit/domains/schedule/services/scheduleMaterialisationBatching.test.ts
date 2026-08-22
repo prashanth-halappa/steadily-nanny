@@ -336,7 +336,7 @@ describe('ScheduleMaterialisationService — round trips do not grow with the ho
       NOW
     );
 
-    expect(cancelled).toBe(shifts.length - 1);
+    expect(cancelled).toHaveLength(shifts.length - 1);
     expect(shiftRepo.updateMany).toHaveBeenCalledTimes(1);
     expect(shiftRepo.updateMany).toHaveBeenCalledWith(
       shifts.slice(1).map(shift => shift.id),

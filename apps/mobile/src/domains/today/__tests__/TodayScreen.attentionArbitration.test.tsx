@@ -227,6 +227,13 @@ beforeAll(async () => {
   mock.module('@/src/domains/today/hooks/useTermsGate', () => ({
     useTermsGate: mockUseTermsGate,
   }));
+  mock.module('@/src/hooks/queries/useRecentDepartures', () => ({
+    useRecentDepartures: () => ({
+      data: [],
+      isSuccess: true,
+      isLoading: false,
+    }),
+  }));
   mock.module('@/src/hooks/queries/useChildren', () => ({
     useChildren: () => ({ data: [], isLoading: false }),
   }));

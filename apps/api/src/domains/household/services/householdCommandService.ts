@@ -20,10 +20,15 @@ import {
   type PayOfferPromotionOutcome,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
-import { SCHEDULE_PATTERN_STATUSES } from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import { TERMS_PROPOSAL_DIRECTIONS } from '@steadily-nanny/shared-types/schemas/termsProposal.schema';
 import { ConflictError } from '../../../errors';
 import { logger } from '../../../middlewares/logger';
+import { invalidateResourceRelationshipCache } from '../../../utils/cache';
+// TYPE ONLY, same cycle as the schedule import below: the detection module
+// reaches `uncoveredCareService`, which imports the household barrel, which
+// constructs this service. Verified the same way — the value import fails at
+// boot with "Cannot access 'HouseholdMemberRepository' before initialization".
+import type { DetectUncoveredCareArgs } from '../../child/services/detectUncoveredCareForDate';
 import { notifyHouseholdParents, notifyUser } from '../../notification';
 // Repository modules directly, NOT the domain barrels: a barrel pulls in that
 // domain's services, and one of those reaching back for household membership
@@ -34,8 +39,13 @@ import { PtoLedgerRepository } from '../../pay/repositories/ptoLedgerRepository'
 // domain's services, and `schedulePatternCommandService` reaches back here for
 // household membership — the cycle this file's import note at the top warns
 // about.
-import { SchedulePatternRepository } from '../../schedule/repositories/schedulePatternRepository';
-import { scheduleMaterialisationService } from '../../schedule/services/scheduleMaterialisationService';
+// TYPE ONLY, and the lazy loader below is why. A value import here closes a
+// cycle at boot: schedulePatternCommandService -> notification ->
+// the household barrel -> this file. Verified, not theorised — it fails with
+// "Cannot access 'HouseholdMemberRepository' before initialization". This is
+// the same trap `userService.endAcceptedPatterns` documents for the same
+// method, reached from the other side.
+import type { schedulePatternCommandService } from '../../schedule/services/schedulePatternCommandService';
 // Imported from the repository module directly, NOT the timesheet domain
 // barrel: the barrel pulls in the timesheet services, and one of those reaching
 // back for household membership would close an import cycle.
@@ -110,6 +120,55 @@ const WRITE_ROLES: ReadonlySet<string> = new Set([
   HOUSEHOLD_ROLES.OWNER,
   HOUSEHOLD_ROLES.PARENT,
 ]);
+
+/**
+ * The departure teardown, resolved at CALL time rather than import time.
+ *
+ * A constructor default is evaluated eagerly, so defaulting straight to
+ * `schedulePatternCommandService` would need a value import — and that import
+ * closes a cycle at boot (see the type-only import at the top of this file).
+ * Deferring it to the first call breaks the cycle without giving up injection:
+ * a test still passes its own object and never reaches this.
+ *
+ * One method, matching the injected `Pick`, so the seam stays honest.
+ */
+/**
+ * Uncovered-care detection, resolved at call time for the same cycle reason as
+ * `lazySchedulePatterns` below.
+ *
+ * Stays `void`-returning so callers cannot accidentally await it: the
+ * membership row is already committed by the time this runs, and a detection
+ * failure must never propagate back into the write. The import itself can fail
+ * too, so that is caught here rather than becoming an unhandled rejection.
+ */
+const lazyDetectUncovered = (args: DetectUncoveredCareArgs): void => {
+  void import('../../child/services/detectUncoveredCareForDate')
+    .then(m => m.detectUncoveredCareBestEffort(args))
+    .catch(error => {
+      logger.error('Uncovered-care recompute could not be loaded', {
+        householdId: args.householdId,
+        localDate: args.localDate,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+};
+
+const lazySchedulePatterns = {
+  async endAcceptedPatternsForCarer(
+    householdId: string,
+    carerId: string,
+    now?: Date
+  ): Promise<string[]> {
+    const { schedulePatternCommandService } = await import(
+      '../../schedule/services/schedulePatternCommandService'
+    );
+    return schedulePatternCommandService.endAcceptedPatternsForCarer(
+      householdId,
+      carerId,
+      now
+    );
+  },
+};
 
 /**
  * Crash-recovery window: how long an `accepted` invite with no membership row
@@ -227,17 +286,50 @@ export class HouseholdCommandService {
       HouseholdCustomHolidayRepository,
       'replaceSet'
     > = new HouseholdCustomHolidayRepository(),
-    // The removal-side pattern teardown. LAST parameters and defaulted, so
-    // every existing positional construction keeps working.
-    private readonly patterns: Pick<
-      SchedulePatternRepository,
-      'listAcceptedByHouseholdAndCarer' | 'update'
-    > = new SchedulePatternRepository(),
-    private readonly materialisation: Pick<
-      typeof scheduleMaterialisationService,
-      'cancelFutureShiftsForEndedPattern'
-    > = scheduleMaterialisationService
+    // The departure-side pattern teardown, now ONE method rather than the
+    // repository+materialisation pair each caller used to drive itself. LAST
+    // parameters and defaulted, so every existing positional construction
+    // keeps working.
+    private readonly schedulePatterns: Pick<
+      typeof schedulePatternCommandService,
+      'endAcceptedPatternsForCarer'
+    > = lazySchedulePatterns,
+    // Injected so a test can assert the recompute without reaching a database.
+    // `detectUncoveredCareBestEffort` is void by design: it is fire-and-forget
+    // and swallows its own failures.
+    private readonly detectUncovered: (
+      args: DetectUncoveredCareArgs
+    ) => void = lazyDetectUncovered
   ) {}
+
+  /**
+   * Re-run uncovered-care detection for the days a departure just emptied.
+   *
+   * Membership change is NOT one of the detection triggers
+   * (`docs/12-NEED-COVERAGE.md`), and `detectUncoveredCareForDate` counts any
+   * shift with a `carer_id` as covered — so without this the family's calendar
+   * still shows the departed carer on Tuesday, the day never reads as
+   * uncovered, and the parents learn nothing until the 03:00 sweep. They go to
+   * bed believing they have childcare.
+   *
+   * `cause: 'cancelled'` because that is literally what happened to the shifts
+   * these dates came from. Best-effort per date and AFTER the membership flip:
+   * the row is already committed, and a detection failure must never undo it.
+   */
+  private raiseUncoveredForVacatedDates(
+    householdId: string,
+    localDates: readonly string[],
+    actorId: string
+  ): void {
+    for (const localDate of localDates) {
+      this.detectUncovered({
+        householdId,
+        localDate,
+        cause: 'cancelled',
+        actorId,
+      });
+    }
+  }
 
   /**
    * Create a household AND the creator's membership together. A household with
@@ -1508,25 +1600,16 @@ export class HouseholdCommandService {
     // pattern she still works under is the one mistake here that would be
     // unrecoverable.
     //
-    // ponytail: third copy of this six-line loop (`userService`'s private
-    // `endAcceptedPatterns` and `schedulePatternCommandService`'s private
-    // `endPattern` are the other two). It wants to be one exported method on
-    // `schedulePatternCommandService`, which is outside this task's allowlist.
-    for (const pattern of await this.patterns.listAcceptedByHouseholdAndCarer(
-      householdId,
-      target.user_id
-    )) {
-      await this.patterns.update(pattern.id, {
-        status: SCHEDULE_PATTERN_STATUSES.ENDED,
-      });
-      // The removal's OWN instant, not a fresh clock: it is what draws the
-      // line between a shift already worked (or half-worked today) and the
-      // ones that were never going to happen.
-      await this.materialisation.cancelFutureShiftsForEndedPattern(
-        pattern.id,
+    // Was the third inlined copy of this loop; it is now one method that
+    // account deletion, household closure and `leave` all run, so the rules it
+    // encodes cannot drift apart per caller again. It hands back the days it
+    // emptied, which is what the uncovered-care recompute below needs.
+    const vacatedDates =
+      await this.schedulePatterns.endAcceptedPatternsForCarer(
+        householdId,
+        target.user_id,
         now()
       );
-    }
 
     const removed = await this.memberRepo.removeMembership(memberId);
     if (!removed) {
@@ -1540,12 +1623,30 @@ export class HouseholdCommandService {
     // told: `status = 'removed'` alone cannot tell "a parent removed me" from
     // "the family closed the household under me".
     //
+    // 112 adds the other two facts the household's own departure card needs:
+    // WHEN (`ended_at` — not `updated_at`, which the 009 trigger bumps on any
+    // later write and would put a year-old departure back on screen) and WHO
+    // (`ended_by`, read only to keep the parent who acted from being told
+    // about their own action).
+    //
     // ponytail: one extra UPDATE on a rare path. Fold it into
     // `removeMembership` as an optional argument when that repository is next
     // touched.
     await this.memberRepo.update(memberId, {
       ended_reason: MEMBERSHIP_ENDED_REASONS.REMOVED_BY_PARENT,
+      ended_at: now().toISOString(),
+      ended_by: callerId,
     });
+
+    // The relationship cache holds a POSITIVE membership answer for an hour
+    // (`makeOwnershipValidator`), so without this the person just removed can
+    // keep passing id-scoped write gates long after the row says otherwise —
+    // GOLDEN-FIXES records a removed parent approving a week through exactly
+    // this window. Account deletion has always done it; the two membership
+    // paths did not.
+    invalidateResourceRelationshipCache(target.user_id);
+
+    this.raiseUncoveredForVacatedDates(householdId, vacatedDates, callerId);
 
     // She is told NOTHING otherwise — no push, no inbox item, no card — and
     // finds out by watching her controls disappear. No figure and no promise
@@ -1561,6 +1662,34 @@ export class HouseholdCommandService {
         reason: MEMBERSHIP_ENDED_REASONS.REMOVED_BY_PARENT,
       },
     });
+
+    // THE OTHER PARENTS, which this path told nobody until now: in a
+    // two-parent household one of them could remove the nanny and the other
+    // would find out when a shift went uncovered. `excludeUserId` is the
+    // whole point — the parent who did it does not need to be told they did
+    // it, and being told would read as somebody else's decision.
+    //
+    // Wrapped like the departure push in `leave`, and for the same reason:
+    // the membership row is already flipped and must not be undone by a
+    // notification failure.
+    try {
+      notifyHouseholdParents(
+        householdId,
+        {
+          title: `${await this.memberDisplayName(target)} is no longer in your household`,
+          body: this.departureBody(target.role),
+          data: {
+            type: PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED,
+            householdId,
+            role: 'parent',
+          },
+        },
+        { excludeUserId: callerId }
+      );
+    } catch {
+      // notifyHouseholdParents is sync fire-and-forget; swallow any unexpected
+      // throw — the membership row is already flipped.
+    }
 
     return removed;
   }
@@ -1615,6 +1744,11 @@ export class HouseholdCommandService {
       throw new CannotLeaveWhileClockedInError(householdId);
     }
 
+    // Empty for a co-parent or helper, who hold no patterns — so the recompute
+    // below is a no-op for them, which is correct: their leaving takes nobody
+    // off the calendar.
+    let vacatedDates: readonly string[] = [];
+
     if (membership.role === HOUSEHOLD_ROLES.NANNY) {
       // F8, same NANNY-only gate as `endForCarer` just below: a terms
       // proposal only ever names a carer (`terms_proposals.carer_id`), so a
@@ -1632,6 +1766,26 @@ export class HouseholdCommandService {
         callerId,
         localDateOf(now(), householdRow.timezone)
       );
+
+      // The teardown this path was missing entirely, and the reason it had to
+      // be added before the leave button could be offered to anyone: patterns
+      // are read by `scheduleHorizonJob` through `listAccepted`, which has NO
+      // membership filter. A carer who left while still holding an `accepted`
+      // pattern kept having shifts materialised to the horizon, kept getting
+      // "you have a shift tomorrow", and kept appearing on the family's
+      // calendar as cover that was never coming.
+      //
+      // NANNY-only for the same reason as the two writes above: a co-parent or
+      // helper holds no pattern, because neither can be a shift's carer.
+      //
+      // Before the CAS, like everything else in this branch — a throw here
+      // refuses the whole leave with nothing changed, rather than flipping a
+      // membership and leaving live patterns behind it.
+      vacatedDates = await this.schedulePatterns.endAcceptedPatternsForCarer(
+        householdId,
+        callerId,
+        now()
+      );
     }
 
     const removed = await this.memberRepo.removeMembership(membership.id);
@@ -1641,9 +1795,29 @@ export class HouseholdCommandService {
       throw new MemberNotFoundError(membership.id);
     }
 
-    const roleLabel = this.roleLabel(membership.role);
+    // Same three facts `removeMember` stamps, and for the same reasons —
+    // except `ended_reason` is `left`, the third value 112 added. Without it a
+    // self-departure is indistinguishable from a row written before 110, and
+    // the family's card would have to announce a resignation as a removal.
+    // `ended_by` is the leaver themselves, which is what keeps the card off
+    // their own screen if they ever read the household again.
+    await this.memberRepo.update(membership.id, {
+      ended_reason: MEMBERSHIP_ENDED_REASONS.LEFT,
+      ended_at: now().toISOString(),
+      ended_by: callerId,
+    });
+
+    // See `removeMember` for why this cannot wait for the cache to expire.
+    invalidateResourceRelationshipCache(callerId);
+
+    this.raiseUncoveredForVacatedDates(householdId, vacatedDates, callerId);
+
     // Nobody in the household initiated this, so without a push the family
     // finds out when a shift goes uncovered.
+    //
+    // NAMED, per `docs/design/02-VOICE.md`'s first rule: "A nanny left the
+    // household" tells a two-carer family the one thing they already knew and
+    // withholds the one thing they need.
     //
     // ponytail: the type is INVITE_REDEEMED, which is a lie in the name and
     // true in every effect a client observes — it is the household's
@@ -1657,8 +1831,8 @@ export class HouseholdCommandService {
     // actually reads.
     try {
       notifyHouseholdParents(householdId, {
-        title: 'Someone left your household',
-        body: `A ${roleLabel} left the household.`,
+        title: `${await this.memberDisplayName(membership)} left your household`,
+        body: this.departureBody(membership.role),
         data: {
           type: PUSH_NOTIFICATION_TYPES.INVITE_REDEEMED,
           householdId,
@@ -1754,6 +1928,56 @@ export class HouseholdCommandService {
    * than throwing: a role added to the enum without touching this map should
    * cost a slightly stiff notification, never the write that triggered it.
    */
+  /**
+   * How a member reads in a push ABOUT them, to somebody else:
+   * `display_name_override` -> their profile name -> `A nanny`.
+   *
+   * NAME PEOPLE (`docs/design/02-VOICE.md`) — "A nanny left the household"
+   * answers the wrong question. The parent knows a nanny left; they want to
+   * know which one, and in a two-carer household the role alone is useless.
+   *
+   * Never throws. The profile read is the only part that can fail and it is
+   * caught here, because a display name is decoration on a push and nothing
+   * decorative may fail a membership write — the same rule `redeemInvite`
+   * states and `userService`'s owner-handover push repeats: a lookup that
+   * fails costs the reader a name, never the household the write.
+   *
+   * Safe to call AFTER the status flip: `display_name_override` lives on the
+   * row that was soft-removed, not deleted, and the `user_profiles` row is
+   * untouched by anything short of account deletion.
+   */
+  private async memberDisplayName(member: HouseholdMember): Promise<string> {
+    const override = member.display_name_override?.trim();
+    if (override) {
+      return override;
+    }
+    try {
+      const profile = await this.users.getProfileById(member.user_id);
+      const name = profile?.name?.trim();
+      if (name) {
+        return name;
+      }
+    } catch {
+      // fall through to the role label
+    }
+    return `A ${this.roleLabel(member.role)}`;
+  }
+
+  /**
+   * What a departure MEANS to the family, in one line, keyed on what the
+   * person actually did here. A carer's departure is a hole in the week; a
+   * co-parent's or helper's is a loss of access and nothing else.
+   *
+   * Deliberately says nothing about money or about cover. The specific,
+   * urgent alert — "Tuesday 8:00 AM is uncovered" — is uncovered-care
+   * detection's to send, and it names the day this one cannot.
+   */
+  private departureBody(role: string): string {
+    return role === HOUSEHOLD_ROLES.NANNY
+      ? 'Nothing further is scheduled for them.'
+      : 'They no longer have access to your household.';
+  }
+
   private roleLabel(role: string): string {
     if (role === HOUSEHOLD_ROLES.NANNY) {
       return 'nanny';

@@ -55,6 +55,8 @@ export const householdEndpoints = {
   getById: (householdId: string) => `/v1/households/${householdId}`,
   update: (householdId: string) => `/v1/households/${householdId}`,
   listMembers: (householdId: string) => `/v1/households/${householdId}/members`,
+  listDeparted: (householdId: string) =>
+    `/v1/households/${householdId}/members/departed`,
   updateMember: (householdId: string, memberId: string) =>
     `/v1/households/${householdId}/members/${memberId}`,
   leave: (householdId: string) => `/v1/households/${householdId}/members/leave`,
@@ -70,6 +72,13 @@ export const householdEndpoints = {
 } as const;
 
 // --- Zod schemas not (yet) in the shared package ----------------------------
+
+// API-CONTRACT: GET /v1/households/:id/members/departed — the rows are plain
+// `HouseholdMember`s, only the envelope key differs from the roster read.
+// Local rather than in shared-types because nothing server-side imports it.
+const DepartedMemberListResponseSchema = z.object({
+  departed_members: z.array(HouseholdMemberSchema),
+});
 
 // API-CONTRACT: GET /v1/households/invites/:code/preview — deliberately
 // minimal (no household id, no member list) since the caller isn't a member
@@ -189,6 +198,35 @@ export const householdApi = {
     );
     if (!parsed.success) throw parsed.error;
     return parsed.data.household_members;
+  },
+
+  /**
+   * Memberships of this household that ENDED recently — parent-only, and
+   * deliberately a separate route from `listMembers` rather than a flag on
+   * it. `listMembers` feeds every roster and name lookup in the app; a
+   * departed row leaking into that list is a removed member who still looks
+   * assignable. The server defaults the window to the last seven days.
+   *
+   * Same `HouseholdMember` shape as `listMembers` but a DIFFERENT envelope
+   * key — `departed_members`, not `household_members`. The server keeps them
+   * apart on purpose: the two lists have opposite membership semantics
+   * (`status: 'removed'` vs active+candidate), and one key for both is how a
+   * departed row eventually gets rendered as a current carer. Rows arrive
+   * most-recent-first, with `profile_phone` absent (this is not the roster).
+   *
+   * A carer gets 403 `NOT_A_PARENT` here, which is why the only caller
+   * (`useRecentDepartures`) is handed `undefined` on a carer's screen — an
+   * enabled query there is a guaranteed 403 on every launch.
+   */
+  listDeparted: async (householdId: string): Promise<HouseholdMember[]> => {
+    const response = await apiClient.get(
+      householdEndpoints.listDeparted(householdId)
+    );
+    const parsed = DepartedMemberListResponseSchema.safeParse(
+      response.data.data
+    );
+    if (!parsed.success) throw parsed.error;
+    return parsed.data.departed_members;
   },
 
   /**

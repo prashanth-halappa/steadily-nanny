@@ -214,7 +214,9 @@ describe('ScheduleMaterialisationService.cancelFutureShiftsForEndedPattern', () 
       NOW
     );
 
-    expect(cancelled).toBe(1);
+    // The DATES, not a count: the caller re-runs uncovered-care detection
+    // for exactly the days it just emptied.
+    expect(cancelled).toEqual(['2026-07-02']);
     // ONE statement for the whole set, not one per shift.
     expect(repo.updateMany).toHaveBeenCalledWith(
       ['shift-future'],
@@ -238,9 +240,9 @@ describe('ScheduleMaterialisationService.cancelFutureShiftsForEndedPattern', () 
       makeEventRepo()
     );
 
-    expect(await svc.cancelFutureShiftsForEndedPattern('pattern-1', NOW)).toBe(
-      0
-    );
+    expect(
+      await svc.cancelFutureShiftsForEndedPattern('pattern-1', NOW)
+    ).toEqual([]);
     expect(repo.updateMany).not.toHaveBeenCalled();
   });
 
@@ -258,9 +260,9 @@ describe('ScheduleMaterialisationService.cancelFutureShiftsForEndedPattern', () 
       makeEventRepo()
     );
 
-    expect(await svc.cancelFutureShiftsForEndedPattern('pattern-1', NOW)).toBe(
-      1
-    );
+    expect(
+      await svc.cancelFutureShiftsForEndedPattern('pattern-1', NOW)
+    ).toEqual(['2026-07-02']);
     expect(repo.updateMany).toHaveBeenCalledTimes(1);
     expect(repo.updateMany).toHaveBeenCalledWith(
       ['shift-future'],
@@ -280,10 +282,41 @@ describe('ScheduleMaterialisationService.cancelFutureShiftsForEndedPattern', () 
       makeEventRepo()
     );
 
-    expect(await svc.cancelFutureShiftsForEndedPattern('pattern-1', NOW)).toBe(
-      0
-    );
+    expect(
+      await svc.cancelFutureShiftsForEndedPattern('pattern-1', NOW)
+    ).toEqual([]);
     expect(repo.updateMany).not.toHaveBeenCalled();
+  });
+
+  // Two shifts on the same day is the ordinary shape (a split morning and
+  // afternoon), and the caller re-runs uncovered-care detection per DAY —
+  // so the day must come back once, not once per row.
+  it('reports each local date once, however many shifts fell on it', async () => {
+    const repo = makeRepo({
+      findActiveByPattern: mock(async () => [
+        future({ id: 'shift-am' }),
+        future({
+          id: 'shift-pm',
+          starts_at: '2026-07-02T13:00:00.000Z',
+          ends_at: '2026-07-02T18:00:00.000Z',
+        }),
+        future({
+          id: 'shift-next-day',
+          starts_at: '2026-07-03T07:00:00.000Z',
+          ends_at: '2026-07-03T16:00:00.000Z',
+          local_date: '2026-07-03',
+        }),
+      ]),
+    });
+    const svc = new ScheduleMaterialisationService(
+      repo,
+      makeTimeEntryRepo(),
+      makeEventRepo()
+    );
+
+    expect(
+      await svc.cancelFutureShiftsForEndedPattern('pattern-1', NOW)
+    ).toEqual(['2026-07-02', '2026-07-03']);
   });
 
   it('leaves a manually-authored shift alone — it is no longer the pattern to withdraw', async () => {
@@ -298,9 +331,9 @@ describe('ScheduleMaterialisationService.cancelFutureShiftsForEndedPattern', () 
       makeEventRepo()
     );
 
-    expect(await svc.cancelFutureShiftsForEndedPattern('pattern-1', NOW)).toBe(
-      0
-    );
+    expect(
+      await svc.cancelFutureShiftsForEndedPattern('pattern-1', NOW)
+    ).toEqual([]);
     expect(repo.updateMany).not.toHaveBeenCalled();
   });
 });

@@ -11,6 +11,7 @@ function createMockQueryChain(
     select: mock(() => chain),
     eq: mock(() => chain),
     in: mock(() => chain),
+    gte: mock(() => chain),
     insert: mock(() => chain),
     order: mock(() => chain),
     maybeSingle: mock(() => Promise.resolve(finalResponse)),
@@ -631,5 +632,93 @@ describe('HouseholdMemberRepository.listNonRemovedByHousehold', () => {
     const repo = new HouseholdMemberRepository();
     const result = await repo.listNonRemovedByHousehold('h1');
     expect(result[0].profile_phone).toBeNull();
+  });
+});
+
+describe('HouseholdMemberRepository.listDepartedSince', () => {
+  // The parent's departure card. No household-scoped read saw a `removed` row
+  // before this one: `listNonRemovedByHousehold` filters them out at the query,
+  // and the two reads that do see them are self-scoped.
+  it('filters on household, status = removed, and ended_at >= the window start', async () => {
+    const chain = createMockQueryChain({ data: [], error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new HouseholdMemberRepository();
+
+    await repo.listDepartedSince('h1', '2026-08-14T00:00:00.000Z');
+
+    expect(chain.eq.mock.calls).toContainEqual(['household_id', 'h1']);
+    expect(chain.eq.mock.calls).toContainEqual(['status', 'removed']);
+    expect(chain.gte.mock.calls).toEqual([
+      ['ended_at', '2026-08-14T00:00:00.000Z'],
+    ]);
+  });
+
+  // Without the embed the card can only say "someone left", which is not a
+  // card. `household_members` has no name column.
+  it('joins the profile name onto each row as profile_name', async () => {
+    const rows = [
+      memberRow({
+        status: 'removed',
+        ended_at: '2026-08-20T09:00:00+00:00',
+        ended_reason: 'left',
+        user_profiles: { name: 'Priya' },
+      }),
+    ];
+    let selectArg = '';
+    mockSupabaseService.from.mockImplementation(() => {
+      const chain = createMockQueryChain({ data: rows, error: null });
+      chain.select = mock((arg: string) => {
+        selectArg = arg;
+        return chain;
+      });
+      return chain;
+    });
+    const repo = new HouseholdMemberRepository();
+    const result = await repo.listDepartedSince(
+      'h1',
+      '2026-08-14T00:00:00.000Z'
+    );
+
+    expect(selectArg).toContain('user_profiles(name)');
+    expect(result[0].profile_name).toBe('Priya');
+    // The nested embed is an implementation detail of the join, not wire shape.
+    expect(result[0]).not.toHaveProperty('user_profiles');
+  });
+
+  it('leaves profile_name null when the profile row is gone', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({
+        data: [memberRow({ status: 'removed', user_profiles: null })],
+        error: null,
+      })
+    );
+    const repo = new HouseholdMemberRepository();
+    const result = await repo.listDepartedSince(
+      'h1',
+      '2026-08-14T00:00:00.000Z'
+    );
+    expect(result[0].profile_name).toBeNull();
+  });
+
+  it('orders most recent departure first — the card reads top-down', async () => {
+    const chain = createMockQueryChain({ data: [], error: null });
+    mockSupabaseService.from.mockImplementation(() => chain);
+    const repo = new HouseholdMemberRepository();
+
+    await repo.listDepartedSince('h1', '2026-08-14T00:00:00.000Z');
+
+    expect(chain.order.mock.calls).toEqual([
+      ['ended_at', { ascending: false }],
+    ]);
+  });
+
+  it('surfaces a database error rather than an empty list', async () => {
+    mockSupabaseService.from.mockImplementation(() =>
+      createMockQueryChain({ data: null, error: { message: 'boom' } })
+    );
+    const repo = new HouseholdMemberRepository();
+    await expect(
+      repo.listDepartedSince('h1', '2026-08-14T00:00:00.000Z')
+    ).rejects.toThrow('Failed to list departed household members');
   });
 });

@@ -165,6 +165,9 @@ mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
     householdId: null,
   }),
 }));
+mock.module('@/src/hooks/queries/useRecentDepartures', () => ({
+  useRecentDepartures: () => ({ data: [], isSuccess: true, isLoading: false }),
+}));
 mock.module('@/src/hooks/queries/useChildren', () => ({
   useChildren: () => ({ data: [], isLoading: false }),
 }));

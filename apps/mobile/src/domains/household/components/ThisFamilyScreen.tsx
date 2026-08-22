@@ -19,8 +19,22 @@
  * No clipboard module is in this app (see `ShareTermsSheet`'s precedent) —
  * "tap to copy" the address hands it to the OS share sheet, whose first
  * action IS Copy.
+ *
+ * LEAVING sits LAST, outside every Card and under no heading. The section
+ * order above is written for one bad afternoon; leaving is not that
+ * afternoon, and a heading would put "Leaving" into the screen's outline
+ * where a person scanning for a phone number has to read past it. Until now
+ * the only "Leave household" button in the app lived on
+ * `ManageHouseholdScreen`, which is parent-only — so the member the action
+ * exists for could not reach it.
  */
+import type { Household } from '@steadily-nanny/shared-types/schemas/household.schema';
+import {
+  HOUSEHOLD_MEMBER_STATUSES,
+  HOUSEHOLD_ROLES,
+} from '@steadily-nanny/shared-types/schemas/household.schema';
 import { type Href, useRouter } from 'expo-router';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Image,
@@ -31,27 +45,172 @@ import {
   View,
 } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
-import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { SCREEN_CONTENT_STYLE, spacing } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
+import { RestrictedActionButton } from '@/src/components/custom/RestrictedActionButton';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/src/components/ui/alert-dialog';
 import { BackButton } from '@/src/components/ui/back-button';
-import { Button } from '@/src/components/ui/button';
+import { Button, buttonVariants } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { PersonAvatar } from '@/src/components/ui/person-avatar';
 import { Text } from '@/src/components/ui/text';
 import { Body, H1, H3, Small } from '@/src/components/ui/typography';
+import { HouseholdSwitcher } from '@/src/domains/household/components/HouseholdSwitcher';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { ageFromBirthDate } from '@/src/domains/setup/childAge';
 import {
   formatTimeOffRangeLabel,
   isPastTimeOff,
 } from '@/src/domains/timeOff/utils/timeOffDate';
+import { useLeaveHousehold } from '@/src/hooks/mutations/useLeaveHousehold';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholdClosures } from '@/src/hooks/queries/useHouseholdClosures';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
+import { useRunningTimeEntry } from '@/src/hooks/queries/useRunningTimeEntry';
+import { showSuccessToast } from '@/src/lib/toast';
+import { useAuthStore } from '@/src/store/auth';
 
 function callNumber(phone: string) {
   void Linking.openURL(`tel:${phone}`);
+}
+
+/**
+ * The leave action and its confirm, in their OWN component so the two hooks
+ * they need (`useRunningTimeEntry`, `useLeaveHousehold`) only run for the
+ * member who is actually offered the door — same reasoning as
+ * `PaySetupPromptCard`. The parent gates on `canLeave` below, so an owner, a
+ * candidate or a removed member never mounts either one.
+ */
+function LeaveHouseholdAction({ household }: { household: Household }) {
+  const { t } = useTranslation('household');
+  const router = useRouter();
+  const runningEntry = useRunningTimeEntry();
+  const leaveHousehold = useLeaveHousehold();
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+
+  const name = household.name ?? t('untitledDraft');
+
+  // Scoped to THIS household, both times it matters: the server scopes its
+  // 409 the same way, so a nanny clocked in at another family may still leave
+  // this one — and naming family B's clock-in on family A's screen would tell
+  // this family where else she works.
+  const clockedInHere = runningEntry.data?.household_id === household.id;
+
+  const handleConfirmLeave = async () => {
+    setIsConfirmOpen(false);
+    // `name` is resolved at render, above — which is both the capture the
+    // toast needs (this household stops being the active one the moment the
+    // mutation invalidates memberships) and the one that carries the
+    // untitled-draft fallback. Re-reading `household.name` here would take
+    // the raw column and interpolate a null into "You've left ".
+    try {
+      await leaveHousehold.mutateAsync(household.id);
+    } catch {
+      // useLeaveHousehold's onError already named the refusal (owner /
+      // clocked in) in a toast, and staying on this screen is the honest
+      // outcome — nothing changed.
+      return;
+    }
+    showSuccessToast(t('householdSettings.leftToast', { name }));
+    // Back through the ENTRY ROUTER rather than a guessed destination: after
+    // leaving, "where does this user belong" depends on whether they have
+    // another active household, a past-household-only history, or nothing at
+    // all — and `app/index.tsx` is the one place that answers that, from the
+    // memberships the mutation just invalidated. `replace`, not `push`: the
+    // household settings screen for a household you are no longer in must
+    // not be reachable with a back gesture.
+    router.replace('/' as Href);
+  };
+
+  return (
+    <View style={{ marginTop: spacing.xl }}>
+      <RestrictedActionButton
+        testID="this-family-leave-button"
+        variant="outline"
+        size="lg"
+        destructive
+        label={t('householdSettings.leaveButton', { name })}
+        reason={
+          clockedInHere
+            ? t('householdSettings.leaveClockedInError', { name })
+            : null
+        }
+        disabled={leaveHousehold.isPending}
+        onPress={() => setIsConfirmOpen(true)}
+      />
+      {/* The hint and the restriction reason occupy the same slot — the
+          button already renders the reason itself, and two sentences under
+          one disabled button is one too many. */}
+      {clockedInHere ? null : (
+        <Small
+          testID="this-family-leave-hint"
+          className="mt-2 text-center text-muted-foreground"
+        >
+          {t('householdSettings.leaveHint')}
+        </Small>
+      )}
+
+      {/* Controlled, no Trigger. AlertDialog and not BottomSheetBase because
+          there is no text input here, so no keyboard to avoid. */}
+      <AlertDialog open={isConfirmOpen} onOpenChange={setIsConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t('householdSettings.leaveConfirmTitle', { name })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('householdSettings.leaveConfirmBody', { name })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {/* What actually changes, in the order she will feel it: the
+              schedule stops, the record stays, the way back is not hers. */}
+          <View className="gap-1" testID="this-family-leave-consequences">
+            <Body className="text-muted-strong">
+              {`• ${t('householdSettings.leaveConsequenceSchedule', { name })}`}
+            </Body>
+            <Body className="text-muted-strong">
+              {`• ${t('householdSettings.leaveConsequenceRecord', { name })}`}
+            </Body>
+            <Body className="text-muted-strong">
+              {`• ${t('householdSettings.leaveConsequenceReturn', { name })}`}
+            </Body>
+          </View>
+          <Small className="text-muted-strong">
+            {t('householdSettings.leaveConfirmMoney', { name })}
+          </Small>
+          <AlertDialogFooter>
+            <AlertDialogCancel testID="this-family-leave-cancel">
+              <Text>{t('householdSettings.leaveConfirmCancel')}</Text>
+            </AlertDialogCancel>
+            {/* `className` styles the BUTTON only; the label colour goes on
+                the inner Text. A scoped `active:` on that Text would make
+                css-interop attach press handlers to it, and the Text would
+                win the touch responder — an inert confirm. See
+                alert-dialog.tsx's own note. */}
+            <AlertDialogAction
+              testID="this-family-leave-confirm"
+              className={buttonVariants({ variant: 'destructive' })}
+              onPress={() => void handleConfirmLeave()}
+            >
+              <Text className="text-destructive-foreground">
+                {t('householdSettings.leaveConfirmConfirm')}
+              </Text>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </View>
+  );
 }
 
 export function ThisFamilyScreen() {
@@ -64,12 +223,27 @@ export function ThisFamilyScreen() {
   const members = useHouseholdMembers(active.householdId);
   const children = useChildren(active.householdId);
   const closures = useHouseholdClosures(active.householdId);
+  const currentUserId = useAuthStore(s => s.session?.user?.id);
 
   // ONLY owner/parent — see the privacy-rule comment above. Never widen this
   // to render a co-carer's row.
   const activeParents = (members.data ?? []).filter(
     m => m.status === 'active' && (m.role === 'owner' || m.role === 'parent')
   );
+
+  // The viewer's OWN row, from the same list the parent rows are built from —
+  // never `useIsOnboarded().role`, which collapses owner and parent into one
+  // `SetupRole`. Both conditions are doors that would otherwise never open:
+  // a DRAFT-AUTHOR NANNY is her own household's `owner` and the server
+  // refuses her with 403 CANNOT_LEAVE_AS_OWNER, and a `candidate` (redeemed a
+  // code, terms not accepted yet) is invisible to `findActiveMembership`, so
+  // her leave 404s. `active`, not merely non-removed, for that second reason.
+  const ownMembership =
+    (members.data ?? []).find(m => m.user_id === currentUserId) ?? null;
+  const canLeave =
+    ownMembership !== null &&
+    ownMembership.status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE &&
+    ownMembership.role !== HOUSEHOLD_ROLES.OWNER;
 
   const upcomingClosures = (closures.data ?? []).filter(
     c => !isPastTimeOff(c.ends_at)
@@ -112,6 +286,11 @@ export function ThisFamilyScreen() {
           resizeMode="contain"
         />
       </View>
+
+      {/* Self-hides at one selectable household, so a one-family nanny sees
+          nothing new; a two-family nanny gets the chip that says which
+          family this screen is about. */}
+      <HouseholdSwitcher />
 
       <View testID="this-family-if-something-happens" className="mt-6 gap-2">
         <H3>{t('thisFamily.ifSomethingHappens')}</H3>
@@ -245,6 +424,10 @@ export function ThisFamilyScreen() {
           </Card>
         )}
       </View>
+
+      {household && canLeave ? (
+        <LeaveHouseholdAction household={household} />
+      ) : null}
     </ScrollView>
   );
 }

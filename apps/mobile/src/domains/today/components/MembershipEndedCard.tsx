@@ -24,6 +24,10 @@
  * keeps, because closing an entry completes a record rather than taking on an
  * obligation.
  */
+import {
+  MEMBERSHIP_ENDED_REASONS,
+  type MembershipEndedReason,
+} from '@steadily-nanny/shared-types/schemas/household.schema';
 import { type Href, useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
@@ -40,20 +44,28 @@ interface MembershipEndedCardProps {
   /** Already resolved for display — this component never derives a name. */
   familyName: string;
   /**
-   * Her employer's account was deleted, rather than her being removed.
-   * Defaults FALSE on purpose: `ended_reason` is null for any membership that
-   * ended before migration 110, and unknown must take the weaker claim.
-   * "You're no longer with them" is true either way; "they closed their
-   * account" is a fact we would be inventing about a family.
+   * WHY the membership ended, straight off `household_members.ended_reason`.
+   *
+   * Three cases, not two. This was a `closed?: boolean` until 112 added
+   * `left`, and a boolean collapsed a resignation into `titleRemoved` —
+   * "You're no longer with them", passive removal wording for the one case
+   * she chose herself.
+   *
+   * `null`/absent keeps the WEAKER claim (`titleRemoved`) on purpose:
+   * `ended_reason` is null for any membership that ended before migration
+   * 110, and unknown must not be dressed up as knowledge. "You're no longer
+   * with them" is true whichever way it happened; "they closed their account"
+   * is a fact we would be inventing about a family, and it is the one a
+   * parent would most resent being invented about them.
    */
-  closed?: boolean;
+  reason?: MembershipEndedReason | null;
   /** A time entry of hers is still running (`useOverdueClockOut().clockInAt`). */
   onClock?: boolean;
 }
 
 export function MembershipEndedCard({
   familyName,
-  closed = false,
+  reason = null,
   onClock = false,
 }: MembershipEndedCardProps) {
   const { t } = useTranslation('today');
@@ -62,9 +74,12 @@ export function MembershipEndedCard({
   // Literal `t()` per branch, never a ternary inside `t(...)` — the second key
   // is invisible to the locale-key guard that way (the ClockInBlockedCard
   // comment says the same thing, and it is the same trap).
-  const title = closed
-    ? t('membershipEnded.title', { familyName })
-    : t('membershipEnded.titleRemoved', { familyName });
+  const title =
+    reason === MEMBERSHIP_ENDED_REASONS.HOUSEHOLD_CLOSED
+      ? t('membershipEnded.title', { familyName })
+      : reason === MEMBERSHIP_ENDED_REASONS.LEFT
+        ? t('membershipEnded.titleLeft', { familyName })
+        : t('membershipEnded.titleRemoved', { familyName });
   const body = onClock
     ? t('membershipEnded.bodyOnClock')
     : t('membershipEnded.body');

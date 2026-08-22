@@ -71,6 +71,7 @@ import { View } from 'react-native';
 import { AnimatedPressable } from '@/lib/animations';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { cn } from '@/lib/utils';
+import { RestrictedActionButton } from '@/src/components/custom/RestrictedActionButton';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -735,17 +736,27 @@ export function ManageHouseholdScreen() {
       {canLeave ? (
         <View className="gap-2" testID="household-leave-section">
           <FieldLabel>{t('householdSettings.leaveSectionTitle')}</FieldLabel>
-          <AnimatedPressable
+          {/* The app's one treatment for a destructive action that must stay
+              visible: a real Button, so it gets a press state, an
+              `accessibilityRole` and a guaranteed 44pt target — none of which
+              the hand-rolled bordered pill this replaces had. `reason` is
+              always null here: a parent is never clocked in, and the owner
+              (the only other refusal) never sees this block at all.
+
+              No `accessibilityLabel`: the child Text supplies it, and a
+              literal one would have rendered `{{name}}` uninterpolated. */}
+          <RestrictedActionButton
             testID="household-leave-button"
-            accessibilityLabel={t('householdSettings.leaveButton')}
+            variant="outline"
+            size="lg"
+            destructive
+            label={t('householdSettings.leaveButton', {
+              name: household.name,
+            })}
+            reason={null}
+            disabled={leaveHousehold.isPending}
             onPress={() => setIsLeaveConfirmOpen(true)}
-          >
-            <View className="rounded-row border border-border bg-background px-4 py-3">
-              <Small className="text-error-inline-text">
-                {t('householdSettings.leaveButton')}
-              </Small>
-            </View>
-          </AnimatedPressable>
+          />
           <Small className="text-muted-foreground">
             {t('householdSettings.leaveHint')}
           </Small>
@@ -767,9 +778,33 @@ export function ManageHouseholdScreen() {
               })}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {t('householdSettings.leaveConfirmBody')}
+              {t('householdSettings.leaveConfirmBody', {
+                name: household.name,
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {/* What actually changes, in the order it will be felt: the
+              schedule stops, the record stays, the way back is not theirs. */}
+          <View className="gap-1" testID="household-leave-consequences">
+            <Body className="text-muted-strong">
+              {`• ${t('householdSettings.leaveConsequenceSchedule', {
+                name: household.name,
+              })}`}
+            </Body>
+            <Body className="text-muted-strong">
+              {`• ${t('householdSettings.leaveConsequenceRecord', {
+                name: household.name,
+              })}`}
+            </Body>
+            <Body className="text-muted-strong">
+              {`• ${t('householdSettings.leaveConsequenceReturn', {
+                name: household.name,
+              })}`}
+            </Body>
+          </View>
+          <Small className="text-muted-strong">
+            {t('householdSettings.leaveConfirmMoney', { name: household.name })}
+          </Small>
           <AlertDialogFooter>
             <AlertDialogCancel testID="household-leave-cancel">
               <Text>{t('householdSettings.leaveConfirmCancel')}</Text>

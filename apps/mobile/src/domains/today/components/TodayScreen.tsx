@@ -41,7 +41,6 @@
 import {
   HOUSEHOLD_MEMBER_STATUSES,
   HOUSEHOLD_STATES,
-  MEMBERSHIP_ENDED_REASONS,
 } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { TIMESHEET_STATUSES } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { type Href, useRouter } from 'expo-router';
@@ -93,6 +92,7 @@ import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useHouseholdTimesheets } from '@/src/hooks/queries/useHouseholdTimesheets';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { useRecentDepartures } from '@/src/hooks/queries/useRecentDepartures';
 import { localDateInZone } from '@/src/lib/localDate';
 import { useAuthStore } from '@/src/store/auth';
 import { useTodayCardDismissalStore } from '@/src/store/todayCardDismissalStore';
@@ -116,6 +116,7 @@ import { FirstClockInMomentCard } from './FirstClockInMomentCard';
 import { FirstWeekApprovedMomentCard } from './FirstWeekApprovedMomentCard';
 import { HandoffChipsCard } from './HandoffChipsCard';
 import { InviteWaitingCard } from './InviteWaitingCard';
+import { MemberLeftCard } from './MemberLeftCard';
 import { MembershipEndedCard } from './MembershipEndedCard';
 import { NannyJoinedMomentCard } from './NannyJoinedMomentCard';
 import { PinnedSlot } from './PinnedSlot';
@@ -130,6 +131,16 @@ import { WeekApprovedCard } from './WeekApprovedCard';
  * household she has worked in for months.
  */
 const JOINED_CARD_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * How recently someone must have left for the family to still be told about
+ * it. The same week as `JOINED_CARD_MAX_AGE_MS`, and for the same reason: the
+ * dismissal store is empty on every install, so without a clock a departure
+ * from last spring is news on a new device. `ended_at` is null on every row
+ * that predates migration 112 — treat that as "too old to report", never as
+ * "just now" (the schema comment says so too).
+ */
+const DEPARTURE_CARD_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 const FEED_STYLE = {
   paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
@@ -377,6 +388,31 @@ export function TodayScreen() {
       member.role === 'nanny' &&
       member.status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE
   );
+  // 112 — the parent-side half of "somebody left". PARENT-ONLY, and the
+  // `undefined` is doing the work: the route is parent-only server-side, so
+  // gating only the render would still fire a guaranteed 403 on every carer's
+  // launch.
+  const departures = useRecentDepartures(
+    isParentView ? household?.id : undefined
+  );
+  // Three gates, and the query having SETTLED is the first of them. Reading
+  // `data ?? []` while the request is in flight renders a card whose
+  // dismissal key can be spent before the answer arrives — the same trap the
+  // null-key discipline below exists for.
+  const recentDepartures =
+    isParentView && departures.isSuccess
+      ? (departures.data ?? []).filter(member => {
+          // `ended_by` is read for exactly one purpose: the person who acted is
+          // never told about their own action. It is never rendered as
+          // "X removed Y" (the schema comment says so).
+          if (member.ended_by && member.ended_by === myUserId) return false;
+          if (!member.ended_at) return false;
+          return (
+            Date.now() - new Date(member.ended_at).getTime() <
+            DEPARTURE_CARD_MAX_AGE_MS
+          );
+        })
+      : [];
   const parentJoinedKey =
     isParentView &&
     household?.state === HOUSEHOLD_STATES.LIVE &&
@@ -524,10 +560,7 @@ export function TodayScreen() {
         return (
           <MembershipEndedCard
             familyName={household.name ?? t('household:untitledDraft')}
-            closed={
-              onboarding.endedReason ===
-              MEMBERSHIP_ENDED_REASONS.HOUSEHOLD_CLOSED
-            }
+            reason={onboarding.endedReason}
           />
         );
       case 'pendingOffer':
@@ -647,10 +680,7 @@ export function TodayScreen() {
             {isPastMember && clockInAt !== null ? (
               <MembershipEndedCard
                 familyName={household.name ?? t('household:untitledDraft')}
-                closed={
-                  onboarding.endedReason ===
-                  MEMBERSHIP_ENDED_REASONS.HOUSEHOLD_CLOSED
-                }
+                reason={onboarding.endedReason}
                 onClock
               />
             ) : null}
@@ -680,6 +710,19 @@ export function TodayScreen() {
                 momentKey={parentJoinedKey}
               />
             ) : null}
+            {/* 112 — one note per person who left, dismissed one at a time.
+                A plain card, not a moment: leaving is not on Table B's
+                moment list, and the hole it leaves in tomorrow's cover
+                belongs to the coverage surfaces, not to this card. */}
+            {recentDepartures.map(member => (
+              <MemberLeftCard
+                key={member.id}
+                name={resolveCarerName(member, tSchedule('detail.someone'))}
+                reason={member.ended_reason ?? null}
+                memberRole={member.role}
+                dismissKey={`memberLeft:${household.id}:${member.user_id}`}
+              />
+            ))}
             {showFirstClockInMoment ? (
               <FirstClockInMomentCard
                 family={household.name ?? tCommon('theFamily')}

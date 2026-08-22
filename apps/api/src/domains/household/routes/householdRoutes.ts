@@ -98,6 +98,20 @@ router.get(
   asyncHandler(HouseholdController.listMembers)
 );
 
+// Who recently left — parents only (role check in the query service).
+//
+// Registered BEFORE `/:householdId/members/:memberId` below, on the same
+// literal-before-param principle the `/members/leave` route documents:
+// 'departed' must never be read as a member id. That ordering is the ONLY
+// thing holding it — the sibling route being a PATCH is a coincidence of
+// verbs, and the day it gains a GET, a route registered after it would 400
+// this request on the uuid check instead of answering it.
+router.get(
+  '/:householdId/members/departed',
+  ...authWithOwnership(HouseholdIdParamSchema, householdOwnership),
+  asyncHandler(HouseholdController.listDepartedMembers)
+);
+
 // The household's holiday calendar (080). Read: any active member — what the
 // family observes is a term of the nanny's employment. Write: parents only
 // (role check in the command service). A PUT, not a PATCH, because the body is

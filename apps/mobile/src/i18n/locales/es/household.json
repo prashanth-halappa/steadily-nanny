@@ -176,15 +176,20 @@
     "removeMemberConfirmConfirm": "Eliminar",
     "removeMemberSuccessToast": "{{name}} eliminado del hogar",
     "leaveSectionTitle": "Salir",
-    "leaveButton": "Salir del hogar",
+    "leaveButton": "Salir de {{name}}",
     "leaveHint": "Solo un padre o madre de este hogar puede volver a añadirte.",
     "leaveConfirmTitle": "¿Salir de {{name}}?",
-    "leaveConfirmBody": "Perderás el acceso al horario, las horas y el pago de este hogar. Las horas que ya has trabajado siguen en su registro, y tendrían que volver a invitarte.",
+    "leaveConfirmBody": "Esto surte efecto ahora, y se avisa a {{name}}.",
+    "leaveConsequenceSchedule": "No queda nada programado para ti con {{name}}.",
+    "leaveConsequenceRecord": "Tus horas, tus hojas de horas y tu pago de {{name}} siguen aquí para consultarlos. Lo que no hayas fichado no se puede añadir después.",
+    "leaveConsequenceReturn": "Solo un padre o madre de {{name}} puede volver a invitarte.",
+    "leaveConfirmMoney": "Steadily registra el pago, nunca lo mueve. Lo que quede por saldar es entre tú y {{name}}.",
     "leaveConfirmCancel": "Quedarme",
     "leaveConfirmConfirm": "Salir del hogar",
     "leftToast": "Has salido de {{name}}",
     "leaveOwnerError": "Creaste este hogar, así que no puedes salir: alguien tiene que poder gestionarlo.",
-    "leaveClockedInError": "Tienes el turno abierto. Fíchalo primero y luego sal."
+    "leaveClockedInError": "Tienes el turno abierto con {{name}}. Fíchalo primero y luego sal.",
+    "leaveAlreadyLeftError": "Ya has salido de {{name}}."
   },
   "closures": {
     "manageTitle": "Estamos de viaje",

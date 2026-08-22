@@ -34,9 +34,24 @@ import type {
   TermsPreviewSource,
 } from '../types';
 import {
+  assertHouseholdWriteRole,
   HOUSEHOLD_WRITE_ROLES,
   isDraftAuthor,
 } from '../utils/assertHouseholdRole';
+
+/**
+ * How far back the parent-side departure card looks, in days.
+ *
+ * THE SERVICE OWNS THIS, not the caller and not the client. `ended_at` is a
+ * fact about a person leaving a family, and "how recent counts as news" is a
+ * product decision that belongs next to the gate that decides who may hear it
+ * at all — not in a query string any caller can widen to a year and turn the
+ * card into a permanent roster of everyone who ever left. The override
+ * parameter exists for tests and for a future second consumer with a
+ * different window; nothing on the wire can set it.
+ */
+const DEPARTURE_WINDOW_DAYS = 7;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export class HouseholdQueryService {
   constructor(
@@ -176,6 +191,62 @@ export class HouseholdQueryService {
         ? member
         : { ...member, profile_phone: null }
     );
+  }
+
+  /**
+   * Who recently left this household — the parent-side departure card.
+   *
+   * PARENTS ONLY, and this gate is the whole reason the method exists here
+   * rather than as a filter on the roster read. It is the server half of
+   * `ThisFamilyScreen`'s privacy rule (apps/mobile/src/domains/household/
+   * components/ThisFamilyScreen.tsx:13-17): one carer is never told who else
+   * works for this family, past or present. A list of departures IS that
+   * fact, and a client-side filter is not a gate — the payload would already
+   * have crossed the wire to her device.
+   *
+   * A non-member gets the domain's opaque `HouseholdNotFoundError` from
+   * `getMembership`, same as everywhere: "missing" and "not yours" must stay
+   * indistinguishable. A carer who IS a member gets `NotAHouseholdParentError`
+   * (403), matching `listInvites`, the closest sibling — she already knows she
+   * belongs here, so the refusal discloses nothing, and the body carries no
+   * departure facts.
+   *
+   * THE ACTOR IS EXCLUDED. 112's `ended_by` column exists for exactly this:
+   * telling a parent that they removed someone is noise, and the card is for
+   * the OTHER parent — the one who did not act and would otherwise learn
+   * their co-parent's decision from an empty seat. `null` (every row that
+   * predates 112, or an actor whose profile is gone) is nobody, never the
+   * caller, so those rows stay.
+   *
+   * The exclusion only ever bites on the REMOVAL path. On a leave, `ended_by`
+   * is the leaver, who is by then a non-member and is refused by
+   * `getMembership` two lines up — she never reaches the filter. And because
+   * `ended_by` is `on delete set null` (112), a removal stops being excluded
+   * once the parent who made it deletes their account. That is the right
+   * degradation, not a bug: the actor is gone, so nobody is being told about
+   * their own action.
+   *
+   * The window is a rolling `windowDays * 24h` back from `now`, not a
+   * calendar boundary: there is no household timezone in play here and a
+   * departure is an instant, not a date.
+   */
+  async listDepartedMembers(
+    userId: string,
+    householdId: string,
+    windowDays: number = DEPARTURE_WINDOW_DAYS,
+    now: () => Date = () => new Date()
+  ): Promise<HouseholdMember[]> {
+    const membership = await this.getMembership(userId, householdId);
+    assertHouseholdWriteRole(householdId, membership);
+
+    const since = new Date(
+      now().getTime() - windowDays * MS_PER_DAY
+    ).toISOString();
+    const departed = await this.memberRepo.listDepartedSince(
+      householdId,
+      since
+    );
+    return departed.filter(member => member.ended_by !== userId);
   }
 
   /**

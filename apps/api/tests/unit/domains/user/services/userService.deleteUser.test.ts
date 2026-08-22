@@ -37,7 +37,6 @@ interface Row {
 let memberships: Row[] = [];
 let households: Row[] = [];
 let rosters: Record<string, Row[]> = {};
-let acceptedPatterns: Record<string, Row[]> = {};
 let runningEntry: Row | null = null;
 let departingProfile: Row | null = null;
 let failures: Record<string, boolean> = {};
@@ -222,37 +221,21 @@ beforeAll(async () => {
     })
   );
 
+  // The status flip and the shift cancellation are no longer this service's
+  // code — `schedulePatternCommandService.endAcceptedPatternsForCarer` owns
+  // that loop for every departure path, and
+  // `schedulePatternEndForCarer.test.ts` is where its behaviour is pinned.
+  // What is still deleteUser's to get right is WHO it runs the teardown for.
   mock.module(
-    '../../../../../src/domains/schedule/repositories/schedulePatternRepository',
+    '../../../../../src/domains/schedule/services/schedulePatternCommandService',
     () => ({
-      SchedulePatternRepository: class {
-        async listAcceptedByHouseholdAndCarer(
-          householdId: string,
-          carerId: string
-        ) {
-          record('patterns.list', householdId, carerId);
-          // Carer-scoped, like the real query: a fixture row with no
-          // `carer_id` belongs to whoever asks (the pre-existing tests).
-          return (acceptedPatterns[householdId] ?? []).filter(
-            row => row.carer_id === undefined || row.carer_id === carerId
-          );
-        }
-        async update(id: string, patch: Row) {
-          record('patterns.update', id, patch);
-          return { id, ...patch };
-        }
-      },
-    })
-  );
-
-  mock.module(
-    '../../../../../src/domains/schedule/services/scheduleMaterialisationService',
-    () => ({
-      scheduleMaterialisationService: {
-        cancelFutureShiftsForEndedPattern: mock(async (patternId: string) => {
-          record('patterns.cancelFuture', patternId);
-          return 0;
-        }),
+      schedulePatternCommandService: {
+        endAcceptedPatternsForCarer: mock(
+          async (householdId: string, carerId: string) => {
+            record('patterns.endForCarer', householdId, carerId);
+            return [];
+          }
+        ),
       },
     })
   );
@@ -294,7 +277,6 @@ beforeEach(() => {
   memberships = [member()];
   households = [{ id: 'h1', timezone: 'Europe/London' }];
   rosters = {};
-  acceptedPatterns = {};
   runningEntry = null;
   departingProfile = { user_id: 'u1', name: 'Sam Okonkwo' };
   failures = {};
@@ -397,22 +379,13 @@ describe('UserService.deleteUser — open terms proposals (F8)', () => {
 });
 
 describe('UserService.deleteUser — schedule patterns', () => {
-  it('ends every accepted pattern and withdraws the shifts it already made', async () => {
-    acceptedPatterns = { h1: [{ id: 'p1' }, { id: 'p2' }] };
-
+  // BOTH ids, exactly once. She may work for two families, and running the
+  // teardown for the household alone would end the usual week she still
+  // works under somewhere else.
+  it('hands the teardown to the schedule service, scoped to this carer in this household', async () => {
     await UserService.deleteUser('u1');
 
-    expect(argsFor('patterns.update')).toEqual([
-      ['p1', { status: 'ended' }],
-      ['p2', { status: 'ended' }],
-    ]);
-    expect(argsFor('patterns.cancelFuture')).toEqual([['p1'], ['p2']]);
-  });
-
-  it('asks only for this carer, in this household', async () => {
-    await UserService.deleteUser('u1');
-
-    expect(argsFor('patterns.list')).toEqual([['h1', 'u1']]);
+    expect(argsFor('patterns.endForCarer')).toEqual([['h1', 'u1']]);
   });
 });
 
@@ -668,17 +641,11 @@ describe('UserService.deleteUser — the household loses its last writer', () =>
 
   it('ends her accepted pattern and cancels the ghost shifts it was still making', async () => {
     ownerLeavesNannyStays();
-    acceptedPatterns = { h1: [{ id: 'p-nanny', carer_id: 'u-nanny' }] };
 
     await UserService.deleteUser('u1');
 
-    // `patterns.list` is asked for HER, not for the parent who owned nothing.
-    expect(argsFor('patterns.list')).toContainEqual(['h1', 'u-nanny']);
-    expect(argsFor('patterns.update')).toContainEqual([
-      'p-nanny',
-      { status: 'ended' },
-    ]);
-    expect(argsFor('patterns.cancelFuture')).toContainEqual(['p-nanny']);
+    // The teardown is run for HER, not only for the parent who owned nothing.
+    expect(argsFor('patterns.endForCarer')).toContainEqual(['h1', 'u-nanny']);
   });
 
   it('busts her cached ownership relationships, which otherwise stand for an hour', async () => {
@@ -738,8 +705,6 @@ describe('UserService.deleteUser — the household loses its last writer', () =>
         }),
       ],
     };
-    acceptedPatterns = { h1: [{ id: 'p-nanny', carer_id: 'u-nanny' }] };
-
     await UserService.deleteUser('u1');
 
     expect(argsFor('members.update')).toEqual([
@@ -751,7 +716,10 @@ describe('UserService.deleteUser — the household loses its last writer', () =>
       'u-nanny',
       expect.any(String),
     ]);
-    expect(argsFor('patterns.update')).toEqual([]);
+    expect(argsFor('patterns.endForCarer')).not.toContainEqual([
+      'h1',
+      'u-nanny',
+    ]);
     expect(argsFor('proposals.withdrawOpenForCarer')).toEqual([['h1', 'u1']]);
   });
 
@@ -849,10 +817,21 @@ describe('UserService.deleteUser — the notice (Phase 2)', () => {
 
     await UserService.deleteUser('u1');
 
-    expect(argsFor('members.update')).toContainEqual([
-      'm-nanny',
-      { ended_reason: 'household_closed' },
-    ]);
+    // 112 stamps three facts, not one. `ended_at` is a real clock this path
+    // does not inject, so it is asserted as "an ISO instant" rather than a
+    // value — the point of the assertion is that it is written at all, and
+    // that `ended_by` names the owner whose deletion closed the household.
+    const patch = argsFor('members.update').find(
+      ([id]) => id === 'm-nanny'
+    )?.[1] as
+      | { ended_reason?: string; ended_at?: string; ended_by?: string }
+      | undefined;
+    expect(patch).toMatchObject({
+      ended_reason: 'household_closed',
+      ended_by: 'u1',
+    });
+    expect(typeof patch?.ended_at).toBe('string');
+    expect(Number.isNaN(Date.parse(patch?.ended_at ?? ''))).toBe(false);
   });
 
   it('tells the NANNY nothing when a co-parent remains — her job is unchanged', async () => {

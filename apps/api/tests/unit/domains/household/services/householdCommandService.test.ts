@@ -277,17 +277,22 @@ const stubUsers: any = { ensureProfile: mock(async () => {}) };
 const stubPtoLedger: any = { listForCarerYear: mock(async () => []) };
 
 /**
- * The removal-side pattern teardown, stubbed. Empty list by default: every
- * test that is not ABOUT the pattern still has to construct past it, or it
- * reaches the real repository and a real Supabase call.
+ * The departure-side pattern teardown, stubbed. Empty list of vacated days by
+ * default: every test that is not ABOUT the teardown still has to construct
+ * past it, or the real default lazily imports the live command service and
+ * reaches a real Supabase call.
  */
 const stubPatterns: any = {
-  listAcceptedByHouseholdAndCarer: mock(async () => []),
-  update: mock(async () => ({ id: 'p1', status: 'ended' })),
+  endAcceptedPatternsForCarer: mock(async () => []),
 };
-const stubMaterialisation: any = {
-  cancelFutureShiftsForEndedPattern: mock(async () => 0),
-};
+
+/**
+ * Uncovered-care detection, stubbed for the same reason. Void by design — it
+ * is fire-and-forget in production and swallows its own failures.
+ */
+const stubDetectUncovered: any = mock(
+  (_args: Record<string, unknown>) => undefined
+);
 
 /**
  * Same hazard as `stubPtoLedger`, on the create path: `create` seeds the
@@ -1511,7 +1516,7 @@ describe('HouseholdCommandService.removeMember', () => {
       stubProposals,
       undefined,
       stubPatterns,
-      stubMaterialisation
+      stubDetectUncovered
     );
 
     const removed = await svc.removeMember('u1', 'h1', 'm-target');
@@ -1538,7 +1543,7 @@ describe('HouseholdCommandService.removeMember', () => {
       stubProposals,
       undefined,
       stubPatterns,
-      stubMaterialisation
+      stubDetectUncovered
     );
 
     await expect(
@@ -1567,7 +1572,7 @@ describe('HouseholdCommandService.removeMember', () => {
       stubProposals,
       undefined,
       stubPatterns,
-      stubMaterialisation
+      stubDetectUncovered
     );
 
     await expect(
@@ -1594,7 +1599,7 @@ describe('HouseholdCommandService.removeMember', () => {
       stubProposals,
       undefined,
       stubPatterns,
-      stubMaterialisation
+      stubDetectUncovered
     );
 
     await expect(
@@ -1630,7 +1635,7 @@ describe('HouseholdCommandService.removeMember', () => {
       stubProposals,
       undefined,
       stubPatterns,
-      stubMaterialisation
+      stubDetectUncovered
     );
 
     await expect(
@@ -1662,7 +1667,7 @@ describe('HouseholdCommandService.removeMember', () => {
       stubProposals,
       undefined,
       stubPatterns,
-      stubMaterialisation
+      stubDetectUncovered
     );
 
     const removed = await svc.removeMember('u1', 'h1', 'm-target');
@@ -1693,7 +1698,7 @@ describe('HouseholdCommandService.removeMember', () => {
       stubProposals,
       undefined,
       stubPatterns,
-      stubMaterialisation
+      stubDetectUncovered
     );
 
     await svc.removeMember('u1', 'h1', 'm-target');
@@ -1723,7 +1728,7 @@ describe('HouseholdCommandService.removeMember', () => {
       stubProposals,
       undefined,
       stubPatterns,
-      stubMaterialisation
+      stubDetectUncovered
     );
 
     await expect(
@@ -1748,7 +1753,7 @@ describe('HouseholdCommandService.removeMember', () => {
       stubProposals,
       undefined,
       stubPatterns,
-      stubMaterialisation
+      stubDetectUncovered
     );
 
     await expect(svc.removeMember('u1', 'h1', 'm-gone')).rejects.toBeInstanceOf(
@@ -1775,7 +1780,7 @@ describe('HouseholdCommandService.removeMember', () => {
       stubProposals,
       undefined,
       stubPatterns,
-      stubMaterialisation
+      stubDetectUncovered
     );
 
     await expect(
@@ -1885,22 +1890,20 @@ describe('HouseholdCommandService.revokeInvite', () => {
 });
 
 describe('HouseholdCommandService.removeMember — pay arrangement (065)', () => {
-  function makePatternRepo(overrides: Record<string, unknown> = {}): any {
+  // The teardown is ONE injected method now, not a repository plus a
+  // materialisation service driven from here. What it does internally — both
+  // ids to the read, one `now` across the sweep, a throw leaving nothing
+  // changed — is pinned in schedulePatternEndForCarer.test.ts, where the
+  // method lives. What these tests owe is that removal DELEGATES to it, with
+  // the right arguments, at the right point in the sequence.
+  function makeSchedulePatterns(cancelledDates: string[] = []): any {
     return {
-      listAcceptedByHouseholdAndCarer: mock(async () => []),
-      update: mock(async (id: string, patch: Record<string, unknown>) => ({
-        id,
-        ...patch,
-      })),
-      ...overrides,
+      endAcceptedPatternsForCarer: mock(async () => cancelledDates),
     };
   }
 
-  function makeMaterialisation(overrides: Record<string, unknown> = {}): any {
-    return {
-      cancelFutureShiftsForEndedPattern: mock(async () => 0),
-      ...overrides,
-    };
+  function makeDetectUncovered(): any {
+    return mock((_args: Record<string, unknown>) => undefined);
   }
 
   function svcWith(
@@ -1908,8 +1911,8 @@ describe('HouseholdCommandService.removeMember — pay arrangement (065)', () =>
     payArrangements: any,
     memberRepo = makeMemberRepo({ findById: mock(async () => targetMember()) }),
     proposals: any = stubProposals,
-    patterns: any = makePatternRepo(),
-    materialisation: any = makeMaterialisation()
+    schedulePatterns: any = makeSchedulePatterns(),
+    detectUncovered: any = makeDetectUncovered()
   ) {
     return new HouseholdCommandService(
       householdRepo,
@@ -1924,8 +1927,8 @@ describe('HouseholdCommandService.removeMember — pay arrangement (065)', () =>
       undefined,
       proposals,
       undefined,
-      patterns,
-      materialisation
+      schedulePatterns,
+      detectUncovered
     );
   }
 
@@ -2118,86 +2121,92 @@ describe('HouseholdCommandService.removeMember — pay arrangement (065)', () =>
   // `accepted` pattern keeps manufacturing confirmed shifts to the 84-day
   // horizon — and `reminderJob` keeps pushing "you have a shift tomorrow" at
   // a woman who no longer works there.
-  it('ends her accepted pattern and cancels the shifts it already made', async () => {
-    const patterns = makePatternRepo({
-      listAcceptedByHouseholdAndCarer: mock(async () => [
-        { id: 'p1' },
-        { id: 'p2' },
-      ]),
-    });
-    const materialisation = makeMaterialisation();
+  // BOTH ids and the removal's OWN instant. She works for two families:
+  // ending the pattern she still works under would be catastrophic, and
+  // passing both ids is the only thing standing between here and there. The
+  // instant matters because it is what draws the line between a shift already
+  // worked (or half-worked today) and one that was never going to happen — a
+  // fresh clock inside the teardown would move it.
+  it('ends her accepted patterns for THIS household and carer, at the removal instant', async () => {
+    const schedulePatterns = makeSchedulePatterns();
     const svc = svcWith(
       makeHouseholdRepo(),
       makePayArrangements(),
       undefined,
       undefined,
-      patterns,
-      materialisation
+      schedulePatterns
     );
 
     await svc.removeMember('u1', 'h1', 'm-target', AT_NOON_UTC);
 
-    expect(patterns.update).toHaveBeenCalledWith('p1', { status: 'ended' });
-    expect(patterns.update).toHaveBeenCalledWith('p2', { status: 'ended' });
-    expect(
-      materialisation.cancelFutureShiftsForEndedPattern
-    ).toHaveBeenCalledTimes(2);
-  });
-
-  // She works for two families. Ending the pattern she still works under
-  // would be catastrophic, and the only thing standing between here and there
-  // is that BOTH ids are passed to the read.
-  it('asks only for THIS household and THIS carer, never her other family', async () => {
-    const patterns = makePatternRepo();
-    const svc = svcWith(
-      makeHouseholdRepo(),
-      makePayArrangements(),
-      undefined,
-      undefined,
-      patterns
-    );
-
-    await svc.removeMember('u1', 'h1', 'm-target', AT_NOON_UTC);
-
-    expect(patterns.listAcceptedByHouseholdAndCarer).toHaveBeenCalledWith(
+    expect(schedulePatterns.endAcceptedPatternsForCarer).toHaveBeenCalledWith(
       'h1',
-      'u-nanny'
+      'u-nanny',
+      AT_NOON_UTC()
     );
-    expect(patterns.listAcceptedByHouseholdAndCarer).toHaveBeenCalledTimes(1);
+    expect(schedulePatterns.endAcceptedPatternsForCarer).toHaveBeenCalledTimes(
+      1
+    );
   });
 
-  // Only shifts AFTER the removal instant go. Yesterday's are worked history
-  // and today's may be half-done — `cancelFutureShiftsForEndedPattern` draws
-  // that line from the instant it is handed, so the instant has to be the
-  // removal's own `now`, not a fresh clock inside the cancel.
-  it('cancels from the removal instant, so past and in-progress shifts stand', async () => {
-    const patterns = makePatternRepo({
-      listAcceptedByHouseholdAndCarer: mock(async () => [{ id: 'p1' }]),
-    });
-    const materialisation = makeMaterialisation();
+  // The other half of the ghost-shift defect, and the one that reaches the
+  // FAMILY. Cancelling her shifts empties days the children still need
+  // covering, but membership change is not an uncovered-care trigger and
+  // detection counts any shift with a carer_id as covered — so without this
+  // the day reads as covered until the 03:00 sweep and the parents go to bed
+  // believing they have childcare.
+  it('re-runs uncovered-care detection for exactly the days it emptied', async () => {
+    const schedulePatterns = makeSchedulePatterns(['2026-08-25', '2026-08-26']);
+    const detectUncovered = makeDetectUncovered();
     const svc = svcWith(
       makeHouseholdRepo(),
       makePayArrangements(),
       undefined,
       undefined,
-      patterns,
-      materialisation
+      schedulePatterns,
+      detectUncovered
     );
 
     await svc.removeMember('u1', 'h1', 'm-target', AT_NOON_UTC);
 
-    expect(
-      materialisation.cancelFutureShiftsForEndedPattern
-    ).toHaveBeenCalledWith('p1', AT_NOON_UTC());
+    expect(detectUncovered).toHaveBeenCalledTimes(2);
+    expect(detectUncovered).toHaveBeenCalledWith({
+      householdId: 'h1',
+      localDate: '2026-08-25',
+      cause: 'cancelled',
+      actorId: 'u1',
+    });
+    expect(detectUncovered).toHaveBeenCalledWith({
+      householdId: 'h1',
+      localDate: '2026-08-26',
+      cause: 'cancelled',
+      actorId: 'u1',
+    });
+  });
+
+  it('raises nothing when the teardown emptied no days', async () => {
+    const detectUncovered = makeDetectUncovered();
+    const svc = svcWith(
+      makeHouseholdRepo(),
+      makePayArrangements(),
+      undefined,
+      undefined,
+      makeSchedulePatterns([]),
+      detectUncovered
+    );
+
+    await svc.removeMember('u1', 'h1', 'm-target', AT_NOON_UTC);
+
+    expect(detectUncovered).not.toHaveBeenCalled();
   });
 
   // Same discipline as the withdraw and the end-date above it.
   it('a pattern-teardown failure refuses the whole removal, membership unchanged', async () => {
-    const patterns = makePatternRepo({
-      listAcceptedByHouseholdAndCarer: mock(async () => {
+    const patterns = {
+      endAcceptedPatternsForCarer: mock(async () => {
         throw new DatabaseError('patterns boom', 'DATABASE_ERROR');
       }),
-    });
+    };
     const memberRepo = makeMemberRepo({
       findById: mock(async () => targetMember()),
     });
@@ -2217,13 +2226,12 @@ describe('HouseholdCommandService.removeMember — pay arrangement (065)', () =>
 
   it('ends the pattern BEFORE the membership flip, like everything else that can strand', async () => {
     const order: string[] = [];
-    const patterns = makePatternRepo({
-      listAcceptedByHouseholdAndCarer: mock(async () => [{ id: 'p1' }]),
-      update: mock(async () => {
+    const patterns = {
+      endAcceptedPatternsForCarer: mock(async () => {
         order.push('end-pattern');
-        return { id: 'p1', status: 'ended' };
+        return ['2026-08-25'];
       }),
-    });
+    };
     const memberRepo = makeMemberRepo({
       findById: mock(async () => targetMember()),
       removeMembership: mock(async (id: string) => {
@@ -2255,6 +2263,19 @@ describe('HouseholdCommandService.removeMember — pay arrangement (065)', () =>
  * out mid-shift on yourself either).
  */
 describe('HouseholdCommandService.leave', () => {
+  // The last two MUST be injected, even where a test does not assert on them:
+  // undefined falls through to the real defaults, and the schedule one lazily
+  // imports the live command service and reaches a database.
+  function makeSchedulePatterns(cancelledDates: string[] = []): any {
+    return {
+      endAcceptedPatternsForCarer: mock(async () => cancelledDates),
+    };
+  }
+
+  function makeDetectUncovered(): any {
+    return mock((_args: Record<string, unknown>) => undefined);
+  }
+
   function svcWith(overrides: {
     role?: HouseholdMember['role'];
     householdRepo?: any;
@@ -2263,6 +2284,8 @@ describe('HouseholdCommandService.leave', () => {
     timeEntries?: any;
     payArrangements?: any;
     proposals?: any;
+    schedulePatterns?: any;
+    detectUncovered?: any;
   }) {
     return new HouseholdCommandService(
       overrides.householdRepo ?? makeHouseholdRepo(),
@@ -2275,7 +2298,10 @@ describe('HouseholdCommandService.leave', () => {
       stubPtoLedger,
       undefined,
       undefined,
-      overrides.proposals ?? stubProposals
+      overrides.proposals ?? stubProposals,
+      undefined,
+      overrides.schedulePatterns ?? makeSchedulePatterns(),
+      overrides.detectUncovered ?? makeDetectUncovered()
     );
   }
 
@@ -2535,6 +2561,137 @@ describe('HouseholdCommandService.leave', () => {
 
     await expect(svc.leave('u1', 'h1', AT_NOON_UTC)).rejects.toThrow('boom');
     expect(memberRepo.removeMembership).not.toHaveBeenCalled();
+  });
+
+  // THE defect this whole feature had to fix before the button could exist.
+  // `leave` did not end her patterns, and `listAccepted` — the read
+  // `scheduleHorizonJob` iterates — has no membership filter. She left, and
+  // the job kept manufacturing her shifts to the horizon while `reminderJob`
+  // kept pushing "you have a shift tomorrow" at her.
+  it('ends the leaving NANNY accepted patterns, for THIS household and carer, at the leave instant', async () => {
+    const schedulePatterns = makeSchedulePatterns();
+    const svc = svcWith({ schedulePatterns });
+
+    await svc.leave('u1', 'h1', AT_NOON_UTC);
+
+    expect(schedulePatterns.endAcceptedPatternsForCarer).toHaveBeenCalledWith(
+      'h1',
+      'u1',
+      AT_NOON_UTC()
+    );
+  });
+
+  // A co-parent or helper holds no pattern — neither can be a shift's carer —
+  // so the teardown is not merely unnecessary for them, it has nothing to act
+  // on. Same NANNY-only gate as the withdraw and the end-date above.
+  it('leaves patterns alone for a co-parent or helper, who hold none', async () => {
+    for (const role of ['parent', 'helper'] as const) {
+      const schedulePatterns = makeSchedulePatterns();
+      const svc = svcWith({ role, schedulePatterns });
+
+      await svc.leave('u1', 'h1', AT_NOON_UTC);
+
+      expect(
+        schedulePatterns.endAcceptedPatternsForCarer
+      ).not.toHaveBeenCalled();
+    }
+  });
+
+  it('ends the patterns BEFORE flipping the membership — the ordering that cannot strand', async () => {
+    const order: string[] = [];
+    const schedulePatterns = {
+      endAcceptedPatternsForCarer: mock(async () => {
+        order.push('end-patterns');
+        return [];
+      }),
+    };
+    const memberRepo = makeMemberRepo({
+      removeMembership: mock(async (id: string) => {
+        order.push('remove-membership');
+        return { ...membershipFor('nanny'), id, status: 'removed' };
+      }),
+    });
+    const svc = svcWith({ memberRepo, schedulePatterns });
+
+    await svc.leave('u1', 'h1', AT_NOON_UTC);
+
+    expect(order).toEqual(['end-patterns', 'remove-membership']);
+  });
+
+  it('a pattern-teardown failure refuses the whole leave, membership unchanged', async () => {
+    const memberRepo = makeMemberRepo();
+    const svc = svcWith({
+      memberRepo,
+      schedulePatterns: {
+        endAcceptedPatternsForCarer: mock(async () => {
+          throw new DatabaseError('patterns boom', 'DATABASE_ERROR');
+        }),
+      },
+    });
+
+    await expect(svc.leave('u1', 'h1', AT_NOON_UTC)).rejects.toThrow(
+      'patterns boom'
+    );
+    expect(memberRepo.removeMembership).not.toHaveBeenCalled();
+  });
+
+  // The half that reaches the FAMILY. Without it the day she vacated still
+  // reads as covered — detection counts any shift with a carer_id as cover,
+  // and membership change is not a trigger — so the parents learn nothing
+  // until the 03:00 sweep.
+  it('re-runs uncovered-care detection for exactly the days she vacated', async () => {
+    const detectUncovered = makeDetectUncovered();
+    const svc = svcWith({
+      schedulePatterns: makeSchedulePatterns(['2026-08-25']),
+      detectUncovered,
+    });
+
+    await svc.leave('u1', 'h1', AT_NOON_UTC);
+
+    expect(detectUncovered).toHaveBeenCalledTimes(1);
+    expect(detectUncovered).toHaveBeenCalledWith({
+      householdId: 'h1',
+      localDate: '2026-08-25',
+      cause: 'cancelled',
+      actorId: 'u1',
+    });
+  });
+
+  it('raises nothing for a co-parent, whose leaving takes nobody off the calendar', async () => {
+    const detectUncovered = makeDetectUncovered();
+    const svc = svcWith({ role: 'parent', detectUncovered });
+
+    await svc.leave('u1', 'h1', AT_NOON_UTC);
+
+    expect(detectUncovered).not.toHaveBeenCalled();
+  });
+
+  // `status = 'removed'` alone cannot tell a resignation from a dismissal, and
+  // the family's departure card says opposite things about them. Before 112
+  // this path stamped nothing at all, so a self-departure was indistinguishable
+  // from a row written before the column existed.
+  it('stamps that she LEFT, when, and that it was her own doing', async () => {
+    const memberRepo = makeMemberRepo();
+    const svc = svcWith({ memberRepo });
+
+    await svc.leave('u1', 'h1', AT_NOON_UTC);
+
+    expect(memberRepo.update).toHaveBeenCalledWith('m1', {
+      ended_reason: 'left',
+      ended_at: AT_NOON_UTC().toISOString(),
+      ended_by: 'u1',
+    });
+  });
+
+  it('stamps nothing when the CAS found no row to flip', async () => {
+    const memberRepo = makeMemberRepo({
+      removeMembership: mock(async () => null),
+    });
+    const svc = svcWith({ memberRepo });
+
+    await expect(svc.leave('u1', 'h1', AT_NOON_UTC)).rejects.toThrow();
+
+    expect(memberRepo.update).not.toHaveBeenCalled();
   });
 });
 

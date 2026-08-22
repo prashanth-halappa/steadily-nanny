@@ -181,6 +181,13 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
     useIsOnboarded: mockUseIsOnboarded,
   }));
+  mock.module('@/src/hooks/queries/useRecentDepartures', () => ({
+    useRecentDepartures: () => ({
+      data: [],
+      isSuccess: true,
+      isLoading: false,
+    }),
+  }));
   mock.module('@/src/hooks/queries/useChildren', () => ({
     useChildren: mockUseChildren,
   }));

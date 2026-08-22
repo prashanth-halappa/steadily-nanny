@@ -12,6 +12,7 @@
  * than dead-ending her in a family that is gone.
  */
 import { describe, expect, it, mock } from 'bun:test';
+import { MEMBERSHIP_ENDED_REASONS } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { renderWithProviders } from '@/src/test-utils';
 
 const pushMock = mock((_href: string) => {});
@@ -65,12 +66,44 @@ describe('MembershipEndedCard', () => {
 
   it('says the family closed their account only when that is recorded', () => {
     const { getByTestId } = renderWithProviders(
-      <MembershipEndedCard familyName="the Okonkwo family" closed />
+      <MembershipEndedCard
+        familyName="the Okonkwo family"
+        reason={MEMBERSHIP_ENDED_REASONS.HOUSEHOLD_CLOSED}
+      />
     );
 
     expect(
       getByTestId('today-membership-ended-title').props.children
     ).toContain('membershipEnded.title');
+  });
+
+  it('says SHE left when that is what happened', () => {
+    // The third branch, and the reason `closed?: boolean` had to go: a
+    // self-departure used to collapse into `titleRemoved` — passive removal
+    // wording for the one case she chose herself.
+    const { getByTestId } = renderWithProviders(
+      <MembershipEndedCard
+        familyName="the Okonkwo family"
+        reason={MEMBERSHIP_ENDED_REASONS.LEFT}
+      />
+    );
+
+    expect(
+      getByTestId('today-membership-ended-title').props.children
+    ).toContain('membershipEnded.titleLeft');
+  });
+
+  it('takes the weaker claim when a parent removed her', () => {
+    const { getByTestId } = renderWithProviders(
+      <MembershipEndedCard
+        familyName="the Okonkwo family"
+        reason={MEMBERSHIP_ENDED_REASONS.REMOVED_BY_PARENT}
+      />
+    );
+
+    expect(
+      getByTestId('today-membership-ended-title').props.children
+    ).toContain('membershipEnded.titleRemoved');
   });
 
   it('renders the mid-shift wording when she is still on the clock', () => {
