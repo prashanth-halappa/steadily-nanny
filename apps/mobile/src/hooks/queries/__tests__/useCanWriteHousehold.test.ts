@@ -11,7 +11,7 @@ const useMyMembershipsMock = mock(() => ({
 }));
 
 const useAuthStoreMock = mock(
-  (selector: (state: { user: { id: string } }) => unknown) => {
+  (selector: (state: { user: { id: string } | null }) => unknown) => {
     return selector({ user: { id: 'user-1' } });
   }
 );
@@ -31,6 +31,13 @@ beforeEach(async () => {
   ({ useCanWriteHousehold } = await import('../useCanWriteHousehold'));
   useMyMembershipsMock.mockReset();
   useAuthStoreMock.mockClear();
+  // Re-seat the default viewer per test. `mockClear` only drops recorded
+  // calls, so a case that overrides the implementation would otherwise leak
+  // its viewer into every test after it.
+  useAuthStoreMock.mockImplementation(
+    (selector: (state: { user: { id: string } | null }) => unknown) =>
+      selector({ user: { id: 'user-1' } })
+  );
 });
 
 describe('useCanWriteHousehold', () => {
@@ -163,6 +170,37 @@ describe('useCanWriteHousehold', () => {
       useCanWriteHousehold(undefined)
     );
     expect(resultUndefined.current).toEqual({
+      canWrite: false,
+      isPastMember: false,
+      isLoading: true,
+    });
+  });
+
+  // A null viewer is UNKNOWN, not "not a member". Without this the lookup
+  // compares every row against null, matches nothing, and reports a confident
+  // `isLoading: false` refusal — which the eight household-scoped hooks that
+  // gate on `canWrite` would turn into a silently empty app. `store.user` and
+  // `store.session` always move together in production today (`setSession`
+  // exists but has no callers), so this guards the trap rather than a live bug.
+  it('waits, rather than refusing, when there is no signed-in user id', () => {
+    useAuthStoreMock.mockImplementation(
+      (selector: (state: { user: { id: string } | null }) => unknown) =>
+        selector({ user: null })
+    );
+    useMyMembershipsMock.mockReturnValue({
+      data: [
+        {
+          household_id: 'household-a',
+          user_id: 'user-1',
+          status: HOUSEHOLD_MEMBER_STATUSES.ACTIVE,
+        },
+      ] as HouseholdMember[],
+      isLoading: false,
+    });
+
+    const { result } = renderHook(() => useCanWriteHousehold('household-a'));
+
+    expect(result.current).toEqual({
       canWrite: false,
       isPastMember: false,
       isLoading: true,

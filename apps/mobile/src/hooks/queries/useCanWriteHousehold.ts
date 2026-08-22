@@ -27,7 +27,21 @@ export function useCanWriteHousehold(householdId: string | null | undefined) {
   // not return canWrite: true, and we must not announce a closure
   // (isPastMember: true) we have not confirmed. Unknown fails toward WAIT,
   // never toward an assumption — the same rule `useIsOnboarded` follows.
-  if (!householdId || isMembershipsLoading || memberships === undefined) {
+  //
+  // `!userId` belongs in that list and was missing from it. Without it the
+  // lookup below compares every row against `null`, matches nothing, and
+  // returns a CONFIDENT "not a member" — `isLoading: false` — from an input
+  // that says only "we don't know who is asking". That was inert while
+  // nothing branched on the result; it is not any more. Eight household-scoped
+  // query hooks now gate `enabled` on `canWrite`, so a null user id here
+  // silently disables the roster, the schedule, the closures and the rest,
+  // with no error anywhere to say why.
+  if (
+    !householdId ||
+    !userId ||
+    isMembershipsLoading ||
+    memberships === undefined
+  ) {
     return {
       canWrite: false,
       isPastMember: false,
