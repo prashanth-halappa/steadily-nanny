@@ -15,6 +15,7 @@ import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
+import { PastMemberState } from '@/src/components/custom/PastMemberState';
 import { Card } from '@/src/components/ui/card';
 import { EmptyState } from '@/src/components/ui/empty-state';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
@@ -26,6 +27,7 @@ import { householdIdOf } from '@/src/domains/inbox/utils/buildInboxItems';
 import { hrefForItem } from '@/src/domains/inbox/utils/inboxItemCopy';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useHouseholdLookup } from '@/src/hooks/queries/useHouseholdById';
+import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { InboxRow } from './InboxRow';
 
 // `ScreenHeader` owns the band's own top+horizontal padding (Rule H), so the
@@ -42,6 +44,13 @@ export function InboxScreen() {
   const { households, pastHouseholds } = useActiveHousehold();
   const { timeZoneFor, nameFor } = useHouseholdLookup();
   const { items, isLoading, isError, refetch } = useInboxItems();
+  // Layer 2 of the past-member design (see `ScreenHeader`'s `readOnly` docs):
+  // the explanation lives once on Today's pinned card, and every other tab
+  // showing household data carries the one-line reminder. Sourced from the
+  // active household, exactly as `TodayScreen` does — the rows themselves can
+  // span households, but the tab she is standing in is the one that answers
+  // "why can't I act on any of this?".
+  const { isPastMember } = useIsOnboarded();
   const { refreshControl } = usePullToRefresh();
   // A tab root now (WP-C), so the floating tab bar overlays the last rows
   // unless the scroll reserves its height — same reason every other tab
@@ -64,6 +73,7 @@ export function InboxScreen() {
     >
       <View className="min-h-full flex-1 gap-8">
         <ScreenHeader
+          readOnly={isPastMember}
           testID="inbox-header"
           title={t('screenTitle')}
           contextLine={items.length > 0 ? t('screenSubtitle') : undefined}
@@ -87,6 +97,20 @@ export function InboxScreen() {
               }}
             />
           </View>
+        ) : items.length === 0 && isPastMember ? (
+          // "You're all caught up" is reassuring and false — there is no
+          // household left to be caught up with. Only the empty case swaps:
+          // rows can come from a household she is still in, and hiding those
+          // behind a refusal would be the same lie pointing the other way.
+          <PastMemberState
+            testID="inbox-past-member"
+            // Cross-namespace on purpose: `inbox` has no `pastMember` pair
+            // yet, and this is the canonical wording. Swap to
+            // `inbox:pastMember.*` the moment it lands — the description
+            // still names time off, which is not what went quiet here.
+            title={t('timeOff:pastMember.title')}
+            description={t('timeOff:pastMember.description')}
+          />
         ) : items.length === 0 ? (
           <View
             testID="inbox-empty"

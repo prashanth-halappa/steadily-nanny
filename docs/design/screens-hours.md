@@ -320,6 +320,7 @@ missing buttons reads as a bug on a screen about money.
 | **Hours error** | `ErrorState variant="network"` + retry replaces the list. |
 | **Earnings error, hours OK** | Day rows and the hours figure stay; the money card degrades to a retry line. This split already exists (`NannyWeekView.tsx:268–277`) and is exactly right — **a money read failing must never make the hours look wrong.** |
 | **Offline** | Banner above the hero band. Corrections queue; the screen never claims a figure is settled while a write is pending. |
+| **Past member** | The screen keeps its full shape and its full data — this is the record she is owed, and the one surface with something true to show her. `readOnly` strips the verbs (handlers become `undefined`, so affordances are ABSENT, not disabled) and `hours-past-member-note` under the hero band says why. `ScreenHeader` also takes `readOnly`. See §6. |
 
 ---
 

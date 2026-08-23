@@ -213,6 +213,8 @@
   },
   "holidays": {
     "manageTitle": "Holidays",
+    "pastMemberTitle": "Read-only",
+    "pastMemberDescription": "You're no longer with this household, so its holidays aren't shown here. Your record of what you worked stays on Hours.",
     "subtitle": "The days your family treats as holidays. What they pay is set in Pay and terms.",
     "saveButton": "Save holidays",
     "savedToast": "Holidays saved.",
@@ -278,6 +280,8 @@
   },
   "thisFamily": {
     "navLabel": "This family",
+    "pastMemberTitle": "Read-only",
+    "pastMemberDescription": "You're no longer with this household, so its details aren't shown here. Your record of what you worked stays on Hours.",
     "addressEmpty": "No address added yet",
     "ifSomethingHappens": "If something happens",
     "callButton": "Call",

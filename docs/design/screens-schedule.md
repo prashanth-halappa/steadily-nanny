@@ -266,6 +266,7 @@ yet".
 | **Empty (week with no shifts)** | Not a full-screen empty state. Day headers still render for the week (`weekDates` already drives this); each empty day shows a single `Small mutedForeground` "Nothing scheduled" row on bare ground. The week's shape is information. |
 | **Away band** | `bg-muted` row, `Body weight="medium" mutedForeground` "Away" + the message. Correct as built (`AgendaView.tsx:658–673`). Add a `Plane` icon in an `IconChip tone="people"` so it is not a grey rectangle among grey rectangles. |
 | **Error** | `ErrorState variant="network"` with retry, replacing the list only — the hero band and week strip stay, because they are still true. |
+| **Past member** | NOT the "week with no shifts" state — "Nothing scheduled" is the copy for an active carer's quiet week and reads as a lie to someone no longer employed. The list is replaced by `PastMemberState` (the shared whole-screen refusal, `components/custom/PastMemberState.tsx`), and `ScreenHeader` carries `readOnly`. |
 
 ---
 

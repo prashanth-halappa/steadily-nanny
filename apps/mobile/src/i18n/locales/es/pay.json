@@ -14,8 +14,8 @@
   "notAvailableTitle": "No disponible",
   "notAvailableDescription": "El sueldo y las condiciones los gestiona un padre/madre en este hogar.",
   "pastMember": {
-    "title": "No disponible",
-    "description": "Ya no estás activo en este hogar, así que el sueldo y las condiciones ya no están disponibles aquí."
+    "title": "Solo lectura",
+    "description": "Ya no estás en este hogar, así que el sueldo y las condiciones no se pueden cambiar aquí. Tu registro sigue aquí."
   },
   "noCarerTitle": "Aún no hay niñera",
   "noCarerDescription": "Invita a tu niñera y luego establece aquí sus condiciones de pago.",

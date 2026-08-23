@@ -151,6 +151,18 @@ beforeAll(async () => {
     }),
   }));
 
+  // The screen now asks whether the viewer is still a member of this
+  // household, so it can say "you've left" instead of blaming the network for
+  // a permission the server is right to withhold. Mocked rather than left
+  // real: the real hook reaches the api client, which imports more of
+  // expo-router than this suite stubs.
+  mock.module('@/src/hooks/queries/useCanWriteHousehold', () => ({
+    useCanWriteHousehold: () => ({
+      canWrite: true,
+      isPastMember: false,
+      isLoading: false,
+    }),
+  }));
   mock.module('@/src/hooks/queries/useHouseholdHolidays', () => ({
     useHouseholdHolidays: () => ({
       data: holidayRows,

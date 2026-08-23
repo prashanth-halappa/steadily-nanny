@@ -127,6 +127,11 @@ const listInvitesMock = mock<() => Promise<unknown[]>>(() =>
 mock.module('@/src/api/endpoints/household', () => ({
   householdApi: {
     list: listMock,
+    // `useActiveHousehold` reads past households too, and an unmocked
+    // `listPast` leaves that query with no queryFn — it never settles, so
+    // `activeHousehold.isLoading` stays true and the screen sits on its
+    // loading branch forever. Latent until an import-order change surfaced it.
+    listPast: mock(() => Promise.resolve([])),
     listMembers: listMembersMock,
     listInvites: listInvitesMock,
   },

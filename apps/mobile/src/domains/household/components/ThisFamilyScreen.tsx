@@ -47,6 +47,7 @@ import {
 import { illustrations } from '@/assets/illustrations';
 import { SCREEN_CONTENT_STYLE, spacing } from '@/lib/design-tokens';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
+import { PastMemberState } from '@/src/components/custom/PastMemberState';
 import { RestrictedActionButton } from '@/src/components/custom/RestrictedActionButton';
 import {
   AlertDialog,
@@ -73,6 +74,7 @@ import {
 } from '@/src/domains/timeOff/utils/timeOffDate';
 import { useLeaveHousehold } from '@/src/hooks/mutations/useLeaveHousehold';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
+import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholdClosures } from '@/src/hooks/queries/useHouseholdClosures';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
@@ -223,6 +225,7 @@ export function ThisFamilyScreen() {
   const members = useHouseholdMembers(active.householdId);
   const children = useChildren(active.householdId);
   const closures = useHouseholdClosures(active.householdId);
+  const canWriteHousehold = useCanWriteHousehold(active.householdId);
   const currentUserId = useAuthStore(s => s.session?.user?.id);
 
   // ONLY owner/parent — see the privacy-rule comment above. Never widen this
@@ -240,7 +243,17 @@ export function ThisFamilyScreen() {
   // her leave 404s. `active`, not merely non-removed, for that second reason.
   const ownMembership =
     (members.data ?? []).find(m => m.user_id === currentUserId) ?? null;
+  //
+  // AND the membership answer must be one this screen actually asked for.
+  // This used to be safe only by accident: `members` is itself gated on
+  // `canWrite`, so for a past member the list was empty, `ownMembership` was
+  // null, and the button vanished because a QUERY WAS SWITCHED OFF rather
+  // than because she is not a member. Move that gate and the Leave button
+  // comes back for someone the server would 404. `canWriteHousehold` is the
+  // deliberate answer, and the past-member branch below returns before this
+  // is ever read.
   const canLeave =
+    canWriteHousehold.canWrite &&
     ownMembership !== null &&
     ownMembership.status === HOUSEHOLD_MEMBER_STATUSES.ACTIVE &&
     ownMembership.role !== HOUSEHOLD_ROLES.OWNER;
@@ -250,6 +263,43 @@ export function ThisFamilyScreen() {
   );
 
   const hasEmergencyContact = !!household?.emergency_contact_name;
+
+  // A household she has left has nothing honest to put on this screen. Every
+  // section here — the parents to call, the children, the days off — is that
+  // household's data, and the server refuses all of it, so what rendered was
+  // the family's NAME over three empty headings and no word of explanation.
+  //
+  // Stated rather than merely emptied: silently missing content reads as a
+  // bug, and this is the screen she would open on the one bad afternoon it
+  // exists for. `PastMemberState` is the shared treatment; Hours keeps its
+  // shape and takes the read-only chip instead, because Hours still has
+  // something true to show her.
+  //
+  // AFTER the hooks and before the body, never as an early return above
+  // them — the hooks must keep running or the rules of hooks break, and the
+  // membership answer arrives through one of them.
+  if (canWriteHousehold.isPastMember) {
+    return (
+      <View
+        testID="settings-this-family-screen"
+        className="flex-1 bg-background"
+      >
+        <View
+          style={{
+            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingTop: SCREEN_CONTENT_STYLE.padding,
+          }}
+        >
+          <BackButton onPress={() => router.back()} label={tCommon('back')} />
+        </View>
+        <PastMemberState
+          testID="this-family-past-member"
+          title={t('thisFamily.pastMemberTitle')}
+          description={t('thisFamily.pastMemberDescription')}
+        />
+      </View>
+    );
+  }
 
   return (
     <ScrollView

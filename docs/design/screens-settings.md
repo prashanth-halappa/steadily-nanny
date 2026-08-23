@@ -181,6 +181,7 @@ same identity hero, the same grouping, the same chips.
 | **No inbox row** | Deleted with WP-C. The Inbox is a tab; a Settings row duplicating it was a second front door with its own count to keep in sync. This screen no longer subscribes to `useInboxItems` at all. |
 | **Error** | Settings never blanks. A failed profile read shows the email from the auth store and omits the name row's value. |
 | **Offline** | Banner. Language still switches (it is applied locally first and synced best-effort — `:128–136`); do not gate it. |
+| **Past member** | Rows split by what the SERVER still serves her. Kept: This family, My pay, Household holidays, Join another family, and every account row. Hidden: nothing household-writing. Availability and Request time off are gated on "no active membership ANYWHERE", never on past-membership of the resolved household — `carer_availability` carries no household id, so a two-family nanny needs both while she still works for someone. |
 
 ---
 

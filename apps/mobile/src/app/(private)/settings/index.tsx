@@ -61,6 +61,7 @@ import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useDeleteAccount } from '@/src/hooks/mutations/useDeleteAccount';
 import { useUpdatePreferredLocale } from '@/src/hooks/mutations/useUpdatePreferredLocale';
+import { useHasActiveMembership } from '@/src/hooks/queries/useHasActiveMembership';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
@@ -183,6 +184,9 @@ export default function SettingsScreen() {
   // useIsOnboarded's header comment / TodayScreen for the same pattern).
   const onboarding = useIsOnboarded();
   const members = useHouseholdMembers(onboarding.householdId);
+  // Across ALL her households, not the resolved one — see the Availability
+  // row below and `useHasActiveMembership`'s header for why the two differ.
+  const { hasActiveMembership } = useHasActiveMembership();
 
   const appVersion =
     Constants.expoConfig?.version ?? Constants.nativeAppVersion ?? '—';
@@ -412,12 +416,19 @@ export default function SettingsScreen() {
                         router.push('/settings/this-family' as Href)
                       }
                     />
-                    {/* A past member's household has ended for her — nobody
-                        reads an availability she can no longer offer, so the
-                        row would only dead-end her. Household holidays and
-                        My pay below stay: they still show her something of
-                        her own. */}
-                    {!onboarding.isPastMember ? (
+                    {/* Nobody reads an availability she can no longer offer,
+                        so the row would only dead-end her — but the fact that
+                        decides it is "does she work for ANYONE", not
+                        `onboarding.isPastMember`. `carer_availability` carries
+                        no household id: it is ONE availability shared across
+                        every family, and `isPastMember` answers only for the
+                        household the switcher resolved. A nanny with one ended
+                        family and one live one reads as a past member whenever
+                        the ended one resolves, and this row was hidden from
+                        her while she was still working four days a week.
+                        Household holidays and My pay below stay either way:
+                        they still show her something of her own. */}
+                    {hasActiveMembership ? (
                       <SettingsNavRow
                         testID="settings-manage-availability"
                         label={t('household:availability.manageTitle')}
@@ -470,11 +481,17 @@ export default function SettingsScreen() {
                         onPress={() => router.push('/settings/invites' as Href)}
                       />
                     ) : null}
-                    {/* Same reasoning as Availability above — TimeOffScreen
-                        itself already refuses a past member outright, so a
-                        row that leads there for her is a dead end, not a
-                        record. */}
-                    {!onboarding.isPastMember ? (
+                    {/* Same reasoning as Availability above, and the same
+                        fact underneath: `POST /v1/time-off` is user-scoped —
+                        time off is requested by the PERSON, not by one
+                        household. A nanny with no live family anywhere would
+                        only dead-end here; the two-family nanny needs this row
+                        to book a week off from the family she still works for.
+                        ponytail: TimeOffScreen's OWN refusal still reads
+                        `onboarding.isPastMember`, so she reaches it and is
+                        told read-only when the ended household is the resolved
+                        one. That gate wants the same fact this row now uses. */}
+                    {hasActiveMembership ? (
                       <SettingsNavRow
                         testID="settings-request-time-off"
                         label={t('timeOff:screenTitle')}

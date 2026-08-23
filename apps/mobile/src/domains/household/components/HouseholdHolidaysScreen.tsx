@@ -28,6 +28,7 @@ import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
 import { InlineRetry } from '@/src/components/custom/InlineRetry';
+import { PastMemberState } from '@/src/components/custom/PastMemberState';
 import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
@@ -40,6 +41,7 @@ import { SetupScreenShell } from '@/src/domains/setup/components/SetupScreenShel
 import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useSetHouseholdCustomHolidays } from '@/src/hooks/mutations/useSetHouseholdCustomHolidays';
 import { useSetHouseholdHolidays } from '@/src/hooks/mutations/useSetHouseholdHolidays';
+import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useHouseholdById } from '@/src/hooks/queries/useHouseholdById';
 import { useHouseholdCustomHolidays } from '@/src/hooks/queries/useHouseholdCustomHolidays';
 import { useHouseholdHolidays } from '@/src/hooks/queries/useHouseholdHolidays';
@@ -58,6 +60,7 @@ export function HouseholdHolidaysScreen() {
   const householdId = onboarding.householdId;
   const householdLookup = useHouseholdById(householdId);
   const holidaysQuery = useHouseholdHolidays(householdId);
+  const canWriteHousehold = useCanWriteHousehold(householdId);
   const customHolidaysQuery = useHouseholdCustomHolidays(householdId);
   const setHolidays = useSetHouseholdHolidays(householdId ?? '');
   const setCustomHolidays = useSetHouseholdCustomHolidays(householdId ?? '');
@@ -176,6 +179,31 @@ export function HouseholdHolidaysScreen() {
         className="flex-1 items-center justify-center bg-background"
       >
         <LoadingIndicator testID="household-holidays-loading" />
+      </View>
+    );
+  }
+
+  // BEFORE the error branch, because for her it is not an error. Both reads
+  // are household-scoped and the server refuses them for a member who has
+  // left, so what rendered was a generic "check your connection" retry — the
+  // app blaming the network for a permission it is right to withhold. Say the
+  // true thing instead, and offer no retry: there is nothing to retry.
+  if (canWriteHousehold.isPastMember) {
+    return (
+      <View testID="household-holidays-screen" className="flex-1 bg-background">
+        <View
+          style={{
+            paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+            paddingTop: SCREEN_CONTENT_STYLE.padding,
+          }}
+        >
+          {backHeader}
+        </View>
+        <PastMemberState
+          testID="household-holidays-past-member"
+          title={t('holidays.pastMemberTitle')}
+          description={t('holidays.pastMemberDescription')}
+        />
       </View>
     );
   }

@@ -60,8 +60,12 @@ every visit now (`ScreenWash kind="brand"`, apricot only while live).
 │
 │  gap 16
 │  PinnedSlot     — attention owner; on an ordinary day the clock (nanny) or
-│                   TodayCoverage at default tone (parent / helper). Empty
-│                   only for a role with neither: a past-member nanny.
+│                   TodayCoverage at default tone (parent / helper). For a
+│                   past-member nanny it holds MembershipEndedCard — this
+│                   slot used to be left EMPTY for her, which is the silence
+│                   that card exists to end (slotOccupant.ts). Mid-shift the
+│                   clock still wins, so clock-out stays the one thing to
+│                   press, and the card moves below it.
 │  L2 slot        — live / clock card
 │  feed           — moment cards (nanny-joined / joined-household, first
 │                   clock-in, first week-approved) before NeedsAttention,
@@ -344,6 +348,7 @@ was cancelled"), never to a person.
 | **Empty (household, quiet day)** | Not an empty state. `NeedsAttentionCard` and `PendingScheduleCard` already render nothing when there is nothing — that decision (`TodayScreen.tsx:147–154`) is correct and must survive. A quiet day is: hero band, cover card at `positive`, handoff at L3, next-up at L4. |
 | **Error** | Per-card. A failed shifts query must never blank the hero band or the clock-in button — `ClockInCard` already refuses to gate clock-in on the schedule query (`:560–566`), which is the right instinct generalised: **never let a read failure remove a write affordance.** |
 | **Offline** | `OfflineBanner` above the hero band, not floating over it. |
+| **Past member** | The pinned slot holds `MembershipEndedCard` — the ONE place this state is explained — and `ScreenHeader` carries `readOnly`, which renders "Read-only · {context}". Mid-shift the clock keeps the slot and the card moves below it, so clock-out stays the single thing to press: it is the one write the server deliberately keeps for a removed member. Nanny-only; a past-member PARENT keeps the coverage surface, read-only. |
 
 ---
 

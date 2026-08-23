@@ -17,6 +17,7 @@ let InboxScreen: typeof import('../components/InboxScreen').InboxScreen;
 let mockUseInboxItems: ReturnType<typeof mock>;
 let mockPush: ReturnType<typeof mock>;
 let mockRefetch: ReturnType<typeof mock>;
+let mockUseIsOnboarded: ReturnType<typeof mock>;
 
 beforeAll(async () => {
   mockRefetch = mock(() => Promise.resolve());
@@ -47,6 +48,16 @@ beforeAll(async () => {
     // `SettingsHeaderButton` (the header icon that replaced the Settings
     // tab) reaches for the singleton, not the hook.
     router: { push: mockPush, back: mock() },
+  }));
+  // The header's read-only reminder reads this hook. It is a real `useQuery`
+  // over memberships and this file renders without a QueryClientProvider.
+  mockUseIsOnboarded = mock(() => ({
+    role: 'nanny',
+    status: 'onboarded',
+    isPastMember: false,
+  }));
+  mock.module('@/src/hooks/queries/useIsOnboarded', () => ({
+    useIsOnboarded: mockUseIsOnboarded,
   }));
   mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
     useActiveHousehold: () => ({
@@ -92,6 +103,11 @@ beforeEach(() => {
     isLoading: false,
     isError: false,
     refetch: mockRefetch,
+  }));
+  mockUseIsOnboarded.mockImplementation(() => ({
+    role: 'nanny',
+    status: 'onboarded',
+    isPastMember: false,
   }));
 });
 
@@ -445,6 +461,48 @@ describe('InboxScreen', () => {
     expect(getByTestId('inbox-header-context')).toBeTruthy();
     expect(getByText('screenSubtitle')).toBeTruthy();
     expect(getByTestId('inbox-lead')).toBeTruthy();
+  });
+
+  // Layer 2 of the past-member design: Today's pinned card carries the
+  // explanation, every other tab carries the reminder in its hero band.
+  it('carries the read-only reminder in the header for a past member', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'nanny',
+      status: 'onboarded',
+      isPastMember: true,
+    }));
+
+    const { getByTestId } = render(<InboxScreen />);
+
+    expect(getByTestId('inbox-header-read-only')).toBeTruthy();
+  });
+
+  it('omits the read-only reminder for an active member', () => {
+    const { queryByTestId } = render(<InboxScreen />);
+
+    expect(queryByTestId('inbox-header-read-only')).toBeNull();
+  });
+
+  // Layer 4: "You're all caught up" is reassuring and false — she has no
+  // household left to be caught up with.
+  it('past member, nothing pending: the whole-screen refusal, not "all caught up"', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'nanny',
+      status: 'onboarded',
+      isPastMember: true,
+    }));
+
+    const { getByTestId, queryByTestId } = render(<InboxScreen />);
+
+    expect(getByTestId('inbox-past-member')).toBeTruthy();
+    expect(queryByTestId('inbox-empty')).toBeNull();
+  });
+
+  it('active member, nothing pending: still the ordinary caught-up state', () => {
+    const { getByTestId, queryByTestId } = render(<InboxScreen />);
+
+    expect(getByTestId('inbox-empty')).toBeTruthy();
+    expect(queryByTestId('inbox-past-member')).toBeNull();
   });
 
   // Locale sentence values are asserted against the JSON files — emptyBody

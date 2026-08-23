@@ -151,6 +151,17 @@ describe('ThisFamilyScreen — render (Pattern B)', () => {
       isLoading: false,
     }),
   }));
+  // The screen asks whether the viewer is still a member before rendering
+  // anything: a past member gets a whole-screen "you've left" state instead of
+  // the family's name over three empty sections. Every case here is an ACTIVE
+  // member, so the gate is open and the sections below are the subject.
+  mock.module('@/src/hooks/queries/useCanWriteHousehold', () => ({
+    useCanWriteHousehold: () => ({
+      canWrite: true,
+      isPastMember: false,
+      isLoading: false,
+    }),
+  }));
   mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
     useHouseholdMembers: () => ({
       data: [

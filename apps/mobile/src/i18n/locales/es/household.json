@@ -213,6 +213,8 @@
   },
   "holidays": {
     "manageTitle": "Días festivos",
+    "pastMemberTitle": "Solo lectura",
+    "pastMemberDescription": "Ya no estás en este hogar, así que sus festivos no se muestran aquí. Tu registro de lo que trabajaste sigue en Horas.",
     "subtitle": "Los días que tu familia trata como festivos. Lo que se paga se establece en Sueldo y condiciones.",
     "saveButton": "Guardar festivos",
     "savedToast": "Festivos guardados.",
@@ -278,6 +280,8 @@
   },
   "thisFamily": {
     "navLabel": "Esta familia",
+    "pastMemberTitle": "Solo lectura",
+    "pastMemberDescription": "Ya no estás en este hogar, así que sus datos no se muestran aquí. Tu registro de lo que trabajaste sigue en Horas.",
     "addressEmpty": "Aún no se ha añadido una dirección",
     "ifSomethingHappens": "Si pasa algo",
     "callButton": "Llamar",

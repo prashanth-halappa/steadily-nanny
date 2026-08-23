@@ -1642,9 +1642,16 @@ Marisol's stated stake in this is not abstract: "one screenshot in a nanny
 Facebook group and this app is done." A wage-visibility leak between two
 employees of the same family is the failure this domain does not recover from.
 
-**Past member.** Read-only, header reads "Ended {date}", history intact. Same
-rule as `screens-hours.md` §6: the screen *says* the person is no longer with
-the household rather than silently omitting the buttons.
+**Past member.** Read-only, history intact. Same rule as `screens-hours.md`
+§6: the screen *says* the person is no longer with the household rather than
+silently omitting the buttons — `PastMemberState` with `pay:pastMember.*`.
+
+An earlier version of this line specified a header reading `Ended {date}`.
+No such string was ever built, and it is struck rather than carried: the date
+a membership ended is not what she needs from this screen, and `ended_at`
+(migration 112) only exists for memberships that ended after it shipped, so
+the header would be blank for every earlier one. The state is stated in prose
+instead, which is true regardless.
 
 ### 13.2 Verified 2026-08-18: a nanny with a live arrangement can propose new terms
 
@@ -1702,6 +1709,7 @@ nanny with no arrangement sends a first offer.
 | **Submit refused** | Inline error inside the review sheet, never a toast (GOLDEN #40), and every typed field survives — the existing `ClockOutSheet` discipline (`PayChangeSheet.tsx:15` documents it; keep it). |
 | **Ack write fails** | The button returns to its unpressed state with an inline error. Never optimistic: "seen" is a legal-ish fact about a person and must not be claimed before the server has it. |
 | **Terms just agreed** | Accepting a proposal no longer `replace`s straight to My pay / Pay & terms. The same screen swaps to a `MomentCard` naming the counterparty, the rate, and the start date (§9.1). The CTA then continues to the role's terms surface. A failed accept never shows it. |
+| **Past member** | `PastMemberState` with `pay:pastMember.*` — "Read-only" / "You're no longer with this household, so pay and terms can't be changed here. Your record stays here." Unified onto Time off's wording; it previously said "Not available" and "no longer active in", and dropped the record-stays reassurance every other surface carries. |
 
 ---
 

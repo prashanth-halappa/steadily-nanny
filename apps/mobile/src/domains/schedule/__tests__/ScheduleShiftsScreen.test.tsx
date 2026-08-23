@@ -482,6 +482,87 @@ describe('ScheduleShiftsScreen', () => {
     expect(queryByTestId('schedule-shifts-add-extra')).toBeNull();
   });
 
+  // Layer 2 of the past-member design: Today's pinned card carries the
+  // explanation, every other tab that shows household data carries the
+  // reminder in its hero band. Hiding the write affordances is not enough —
+  // nothing on screen would say WHY they are gone.
+  it('carries the read-only reminder in the hero band for a past member', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'nanny',
+      status: 'onboarded',
+      isPastMember: true,
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+
+    const { getByTestId } = render(<ScheduleShiftsScreen />);
+
+    expect(getByTestId('schedule-header-read-only')).toBeTruthy();
+  });
+
+  it('omits the read-only reminder for an active member', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'nanny',
+      status: 'onboarded',
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+
+    const { getByTestId, queryByTestId } = render(<ScheduleShiftsScreen />);
+
+    expect(queryByTestId('schedule-header-read-only')).toBeNull();
+    expect(getByTestId('schedule-lead')).toBeTruthy();
+  });
+
+  // Layer 4: "No shifts yet" is an ACTIVE nanny's quiet week. Printed at
+  // someone whose membership ended it reads as a roster that might still
+  // fill. The chip stays above it — the two layers stack, they don't swap.
+  it('past member, empty week: the whole-screen refusal, not the quiet-week copy', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'nanny',
+      status: 'onboarded',
+      isPastMember: true,
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+
+    const { getByTestId, queryByTestId } = render(<ScheduleShiftsScreen />);
+
+    expect(getByTestId('schedule-past-member')).toBeTruthy();
+    expect(queryByTestId('schedule-shifts-empty')).toBeNull();
+    expect(getByTestId('schedule-header-read-only')).toBeTruthy();
+  });
+
+  it('active member, empty week: still the ordinary quiet-week empty state', () => {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'nanny',
+      status: 'onboarded',
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+
+    const { getByTestId, queryByTestId } = render(<ScheduleShiftsScreen />);
+
+    expect(getByTestId('schedule-shifts-empty')).toBeTruthy();
+    expect(queryByTestId('schedule-past-member')).toBeNull();
+  });
+
   it('hides Add a one-off shift for nannies', () => {
     mockUseIsOnboarded.mockImplementation(() => ({
       role: 'nanny',

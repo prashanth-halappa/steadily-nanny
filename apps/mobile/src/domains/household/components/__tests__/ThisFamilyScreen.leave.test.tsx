@@ -247,6 +247,29 @@ function setViewerMembership(
         : [member('owner-1', 'owner'), member(VIEWER_ID, role, status)]
     )
   );
+  // The MEMBERSHIPS read, not just the roster. `useCanWriteHousehold` decides
+  // past-ness from this one, and the screen's whole shape now turns on it —
+  // setting only the roster left the removed case passing for the wrong
+  // reason (an active membership rendering a roster that happened to be
+  // empty of her).
+  listMembershipsMock.mockImplementation(() =>
+    Promise.resolve([
+      {
+        id: 'membership-1',
+        household_id: HOUSEHOLD_ID,
+        user_id: VIEWER_ID,
+        role,
+        status,
+      },
+      {
+        id: 'membership-2',
+        household_id: OTHER_HOUSEHOLD_ID,
+        user_id: VIEWER_ID,
+        role: 'nanny',
+        status: 'active',
+      },
+    ])
+  );
 }
 
 beforeEach(() => {
@@ -293,15 +316,20 @@ describe('ThisFamilyScreen — leaving the family', () => {
     expect(queryByTestId('this-family-leave-button')).toBeNull();
   });
 
-  it('never offers it to a REMOVED member — she has already left', async () => {
+  // The screen is nothing but this household's data, and the server refuses
+  // all of it for her — so it says so rather than rendering the family's name
+  // over three empty headings. No leave button either: she has already gone.
+  it('replaces the whole screen for a REMOVED member, and says why', async () => {
     setViewerMembership('nanny', 'removed');
 
     const { getByTestId, queryByTestId } = renderWithProviders(
       <ThisFamilyScreen />
     );
 
-    await waitFor(() => expect(getByTestId('this-family-days-off')));
+    await waitFor(() => expect(getByTestId('this-family-past-member')));
     expect(queryByTestId('this-family-leave-button')).toBeNull();
+    expect(queryByTestId('this-family-days-off')).toBeNull();
+    expect(queryByTestId('this-family-if-something-happens')).toBeNull();
   });
 
   it('never offers it to a CANDIDATE — leave 404s before she is hired', async () => {

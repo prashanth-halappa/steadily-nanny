@@ -31,6 +31,7 @@ import { SCREEN_CONTENT_STYLE, spacing } from '@/lib/design-tokens';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { InlineRetry } from '@/src/components/custom/InlineRetry';
+import { PastMemberState } from '@/src/components/custom/PastMemberState';
 import { BackButton } from '@/src/components/ui/back-button';
 import { Button } from '@/src/components/ui/button';
 import { EmptyState } from '@/src/components/ui/empty-state';
@@ -532,8 +533,28 @@ export function ScheduleShiftsScreen({
       <View className="flex-row items-start justify-between gap-3">
         <View className="flex-1 gap-1">
           <H1>{heading}</H1>
-          <Small testID="schedule-lead" className="text-muted-strong">
-            {lead}
+          {/* The read-only reminder, layer 2 of the past-member design (see
+              `ScreenHeader`'s `readOnly` docs): the explanation lives once,
+              on Today's pinned card, and every other tab showing household
+              data carries this one line. Hiding the write affordances alone
+              leaves nothing on screen saying WHY they are gone.
+              This band predates `ScreenHeader` and is still hand-rolled —
+              it stacks a figure and a per-carer note the band's one-anchor
+              cap does not hold as-is — so it reproduces `ScreenHeader`'s
+              exact `"Read-only · {context}"` line rather than importing it.
+              Fold this into `ScreenHeader` when the band is finally
+              converted; the testID swap mirrors it deliberately. */}
+          <Small
+            testID={
+              onboarding.isPastMember
+                ? 'schedule-header-read-only'
+                : 'schedule-lead'
+            }
+            className="text-muted-strong"
+          >
+            {onboarding.isPastMember
+              ? `${tCommon('readOnlyBadge')} · ${lead}`
+              : lead}
           </Small>
           {/* The week range is not repeated here — `WeekNavHeader` below
               already owns and renders that exact string. */}
@@ -691,14 +712,33 @@ export function ScheduleShiftsScreen({
       ) : null}
 
       {showEmpty && calendarView !== CALENDAR_VIEWS.CROSS_FAMILY ? (
-        <View testID="schedule-shifts-empty" style={{ flex: 1 }}>
-          <EmptyState
-            variant="inline"
-            image={illustrations.emptySchedule}
-            title={emptyState.title}
-            description={emptyState.description}
+        onboarding.isPastMember ? (
+          // Every branch of `emptyState` above is written at someone still
+          // employed — "No shifts yet" is an active nanny's quiet week, and
+          // the pattern-pending copy promises a week somebody is still going
+          // to build. Layer 4 replaces ONLY this empty state: a past member
+          // whose week still holds shifts keeps the list, because that list
+          // IS the read-only record the design preserves, and the header
+          // chip already says it takes no writes.
+          <PastMemberState
+            testID="schedule-past-member"
+            // Cross-namespace on purpose: `schedule` has no `pastMember`
+            // pair yet, and this is the canonical wording. Swap to
+            // `schedule:pastMember.*` the moment it lands — the description
+            // still names time off, which is not what went quiet here.
+            title={t('timeOff:pastMember.title')}
+            description={t('timeOff:pastMember.description')}
           />
-        </View>
+        ) : (
+          <View testID="schedule-shifts-empty" style={{ flex: 1 }}>
+            <EmptyState
+              variant="inline"
+              image={illustrations.emptySchedule}
+              title={emptyState.title}
+              description={emptyState.description}
+            />
+          </View>
+        )
       ) : null}
 
       {showContent && calendarView === CALENDAR_VIEWS.AGENDA ? (

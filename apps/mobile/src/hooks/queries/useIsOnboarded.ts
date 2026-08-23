@@ -64,15 +64,25 @@ export interface OnboardingState {
    * `GET /v1/users/me/memberships` this was permanently false and every one of
    * those gates was dead code — see `householdQueryService.listMembershipsForUser`.
    *
-   * ponytail: NOT yet honoured by `ShiftDetailScreen` (accept/decline/change
-   * request — no single choke point, it would mean ANDing into three separate
-   * booleans), `ScheduleRespondScreen` (doesn't call this hook at all),
-   * `SchedulePendingScreen`, `ScheduleBuildScreen`, `ExtraShiftScreen`
-   * (reachable only by deep link now that its entry point is gated), and the
-   * inbox. Those all have source-inspection tests rather than render tests, so
-   * a gate there is cheap to write and expensive to prove; the API refuses the
-   * write with a 403 regardless, so the failure mode is an error toast, not a
-   * bad write. Widen the gate as those screens gain render tests.
+   * THE FIVE SCHEDULE SCREENS THIS USED TO NAME AS UNGATED ARE NOW GATED, and
+   * three of them ask a BETTER question than this flag can: `ShiftDetail`,
+   * `ScheduleRespond` and `ExtraShift` resolve `useCanWriteHousehold` against
+   * the household of the thing on screen, not the one that happens to be
+   * active. `SchedulePending` and `ScheduleBuild` gate on the active
+   * household. All five surface the refusal through `RestrictedActionButton`.
+   *
+   * PREFER `useCanWriteHousehold(id)` TO THIS FLAG wherever a household id is
+   * in hand. This one answers only for the RESOLVED household, so it is wrong
+   * for anything deep-linked or passed as a prop, and wrong for a carer who
+   * works for two families.
+   *
+   * AND IT IS THE WRONG QUESTION ENTIRELY for availability and time off.
+   * `carer_availability` carries no household id — it is one availability
+   * shared across every family she works for — so gating those on "past
+   * member of the resolved household" both hides a surface a two-family nanny
+   * still needs and fails to stop the write that actually succeeds
+   * (`PUT /v1/availability/me` is user-scoped; the server accepts it). Those
+   * belong to "no active membership anywhere".
    */
   isPastMember: boolean;
   /**

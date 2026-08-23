@@ -262,25 +262,33 @@ describe('SettingsScreen', () => {
     );
   });
 
-  // A past member's household has ended for her — rows that WRITE to it, or
-  // point at a future she is no longer part of, must not dead-end her. Rows
-  // that still show her something of her own stay.
-  it('gates Availability and Request time off on onboarding.isPastMember', () => {
+  // Rows that WRITE, or point at a future she may no longer be part of, must
+  // not dead-end her. But `onboarding.isPastMember` answers for the RESOLVED
+  // household only, and neither of these two rows is household-scoped:
+  // availability is one row per carer shared across every family, and time
+  // off is requested by the person, not by the household. The question they
+  // both want is "do I work for anyone at all" — see
+  // `useHasActiveMembership`.
+  it('gates Availability and Request time off on hasActiveMembership, not isPastMember', () => {
     const availabilityIdx = screenSource.indexOf(
       'settings-manage-availability'
     );
     const timeOffIdx = screenSource.indexOf('settings-request-time-off');
-    const pastMemberGateIdxs = [
-      ...screenSource.matchAll(/!onboarding\.isPastMember/g),
-    ].map(match => match.index as number);
+    const gateIdxs = [...screenSource.matchAll(/hasActiveMembership \?/g)].map(
+      match => match.index as number
+    );
 
+    expect(screenSource).toContain('useHasActiveMembership');
     expect(availabilityIdx).toBeGreaterThan(-1);
     expect(timeOffIdx).toBeGreaterThan(-1);
-    // Each row's testID must be preceded (nearest match before it) by a
-    // `!onboarding.isPastMember` gate opening its JSX block.
+    // Each row's testID must be preceded by a `hasActiveMembership` gate
+    // opening its JSX block.
     for (const rowIdx of [availabilityIdx, timeOffIdx]) {
-      expect(pastMemberGateIdxs.some(gateIdx => gateIdx < rowIdx)).toBe(true);
+      expect(gateIdxs.some(gateIdx => gateIdx < rowIdx)).toBe(true);
     }
+    // And the household-scoped gate must be gone from both — it is the wrong
+    // question here, in both directions.
+    expect(screenSource).not.toContain('!onboarding.isPastMember');
   });
 
   it('keeps This family and (nanny) Household holidays ungated by isPastMember — they still show her something of her own', () => {
@@ -351,8 +359,13 @@ const fakeMember = (overrides: Partial<FakeMember> = {}): FakeMember => ({
 
 let membershipRows: FakeMember[] = [];
 let householdMemberRows: FakeMember[] = [];
+/** Households the viewer was REMOVED from — `useActiveHousehold` resolves one
+ * of these when there is no live household to prefer, which is what makes
+ * `onboarding.isPastMember` true in a render test. */
+let pastHouseholdRows: unknown[] = [];
 
 const householdListMock = mock(() => Promise.resolve([]));
+const householdListPastMock = mock(() => Promise.resolve(pastHouseholdRows));
 const childrenListMock = mock(() => Promise.resolve([]));
 const listMembersMock = mock(() => Promise.resolve(householdMemberRows));
 const getProfileMock = mock(() =>
@@ -367,7 +380,11 @@ const getProfileMock = mock(() =>
 const listMembershipsMock = mock(() => Promise.resolve(membershipRows));
 
 mock.module('@/src/api/endpoints/household', () => ({
-  householdApi: { list: householdListMock, listMembers: listMembersMock },
+  householdApi: {
+    list: householdListMock,
+    listMembers: listMembersMock,
+    listPast: householdListPastMock,
+  },
 }));
 mock.module('@/src/api/endpoints/children', () => ({
   childrenApi: { list: childrenListMock },
@@ -397,6 +414,7 @@ beforeEach(() => {
   listMembershipsMock.mockClear();
   membershipRows = [];
   householdMemberRows = [];
+  pastHouseholdRows = [];
   useAuthStore.setState({
     session: { user: { id: OWNER_USER_ID } } as unknown as never,
     isInitialized: true,
@@ -628,6 +646,63 @@ describe('SettingsScreen — an ACTIVE nanny keeps every row (no regression)', (
       session: { user: { id: 'nanny-active-1' } } as unknown as never,
       isInitialized: true,
       user: { id: 'nanny-active-1' } as unknown as never,
+    } as never);
+  });
+
+  it('still shows Availability and Request time off', async () => {
+    const { getByTestId } = renderWithProviders(<SettingsScreenRendered />);
+
+    await waitFor(() =>
+      expect(getByTestId('settings-household-section')).toBeTruthy()
+    );
+    expect(getByTestId('settings-manage-availability')).toBeTruthy();
+    expect(getByTestId('settings-request-time-off')).toBeTruthy();
+  });
+});
+
+// THE case `onboarding.isPastMember` cannot answer. `carer_availability`
+// carries no household id — it is ONE availability shared across every family
+// she works for — and time off is requested by the person, not the household.
+// This nanny's resolved household is the one that ended, so `isPastMember` is
+// true for her, and gating on it hid both rows from someone who still works
+// four days a week for the other family.
+const TWO_FAMILY_NANNY_ID = 'nanny-two-families';
+const LIVE_HOUSEHOLD_ID = 'h2';
+
+describe('SettingsScreen — a nanny with one past AND one active family keeps both rows', () => {
+  beforeEach(() => {
+    membershipRows = [
+      fakeMember({
+        id: 'm-past',
+        household_id: HOUSEHOLD_ID,
+        user_id: TWO_FAMILY_NANNY_ID,
+        role: 'nanny',
+        status: 'removed',
+      }),
+      fakeMember({
+        id: 'm-live',
+        household_id: LIVE_HOUSEHOLD_ID,
+        user_id: TWO_FAMILY_NANNY_ID,
+        role: 'nanny',
+        status: 'active',
+      }),
+    ];
+    householdMemberRows = [...membershipRows];
+    // `GET /households` returns [] here, so the only resolvable household is
+    // the one she left — exactly the state that made `isPastMember` true.
+    pastHouseholdRows = [
+      {
+        id: HOUSEHOLD_ID,
+        name: 'The Past Family',
+        state: 'live',
+        currency: 'GBP',
+        timezone: 'Europe/London',
+      },
+    ];
+    useAuthStore.setState({
+      session: { user: { id: TWO_FAMILY_NANNY_ID } } as unknown as never,
+      isInitialized: true,
+      user: { id: TWO_FAMILY_NANNY_ID } as unknown as never,
     } as never);
   });
 
