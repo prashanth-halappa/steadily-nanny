@@ -254,11 +254,12 @@ appId: com.jetto.steadily.nanny
 - assertNotVisible:
     id: 'this-family-leave-button'
 - takeScreenshot: 41-h-this-family-past-member
-# By TEXT, not id: `ThisFamilyScreen`'s past-member branch renders a bare
-# `BackButton` with no `testID` prop (ThisFamilyScreen.tsx:294), unlike the
-# `settings-back` on Settings itself. Worth giving it one.
+# By id: both of ThisFamilyScreen's back buttons carry `this-family-back`.
+# They did not when this flow was written — the past-member branch rendered a
+# bare `BackButton`, the text match was the workaround, and it did not
+# reliably navigate. The testID is the fix; the workaround is gone.
 - tapOn:
-    text: 'Back'
+    id: 'this-family-back'
 - assertVisible:
     id: 'settings-screen'
 
@@ -280,7 +281,7 @@ appId: com.jetto.steadily.nanny
     id: 'household-holidays-retry'
 - takeScreenshot: 41-i-holidays-past-member
 
-# --- J. back to Today for the lead line -------------------------------------
+# --- J. back to Today: no lead line for a past member -------------------------------------
 # ASSERTED LAST, DELIBERATELY. `resolveTodayLead` (todayLead.ts:45) returns
 # null unless the viewer is a parent or an ACTIVE nanny, and `activeNanny` is
 # `role === NANNY && !isPastMember` — so a past member's lead line resolves to
@@ -297,6 +298,17 @@ appId: com.jetto.steadily.nanny
     id: 'settings-back'
 - assertVisible:
     id: 'today-header'
-- assertVisible:
+# NOT visible, and that is the correct expectation — the comment above this
+# section already said so and the assertion contradicted it. `resolveTodayLead`
+# returns null unless the viewer is a parent or an ACTIVE nanny, so a past
+# member has no lead line to render and never will. Asserting its presence here
+# was asking the product to contradict a deliberate rule.
+#
+# The regression `ab57562f` fixed is proved in §C instead, where it actually
+# shows: `useTodayCoverRows` used to sit at 'loading' forever for a past member
+# because a disabled query is `isPending` forever, which left a permanent
+# skeleton in "This week". §C asserts that skeleton is GONE and the section
+# settles. That is the observable half; the lead line was never the tell.
+- assertNotVisible:
     id: 'today-lead'
-- takeScreenshot: 41-j-today-lead-line
+- takeScreenshot: 41-j-today-no-lead-for-past-member

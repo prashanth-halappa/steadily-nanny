@@ -202,6 +202,17 @@ appId: com.jetto.steadily.nanny
       notVisible:
         id: 'welcome-screen'
     commands:
+      # POP TO A TAB ROOT FIRST. The settings deep link alone is not enough
+      # when the previous flow left the app on a PUSHED child of that same
+      # segment (`/settings/household-holidays`, `/settings/this-family`, a
+      # shift detail): expo-router treats the parent link as somewhere it is
+      # already at, nothing navigates, and `logout.yaml` then fails its
+      # `settings-screen` assertion — which reads as "logout is broken" when
+      # the app is simply two screens deeper than this file assumed. Observed
+      # 2026-08-23 after flow 41 ended on the holidays screen. A no-op when
+      # already on the tabs.
+      - openLink: steadilynanny:///(private)/(tabs)/home
+      - waitForAnimationToEnd
       - openLink: steadilynanny:///(private)/settings
       - waitForAnimationToEnd
       # Notification soft-ask sheet may be covering the screen — logout.yaml

@@ -290,7 +290,11 @@ export function ThisFamilyScreen() {
             paddingTop: SCREEN_CONTENT_STYLE.padding,
           }}
         >
-          <BackButton onPress={() => router.back()} label={tCommon('back')} />
+          <BackButton
+            testID="this-family-back"
+            onPress={() => router.back()}
+            label={tCommon('back')}
+          />
         </View>
         <PastMemberState
           testID="this-family-past-member"
@@ -308,7 +312,11 @@ export function ThisFamilyScreen() {
       contentContainerStyle={SCREEN_CONTENT_STYLE}
       refreshControl={refreshControl}
     >
-      <BackButton onPress={() => router.back()} label={tCommon('back')} />
+      <BackButton
+        testID="this-family-back"
+        onPress={() => router.back()}
+        label={tCommon('back')}
+      />
       <View className="mt-1 flex-row items-start justify-between gap-3">
         <View className="flex-1">
           <H1>{household?.name ?? t('untitledDraft')}</H1>
