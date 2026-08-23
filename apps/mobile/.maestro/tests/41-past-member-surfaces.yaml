@@ -1,0 +1,302 @@
+# 41 — every surface a nanny can reach in a household she has LEFT.
+#
+# WHAT THIS PROVES. `ab57562f` + `86f6984d` finished a three-layer design for a
+# member whose household membership ended: the explanation ONCE on Today's
+# pinned card, a read-only reminder on every tab that shows household data, and
+# a whole-screen refusal where a surface has no honest content left. Before it,
+# every surface invented its own silence — Schedule said "No shifts yet", Inbox
+# said "You're all caught up", This family showed the family's name over three
+# empty sections, and Household holidays blamed the network. This walks one
+# nanny through all seven surfaces in one session and asserts the shipped
+# state on each.
+#
+# It also proves the TWO-FAMILY case, which is the part that is easy to get
+# wrong: Availability and Request time off are gated on "does she work for
+# ANYONE" (`hasActiveMembership`), NOT on the past-membership of the household
+# the switcher happens to have resolved. A nanny with one ended family and one
+# live one must keep both rows.
+#
+# And it proves there is no request storm. The original defect fired ~1/sec of
+# doomed requests into the household she had left until the rate limiter
+# tripped. Count new `http:` lines in apps/api/logs/dev.log across the run:
+# single-digit 404s and ZERO 429s is healthy.
+#
+# NOT RE-RUNNABLE without re-seeding — well, almost. It takes no writes at all
+# (that is the point: every write affordance is meant to be gone), so it IS
+# re-runnable as long as the fixture below holds. What it CANNOT survive is a
+# local DB reset: it needs Test Nanny to be `removed` from PAST_HOUSEHOLD_ID
+# and `active` in ACTIVE_HOUSEHOLD_ID at the same time. Re-establish with:
+#   update household_members set status='removed', ended_reason='removed_by_parent'
+#     where household_id=<past> and user_id=<nanny>;
+# PAST_HOUSEHOLD_ID must ALSO have no shifts in the current week: Schedule's
+# layer-4 refusal replaces the EMPTY state only — a past member whose week
+# still holds shifts keeps the list on purpose, because that list IS the
+# read-only record the design preserves (ScheduleShiftsScreen.tsx:714).
+# Hours wants at least one time entry in the current week to show that it kept
+# its data as well as its shape.
+#
+# Requires ONE booted simulator (two make Maestro drive the wrong one and
+# --udid does not help), Metro on :8081 and the API on :8080.
+#
+# Env, all passed with an explicit `-e` per pair — a single word-split ENV
+# string does not survive zsh into `maestro test`:
+#   NANNY_EMAIL, NANNY_PASSWORD, ACTIVE_HOUSEHOLD_ID, PAST_HOUSEHOLD_ID
+appId: com.jetto.steadily.nanny
+---
+# --- A. the live family, first, so "normal" is on the record ----------------
+# Sign in resolved to the household she is STILL in. Everything here must look
+# like an ordinary session: no read-only chip, no membership-ended card. If
+# this block fails, the past-member state has leaked across households and
+# nothing below it means anything.
+- runFlow:
+    file: ../flows/login-nanny.yaml
+    env:
+      PHASE4_HOUSEHOLD_ID: ${ACTIVE_HOUSEHOLD_ID}
+
+- assertVisible:
+    id: 'today-header'
+- assertNotVisible:
+    id: 'today-header-read-only'
+- assertNotVisible:
+    id: 'today-membership-ended-card'
+- takeScreenshot: 41-a-active-household-today
+
+# --- B. switch to the family she left ---------------------------------------
+# The switcher is the first thing in Today's feed, under the pinned slot.
+# Scrolled to, not tapped blind: Maestro's visibility is a11y-tree-based
+# rather than occlusion-based, so a tap on an element under the fold reports
+# COMPLETED and does nothing.
+- scrollUntilVisible:
+    element:
+      id: 'household-switcher-trigger'
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: 'household-switcher-trigger'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'household-switcher-sheet'
+# Past households live under their own section heading at the BOTTOM of the
+# sheet, below every live one — five households here, so this genuinely
+# scrolls.
+- assertVisible:
+    id: 'household-switcher-past-section'
+- scrollUntilVisible:
+    element:
+      id: 'household-switcher-option-${PAST_HOUSEHOLD_ID}'
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: 'household-switcher-option-${PAST_HOUSEHOLD_ID}'
+- waitForAnimationToEnd
+- assertNotVisible:
+    id: 'household-switcher-sheet'
+
+# --- C. Today: layer 1 (the explanation) and layer 2 (the reminder) ---------
+# The chip: ScreenHeader derives it from its own testID, so Today's is
+# `today-header-read-only` (screen-header.tsx:114). Note the context line is
+# FOLDED INTO the chip's node when readOnly is set — `today-header-context`
+# does not exist in this state, by design.
+- extendedWaitUntil:
+    visible:
+      id: 'today-header-read-only'
+    timeout: 15000
+- assertVisible:
+    id: 'today-header-read-only'
+
+# The card. One explanation, in the one slot that can never fall under the
+# fold. Its title must be the removal wording, not a network error and not
+# nothing at all.
+- assertVisible:
+    id: 'today-membership-ended-card'
+- assertVisible:
+    id: 'today-membership-ended-title'
+- assertVisible:
+    id: 'today-membership-ended-body'
+- takeScreenshot: 41-c-today-membership-ended
+
+# THE REGRESSION ROW. A DISABLED TanStack v5 query is `isPending` forever, so
+# feeding one to `queryState` pinned "This week" at 'loading' and it shimmered
+# a skeleton for good. `today-shifts-card` and `today-shifts-skeleton` are
+# mutually exclusive siblings, so scrolling until the CARD appears is the
+# positive form of the assertion — if the bug is back this times out rather
+# than passing on an element that is merely off-screen.
+- scrollUntilVisible:
+    element:
+      id: 'today-shifts-card'
+    direction: DOWN
+    timeout: 15000
+- assertVisible:
+    id: 'today-shifts-card'
+- assertNotVisible:
+    id: 'today-shifts-skeleton'
+- takeScreenshot: 41-c-today-this-week-settled
+
+# --- D. Schedule: layer 4, not an active carer's quiet week -----------------
+- tapOn:
+    id: 'tab-schedule'
+- waitForAnimationToEnd
+# Force AGENDA first. The calendar view is a PERSISTED preference
+# (`calendarViewStore`), so the tab opens on whatever the last session left —
+# a prior run left this simulator on Rhythm. Rhythm is `CROSS_FAMILY`, which
+# spans every household she has, so the household-scoped refusal is suppressed
+# there ON PURPOSE (ScheduleShiftsScreen.tsx:714). Asserting without pinning
+# the view tests whichever screen the last flow happened to leave behind.
+- assertVisible:
+    id: 'calendar-view-switcher'
+- tapOn:
+    id: 'calendar-view-agenda'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-past-member'
+    timeout: 20000
+- assertVisible:
+    id: 'schedule-past-member'
+# "No shifts yet" is written at somebody still employed. It must be gone.
+- assertNotVisible:
+    id: 'schedule-shifts-empty'
+# Schedule predates ScreenHeader and hand-rolls its band, so it reproduces the
+# same "Read-only · {context}" line under its own id.
+- assertVisible:
+    id: 'schedule-header-read-only'
+- takeScreenshot: 41-d-schedule-past-member
+
+# --- E. Inbox: layer 4, not a reassurance -----------------------------------
+- tapOn:
+    id: 'tab-inbox'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'inbox-past-member'
+    timeout: 20000
+- assertVisible:
+    id: 'inbox-past-member'
+- assertNotVisible:
+    id: 'inbox-empty'
+- assertVisible:
+    id: 'inbox-header-read-only'
+- takeScreenshot: 41-e-inbox-past-member
+
+# --- F. Hours: layer 3 — the ONE surface that keeps its whole shape ---------
+# Hours is deliberately NOT refused. The hours she worked are hers, and the
+# record is the thing she may have to prove; it keeps the title, the week
+# navigation and the figures, and takes a footnote instead.
+- tapOn:
+    id: 'tab-hours'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'hours-screen'
+    timeout: 20000
+- assertVisible:
+    id: 'hours-title'
+- assertVisible:
+    id: 'hours-total'
+- assertVisible:
+    id: 'hours-week-bars'
+- assertVisible:
+    id: 'hours-past-member-note'
+- takeScreenshot: 41-f-hours-keeps-its-shape
+
+# --- G. Settings: the two-family gate ---------------------------------------
+# Back to Today first: Hours has no `SettingsHeaderButton`, so `header-settings`
+# genuinely does not exist on that tab.
+# Both rows are user-scoped facts, not household ones: `carer_availability`
+# carries no household id, and `POST /v1/time-off` is user-scoped. She is
+# standing IN the ended household right now and must still be offered both,
+# because she still works four days a week for the other family.
+- tapOn:
+    id: 'tab-today'
+- waitForAnimationToEnd
+# Today is still scrolled down from §C — the feed keeps its offset across tab
+# switches, so the header (and the gear in it) is off-screen and a bare tap
+# fails with "Element not found" on a control that is plainly there when you
+# look at the app.
+- scrollUntilVisible:
+    element:
+      id: 'header-settings'
+    direction: UP
+    timeout: 10000
+- tapOn:
+    id: 'header-settings'
+- assertVisible:
+    id: 'settings-screen'
+- scrollUntilVisible:
+    element:
+      id: 'settings-manage-availability'
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: 'settings-manage-availability'
+- scrollUntilVisible:
+    element:
+      id: 'settings-request-time-off'
+    direction: DOWN
+    timeout: 10000
+- assertVisible:
+    id: 'settings-request-time-off'
+- takeScreenshot: 41-g-settings-keeps-user-scoped-rows
+
+# --- H. This family: layer 4, and the leave button must be GONE -------------
+- scrollUntilVisible:
+    element:
+      id: 'settings-this-family'
+    direction: UP
+    timeout: 10000
+- tapOn:
+    id: 'settings-this-family'
+- assertVisible:
+    id: 'settings-this-family-screen'
+- assertVisible:
+    id: 'this-family-past-member'
+# There is nothing left to leave. Offering the action would 403.
+- assertNotVisible:
+    id: 'this-family-leave-button'
+- takeScreenshot: 41-h-this-family-past-member
+# By TEXT, not id: `ThisFamilyScreen`'s past-member branch renders a bare
+# `BackButton` with no `testID` prop (ThisFamilyScreen.tsx:294), unlike the
+# `settings-back` on Settings itself. Worth giving it one.
+- tapOn:
+    text: 'Back'
+- assertVisible:
+    id: 'settings-screen'
+
+# --- I. Household holidays: layer 4, not a network error --------------------
+- scrollUntilVisible:
+    element:
+      id: 'settings-household-holidays'
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: 'settings-household-holidays'
+- assertVisible:
+    id: 'household-holidays-screen'
+- assertVisible:
+    id: 'household-holidays-past-member'
+# The server is RIGHT to withhold this. Blaming the connection sends her to
+# reset a router over a permission.
+- assertNotVisible:
+    id: 'household-holidays-retry'
+- takeScreenshot: 41-i-holidays-past-member
+
+# --- J. back to Today for the lead line -------------------------------------
+# ASSERTED LAST, DELIBERATELY. `resolveTodayLead` (todayLead.ts:45) returns
+# null unless the viewer is a parent or an ACTIVE nanny, and `activeNanny` is
+# `role === NANNY && !isPastMember` — so a past member's lead line resolves to
+# nothing regardless of whether its data settled. `ab57562f` fixed the OTHER
+# half of that row (the cover-rows query was stuck 'loading'), which is real
+# and is now verifiable: if this fails while §C passed, the remaining cause is
+# the resolver, not the query. Last in the file so one open gap cannot mask
+# the six surfaces above it.
+- tapOn:
+    id: 'household-holidays-back'
+- assertVisible:
+    id: 'settings-screen'
+- tapOn:
+    id: 'settings-back'
+- assertVisible:
+    id: 'today-header'
+- assertVisible:
+    id: 'today-lead'
+- takeScreenshot: 41-j-today-lead-line

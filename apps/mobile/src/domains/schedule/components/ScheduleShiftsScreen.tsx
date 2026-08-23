@@ -558,11 +558,20 @@ export function ScheduleShiftsScreen({
           </Small>
           {/* The week range is not repeated here — `WeekNavHeader` below
               already owns and renders that exact string. */}
-          <Figure28 testID="schedule-week-total" weight="semibold">
-            {t('shifts.weekTotal', {
-              duration: formatDuration(weekTotalMinutes),
-            })}
-          </Figure28>
+          {/* Suppressed for a past member. "0h scheduled this week" is a
+              FACTUAL ASSERTION about a household she is no longer in, and it
+              is not even derived from a read the server served her — the
+              shifts query is membership-gated, so the zero comes from an
+              empty default, not from an answer. CLAUDE.md's rule about
+              ungated queries stating facts is exactly this shape. The
+              read-only line above already carries the honest version. */}
+          {onboarding.isPastMember ? null : (
+            <Figure28 testID="schedule-week-total" weight="semibold">
+              {t('shifts.weekTotal', {
+                duration: formatDuration(weekTotalMinutes),
+              })}
+            </Figure28>
+          )}
           {!isNannyVoice && carerList.length > 1 ? (
             <Small
               testID="schedule-week-total-note"

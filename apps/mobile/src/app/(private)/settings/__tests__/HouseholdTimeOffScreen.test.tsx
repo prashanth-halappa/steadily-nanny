@@ -269,19 +269,26 @@ describe('household-time-off route (parent mark-paid entry point)', () => {
     expect(queryByTestId('pto-mark-paid-hours-input')).toBeNull();
   });
 
-  it('a REMOVED parent (past member) sees the rows but cannot open the mark-paid sheet', async () => {
+  // AMENDED. This used to assert a removed parent "sees the rows but cannot
+  // open the sheet". The second half was the point and still holds; the first
+  // half was never a real state — `useHouseholdTimeOff` is household-scoped
+  // and the server 404s it for a member who has left, so rows only appeared
+  // because this suite mocks the read. Leaving the query ungated had a cost
+  // beyond this screen: its `isError` fed `ScheduleShiftsScreen`'s
+  // `coverInputsFailed`, which put "We couldn't load this family's care
+  // hours" in front of a past member — the app blaming the network for a
+  // permission the server is right to withhold. The query is gated now, so
+  // there is nothing to render and nothing to press.
+  it('a REMOVED parent (past member) is not served the rows at all, so no sheet can open', async () => {
     membershipsListMock.mockImplementation(() =>
       Promise.resolve([{ ...parentMembership, status: 'removed' }])
     );
 
-    const { getByTestId, queryByTestId } = renderWithProviders(
-      <HouseholdTimeOffScreen />
-    );
+    const { queryByTestId } = renderWithProviders(<HouseholdTimeOffScreen />);
 
     await waitFor(() =>
-      expect(getByTestId(`household-time-off-${TIME_OFF_ID}`)).toBeTruthy()
+      expect(queryByTestId(`household-time-off-${TIME_OFF_ID}`)).toBeNull()
     );
-    fireEvent.press(getByTestId(`household-time-off-${TIME_OFF_ID}`));
     expect(queryByTestId('pto-mark-paid-hours-input')).toBeNull();
   });
 
