@@ -383,5 +383,6 @@
         "definition": "El tramo de siete días con el que se cuentan las horas extra; empieza el día que fija el hogar. No cambia con el calendario de pago, así que un hogar que paga cada mes sigue teniendo las horas extra calculadas semana a semana."
       }
     }
-  }
+  },
+  "ledgerHint": "Toca un día para corregir sus horas."
 }

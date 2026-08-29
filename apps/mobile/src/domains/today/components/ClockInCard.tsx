@@ -41,9 +41,11 @@ import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import type { TimeEntry } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
 import { SCHEDULED_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { ChevronRight } from 'lucide-react-native';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { Icon } from '@/lib/icons/iconWithClassName';
 import { Button } from '@/src/components/ui/button';
 import { Card } from '@/src/components/ui/card';
 import { LiveDot } from '@/src/components/ui/live-dot';
@@ -80,7 +82,7 @@ import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { useIsOnline } from '@/src/lib/network';
-import { showErrorToast } from '@/src/lib/toast';
+import { showErrorToast, showSuccessToast } from '@/src/lib/toast';
 import { utcIsoToWallClockHHMM, wallClockToUtcIso } from '@/src/lib/wallClock';
 import { useAuthStore } from '@/src/store/auth';
 import { useClockOutReminder } from '../hooks/useClockOutReminder';
@@ -89,6 +91,7 @@ import { useOverdueClockOut } from '../hooks/useOverdueClockOut';
 import { resolveDefaultClockOutAt } from '../utils/clockOutReminder';
 import { ClockOutSheet, type ClockOutSheetSubmitInput } from './ClockOutSheet';
 import { MissedHoursSheet } from './MissedHoursSheet';
+import { StartTimeSheet } from './StartTimeSheet';
 
 interface ClockInCardProps {
   householdId: string;
@@ -227,6 +230,9 @@ export function ClockInCard({
 }: ClockInCardProps) {
   const { t } = useTranslation('today');
   const { t: tErrors } = useTranslation('errors');
+  // Cross-namespace on purpose: "Correction saved." is already this app's
+  // word for this act, and a second phrasing would be a second voice.
+  const { t: tHours } = useTranslation('hours');
   const currentUserId = useAuthStore(s => s.user?.id ?? null);
   const { households } = useActiveHousehold();
   const isMultiHousehold = households.length > 1;
@@ -249,7 +255,8 @@ export function ClockInCard({
   // arbitrate which T1 surface wins when this and NeedsAttentionCard are
   // both eligible. `shiftEndsAt` comes from here too: the shift auto-match
   // (within 2h — see the API's `matchConfirmedShift`) it's derived from.
-  const { overdue, clockInAt, shiftEndsAt } = useOverdueClockOut();
+  const { overdue, clockInAt, shiftEndsAt, shiftStartsAt } =
+    useOverdueClockOut();
 
   const today = useMemo(() => localDateInZone(timeZone), [timeZone]);
   const dayThread = useDayThread(householdId, today);
@@ -480,6 +487,7 @@ export function ClockInCard({
   // `missedShift`'s own schedule — a suggestion she confirms or edits, never
   // a write fired on tap. "We record what happened, not what was planned."
   const [showMissedHoursSheet, setShowMissedHoursSheet] = useState(false);
+  const [showStartTimeSheet, setShowStartTimeSheet] = useState(false);
   // Frozen when the sheet opens so the optimistic clear (and a 409 overlap
   // invalidate) can null the running cache without remounting the sheet or
   // reseeding its draft from shifting props.
@@ -501,6 +509,42 @@ export function ClockInCard({
     ? Math.max(0, Date.now() - new Date(entry.clock_in_at).getTime())
     : 0;
   const canDiscard = Boolean(entry) && !isOptimisticTimeEntry(entry);
+
+  /**
+   * Below this, there is nothing to correct and a second clock time is noise.
+   * A module constant rather than a token: it is a product threshold, not a
+   * visual one.
+   */
+  const START_DELTA_VISIBLE_MS = 5 * 60 * 1000;
+  const startDeltaMs =
+    entry?.clock_in_at && shiftStartsAt
+      ? Math.abs(
+          new Date(entry.clock_in_at).getTime() -
+            new Date(shiftStartsAt).getTime()
+        )
+      : null;
+  /**
+   * SYMMETRIC by construction — |delta|, so clocking in five minutes early
+   * renders exactly like clocking in five minutes late. That symmetry is the
+   * whole reason this is a record of two facts and not a lateness meter.
+   */
+  const showStartDelta =
+    startDeltaMs !== null && startDeltaMs >= START_DELTA_VISIBLE_MS;
+  const scheduledStartLabel = shiftStartsAt
+    ? formatClockTime(shiftStartsAt, timeZone)
+    : null;
+  /**
+   * Same rule the discard affordance uses: an optimistic row has no server id
+   * yet, so a correction would 404. A failed or unsettled shifts query simply
+   * means no delta line — never a missing affordance, and never a claim about
+   * a schedule we could not read.
+   */
+  const canCorrectStart = Boolean(entry) && !isOptimisticTimeEntry(entry);
+
+  const handleStartTimePress = () => {
+    if (!canCorrectStart) return;
+    setShowStartTimeSheet(true);
+  };
   const handleDiscardPress = () => {
     if (!isOnline) {
       showErrorToast(getLocalizedErrorMessage(null, tErrors, 'errors:offline'));
@@ -581,6 +625,7 @@ export function ClockInCard({
     breakMinutes,
     note,
     clockOutAt,
+    clockInAt,
   }: ClockOutSheetSubmitInput) => {
     // Prefer the live entry; fall back to the ids stashed when the sheet
     // opened so a retry still works while the optimistic clear has left
@@ -609,6 +654,12 @@ export function ClockInCard({
         // Absent unless the carer set a finish — the server's own clock is
         // the right answer for an ordinary clock-out at the door.
         ...(clockOutAt ? { clock_out_at: clockOutAt } : {}),
+        // A start she corrected on her way out. It travels with the finish so
+        // both ends move in ONE write: an update-then-clock-out pair leaves a
+        // window where the start has moved and the shift never closed. Until
+        // the sheet's Started field was unlocked this value existed and was
+        // silently dropped here, which made the unlock a no-op.
+        ...(clockInAt ? { clock_in_at: clockInAt } : {}),
       })
       // Only close the sheet on success — useClockOut's onError already
       // shows a toast for generic failures, and leaving the sheet open on
@@ -703,11 +754,42 @@ export function ClockInCard({
             </View>
             <Timer testID="today-live-timer">{elapsed}</Timer>
             {entry.clock_in_at ? (
-              <Small className="text-muted-strong">
-                {t('since', {
-                  time: formatClockTime(entry.clock_in_at, timeZone),
-                })}
-              </Small>
+              /* The third part of the chord, converted from an inert caption
+                 into the correction affordance — she notices the wrong start
+                 HERE, standing in the hallway, not hours later on Hours.
+                 Kept out of the button register on purpose: the card had two
+                 presses before this and still has two. It is a metadata row
+                 with a chevron, the same glyph that already means "this can
+                 be corrected" on a `TimeEntryRow`, and it sits ABOVE the
+                 primary because it belongs to the fact it corrects rather
+                 than to the action stack. */
+              <Pressable
+                testID="today-start-time-row"
+                accessibilityRole="button"
+                accessibilityLabel={t('startTime.title')}
+                onPress={canCorrectStart ? handleStartTimePress : undefined}
+                disabled={!canCorrectStart}
+                className="flex-row items-center justify-between"
+                style={{ minHeight: 44 }}
+              >
+                <Small className="text-muted-strong">
+                  {showStartDelta && scheduledStartLabel
+                    ? t('startedVsScheduled', {
+                        scheduled: scheduledStartLabel,
+                        actual: formatClockTime(entry.clock_in_at, timeZone),
+                      })
+                    : t('since', {
+                        time: formatClockTime(entry.clock_in_at, timeZone),
+                      })}
+                </Small>
+                {canCorrectStart ? (
+                  <Icon
+                    icon={ChevronRight}
+                    size={20}
+                    className="text-muted-foreground"
+                  />
+                ) : null}
+              </Pressable>
             ) : null}
             {isMultiHousehold && runningEntryHouseholdName ? (
               <Small className="text-muted-strong">
@@ -918,6 +1000,27 @@ export function ClockInCard({
         rather than rolling back — cannot wipe the typed break/note. Unmounted
         once closed so success still clears `clockout-sheet` from the tree.
       */}
+        {/* Mounted only while open, for the same reason `ClockOutSheet` is:
+            RN's `Modal` keeps its children in the tree regardless of its own
+            `visible` prop, so unmounting is what actually removes the sheet.
+            Guarded on a real entry id — the sheet corrects one row. */}
+        {showStartTimeSheet && entry?.id && entry.clock_in_at ? (
+          <StartTimeSheet
+            entryId={entry.id}
+            clockInAt={entry.clock_in_at}
+            scheduledStartAt={showStartDelta ? shiftStartsAt : null}
+            timeZone={timeZone}
+            onDismiss={() => setShowStartTimeSheet(false)}
+            onSaved={() => {
+              setShowStartTimeSheet(false);
+              // Acknowledged tier, three words, and the app's existing word
+              // for this act — a fourth phrasing of "we saved your
+              // correction" is how a codebase ends up with four. Fired after
+              // the sheet closes so it is not a toast over a Modal.
+              showSuccessToast(tHours('entryCorrectedToast'));
+            }}
+          />
+        ) : null}
         {showClockOutSheet ? (
           <ClockOutSheet
             visible={showClockOutSheet}

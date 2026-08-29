@@ -147,6 +147,21 @@ export const TimeEntrySchema = z.object({
   shift_id: z.uuid().nullable(),
   clock_in_at: z.iso.datetime({ offset: true }).nullable(),
   clock_out_at: z.iso.datetime({ offset: true }).nullable(),
+  // What the app WATCHED, beside what the carer SAYS (the pair above, which
+  // she may correct and which is what gets paid). Written once at the tap and
+  // never updated — `updateEntry` deliberately omits them from its patch, and
+  // 113's header explains why that convention is the whole guarantee.
+  //
+  // NULL MEANS "NOT OBSERVED", NEVER "UNCHANGED": rows predating 113,
+  // retroactive entries, cancellation-pay rows, and the boundary end of a
+  // split session all carry null. So "was this corrected?" is
+  // `observed != null && observed !== effective` — the null check is
+  // load-bearing, and without it every case above reads as an edit.
+  //
+  // Optional AND nullable: optional for a row written before 113, null for
+  // one the app never watched.
+  observed_clock_in_at: z.iso.datetime({ offset: true }).nullable().optional(),
+  observed_clock_out_at: z.iso.datetime({ offset: true }).nullable().optional(),
   break_minutes: z.int().min(0),
   // For worked rows: frozen at clock-out, informational — must not drift if
   // the shift is later edited. For `cancellation_paid` rows it is the
@@ -187,6 +202,15 @@ export const ClockOutSchema = z.object({
   break_minutes: z.int().min(0).optional(),
   note: z.string().optional(),
   clock_out_at: z.iso.datetime({ offset: true }).optional(),
+  /**
+   * A corrected START, sent when the carer fixed it in the clock-out sheet
+   * rather than earlier on the running card. Both ends move in ONE write on
+   * purpose: an update-then-clock-out pair leaves a window where the start
+   * has moved and the shift never closed, which is the stuck-row class this
+   * domain exists to avoid. Omitting it keeps the recorded start, the
+   * ordinary case. What the app observed is untouched either way (113).
+   */
+  clock_in_at: z.iso.datetime({ offset: true }).optional(),
 });
 
 /**

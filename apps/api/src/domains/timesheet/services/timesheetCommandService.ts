@@ -567,6 +567,13 @@ export class TimesheetCommandService {
       carer_display_name: carerDisplayName,
       shift_id: shiftId,
       clock_in_at: clockInAt.toISOString(),
+      // The same instant, in two columns that then diverge: `clock_in_at` is
+      // EFFECTIVE and she may correct it, this one is what the app watched
+      // and nothing rewrites it (113). Freezing the observation here is what
+      // lets the correction exist at all — before this column, an edit
+      // destroyed the only evidence, which is the whole reason the start was
+      // uneditable while the shift ran.
+      observed_clock_in_at: clockInAt.toISOString(),
       timezone: timeZone,
       kind: 'worked',
       status: 'running',
@@ -667,8 +674,23 @@ export class TimesheetCommandService {
     }
 
     const scheduledMinutes = await this.freezeScheduledMinutes(entry.shift_id);
-    const clockOutAt = input.clock_out_at ?? new Date().toISOString();
-    const { clockInAt } = this.assertClockOrder(entry.clock_in_at, clockOutAt);
+    // The tap itself, captured ONCE and used for both the effective fallback
+    // below and the audit column, so the ordinary path cannot disagree with
+    // itself by the milliseconds between two `new Date()` calls.
+    //
+    // These two are deliberately allowed to differ: on a forgotten clock-out
+    // she declares the finish she actually left at, and `clock_out_at` takes
+    // it while this keeps what the app saw. That divergence IS the record.
+    const observedClockOutAt = new Date().toISOString();
+    const clockOutAt = input.clock_out_at ?? observedClockOutAt;
+    // A start she corrected in the sheet on her way out, if any — validated by
+    // the same pair check as the finish, so a corrected start that lands after
+    // the finish or stretches the session past the ceiling is refused here
+    // rather than written and discovered later.
+    const { clockInAt } = this.assertClockOrder(
+      input.clock_in_at ?? entry.clock_in_at,
+      clockOutAt
+    );
 
     // Overlap guard on the RESOLVED finish — never `input.clock_out_at`,
     // which is omitted on the ordinary "tap Clock out" path that uses the
@@ -704,6 +726,7 @@ export class TimesheetCommandService {
         breakMinutes: input.break_minutes ?? entry.break_minutes,
         scheduledMinutes,
         note: input.note,
+        observedClockOutAt,
       });
     }
 
@@ -717,10 +740,18 @@ export class TimesheetCommandService {
 
     const patch: Partial<TimeEntry> = {
       clock_out_at: clockOutAt,
+      observed_clock_out_at: observedClockOutAt,
       break_minutes: input.break_minutes ?? entry.break_minutes,
       scheduled_minutes: scheduledMinutes,
       status: 'submitted',
     };
+    // Only when she actually corrected it — an unconditional write would fire
+    // the `local_date` trigger on every ordinary clock-out for no change.
+    // `observed_clock_in_at` is deliberately NOT touched: she is restating
+    // when she started, not when the app saw her tap.
+    if (input.clock_in_at !== undefined) {
+      patch.clock_in_at = clockInAt;
+    }
     if (input.note !== undefined) {
       patch.note = input.note;
     }
@@ -845,6 +876,15 @@ export class TimesheetCommandService {
       breakMinutes: number;
       scheduledMinutes: number | null;
       note?: string | null;
+      /**
+       * The instant the app watched the tap, passed in rather than
+       * re-derived here so both fragments of ONE session agree to the
+       * millisecond. It belongs to fragment B alone: B closes at the real
+       * finish, while A closes at a COMPUTED boundary, and a boundary is not
+       * an observation. A therefore keeps the null it already has — see the
+       * patch below, which deliberately does not name the column.
+       */
+      observedClockOutAt: string;
     }
   ): Promise<TimeEntry> {
     const inMs = new Date(plan.clockInAt).getTime();
@@ -897,6 +937,12 @@ export class TimesheetCommandService {
         shift_id: entry.shift_id,
         clock_in_at: plan.boundary,
         clock_out_at: plan.clockOutAt,
+        // Exactly one end of this fragment was observed. It OPENS at a
+        // computed boundary — nobody tapped anything at midnight — so
+        // `observed_clock_in_at` is left unset, and only the finish carries
+        // the tap. Stamping both would make every overnight shift render
+        // "Edited" (113).
+        observed_clock_out_at: plan.observedClockOutAt,
         break_minutes: breakB ?? 0,
         scheduled_minutes: schedB,
         timezone: entry.timezone,
@@ -909,7 +955,19 @@ export class TimesheetCommandService {
       });
     }
 
+    // `clock_in_at` is restated because `plan.clockInAt` may be a start the
+    // carer corrected on her way out — it is the recorded value otherwise, so
+    // the write is a no-op on the ordinary path.
+    //
+    // `observed_clock_out_at` is ABSENT on purpose and must stay absent. This
+    // fragment closes at `plan.boundary` — a computed instant, not a tap — so
+    // it has no finish observation, and the null it already carries from
+    // `clockIn` is the correct answer. Its `observed_clock_in_at` is likewise
+    // untouched: A opens at the real tap and keeps it, whatever the effective
+    // start becomes. Adding either here would brand every week-crossing
+    // session as corrected (113).
     const patch: Partial<TimeEntry> = {
+      clock_in_at: plan.clockInAt,
       clock_out_at: plan.boundary,
       break_minutes: breakA ?? 0,
       scheduled_minutes: schedA,
@@ -1428,8 +1486,18 @@ export class TimesheetCommandService {
    * Editable only while the week is unapproved. Once a parent has approved,
    * the week is a signed agreement — the way back in is the parent's own
    * query flow, not a silent edit that would revoke an approval they gave.
-   * A `running` entry isn't editable either: clocking out IS its edit, and
-   * that path can already set its own finish time.
+   *
+   * A `running` entry is editable too, but ONLY its start and its note. She
+   * taps Clock in twenty minutes after she actually started, notices while
+   * still on the clock, and must not have to work the whole shift around a
+   * number she knows is wrong. This used to be refused on the grounds that
+   * "clocking out IS its edit" — which was true only because the row had one
+   * pair of clock columns and an edit destroyed the app's only observation.
+   * Since 113 the observation is frozen in `observed_clock_in_at` and the
+   * correction cannot erase it, so the refusal has nothing left to protect.
+   *
+   * Her FINISH and her BREAK stay refused while running: neither has
+   * happened yet, and `clockOut` is the path that records them.
    */
   async updateEntry(
     userId: string,
@@ -1437,8 +1505,19 @@ export class TimesheetCommandService {
     input: UpdateTimeEntryInput
   ): Promise<TimeEntry> {
     const entry = await this.queries.getOwnedTimeEntry(userId, timeEntryId);
-    if (entry.status !== 'submitted') {
+    const isRunning = entry.status === 'running';
+    if (entry.status !== 'submitted' && !isRunning) {
       throw new TimeEntryNotEditableError(timeEntryId, entry.status);
+    }
+    // A shift still in progress has no finish and no break to correct.
+    // Reachable only from a client bug — no surface offers either field on a
+    // running row — so it stays a refusal rather than being quietly ignored,
+    // which would report success for a write that never happened.
+    if (
+      isRunning &&
+      (input.clock_out_at !== undefined || input.break_minutes !== undefined)
+    ) {
+      throw new TimeEntryNotEditableError(timeEntryId, 'running');
     }
     // Cancellation pay is system-generated compensation, not a record of
     // something she did, so there is nothing here for her to correct. Since
@@ -1468,10 +1547,24 @@ export class TimesheetCommandService {
       localDateOf(new Date(originalClockInAt), entry.timezone)
     );
 
-    const { clockInAt, clockOutAt } = this.assertClockOrder(
-      input.clock_in_at ?? originalClockInAt,
-      input.clock_out_at ?? entry.clock_out_at
-    );
+    // A runner has no finish to order against, so the pair check does not
+    // apply — `assertClockOrder` would throw MISSING_CLOCK_TIME on the null.
+    // The running variant bounds the START instead: not in the future, and
+    // not so far back that the session already exceeds the span ceiling.
+    const {
+      clockInAt,
+      clockOutAt,
+    }: { clockInAt: string; clockOutAt: string | null } = isRunning
+      ? {
+          clockInAt: this.assertRunningClockStart(
+            input.clock_in_at ?? originalClockInAt
+          ),
+          clockOutAt: null,
+        }
+      : this.assertClockOrder(
+          input.clock_in_at ?? originalClockInAt,
+          input.clock_out_at ?? entry.clock_out_at
+        );
 
     // The ROW's own frozen zone, not the household's current one. `local_date`
     // was derived from this column when the row was written and nothing
@@ -1505,7 +1598,12 @@ export class TimesheetCommandService {
         weekStart,
       });
     }
+    // Skipped for a runner: there is no finish yet, so nothing can carry the
+    // week. Her eventual clock-out gets its own boundary handling, and unlike
+    // this refusal that path SPLITS rather than rejecting — a clock-out must
+    // never fail (F-B2-4).
     if (
+      clockOutAt !== null &&
       weekStartOf(new Date(clockOutAt), timeZone, weekStartsOn) !== weekStart
     ) {
       throw new InvalidClockTimesError('CLOCK_OUT_CHANGES_WEEK', {
@@ -1532,6 +1630,13 @@ export class TimesheetCommandService {
       timeEntryId
     );
 
+    // The observed pair is NEVER written here, and that omission is the only
+    // thing making it immutable — there is no column grant and no trigger
+    // enforcing it (113's header says so out loud). A correction moves the
+    // EFFECTIVE times; what the app watched is evidence and does not move
+    // with them. `timeEntryRepo.update` passes whatever it is given straight
+    // to Supabase, so naming either column below would silently overwrite the
+    // observation this whole feature exists to preserve.
     const patch: Partial<TimeEntry> = {};
     if (input.clock_in_at !== undefined) patch.clock_in_at = input.clock_in_at;
     if (input.clock_out_at !== undefined)
@@ -1651,6 +1756,46 @@ export class TimesheetCommandService {
       throw new InvalidClockTimesError('CLOCK_OUT_IN_FUTURE', { clockOutAt });
     }
     return { clockInAt, clockOutAt };
+  }
+
+  /**
+   * The same bounds as `assertClockOrder`, for a session with no finish yet —
+   * a carer correcting her start while still on the clock.
+   *
+   * A SIBLING rather than a widening of `assertClockOrder`, deliberately:
+   * that function's `{ clockInAt: string; clockOutAt: string }` return is
+   * what every caller relies on to narrow both ends to non-null, and making
+   * the finish optional there would push a null into `clockOut` and
+   * `createRetroactiveEntry`, which have no branch for one.
+   *
+   * Two of the four pair checks survive with a meaning:
+   * - the future bound, now on the START — she cannot have begun a shift that
+   *   has not happened, within the same skew tolerance a clock-out gets;
+   * - the span ceiling, measured from the NEW start to now, so a correction
+   *   that would retroactively stretch a live session past
+   *   `MAX_SESSION_SPAN_MS` is refused. Measured against the new value, not
+   *   the stored one, or a runner already over the ceiling could be dragged
+   *   further back.
+   *
+   * The ordering check has no counterpart (there is nothing to order against)
+   * and `MISSING_CLOCK_TIME` keeps its meaning for the start alone.
+   */
+  private assertRunningClockStart(clockInAt: string | null): string {
+    if (!clockInAt) {
+      throw new InvalidClockTimesError('MISSING_CLOCK_TIME');
+    }
+    const inMs = new Date(clockInAt).getTime();
+    const nowMs = Date.now();
+    if (inMs > nowMs + CLOCK_SKEW_TOLERANCE_MS) {
+      throw new InvalidClockTimesError('CLOCK_IN_IN_FUTURE', { clockInAt });
+    }
+    if (nowMs - inMs > MAX_SESSION_SPAN_MS) {
+      throw new InvalidClockTimesError('CLOCK_SPAN_TOO_LONG', {
+        clockInAt,
+        maxSpanMs: MAX_SESSION_SPAN_MS,
+      });
+    }
+    return clockInAt;
   }
 
   /**

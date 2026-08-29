@@ -383,5 +383,6 @@
         "definition": "The seven-day stretch overtime is counted in, starting on the day the household sets. It does not move with the pay schedule, so a household that pays monthly still has overtime worked out week by week."
       }
     }
-  }
+  },
+  "ledgerHint": "Tap a day to fix its times."
 }

@@ -169,3 +169,108 @@ describe('wasEntryEdited — a retroactive entry is not an edited one', () => {
     ).toBe(false);
   });
 });
+
+/**
+ * Migration 113 — the marker stops guessing from `updated_at` and compares
+ * what the app WATCHED against what is EFFECTIVE. The null cases are the
+ * whole risk: four shapes carry a null observation and none of them is a
+ * correction.
+ */
+describe('wasEntryEdited — against the observed pair (113)', () => {
+  const OBSERVED_IN = '2026-08-03T08:00:00.000Z';
+  const OBSERVED_OUT = '2026-08-03T16:00:00.000Z';
+
+  it('is false when both ends still match what was observed', () => {
+    expect(
+      wasEntryEdited(
+        makeEntry({
+          observed_clock_in_at: OBSERVED_IN,
+          observed_clock_out_at: OBSERVED_OUT,
+        })
+      )
+    ).toBe(false);
+  });
+
+  it('still catches a break-or-note-only change, which moves no clock time', () => {
+    // Both observations match, so the exact comparison says nothing — and it
+    // must not, because she did change the record. This is the one thing the
+    // `updated_at` fallback is still here for.
+    expect(
+      wasEntryEdited(
+        makeEntry({
+          observed_clock_in_at: OBSERVED_IN,
+          observed_clock_out_at: OBSERVED_OUT,
+          break_minutes: 30,
+          updated_at: '2026-08-05T09:00:00.000Z',
+        })
+      )
+    ).toBe(true);
+  });
+
+  it('is true when she corrected the start', () => {
+    expect(
+      wasEntryEdited(
+        makeEntry({
+          clock_in_at: '2026-08-03T07:40:00.000Z',
+          observed_clock_in_at: OBSERVED_IN,
+          observed_clock_out_at: OBSERVED_OUT,
+        })
+      )
+    ).toBe(true);
+  });
+
+  it('is true when a forgotten clock-out declared a finish the app never saw', () => {
+    expect(
+      wasEntryEdited(
+        makeEntry({
+          clock_out_at: '2026-08-03T17:00:00.000Z',
+          observed_clock_in_at: OBSERVED_IN,
+          // She tapped the next morning; effective is what she left at.
+          observed_clock_out_at: '2026-08-04T07:12:00.000Z',
+        })
+      )
+    ).toBe(true);
+  });
+
+  it('is false for a retroactive entry, which the app never watched at all', () => {
+    // Born complete and hours after the fact — the exact shape `updated_at`
+    // alone would brand as edited from birth.
+    expect(
+      wasEntryEdited(
+        makeEntry({
+          observed_clock_in_at: null,
+          observed_clock_out_at: null,
+          created_at: '2026-08-03T18:00:00.000Z',
+          updated_at: '2026-08-03T18:00:00.000Z',
+        })
+      )
+    ).toBe(false);
+  });
+
+  it('is false for the boundary half of a split session, whose finish is unobserved by design', () => {
+    expect(
+      wasEntryEdited(
+        makeEntry({
+          clock_in_at: '2026-08-09T22:00:00.000Z', // Sun 23:00 London
+          clock_out_at: '2026-08-09T23:00:00.000Z', // Mon 00:00 London
+          observed_clock_in_at: '2026-08-09T22:00:00.000Z',
+          // Closed at a computed boundary, not a tap.
+          observed_clock_out_at: null,
+          updated_at: '2026-08-10T01:00:00.000Z',
+        })
+      )
+    ).toBe(false);
+  });
+
+  it('still says nothing about a voided row', () => {
+    expect(
+      wasEntryEdited(
+        makeEntry({
+          status: 'voided',
+          clock_in_at: '2026-08-03T07:40:00.000Z',
+          observed_clock_in_at: OBSERVED_IN,
+        })
+      )
+    ).toBe(false);
+  });
+});

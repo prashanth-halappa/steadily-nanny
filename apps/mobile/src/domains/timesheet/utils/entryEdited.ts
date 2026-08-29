@@ -15,23 +15,57 @@ import { endsAtLocalMidnight } from './splitFragment';
  * from "someone came back and changed this", without needing a column to
  * record it.
  *
- * The one exception is the first fragment of a session the server split at
- * local midnight — see `endsAtLocalMidnight`, which `wasEntryEdited` skips.
+ * Only reachable on the FALLBACK path below — rows written before migration
+ * 113, and corrections that moved only the break or the note. Every row the
+ * app observed answers exactly instead.
  */
 const EDIT_DETECTION_SLACK_MS = 60_000;
 
 /**
  * Was this entry changed after it was clocked out?
  *
- * ponytail: derived from `updated_at`, so it can say THAT the record moved,
- * never what changed or who changed it. That is honest for a first pass —
- * the alternative is a `time_entry_edits` table, which is worth building the
- * first time a parent actually disputes a correction, and not before.
+ * Since migration 113 this is a comparison of two real values: what the app
+ * WATCHED (`observed_clock_in_at` / `observed_clock_out_at`, frozen at the
+ * tap) against what is EFFECTIVE now. It replaced an `updated_at` heuristic
+ * that could say THAT the record moved and never what changed.
+ *
+ * One of that heuristic's exceptions survives and must: `endsAtLocalMidnight`.
+ * A split session's boundary end is unobserved BY DESIGN, so that half still
+ * falls through to the fallback and still needs guarding — see the comment
+ * there. The exception is demoted, not deleted.
+ *
+ * A NULL OBSERVATION MEANS "NOT OBSERVED", NEVER "UNCHANGED", and the
+ * `!== null` guards below are the whole reason this reads correctly. Four
+ * shapes carry null and none of them is a correction: rows predating 113,
+ * retroactive entries (a claim about the past, never watched), cancellation
+ * pay (nobody tapped anything), and the boundary end of a session split at
+ * midnight or a week edge. Drop the null checks and every overnight shift
+ * renders as edited — which is exactly the bug the old `endsAtLocalMidnight`
+ * exception existed to suppress.
+ *
+ * The `updated_at` fallback survives for the two cases the columns cannot
+ * answer: a pre-113 row, and a correction that touched only the break or the
+ * note, which leaves both clock times equal to their observations.
  */
 export function wasEntryEdited(entry: TimeEntry): boolean {
   // Voiding bumps `updated_at` but is not a correction — never show "edited".
   if (entry.status === 'voided') return false;
   if (!entry.clock_out_at) return false;
+
+  const observedIn = entry.observed_clock_in_at ?? null;
+  const observedOut = entry.observed_clock_out_at ?? null;
+  if (observedIn !== null && observedIn !== entry.clock_in_at) return true;
+  if (observedOut !== null && observedOut !== entry.clock_out_at) return true;
+  // FALLBACK, for the ends the app did not watch. Reached by a pre-113 row, a
+  // break/note-only change, and — the case that matters — the half of a split
+  // session that CLOSES at the boundary, whose `observed_clock_out_at` is
+  // null by design.
+  //
+  // That last one is why `endsAtLocalMidnight` survives here rather than being
+  // deleted with the rest of the heuristic's scaffolding: the split write
+  // lands long after the clock-in, so `updated_at` alone brands every
+  // overnight and week-crossing fragment as corrected. The observed columns
+  // answer the ends they cover; this still guards the end they cannot.
   if (endsAtLocalMidnight(entry)) return false;
   const clockOutMs = new Date(entry.clock_out_at).getTime();
   const createdMs = new Date(entry.created_at).getTime();
@@ -50,10 +84,15 @@ export function wasEntryEdited(entry: TimeEntry): boolean {
 }
 
 /**
- * Can the carer still correct this entry? Mirrors the server's gate in
- * `timesheetCommandService.updateEntry` — a running entry is corrected by
- * clocking out, and an approved week is a signed agreement that only the
- * parent's query flow re-opens.
+ * Can the carer correct this entry FROM THE HOURS SCREEN? An approved week is
+ * a signed agreement that only the parent's query flow re-opens.
+ *
+ * Deliberately still `submitted`-only, even though the server now also
+ * accepts a correction to a RUNNING entry's start. That correction belongs to
+ * Today, on the running clock card, where she is standing when she notices —
+ * and the Hours sheet edits a completed span, which a running row does not
+ * have. `TimeEntryRow` independently refuses to make a running row pressable,
+ * so widening this would change nothing except what the name promises.
  *
  * The server is the authority; this exists so the row doesn't offer an edit
  * that would come back as a 409.

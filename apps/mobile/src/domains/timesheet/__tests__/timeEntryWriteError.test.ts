@@ -124,7 +124,18 @@ describe('describeTimeEntryWriteError', () => {
         isAxiosError: true,
         response: {
           status: 409,
-          data: { error: { metadata: { reason: 'voided' } } },
+          // The real wire shape: `reason` is the CODE, and 'voided' arrives
+          // as `editableReason`. This test used to assert against a payload
+          // the server never sends, which is why the copy it pins was
+          // unreachable in production.
+          data: {
+            error: {
+              metadata: {
+                reason: 'TIME_ENTRY_NOT_EDITABLE',
+                editableReason: 'voided',
+              },
+            },
+          },
         },
       },
       t,

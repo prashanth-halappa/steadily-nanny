@@ -23,7 +23,14 @@ interface ErrorLike {
   isAxiosError?: boolean;
   response?: {
     status?: number;
-    data?: { error?: { code?: string; metadata?: { reason?: string } } };
+    data?: {
+      error?: {
+        code?: string;
+        // `reason` is the error CODE; `editableReason` is which of the four
+        // not-editable refusals it actually was. See `getTimeEntryEditErrorKey`.
+        metadata?: { reason?: string; editableReason?: string };
+      };
+    };
   };
 }
 
@@ -108,11 +115,33 @@ export function isClockOutConflictError(error: unknown): boolean {
 export function getTimeEntryEditErrorKey(error: unknown): string | undefined {
   const err = asErrorLike(error);
   const reason = err.response?.data?.error?.metadata?.reason;
+  // The SUB-reason, and the whole bug this function used to have. A
+  // `TimeEntryNotEditableError` always sets `metadata.reason` to the literal
+  // 'TIME_ENTRY_NOT_EDITABLE' (`ConflictError` fills it from the error CODE);
+  // which of the four refusals it actually was lives one key over, in
+  // `metadata.editableReason` (`timesheetErrors.ts`). Reading only `reason`
+  // collapsed all four into one sentence that named approval — false for
+  // three of them — and left the `voided` branch below permanently dead,
+  // because 'voided' never arrives as `reason`.
+  const editableReason = err.response?.data?.error?.metadata?.editableReason;
   const status = err.response?.status;
-  if (reason === 'voided' && (status === 409 || status === 400)) {
+  if (editableReason === 'voided' && (status === 409 || status === 400)) {
     return 'errors:entryVoided';
   }
-  if (err.response?.status === 409 && reason === 'TIME_ENTRY_NOT_EDITABLE') {
+  if (status === 409 && reason === 'TIME_ENTRY_NOT_EDITABLE') {
+    // An approved week is the parent's to reopen; cancellation pay is fixed by
+    // fixing the shift. Both need a different action from her, so neither can
+    // share the other's sentence.
+    if (editableReason === 'week_approved') {
+      return 'errors:entryNotEditableApproved';
+    }
+    if (editableReason === 'cancellation_paid') {
+      return 'errors:entryNotEditableCancelled';
+    }
+    // 'running' deliberately has no sentence of its own. Since the server
+    // began accepting a start correction on a live entry, it fires only if a
+    // client sends a finish or a break on one — a client bug, not a state a
+    // carer can reach, and better in Sentry than softened on screen.
     return 'errors:entryNotEditable';
   }
   // A1/A9. The terms gate is a policy on time RECORDS, not a button state —
@@ -125,11 +154,19 @@ export function getTimeEntryEditErrorKey(error: unknown): string | undefined {
   if (err.response?.status !== 400) return undefined;
   if (reason === 'CLOCK_SPAN_TOO_LONG') return 'errors:clockSpanTooLong';
   if (reason === 'CLOCK_OUT_CHANGES_WEEK') return 'errors:clockOutChangesWeek';
+  // The three week-boundary refusals state one rule three ways, and each
+  // names the end that actually crossed. They used to land on the generic
+  // times sentence ("the finish must be after the start"), which describes a
+  // different problem and invites her to retype a field that is not wrong.
+  if (reason === 'CLOCK_IN_CHANGES_WEEK') return 'errors:clockInChangesWeek';
+  if (reason === 'CLOCK_CROSSES_WEEK') return 'errors:clockCrossesWeek';
+  // A row with no start is a data anomaly, not something she typed — so this
+  // must not tell her to fix her times.
+  if (reason === 'MISSING_CLOCK_TIME') return 'errors:missingClockTime';
   if (
     reason === 'CLOCK_OUT_BEFORE_CLOCK_IN' ||
     reason === 'CLOCK_OUT_IN_FUTURE' ||
-    reason === 'CLOCK_IN_CHANGES_WEEK' ||
-    reason === 'MISSING_CLOCK_TIME'
+    reason === 'CLOCK_IN_IN_FUTURE'
   ) {
     return 'errors:invalidClockTimes';
   }

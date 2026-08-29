@@ -32,6 +32,11 @@ export interface NewTimeEntryData {
   carer_display_name: string;
   shift_id: string | null;
   clock_in_at: string;
+  // The instant the app watched the tap — the same value as `clock_in_at` at
+  // insert, and frozen there while `clock_in_at` stays correctable. See 113's
+  // header. Omit it and the row reads as "not observed", which is right only
+  // for entries nobody tapped.
+  observed_clock_in_at?: string | null;
   timezone: string;
   kind: TimeEntry['kind'];
   status: TimeEntry['status'];
@@ -49,6 +54,14 @@ export interface NewSubmittedTimeEntryData {
   shift_id: string | null;
   clock_in_at: string;
   clock_out_at: string;
+  // Both OMITTED on every path that writes a row the app never watched — a
+  // retroactive entry and a cancellation-pay row are claims, not observations,
+  // and their null is what distinguishes them from a real clock-out (113).
+  // The one caller that sets `observed_clock_out_at` is `clockOutAcrossWeeks`,
+  // for fragment B alone: fragment B OPENS at a computed boundary and CLOSES
+  // at the real tap, so exactly one of its ends is an observation.
+  observed_clock_in_at?: string | null;
+  observed_clock_out_at?: string | null;
   break_minutes: number;
   scheduled_minutes: number | null;
   timezone: string;

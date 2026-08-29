@@ -343,7 +343,12 @@ export function ClockOutSheet({
       ...(outTimeText !== null && instants
         ? { clockOutAt: instants.ends_at }
         : {}),
-      ...(mode === 'edit' && inTimeText !== null && instants
+      // Sent in BOTH modes since the start became correctable at clock-out
+      // too — she is looking straight at the two numbers that set her pay,
+      // and the wrong one used to be the one she could not touch. Still only
+      // when she actually typed something (`inTimeText !== null`), so an
+      // untouched sheet sends no start and leaves the record alone.
+      ...(inTimeText !== null && instants
         ? { clockInAt: instants.starts_at }
         : {}),
     });
@@ -381,7 +386,6 @@ export function ClockOutSheet({
                 accessibilityLabel={t('startLabel')}
                 value={shownInTime}
                 onChangeText={setInTimeText}
-                editable={mode === 'edit'}
                 keyboardType="numbers-and-punctuation"
                 maxLength={5}
                 placeholder="HH:MM"

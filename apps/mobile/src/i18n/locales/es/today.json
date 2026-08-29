@@ -8,7 +8,7 @@
   "notOnTheClock": "No estás en horario",
   "since": "Desde las {{time}}",
   "clockOutSheetTitle": "Fichar salida",
-  "clockOutSheetHint": "Añade un descanso si lo tomaste.",
+  "clockOutSheetHint": "Revisa las horas y añade un descanso si lo tomaste.",
   "breakLabel": "Descanso",
   "noBreak": "Sin descanso",
   "breakMinutesOption": "{{minutes}} min",
@@ -329,5 +329,14 @@
     "bodyMember": "Esta persona ya no tiene acceso a tu hogar.",
     "dismiss": "Entendido",
     "dismissLabel": "Descartar el aviso sobre {{name}}"
+  },
+  "startedVsScheduled": "Previsto {{scheduled}} · empezaste {{actual}}",
+  "startTime": {
+    "title": "Hora de entrada",
+    "hint": "Hemos puesto tu hora prevista de entrada — cámbiala si empezaste a otra hora.",
+    "hintNoSchedule": "Indica la hora a la que empezaste — tu familia verá la entrada corregida.",
+    "save": "Guardar hora de entrada",
+    "futureStartError": "La hora de entrada no puede estar en el futuro.",
+    "differentDayError": "La hora de entrada tiene que ser del mismo día en que fichaste."
   }
 }

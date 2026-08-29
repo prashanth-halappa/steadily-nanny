@@ -95,6 +95,25 @@ describe('getTimeEntryEditErrorKey', () => {
     return { response: { status, data: { error: { metadata: { reason } } } } };
   }
 
+  /**
+   * The shape the server ACTUALLY sends for a not-editable refusal: `reason`
+   * is always the error code, and which of the four refusals it was lives in
+   * `editableReason` (`timesheetErrors.ts`). Tests used to put the sub-reason
+   * in `reason`, where nothing ever puts it.
+   */
+  function notEditable(status: number, editableReason: string) {
+    return {
+      response: {
+        status,
+        data: {
+          error: {
+            metadata: { reason: 'TIME_ENTRY_NOT_EDITABLE', editableReason },
+          },
+        },
+      },
+    };
+  }
+
   it('maps a 16h-cap refusal to its own key', () => {
     expect(getTimeEntryEditErrorKey(refusal(400, 'CLOCK_SPAN_TOO_LONG'))).toBe(
       'errors:clockSpanTooLong'
@@ -107,12 +126,11 @@ describe('getTimeEntryEditErrorKey', () => {
     ).toBe('errors:clockOutChangesWeek');
   });
 
-  it('keeps the four plain bad-time reasons on invalidClockTimes', () => {
+  it('keeps the plain bad-time reasons on invalidClockTimes', () => {
     for (const reason of [
       'CLOCK_OUT_BEFORE_CLOCK_IN',
       'CLOCK_OUT_IN_FUTURE',
-      'CLOCK_IN_CHANGES_WEEK',
-      'MISSING_CLOCK_TIME',
+      'CLOCK_IN_IN_FUTURE',
     ]) {
       expect(getTimeEntryEditErrorKey(refusal(400, reason))).toBe(
         'errors:invalidClockTimes'
@@ -120,7 +138,37 @@ describe('getTimeEntryEditErrorKey', () => {
     }
   });
 
-  it('maps the approved-week 409 to entryNotEditable', () => {
+  // Each of these describes a DIFFERENT problem and used to render the
+  // generic times sentence, which describes none of them.
+  it('gives each week-boundary refusal the end that actually crossed', () => {
+    expect(
+      getTimeEntryEditErrorKey(refusal(400, 'CLOCK_IN_CHANGES_WEEK'))
+    ).toBe('errors:clockInChangesWeek');
+    expect(getTimeEntryEditErrorKey(refusal(400, 'CLOCK_CROSSES_WEEK'))).toBe(
+      'errors:clockCrossesWeek'
+    );
+  });
+
+  it('does not tell her to retype a start the row never had', () => {
+    expect(getTimeEntryEditErrorKey(refusal(400, 'MISSING_CLOCK_TIME'))).toBe(
+      'errors:missingClockTime'
+    );
+  });
+
+  it('forks the not-editable 409 on the sub-reason, not the code', () => {
+    expect(getTimeEntryEditErrorKey(notEditable(409, 'week_approved'))).toBe(
+      'errors:entryNotEditableApproved'
+    );
+    expect(
+      getTimeEntryEditErrorKey(notEditable(409, 'cancellation_paid'))
+    ).toBe('errors:entryNotEditableCancelled');
+    // 'running' has no sentence of its own — only a client bug reaches it.
+    expect(getTimeEntryEditErrorKey(notEditable(409, 'running'))).toBe(
+      'errors:entryNotEditable'
+    );
+  });
+
+  it('falls back to the bare sentence when no sub-reason is present', () => {
     expect(
       getTimeEntryEditErrorKey(refusal(409, 'TIME_ENTRY_NOT_EDITABLE'))
     ).toBe('errors:entryNotEditable');
@@ -137,14 +185,13 @@ describe('getTimeEntryEditErrorKey', () => {
     );
   });
 
-  it('maps a void refusal (reason voided) on 409 to entryVoided', () => {
-    expect(getTimeEntryEditErrorKey(refusal(409, 'voided'))).toBe(
+  // This branch was unreachable until the fork above read the right key:
+  // 'voided' only ever arrives as `editableReason`.
+  it('reaches the voided copy, which the old mapping could never fire', () => {
+    expect(getTimeEntryEditErrorKey(notEditable(409, 'voided'))).toBe(
       'errors:entryVoided'
     );
-  });
-
-  it('maps a void refusal (reason voided) on 400 to entryVoided', () => {
-    expect(getTimeEntryEditErrorKey(refusal(400, 'voided'))).toBe(
+    expect(getTimeEntryEditErrorKey(notEditable(400, 'voided'))).toBe(
       'errors:entryVoided'
     );
   });

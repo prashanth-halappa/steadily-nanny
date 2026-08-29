@@ -8,7 +8,7 @@
   "notOnTheClock": "Not on the clock",
   "since": "Since {{time}}",
   "clockOutSheetTitle": "Clock out",
-  "clockOutSheetHint": "Add a break if you took one.",
+  "clockOutSheetHint": "Check the times, and add a break if you took one.",
   "breakLabel": "Break",
   "noBreak": "No break",
   "breakMinutesOption": "{{minutes}} min",
@@ -329,5 +329,14 @@
     "bodyMember": "They no longer have access to your household.",
     "dismiss": "Got it",
     "dismissLabel": "Dismiss the note about {{name}}"
+  },
+  "startedVsScheduled": "Scheduled {{scheduled}} · started {{actual}}",
+  "startTime": {
+    "title": "Start time",
+    "hint": "We've filled in your scheduled start — change it if you started at a different time.",
+    "hintNoSchedule": "Set the time you started — your household sees the corrected start.",
+    "save": "Save start time",
+    "futureStartError": "A start time can't be in the future.",
+    "differentDayError": "A start time has to be on the same day you clocked in."
   }
 }

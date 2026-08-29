@@ -23,6 +23,17 @@ export interface OverdueClockOut {
   overdue: boolean;
   clockInAt: string | null;
   shiftEndsAt: string | null;
+  /**
+   * The matched shift's SCHEDULED start. Already on the object this hook
+   * fetches — it was being discarded while `ends_at` was read, which is why
+   * the app could know she was due at 09:00, see her clock in at 09:20, and
+   * say nothing anywhere.
+   *
+   * Null when no shift matched. Never a judgement on its own: the card
+   * renders it beside the actual start as two plain facts, in either
+   * direction, and an early start reads identically to a late one.
+   */
+  shiftStartsAt: string | null;
 }
 
 export function useOverdueClockOut(): OverdueClockOut {
@@ -31,11 +42,13 @@ export function useOverdueClockOut(): OverdueClockOut {
   useElapsedTimer(clockInAt);
   const shift = useShift(running.data?.shift_id);
   const shiftEndsAt = shift.data?.ends_at ?? null;
+  const shiftStartsAt = shift.data?.starts_at ?? null;
   return {
     overdue: Boolean(
       clockInAt && isOverdue(clockInAt, shiftEndsAt, Date.now())
     ),
     clockInAt,
     shiftEndsAt,
+    shiftStartsAt,
   };
 }
