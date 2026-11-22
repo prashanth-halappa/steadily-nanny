@@ -46,4 +46,6 @@ docs/               The architecture/conventions playbook (10 numbered docs) —
 scripts/setup.ts    The identity find-replace tool — see SETUP.md
 ```
 
+**Run the API locally:** `cp apps/api/.dev.vars.example apps/api/.dev.vars`, then `scripts/dev-local.sh api` (`wrangler dev` on :8080, local D1).
+
 **Package manager: Bun `1.3.14`, everywhere — never `npm`/`yarn`.** See `docs/01-STACK.md` for the full toolchain list.

@@ -96,7 +96,7 @@ The setup script only does plain-text find/replace on the *tokens themselves* �
     cp apps/api/.env.example apps/api/.env
     cp apps/mobile/.env.example apps/mobile/.env
     ```
-    For the API, `apps/api/.env.example` documents every var; under `wrangler dev` put them in `apps/api/.dev.vars` (same KEY=value format; `.env` is for the Bun-only entry `bun src/index.ts`). **Never commit these** (`.gitignore` excludes them). The only var required to boot is `BETTER_AUTH_SECRET` (>= 32 chars, `openssl rand -base64 32`); `apps/api/src/config/env.ts` validates at startup and short-circuits to placeholders when `NODE_ENV=test`. Production additionally requires `JOB_API_KEY` and `RESEND_API_KEY` (set as Worker secrets, see `PROVISIONING.md` §1).
+    For the API, `apps/api/.env.example` documents every var; under `wrangler dev` put them in `apps/api/.dev.vars` (start from `cp apps/api/.dev.vars.example apps/api/.dev.vars`, then `scripts/dev-local.sh api`; same KEY=value format; `.env` is for the Bun-only entry `bun src/index.ts`). **Never commit these** (`.gitignore` excludes them). The only var required to boot is `BETTER_AUTH_SECRET` (>= 32 chars, `openssl rand -base64 32`); `apps/api/src/config/env.ts` validates at startup and short-circuits to placeholders when `NODE_ENV=test`. Production additionally requires `JOB_API_KEY` and `RESEND_API_KEY` (set as Worker secrets, see `PROVISIONING.md` §1).
 
     On the mobile side, `EXPO_PUBLIC_API_URL` is the minimum for the app to talk to your API (the Better Auth client derives `/api/auth` from its origin); everything else (Sentry, PostHog, `EXPO_PUBLIC_GOOGLE_*` client ids) degrades gracefully when unset (a dev-mode console warning, no crash — see `apps/mobile/src/config/env.ts`'s `validateEnv()`).
 

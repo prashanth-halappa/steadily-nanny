@@ -444,7 +444,7 @@ async function main(db: Db): Promise<void> {
         starts_at: startsAt,
         ends_at: endsAt,
         timezone: timezone,
-        local_date: '1900-01-01', // overwritten by the trigger; proves it fires
+        local_date: today, // D1 has no local_date trigger (Postgres' sync_*_local_date): write it.
         kind: 'extra', // not part of the Mon/Wed recurring pattern
         status: 'confirmed',
         origin: 'system_generated',
@@ -558,7 +558,7 @@ async function main(db: Db): Promise<void> {
         starts_at: startsAt,
         ends_at: endsAt,
         timezone: timezone,
-        local_date: '1900-01-01', // overwritten by the trigger
+        local_date: SEED_EXTRA_SHIFT_LOCAL_DATE,
         kind: 'extra',
         status: 'pending',
         origin: 'parent_proposed',
@@ -623,7 +623,7 @@ async function main(db: Db): Promise<void> {
         starts_at: startsAt,
         ends_at: endsAt,
         timezone: timezone,
-        local_date: '1900-01-01', // overwritten by the trigger
+        local_date: SEED_DEMOTED_SHIFT_LOCAL_DATE,
         kind: 'cover',
         status: 'confirmed',
         origin: 'system_generated',
@@ -691,7 +691,7 @@ async function main(db: Db): Promise<void> {
         break_minutes: 0,
         kind: 'worked',
         status: 'submitted',
-        local_date: '1900-01-01', // overwritten by the trigger
+        local_date: SEED_TIME_ENTRY_LOCAL_DATE,
         timezone: timezone,
         // 043's anonymity snapshot — NOT NULL since the column landed.
         carer_display_name: 'Test Nanny',

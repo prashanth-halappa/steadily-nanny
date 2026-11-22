@@ -1,14 +1,19 @@
 # [audit-2026-08-17] Target C (C1) — with the API stopped, the nanny's Today
 # tab shows an ErrorState with retry (`today-tab-error`), never a feed
-# silently missing the clock-in card. Run AFTER the driving agent has killed
-# the local API dev server (same down-window as 23b). NOTE: auth is now served
-# by that same API (Better Auth), so the login step below only passes if the
-# session is already established before the server goes down.
+# silently missing the clock-in card.
+#
+# ORDER (sign-in is served by the same API via Better Auth, so this flow
+# cannot log in once it is down):
+#   1. API UP:   maestro test flows/login-nanny.yaml
+#   2. kill the local API dev server (same down-window as 23b)
+#   3. API DOWN: this flow — it continues that session, like 23b does.
 appId: com.jetto.steadily.nanny
 tags:
   - audit-2026-08-17
 ---
-- runFlow: ../flows/login-nanny.yaml
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd
 - tapOn:
     id: 'tab-today'
 - waitForAnimationToEnd

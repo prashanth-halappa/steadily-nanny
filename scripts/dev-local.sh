@@ -15,7 +15,7 @@
 #   scripts/dev-local.sh migrate   # apply pending migrations only, keep the data
 #   scripts/dev-local.sh job <name>  # fire a scheduled job by hand
 #
-# Port 8080 (not wrangler's default 8787) because the Maestro harness
+# Port 8080 (also pinned in wrangler.jsonc dev.port) because the Maestro harness
 # (apps/mobile/.maestro/run-phase4.sh) and apps/mobile/.env.example assume it.
 # Override the LAN address for the physical devices with LAN_IP=192.168.x.y.
 set -euo pipefail

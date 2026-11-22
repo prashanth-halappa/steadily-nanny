@@ -203,7 +203,8 @@ Best-covered scenario. Run `run-phase4.sh` and these:
 | **Gap** | Care hours wider than the booked week → uncovered row |
 
 `23b`/`24a` kill the API deliberately. Run them last in any batch, and restart
-the API before anything else.
+the API before anything else. `24a` cannot sign in with the API down: run
+`flows/login-nanny.yaml` first, then kill the API, then `24a`.
 
 ---
 

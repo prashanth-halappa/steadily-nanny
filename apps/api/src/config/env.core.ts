@@ -35,7 +35,7 @@ export const coreEnvSchema = z.object({
     .string()
     .min(32, 'BETTER_AUTH_SECRET must be at least 32 characters'),
   // Public origin of this API; the auth routes live under `${it}/api/auth`.
-  BETTER_AUTH_URL: z.string().url().default('http://localhost:8787'),
+  BETTER_AUTH_URL: z.string().url().default('http://localhost:8080'),
 
   // ── Social sign-in (optional; a provider is enabled only when its id is set) ─
   // Apple: the Services ID (web flow, Android) and the iOS bundle id (native
@@ -91,7 +91,7 @@ export const coreTestEnv: CoreEnv = {
   PORT: 8080,
   NODE_ENV: 'test',
   BETTER_AUTH_SECRET: 'test-better-auth-secret-at-least-32-chars',
-  BETTER_AUTH_URL: 'http://localhost:8787',
+  BETTER_AUTH_URL: 'http://localhost:8080',
   LOG_LEVEL: 'info',
   JOB_API_KEY: 'test-job-api-key',
   RESEND_API_KEY: 'test-resend-key',

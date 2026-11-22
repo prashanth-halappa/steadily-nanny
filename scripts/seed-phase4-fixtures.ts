@@ -348,7 +348,7 @@ async function reseedWorkedWeek(
       break_minutes: 0,
       kind: 'worked',
       status: 'submitted',
-      local_date: '1900-01-01', // overwritten by the trigger; proves it fires
+      local_date: entryDate, // D1 has no local_date trigger (Postgres' sync_*_local_date): write it.
       timezone,
       carer_display_name: carerDisplayName,
     })
@@ -756,7 +756,7 @@ async function main(db: Db): Promise<void> {
       starts_at: zonedWallTimeToUtcIso(tomorrow, '18:00', householdTz),
       ends_at: zonedWallTimeToUtcIso(tomorrow, '21:00', householdTz),
       timezone: householdTz,
-      local_date: '1900-01-01', // overwritten by the trigger
+      local_date: tomorrow, // D1 has no local_date trigger (Postgres' sync_*_local_date): write it.
       kind: 'cover',
       status: 'pending',
       origin: 'parent_proposed',
@@ -774,7 +774,7 @@ async function main(db: Db): Promise<void> {
       starts_at: zonedWallTimeToUtcIso(tomorrow, '21:30', householdTz),
       ends_at: zonedWallTimeToUtcIso(tomorrow, '22:30', householdTz),
       timezone: householdTz,
-      local_date: '1900-01-01',
+      local_date: tomorrow,
       kind: 'cover',
       status: 'pending',
       origin: 'parent_proposed',

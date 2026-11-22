@@ -7,6 +7,8 @@
   // nodejs_compat also populates process.env from vars/secrets (default for
   // compat dates >= 2025-04-01), which is what src/config/env.ts validates.
   "compatibility_flags": ["nodejs_compat"],
+  // Local dev always on :8080 (mobile .env, Maestro and BETTER_AUTH_URL expect it).
+  "dev": { "port": 8080 },
   "observability": { "enabled": true },
   "routes": [{ "pattern": "api.nanny.getsteadily.app", "custom_domain": true }],
 

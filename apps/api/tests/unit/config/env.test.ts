@@ -40,7 +40,7 @@ describe('env.core schema', () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.PORT).toBe(8080);
-      expect(result.data.BETTER_AUTH_URL).toBe('http://localhost:8787');
+      expect(result.data.BETTER_AUTH_URL).toBe('http://localhost:8080');
       expect(result.data.APPLE_CLIENT_ID).toBeUndefined();
       expect(result.data.GOOGLE_CLIENT_ID).toBeUndefined();
     }

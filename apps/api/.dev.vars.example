@@ -1,0 +1,40 @@
+# ============================================================================
+# `wrangler dev` secrets — copy to `.dev.vars` (gitignored) and fill in.
+# ============================================================================
+#   cp apps/api/.dev.vars.example apps/api/.dev.vars
+# wrangler loads .dev.vars on top of wrangler.jsonc `vars` (which hold the
+# PRODUCTION values), and nodejs_compat copies both into process.env, where
+# src/config/env.ts validates them. In production these are `wrangler secret
+# put <NAME>` instead. Full per-var notes: apps/api/.env.example.
+
+# Override the production `vars` in wrangler.jsonc. NODE_ENV=production would
+# make JOB_API_KEY / RESEND_API_KEY mandatory; BETTER_AUTH_URL must be the
+# origin you serve on: wrangler.jsonc pins `wrangler dev` to :8080 (what
+# mobile and Maestro expect).
+NODE_ENV=development
+LOG_LEVEL=debug
+BETTER_AUTH_URL=http://localhost:8080
+
+# REQUIRED, >= 32 chars. Generate: openssl rand -base64 32
+BETTER_AUTH_SECRET=change-me-to-at-least-32-random-characters
+
+# X-Job-Api-Key for manual POST /api/jobs/* (cron triggers need no key).
+# scripts/seed-launch-pass.sh copies it into apps/mobile/.env.maestro.
+JOB_API_KEY=local-dev-job-key
+
+# Optional. A social provider is on only when its client id is set.
+APPLE_CLIENT_ID=
+APPLE_APP_BUNDLE_IDENTIFIER=
+APPLE_CLIENT_SECRET=
+GOOGLE_CLIENT_ID=
+GOOGLE_IOS_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+# Optional in dev: unset, Resend is off and emails are not sent (warning logged).
+RESEND_API_KEY=
+RESEND_WEBHOOK_SECRET=
+
+# Optional monitoring / alerting.
+SENTRY_DSN=
+OPS_ALERT_EMAILS=
+OPS_ALERT_USER_IDS=

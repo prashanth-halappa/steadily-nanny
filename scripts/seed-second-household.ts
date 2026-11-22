@@ -175,7 +175,7 @@ async function main(db: Db): Promise<void> {
       starts_at: startsAt,
       ends_at: new Date('2026-09-10T17:00:00+01:00').toISOString(),
       timezone: 'Europe/London',
-      local_date: '1900-01-01', // overwritten by the trigger; proves it fires
+      local_date: '2026-09-10', // D1 has no local_date trigger (Postgres' sync_*_local_date): write it.
       kind: 'recurring',
       status: 'confirmed',
       origin: 'system_generated',
