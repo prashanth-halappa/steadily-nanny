@@ -267,7 +267,7 @@ describe('pending_shift copy', () => {
 
   it('has title/subtitle/cta keys', () => {
     expect(titleForItem(makeItem(), t, ZONE)).toBe('items.pendingShift.title');
-    expect(subtitleForItem(makeItem(), t, ZONE)).toBe(
+    expect(subtitleForItem(makeItem(), t, ZONE, NOW)).toBe(
       'items.pendingShift.subtitle'
     );
     expect(ctaForItem(makeItem(), t)).toBe('items.pendingShift.cta');

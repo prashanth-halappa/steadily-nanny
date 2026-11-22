@@ -14,7 +14,7 @@ describe('shortZoneLabel', () => {
     ).toBe('GMT+1');
     expect(
       shortZoneLabel('Europe/London', new Date('2026-01-21T12:00:00Z'))
-    ).toBe('GMT');
+    ).toMatch(/^GMT(\+0)?$/); // Bun's ICU renders GMT+0
   });
 
   it('differs from the reader device zone rather than echoing it', () => {

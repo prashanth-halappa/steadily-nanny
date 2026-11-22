@@ -6,7 +6,16 @@
  * only the API leaves mocked. Covers the paid-status pill and reachability
  * of the mark-paid sheet through a real row tap.
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+  setSystemTime,
+} from 'bun:test';
 import { fireEvent, waitFor } from '@testing-library/react-native';
 import { useAuthStore } from '@/src/store/auth';
 import { renderWithProviders } from '@/src/test-utils';
@@ -171,7 +180,13 @@ beforeAll(async () => {
   HouseholdTimeOffScreen = (await import('../household-time-off')).default;
 });
 
+// Pin the clock so the 24 Aug fixture stays in the future.
+afterAll(() => {
+  setSystemTime();
+});
+
 beforeEach(() => {
+  setSystemTime(new Date(now));
   listMock.mockReset();
   listMembersMock.mockReset();
   membershipsListMock.mockReset();
