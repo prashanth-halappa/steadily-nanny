@@ -1,10 +1,11 @@
 /**
- * Cloudflare Cron Triggers → job runners.
+ * Cloudflare Cron Trigger → job runners.
  *
- * Replaces the pg_cron → pg_net → POST /api/jobs/* chain the API used
- * before the move to Workers. Each trigger calls the SAME tracked job as the HTTP route (job_runs
- * row, Sentry, error-count semantics) directly — no HTTP hop, no job API key.
- * The cron strings here MUST match `triggers.crons` in wrangler.jsonc exactly.
+ * ONE trigger (`* * * * *` in wrangler.jsonc) fires every minute; each tick
+ * runs every job whose own cron expression matches that minute (UTC). One
+ * trigger keeps the Workers free plan (5-trigger cap) while each job keeps its
+ * original schedule. Each job is the SAME tracked handler as the HTTP route
+ * (job_runs row, Sentry, error-count semantics), called directly.
  *
  * @module scheduled
  */
@@ -45,21 +46,61 @@ export const CRON_JOBS: Record<
   '15 6 * * *': { name: 'job-health', job: JobController.runJobHealth },
 };
 
+/** The single trigger in wrangler.jsonc; it must stay every-minute. */
+export const TICK_CRON = '* * * * *';
+
+/** One cron field (`*`, `n`, `a-b`, `*\/n`, `a-b/n`, comma lists) against a value. */
+function fieldMatches(field: string, value: number, min: number, max: number) {
+  return field.split(',').some(part => {
+    const [range = '*', stepRaw] = part.split('/');
+    const step = stepRaw === undefined ? 1 : Number(stepRaw);
+    const [lo, hi] =
+      range === '*'
+        ? [min, max]
+        : range.includes('-')
+          ? range.split('-').map(Number)
+          : [Number(range), stepRaw === undefined ? Number(range) : max];
+    if (lo === undefined || hi === undefined) return false;
+    return value >= lo && value <= hi && (value - lo) % step === 0;
+  });
+}
+
+/**
+ * Does a 5-field cron expression match this instant (UTC, minute precision)?
+ * ponytail: day-of-month and day-of-week are ANDed, not cron's OR; every
+ * schedule here uses `*` for both. Implement the OR rule before adding one
+ * that restricts both.
+ */
+export function cronMatches(expr: string, at: Date): boolean {
+  const [minute, hour, dom, month, dow] = expr.trim().split(/\s+/);
+  if (!minute || !hour || !dom || !month || !dow) return false;
+  return (
+    fieldMatches(minute, at.getUTCMinutes(), 0, 59) &&
+    fieldMatches(hour, at.getUTCHours(), 0, 23) &&
+    fieldMatches(dom, at.getUTCDate(), 1, 31) &&
+    fieldMatches(month, at.getUTCMonth() + 1, 1, 12) &&
+    fieldMatches(dow, at.getUTCDay(), 0, 6)
+  );
+}
+
 export async function scheduled(
-  controller: { cron: string },
+  controller: { cron: string; scheduledTime: number },
   _env?: unknown,
   _ctx?: unknown
 ): Promise<void> {
-  const entry = CRON_JOBS[controller.cron];
-  if (!entry) {
-    console.error(
-      `[scheduled] no job registered for cron "${controller.cron}"`
-    );
-    return;
-  }
-  // run() already logs + reports failures to Sentry and records job_runs; the
-  // catch only keeps the scheduled invocation from rejecting.
-  await entry.job.run().catch(error => {
-    console.error(`[scheduled] ${entry.name} failed:`, error);
-  });
+  // scheduledTime is the minute the tick was FOR, so a late tick still
+  // matches the right jobs.
+  const at = new Date(controller.scheduledTime);
+  const due = Object.entries(CRON_JOBS).filter(([expr]) =>
+    cronMatches(expr, at)
+  );
+  // run() already logs, reports to Sentry and records job_runs; the catch only
+  // keeps one failing job from rejecting the tick for the others.
+  await Promise.all(
+    due.map(([, entry]) =>
+      entry.job.run().catch(error => {
+        console.error(`[scheduled] ${entry.name} failed:`, error);
+      })
+    )
+  );
 }

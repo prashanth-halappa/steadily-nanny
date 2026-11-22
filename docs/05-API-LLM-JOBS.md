@@ -6,13 +6,13 @@
 
 Scheduled work runs as **Workers cron triggers**, not HTTP calls from an external scheduler.
 
-- `apps/api/wrangler.jsonc` → `triggers.crons` lists one entry per distinct schedule (10 today; the Workers Paid plan is required above 5).
-- `apps/api/src/scheduled.ts` exports `scheduled(controller)`; it looks `controller.cron` up in **`CRON_JOBS`** (`cron expression → { name, job }`) and runs `entry.job.run()`. A failure is logged and swallowed so the invocation never rejects (`run()` already reports to Sentry and records `job_runs`).
-- **`CRON_JOBS` and `triggers.crons` MUST stay in sync.** A cron in `wrangler.jsonc` with no `CRON_JOBS` entry logs `no job registered` and does nothing; an entry with no trigger never fires.
+- `apps/api/wrangler.jsonc` → `triggers.crons` holds ONE every-minute trigger (`* * * * *`), which keeps the Workers free plan (5-trigger cap).
+- `apps/api/src/scheduled.ts` exports `scheduled(controller)`; on each tick it runs every job in **`CRON_JOBS`** (`cron expression → { name, job }`) whose expression matches `controller.scheduledTime` (UTC, via `cronMatches`). Due jobs run in parallel; one failure is logged and swallowed so the others still run (`run()` already reports to Sentry and records `job_runs`).
+- **Add or reschedule a job in `CRON_JOBS` only.** Never add a second trigger to `wrangler.jsonc`, or due jobs would run twice. `cronMatches` supports `*`, `n`, `a-b`, `*/n`, `a-b/n` and lists, and ANDs day-of-month with day-of-week (cron ORs them), so don't restrict both.
 - The cron path needs **no API key** — it never goes through HTTP or Express.
-- Locally: `bun run dev` starts `wrangler dev --test-scheduled`; fire one with `curl "http://localhost:8787/__scheduled?cron=5+*+*+*+*"` (URL-encode the expression).
+- Locally: `bun run dev` starts `wrangler dev --test-scheduled`; fire a tick for a given minute with `curl "http://localhost:8080/__scheduled?cron=*+*+*+*+*&time=<unix-seconds>"`; the jobs matching that minute run.
 
-**Kill-switch:** remove the job's line from `triggers.crons` in `wrangler.jsonc` and redeploy (`wrangler deploy`). See `ROLLBACK-RUNBOOK.md`.
+**Kill-switch:** remove the job's entry from `CRON_JOBS` in `src/scheduled.ts` and redeploy (`wrangler deploy`). See `ROLLBACK-RUNBOOK.md`.
 
 ## 2. Manual trigger: `/api/jobs/*`
 
@@ -53,7 +53,7 @@ router.post('/reminders', jobHandler(JobController.runReminders));
 
 1. Write `apps/api/src/jobs/<name>Job.ts` and a `JobController.run<Name>` via the factory.
 2. Add `'<cron>': { name, job }` to `CRON_JOBS` in `src/scheduled.ts`.
-3. Add the same cron string to `triggers.crons` in `wrangler.jsonc`.
+3. Add its expected `runsPer24h` to the job-health registry (`src/jobs/jobHealthJob.ts`). Do NOT touch `triggers.crons`: the every-minute tick picks the new entry up. `CRON_JOBS` is keyed by expression, so two jobs can't share one identical string (offset one by a minute).
 4. (Optional) add a `router.post` line in `jobRoutes.ts` for manual runs.
 
 ## 6. Batch-job design notes

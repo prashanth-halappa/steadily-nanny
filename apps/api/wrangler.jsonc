@@ -16,8 +16,8 @@
     {
       "binding": "DB",
       "database_name": "steadily-nanny",
-      // Created 2026-11-22, region WEUR.
-      "database_id": "41ce7914-3d82-4b5a-855c-af5f743f9f20",
+      // Created 2026-11-22, region ENAM (eastern North America).
+      "database_id": "e005f65c-5eed-48de-a8bd-799d63d826c3",
       "migrations_dir": "migrations"
     }
   ],
@@ -44,21 +44,9 @@
   //   OPS_ALERT_EMAILS, OPS_ALERT_USER_IDS   (optional, job-health alerting)
   //   POSTHOG_API_KEY                         (optional)
 
-  // One entry per distinct schedule; MUST match CRON_JOBS in src/scheduled.ts.
-  // Replaces pg_cron migrations 026/032/048/054/057/066/073/088/089/090/105.
-  // 10 triggers: Workers Paid plan (free plan allows 5).
+  // ONE every-minute trigger (free plan allows 5). Each job's own schedule
+  // lives in CRON_JOBS in src/scheduled.ts and is matched on every tick.
   "triggers": {
-    "crons": [
-      "0 3 * * *", // schedule-horizon
-      "5 * * * *", // reminders
-      "25 * * * *", // cancellation-pay-reconcile
-      "10 4 * * *", // integrity-checks
-      "*/10 * * * *", // no-show-sweep
-      "35 * * * *", // uncovered-digest
-      "3-58/5 * * * *", // cover-ask-expiry
-      "40 3 * * *", // shift-completion
-      "50 * * * *", // no-show-digest
-      "15 6 * * *" // job-health
-    ]
+    "crons": ["* * * * *"]
   }
 }

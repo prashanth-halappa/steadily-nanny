@@ -24,7 +24,7 @@ Read this first — it is shorter than you would like.
 
 | Switch | Where | Scope | Notes |
 |---|---|---|---|
-| Remove the cron from `triggers.crons` | `apps/api/wrangler.jsonc`, then `wrangler deploy` | One scheduled job | **The strongest switch we have.** Every background behavior is reachable only via a cron trigger, so removing its schedule stops it dead. Costs one deploy (replaces Postgres `cron.unschedule`, which needed none). |
+| Remove the job's entry from `CRON_JOBS` | `apps/api/src/scheduled.ts`, then `wrangler deploy` | One scheduled job | **The strongest switch we have.** Every background behavior is reachable only via the cron tick, which only runs jobs listed in `CRON_JOBS`, so removing the entry stops it dead. Costs one deploy (replaces Postgres `cron.unschedule`, which needed none). |
 | `app_config.status` → `'maintenance'` / `'killed'` | `app_config` row (id=1) | **Whole app** | Blunt instrument. Read by `appStatusService.getAppStatus`. Use only for a genuine emergency. |
 | `app_config.min_supported_version` | `app_config` row | Whole fleet | Forces an update. See §4. |
 | Term columns left `NULL` | `pay_arrangements` | Per household | Every new pricing rule is **null-gated** — see §3. This is the real per-household "flag" for money behavior. |
@@ -41,10 +41,10 @@ that does not exist.
 
 ## §2 Scheduled jobs — the primary kill switches
 
-Jobs are Workers cron triggers. The source of truth is `triggers.crons` in
-`apps/api/wrangler.jsonc`, which must match `CRON_JOBS` in
-`apps/api/src/scheduled.ts` string for string. There are 10 triggers (Workers
-Paid plan; the free plan allows 5):
+Jobs run off ONE Workers cron trigger, `* * * * *` in `apps/api/wrangler.jsonc`
+(fits the free plan's 5-trigger cap). Every minute, `apps/api/src/scheduled.ts`
+runs each job in `CRON_JOBS` whose own expression matches that minute (UTC).
+`CRON_JOBS` is the source of truth for the schedules:
 
 ```
 schedule-horizon             0 3 * * *
@@ -59,11 +59,10 @@ no-show-digest               50 * * * *
 job-health                   15 6 * * *
 ```
 
-**Kill switch for any job:** delete its line from `triggers.crons` in
-`apps/api/wrangler.jsonc` and `wrangler deploy`. A cron whose schedule is not in
-`CRON_JOBS` only logs `no job registered` and does nothing, but remove it from
-wrangler so it stops firing. **Re-enable** by restoring the line and
-redeploying. Note: `reminders` carries shift reminders, the timesheet-approval
+**Kill switch for any job:** delete (or comment out) its entry in `CRON_JOBS`
+in `apps/api/src/scheduled.ts` and `wrangler deploy`. **Re-enable** by restoring
+the entry and redeploying. **Stop every job at once:** set `"crons": []` in
+`wrangler.jsonc` and deploy. Note: `reminders` carries shift reminders, the timesheet-approval
 nudge and the `schedule_not_set` push, so killing it kills all three (§6).
 
 Manual runs: `POST /api/jobs/<name>` with `X-Job-Api-Key` (the `JOB_API_KEY`
@@ -72,7 +71,7 @@ waiting for its schedule.
 
 | Job | Risk it carries | Kill switch |
 |---|---|---|
-| `cover-ask-expiry` | D-22/D-47. Expires unanswered cover asks by writing `status='cancelled'`, `cancelled_by=null`. A bug here **mass-cancels shifts**. Highest-blast-radius job. | Remove `3-58/5 * * * *` from `triggers.crons`, deploy. |
+| `cover-ask-expiry` | D-22/D-47. Expires unanswered cover asks by writing `status='cancelled'`, `cancelled_by=null`. A bug here **mass-cancels shifts**. Highest-blast-radius job. | Remove its `3-58/5 * * * *` entry from `CRON_JOBS`, deploy. |
 | `shift-completion` | D-24/S2. Batch-writes `completed` on past confirmed shifts. Wrong window = wrong statuses at scale. | Remove `40 3 * * *`, deploy. |
 | `no-show-digest` | D-26/A1. Morning digest (window `[07:00,10:00)`). Worst case is push noise. | Remove `50 * * * *`, deploy. |
 | `job-health` | J1-b/S2. Read-only: reads `job_runs`, writes nothing. Worst case is a noisy or missing alert. **Softest switch first:** unset `OPS_ALERT_EMAILS` and `OPS_ALERT_USER_IDS` (`wrangler secret delete`) to silence alerting while the job keeps recording findings in `job_runs.summary`. The old pg_net failure probe (`job_http_failures`) no longer exists, so it cannot be the expensive part. | Remove `15 6 * * *`, deploy. |
@@ -166,7 +165,7 @@ build writes `v: 2`. Keep it that way until a release that pins
    pending, and spot-check the new schema with
    `wrangler d1 execute steadily-nanny --remote --command "<select>"`.
 3. `wrangler deploy`.
-4. Confirm `triggers.crons` in the dashboard matches `wrangler.jsonc`.
+4. Confirm the dashboard shows exactly one trigger, `* * * * *`.
 
 Rehearse a migration locally first: `wrangler d1 migrations apply
 steadily-nanny --local` (local state lives under `.wrangler/state`). A
@@ -521,7 +520,7 @@ freeze. Recorded here so the first person to see the symptom knows the cause.
 
 If something is actively wrong in prod and you do not yet know what:
 
-1. Remove the suspect job from `triggers.crons` in `apps/api/wrangler.jsonc`
+1. Remove the suspect job from `CRON_JOBS` in `apps/api/src/scheduled.ts`
    and `wrangler deploy`. This stops most blast radius.
 2. Run the integrity checks: `POST /api/jobs/integrity-checks` with
    `X-Job-Api-Key`, then read the `job_runs.summary`. Is the money still
