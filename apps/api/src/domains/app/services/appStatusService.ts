@@ -15,10 +15,9 @@ import type {
   AppStatusResponse,
   AppStatusValue,
 } from '@steadily-nanny/shared-types';
-import { eq } from 'drizzle-orm';
-import { supabaseService } from '../../../config/supabase';
+import { eq, or, sql } from 'drizzle-orm';
 import { db } from '../../../db/client';
-import { user } from '../../../db/schema';
+import { appConfig, user, userBetaOverrides } from '../../../db/schema';
 import { logger } from '../../../middlewares/logger';
 import { cache, TTL } from '../../../utils/cache';
 
@@ -55,24 +54,20 @@ async function getUserBetaOverride(
       resolvedEmail = row?.email;
     }
 
-    let query = supabaseService
-      .from('user_beta_overrides')
-      .select('beta_all_pro');
-
-    query = resolvedEmail
-      ? query.or(`user_id.eq.${userId},email.ilike.${resolvedEmail}`)
-      : query.eq('user_id', userId);
-
-    const { data, error } = await query.limit(1).maybeSingle();
-
-    if (error) {
-      logger.warn('Failed to read user beta override, ignoring', {
-        userId,
-        error: error.message,
-      });
-      cache.set(cacheKey, NO_OVERRIDE, TTL.SHORT);
-      return null;
-    }
+    // `ilike` without wildcards = case-insensitive equality, which is also
+    // what `user_beta_overrides_email_uidx` (on lower(email)) indexes.
+    const [data] = await db
+      .select({ beta_all_pro: userBetaOverrides.beta_all_pro })
+      .from(userBetaOverrides)
+      .where(
+        resolvedEmail
+          ? or(
+              eq(userBetaOverrides.user_id, userId),
+              sql`lower(${userBetaOverrides.email}) = lower(${resolvedEmail})`
+            )
+          : eq(userBetaOverrides.user_id, userId)
+      )
+      .limit(1);
 
     const value =
       typeof data?.beta_all_pro === 'boolean' ? data.beta_all_pro : null;
@@ -144,13 +139,9 @@ export async function getAppStatus(
   email?: string
 ): Promise<AppStatusResponse> {
   try {
-    const { data, error } = await supabaseService
-      .from('app_config')
-      .select('*')
-      .limit(1)
-      .single();
+    const [data] = await db.select().from(appConfig).limit(1);
 
-    if (error || !data) {
+    if (!data) {
       logger.warn('[AppStatus] No config row found, returning defaults');
       return {
         ...SAFE_DEFAULTS,
@@ -158,7 +149,7 @@ export async function getAppStatus(
       };
     }
 
-    const config = data as AppConfigRow;
+    const config = data as unknown as AppConfigRow;
     const minimumVersion = config.min_supported_version ?? '0.0.0';
     const latestVersion = config.latest_version ?? '0.0.0';
     const storeUrl =
