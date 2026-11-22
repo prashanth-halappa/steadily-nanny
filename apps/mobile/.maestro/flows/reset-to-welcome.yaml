@@ -224,6 +224,7 @@ appId: com.jetto.steadily.nanny
           commands:
             - tapOn:
                 text: 'Maybe later'
+                optional: true
             - waitForAnimationToEnd
       - runFlow: logout.yaml
       - extendedWaitUntil:

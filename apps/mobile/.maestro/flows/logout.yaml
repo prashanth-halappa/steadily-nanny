@@ -23,6 +23,7 @@ appId: com.jetto.steadily.nanny
     commands:
       - tapOn:
           text: 'Maybe later'
+          optional: true
       - waitForAnimationToEnd
 
 - runFlow:
@@ -30,16 +31,14 @@ appId: com.jetto.steadily.nanny
       notVisible:
         id: 'welcome-screen'
     commands:
-      - runFlow:
-          when:
-            visible:
-              id: 'header-settings'
-          commands:
-            - tapOn:
-                id: 'header-settings'
-            - waitForAnimationToEnd
-      - assertVisible:
-          id: 'settings-screen'
+      # Deep-link, don't tap `header-settings`: the gear scrolls away with its
+      # list (a flow that ends scrolled down on Hours left it off-screen, the
+      # `when: visible` tap was SKIPPED, and this assert failed).
+      - openLink: steadilynanny:///(private)/settings
+      - extendedWaitUntil:
+          visible:
+            id: 'settings-screen'
+          timeout: 10000
       - runFlow:
           when:
             visible:
@@ -47,6 +46,7 @@ appId: com.jetto.steadily.nanny
           commands:
             - tapOn:
                 text: 'Maybe later'
+                optional: true
             - waitForAnimationToEnd
       # 25s, not 10s. `settings-sign-out` is the LAST control on a long
       # settings page (households list → Account → Language → Legal & help →

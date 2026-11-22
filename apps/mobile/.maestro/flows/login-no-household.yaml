@@ -29,7 +29,8 @@ appId: com.jetto.steadily.nanny
 - tapOn:
     id: 'login-password'
 - inputText: ${PARENT_PASSWORD}
-- hideKeyboard
+- hideKeyboard:
+    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 - tapOn:
     id: 'login-submit'
 - extendedWaitUntil:
@@ -52,6 +53,7 @@ appId: com.jetto.steadily.nanny
     commands:
       - tapOn:
           text: 'Not Now'
+          optional: true
       - waitForAnimationToEnd
 - extendedWaitUntil:
     visible:
@@ -65,6 +67,7 @@ appId: com.jetto.steadily.nanny
     commands:
       - tapOn:
           text: 'Maybe later'
+          optional: true
       - waitForAnimationToEnd
 
 - waitForAnimationToEnd

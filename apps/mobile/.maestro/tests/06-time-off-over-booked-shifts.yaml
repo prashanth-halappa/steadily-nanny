@@ -57,7 +57,8 @@ tags:
 - tapOn:
     id: 'time-off-request-message'
 - inputText: 'Family travel — overlaps Tuesday shift'
-- hideKeyboard
+- hideKeyboard:
+    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 - tapOn:
     id: 'time-off-request-submit'
 - waitForAnimationToEnd

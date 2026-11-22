@@ -90,6 +90,11 @@ suppress_dev_menu_intro() {
   if ! plutil -replace EXDevMenuIsOnboardingFinished -bool true "${plist}"; then
     print "warn: plutil -replace failed (continuing; the YAML fallback still applies)"
   fi
+  # The floating "Tools button" gear sits top-right, exactly over the app's
+  # `header-settings` gear, so a tap on Settings opens the dev menu instead.
+  # Written through cfprefsd (`defaults` on the plist PATH): a plutil edit of a
+  # key the app never set itself is discarded by cfprefsd's cached copy.
+  xcrun simctl spawn "${SIM_UDID}" defaults write "${plist%.plist}" EXDevMenuShowFloatingActionButton -bool NO || true
 }
 suppress_dev_menu_intro
 

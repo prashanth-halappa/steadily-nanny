@@ -41,7 +41,8 @@ tags:
 - tapOn:
     id: 'code-input'
 - inputText: ${PHASE4_DRAFT_CODE_B}
-- hideKeyboard
+- hideKeyboard:
+    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 - tapOn:
     id: 'code-screen-cta'
 - waitForAnimationToEnd

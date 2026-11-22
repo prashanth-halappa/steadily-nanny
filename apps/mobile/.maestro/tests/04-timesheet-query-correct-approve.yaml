@@ -44,6 +44,13 @@ tags:
 # so this asserts the thread card and the parent's own words in it. The
 # per-message testID carries a server-generated row id, so the text is the
 # stable handle here.
+# The thread renders BELOW the money card (y>1000 on a 956pt screen), so it
+# is off-screen until scrolled to.
+- scrollUntilVisible:
+    element:
+      text: 'Please check Tuesday clock-out'
+    direction: DOWN
+    timeout: 15000
 - assertVisible:
     id: 'hours-week-thread'
 - assertVisible: 'Please check Tuesday clock-out'
@@ -56,6 +63,21 @@ tags:
 - waitForAnimationToEnd
 - assertVisible:
     id: 'hours-screen'
+# Day rows are FlashList items BELOW the list header (hero, status, money,
+# week thread), so they are off-screen until scrolled to. Their a11y frames
+# are STALE (laid out before the thread grew the header), so a bare
+# scrollUntilVisible "finds" the row at its old y and taps the thread card —
+# swipe the header away first.
+- swipe:
+    direction: UP
+- swipe:
+    direction: UP
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      id: 'hours-edit-entry-${TIME_ENTRY_ID}'
+    direction: DOWN
+    timeout: 15000
 - tapOn:
     id: 'hours-edit-entry-${TIME_ENTRY_ID}'
 - waitForAnimationToEnd

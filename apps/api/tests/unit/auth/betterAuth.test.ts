@@ -166,4 +166,31 @@ describe('Better Auth over D1', () => {
     expect(typeof statusCalls[0]?.[2]).toBe('string');
     expect(statusCalls[1]?.[2]).toBeUndefined();
   });
+
+  // On Workers, workerd compresses any response that carries Content-Encoding
+  // itself, so an Express-level compression() double-encoded every body over
+  // 1KB and the edge stripped the header: the app's getSession() got raw
+  // brotli bytes and sign-in died with "Network error". Compression is the
+  // edge's job — the app must never set Content-Encoding.
+  it('never content-encodes a response, even a >1KB one to a client that accepts br/gzip', async () => {
+    const bigEmail = 'compress@steadilynanny.test';
+    const res = await fetch(`${base}/api/auth/sign-up/email`, {
+      ...json({ email: bigEmail, password, name: 'Compress' }),
+      headers: {
+        'content-type': 'application/json',
+        origin: 'steadilynanny://',
+        'accept-encoding': 'br, gzip',
+      },
+      decompress: false,
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-encoding')).toBeNull();
+    const big = await fetch(`${base}/api/auth/get-session`, {
+      headers: { cookie: cookieFrom(res), 'accept-encoding': 'br, gzip' },
+      decompress: false,
+    });
+    expect(big.headers.get('content-encoding')).toBeNull();
+    const body = (await big.json()) as { user?: { email?: string } };
+    expect(body.user?.email).toBe(bigEmail);
+  });
 });

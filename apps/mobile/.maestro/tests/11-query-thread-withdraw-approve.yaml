@@ -101,7 +101,8 @@ tags:
 # keyboard must actually go away first. Maestro reports the tap COMPLETED
 # either way, and a prediction chip gets committed into the field, which is
 # where the stray "Y" came from.
-- hideKeyboard
+- hideKeyboard:
+    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 - runFlow:
     when:
       visible:

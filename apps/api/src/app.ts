@@ -2,7 +2,6 @@
 import './config/env';
 
 import { toNodeHandler } from 'better-auth/node';
-import compression from 'compression';
 import express from 'express';
 import helmet from 'helmet';
 import { auth } from './auth';
@@ -29,8 +28,9 @@ app.set('trust proxy', 1);
 // Security headers first.
 app.use(helmet(helmetConfig));
 
-// gzip/brotli compression.
-app.use(compression());
+// No compression() here: Cloudflare's edge compresses, and workerd re-encodes
+// any response that already carries Content-Encoding — the two together
+// double-compressed every body over 1KB (sign-in broke on device).
 
 // Cache-Control headers.
 app.use(cacheControl);

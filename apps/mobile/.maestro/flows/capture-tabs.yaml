@@ -32,6 +32,7 @@ appId: com.jetto.steadily.nanny
     commands:
       - tapOn:
           text: 'Not Now'
+          optional: true
       - waitForAnimationToEnd
 - runFlow:
     when:
@@ -40,6 +41,7 @@ appId: com.jetto.steadily.nanny
     commands:
       - tapOn:
           text: 'Maybe later'
+          optional: true
       - waitForAnimationToEnd
 
 # ---------- TODAY ----------

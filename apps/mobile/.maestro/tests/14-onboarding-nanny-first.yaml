@@ -77,11 +77,13 @@ tags:
 # `eraseText` here to clear a stale suggestion first.
 - eraseText
 - inputText: 'Phase4 Fresh Parent'
-- hideKeyboard
+- hideKeyboard:
+    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 - tapOn:
     id: 'code-input'
 - inputText: ${PHASE4_DRAFT_CODE_A}
-- hideKeyboard
+- hideKeyboard:
+    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 # The diagnosis above was right and the remedy was wrong. MEASURED 2026-08-12:
 # `code-screen-cta` sits at [22,760][380,808] — centre (201,784) — while the
 # keyboard occupies [0,539][402,874]. The CTA is ENTIRELY behind it, so the

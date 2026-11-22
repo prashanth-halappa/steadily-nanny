@@ -119,7 +119,8 @@ tags:
 - tapOn:
     id: 'login-password'
 - inputText: ${COPARENT_PASSWORD}
-- hideKeyboard
+- hideKeyboard:
+    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 - tapOn:
     id: 'login-submit'
 - extendedWaitUntil:
@@ -140,6 +141,7 @@ tags:
     commands:
       - tapOn:
           text: 'Not Now'
+          optional: true
       - waitForAnimationToEnd
 - extendedWaitUntil:
     visible:
@@ -153,6 +155,7 @@ tags:
     commands:
       - tapOn:
           text: 'Maybe later'
+          optional: true
       - waitForAnimationToEnd
 
 # THE PRECONDITION CHECK. If the co-parent membership above does not exist,

@@ -35,6 +35,7 @@ appId: com.jetto.steadily.nanny
     commands:
       - tapOn:
           text: 'Maybe later'
+          optional: true
       - waitForAnimationToEnd
 # Guarded, not a bare tapOn: a freshly-onboarding user (no household yet,
 # still in the wizard) has no root screen at all, so 'header-settings' does
@@ -81,6 +82,7 @@ appId: com.jetto.steadily.nanny
           commands:
             - tapOn:
                 text: 'Maybe later'
+                optional: true
             - waitForAnimationToEnd
       # 2026-08-18: the expo-dev-client menu (not the intro card — the
       # ONBOARDING flag only suppresses that; this is the sheet itself,

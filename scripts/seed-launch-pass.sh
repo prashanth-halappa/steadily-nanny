@@ -16,15 +16,27 @@
 # Usage:
 #   scripts/seed-launch-pass.sh            # full: db reset + whole chain
 #   scripts/seed-launch-pass.sh --no-reset # re-seed fixtures, keep the DB
+#   D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=… scripts/seed-launch-pass.sh --no-reset
+#                                          # REMOTE (production) D1 — only when
+#                                          # explicitly authorized; no reset
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# Every read and write below is LOCAL: the seeders use scripts/lib/localDb.ts
-# and the lookups pass `--local`, so there is no remote database to refuse.
+# LOCAL unless D1_REMOTE=1: the seeders go through scripts/lib/localDb.ts (which
+# honours the same switch) and the lookups below pass --local / --remote.
+D1_TARGET=--local
+if [ "${D1_REMOTE:-}" = "1" ]; then
+  D1_TARGET=--remote
+  if [ "${1:-}" != "--no-reset" ]; then
+    echo "refusing: D1_REMOTE=1 never resets — pass --no-reset" >&2
+    exit 1
+  fi
+  echo "!!! D1_REMOTE=1 — seeding the REMOTE (production) D1 database !!!" >&2
+fi
 
-# One scalar from the local D1: first column of the first row, or empty.
+# One scalar from the D1: first column of the first row, or empty.
 d1_scalar() {
-  (cd apps/api && bunx wrangler d1 execute steadily-nanny --local --json --command "$1") \
+  (cd apps/api && bunx wrangler d1 execute steadily-nanny "$D1_TARGET" --json --command "$1") \
     | bun -e 'const r = JSON.parse(await Bun.stdin.text()); const row = r[0]?.results?.[0]; console.log(row ? Object.values(row)[0] ?? "" : "")'
 }
 
@@ -49,7 +61,8 @@ if [ "${1:-}" != "--no-reset" ]; then
   step "local D1 reset (destructive) + migrations + test users"
   scripts/dev-local.sh reset
 else
-  step "skipping db reset (--no-reset)"
+  step "skipping db reset (--no-reset); ensuring test users (idempotent)"
+  bun run scripts/seed-test-users.ts
 fi
 
 run_seed "bootstrap: Our household + nanny draft household" \
@@ -85,10 +98,16 @@ USUALWEEK_KV=$(sed -n '/^# --- eval me/,$p' "$OUT" | grep -E '^USUAL_WEEK_[A-Z0-
 
 # The one value no seeder can derive: it must match what `wrangler dev` loads
 # (apps/api/.dev.vars, else apps/api/.env) or the cover-ask-expiry curl 401s
-# and flow 13b passes against an unexpired ask.
-JOB_API_KEY=$(grep -hE '^JOB_API_KEY=' apps/api/.dev.vars apps/api/.env 2>/dev/null \
-  | head -1 | cut -d= -f2- | tr -d '"'"'"'' || true)
-: "${JOB_API_KEY:?JOB_API_KEY missing from apps/api/.dev.vars and apps/api/.env}"
+# and flow 13b passes against an unexpired ask. Remote: the deployed secret was
+# set from apps/api/.env.cloudrun.yaml.
+if [ "$D1_TARGET" = "--remote" ]; then
+  JOB_API_KEY=$(grep -E '^JOB_API_KEY:' apps/api/.env.cloudrun.yaml 2>/dev/null \
+    | head -1 | cut -d: -f2- | tr -d " \"'" || true)
+else
+  JOB_API_KEY=$(grep -hE '^JOB_API_KEY=' apps/api/.dev.vars apps/api/.env 2>/dev/null \
+    | head -1 | cut -d= -f2- | tr -d '"'"'"'' || true)
+fi
+: "${JOB_API_KEY:?JOB_API_KEY not found}"
 
 # The bootstrap's PHASE4_HOUSEHOLD_ID and the phase4 seeder's must agree — they
 # resolve the same household by the same rule, so a mismatch means one of them

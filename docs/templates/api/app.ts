@@ -14,7 +14,6 @@
 //    deploy crashes at boot, not on the first request.
 import './config/env';
 
-import compression from 'compression';
 import express from 'express';
 import helmet from 'helmet';
 
@@ -41,8 +40,9 @@ app.set('trust proxy', true);
 // 3. Security headers.
 app.use(helmet(/* helmetConfig */));
 
-// 4. Response compression (gzip/brotli) — typically 60–80% smaller bodies.
-app.use(compression());
+// 4. NO response compression: the Cloudflare edge does it, and workerd
+//    re-encodes a body that already has Content-Encoding (double-compressed
+//    responses — see docs/04-API-ARCHITECTURE.md row 4).
 
 // 5. (optional) Cache-Control header strategy middleware goes here.
 

@@ -31,6 +31,7 @@ tags:
     commands:
       - tapOn:
           text: 'Maybe later'
+          optional: true
       - waitForAnimationToEnd
 - extendedWaitUntil:
     visible:

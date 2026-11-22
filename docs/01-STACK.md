@@ -38,7 +38,6 @@ Read from `apps/api/package.json`.
 | `@sentry/cloudflare` | `11.16.0` | Error tracking, wrapped around the Worker handler. | |
 | `helmet` | `^8.1.0` | Security headers. | |
 | `express-rate-limit` | `8.5.2` | Rate limiting. | |
-| `compression` | `1.8.1` | gzip responses. | |
 | `node-cache` | `5.1.2` | In-process cache (per isolate). | |
 | `expo-server-sdk` | `^6.1.0` | Send Expo push notifications from the server. | |
 | `resend` | `6.14.0` | Transactional email (also password-reset email). | |

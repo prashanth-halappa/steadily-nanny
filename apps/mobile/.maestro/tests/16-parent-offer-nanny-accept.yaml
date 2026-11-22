@@ -341,11 +341,13 @@ tags:
     id: 'name-input'
 - eraseText
 - inputText: 'Phase4 Offer Nanny'
-- hideKeyboard
+- hideKeyboard:
+    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 - tapOn:
     id: 'code-input'
 - inputText: ${maestro.copiedText}
-- hideKeyboard
+- hideKeyboard:
+    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 # Dismiss on non-interactive content, not `hideKeyboard` — see flow 14's
 # header for why the CTA sits behind the keyboard otherwise.
 - tapOn:

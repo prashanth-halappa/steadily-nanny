@@ -63,10 +63,35 @@ tags:
     start: 50%,60%
     end: 50%,35%
 - waitForAnimationToEnd
+# "Takes effect from" is a native date picker since D63 (3b207b1c), not a text
+# field — typing into it does nothing. Drive the iOS compact popover: page
+# back to January 2026 and pick the 1st, i.e. PHASE4_ARRANGEMENT_VALID_FROM
+# (2026-01-01, a Thursday — the day's a11y label is "Thursday, January 1").
 - tapOn:
     id: 'pay-setup-date-input'
-- eraseText
-- inputText: ${PHASE4_ARRANGEMENT_VALID_FROM}
+- extendedWaitUntil:
+    visible:
+      id: 'DatePicker.PreviousMonth'
+    timeout: 5000
+- repeat:
+    while:
+      notVisible: 'January 2026'
+    times: 24
+    commands:
+      - tapOn:
+          id: 'DatePicker.PreviousMonth'
+- tapOn: 'Thursday, January 1'
+- waitForAnimationToEnd
+# Close the popover via iOS's own full-screen `PopoverDismissRegion`. Its
+# CENTRE is inside the popover card, so tap it low, well below the card; while
+# the popover is up the region swallows the tap (nothing underneath fires).
+- tapOn:
+    point: 50%,92%
+- extendedWaitUntil:
+    notVisible:
+      id: 'DatePicker.PreviousMonth'
+    timeout: 5000
+- waitForAnimationToEnd
 # Backdating is unbounded (only the 12-month FUTURE horizon is refused), so a
 # past date must show the hint and NOT the error — this asserts the difference.
 - assertVisible:
@@ -74,17 +99,14 @@ tags:
 - assertNotVisible:
     id: 'pay-setup-date-error'
 
-# The keyboard is STILL up from the date field (same story as the rate→date
-# transition above: hideKeyboard is a no-op on this screen, scrollUntilVisible
-# no-ops because Maestro's visibility check is hierarchy-based, not
-# occlusion-based). Left alone, `pay-setup-group-overtime` sits right at the
-# keyboard's top edge and either swallows the tap or opens content that
-# renders behind the keyboard — "Element not found: pay-setup-preset-button"
-# either way. Same swipe fix, same reason: scroll the content, don't fight
-# the keyboard.
-- swipe:
-    start: 50%,60%
-    end: 50%,35%
+# No keyboard after the date any more (it is a picker since D63), so the old
+# keyboard-clearing swipe here over-scrolled the overtime group off the TOP.
+# Bring the group header into view from wherever the picker left the page.
+- scrollUntilVisible:
+    element:
+      id: 'pay-setup-group-overtime'
+    direction: UP
+    timeout: 10000
 - waitForAnimationToEnd
 
 # --- Overtime group: apply the preset behind the D-7 checkbox -------------
@@ -109,7 +131,8 @@ tags:
 # keyboard from the date field above was still up and covering the bottom
 # ~45% of the screen, so the tap landed on the keyboard's input-accessory
 # band, not the button. `hideKeyboard` + scroll the button into view first.
-- hideKeyboard
+- hideKeyboard:
+    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 - scrollUntilVisible:
     element:
       id: 'pay-setup-preset-button'
@@ -146,31 +169,43 @@ tags:
 # hierarchy — confirmed via a hierarchy dump showing the group summary
 # ("After 40h, at 1.5×") collapsed after the first one. `hideKeyboard`
 # dismisses without tapping any coordinate, so it can't hit the toggle.
+# The preset sheet closes with the page scrolled PAST the weekly threshold
+# (it is above the fold on a 956pt screen) — scroll back up to it first.
+- scrollUntilVisible:
+    element:
+      id: 'pay-setup-overtime-threshold-input'
+    direction: UP
+    timeout: 10000
 - tapOn:
     id: 'pay-setup-overtime-threshold-input'
 - eraseText
 - inputText: '40'
-- hideKeyboard
+- hideKeyboard:
+    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 - tapOn:
     id: 'pay-setup-overtime-multiplier-input'
 - eraseText
 - inputText: '1.5'
-- hideKeyboard
+- hideKeyboard:
+    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 - tapOn:
     id: 'pay-setup-daily-overtime-threshold-input'
 - eraseText
 - inputText: '8'
-- hideKeyboard
+- hideKeyboard:
+    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 - tapOn:
     id: 'pay-setup-doubletime-threshold-input'
 - eraseText
 - inputText: '12'
-- hideKeyboard
+- hideKeyboard:
+    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 - tapOn:
     id: 'pay-setup-doubletime-multiplier-input'
 - eraseText
 - inputText: '2'
-- hideKeyboard
+- hideKeyboard:
+    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 - takeScreenshot: pay-setup-ca-overtime
 
 # --- Worked-holiday multiplier (flow 09 consumes this same arrangement) ---
@@ -210,7 +245,8 @@ tags:
 # `value=checkbox, unchecked` and `pay-preset-confirm` carrying NO `enabled`
 # attribute — i.e. a FRESHLY re-opened sheet, not the one the flow had already
 # confirmed and closed successfully several steps earlier.
-- hideKeyboard
+- hideKeyboard:
+    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 - waitForAnimationToEnd
 
 # Cancellations: "the one term with no blank state" (screen copy) — the CTA

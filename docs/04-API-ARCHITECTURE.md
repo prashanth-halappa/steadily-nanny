@@ -45,7 +45,7 @@ This ordering is **load-bearing**. Each layer depends on state set by an earlier
 | 1 | `app.set('trust proxy', 1)` | Trust exactly **one** proxy hop (the Cloudflare edge) so `req.ip` resolves to the real client without trusting a fully client-spoofable `X-Forwarded-For` chain. |
 | 2 | `Sentry.setupExpressErrorHandler(app)` | Error monitoring request handler before routes. |
 | 3 | `helmet(helmetConfig)` | Security headers first. |
-| 4 | `compression()` | gzip/brotli — smaller responses. |
+| 4 | ~~`compression()`~~ | **Removed — never add it back.** Cloudflare's edge compresses; workerd re-encodes any response already carrying `Content-Encoding`, so Express compression double-encoded every body over 1KB and the client got raw brotli (sign-in broke). Guarded by `tests/unit/auth/betterAuth.test.ts`. |
 | 5 | `cacheControl` | Intelligent `Cache-Control` headers. |
 | 6 | `requestId` | Assign a correlation id before anything logs. |
 | 7 | `express.json({ verify })` + `express.urlencoded` | Body parsing. The `verify` callback preserves the **raw body** only for `/api/webhooks/*` so HMAC signatures can be verified (parsed JSON can't be re-hashed). |

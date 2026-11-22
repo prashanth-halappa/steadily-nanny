@@ -17,7 +17,8 @@ appId: com.jetto.steadily.nanny
 - tapOn:
     id: 'login-password'
 - inputText: ${NANNY_PASSWORD}
-- hideKeyboard
+- hideKeyboard:
+    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 - tapOn:
     id: 'login-submit'
 - extendedWaitUntil:
@@ -42,6 +43,7 @@ appId: com.jetto.steadily.nanny
     commands:
       - tapOn:
           text: 'Not Now'
+          optional: true
       - waitForAnimationToEnd
 - extendedWaitUntil:
     visible:
@@ -55,6 +57,7 @@ appId: com.jetto.steadily.nanny
     commands:
       - tapOn:
           text: 'Maybe later'
+          optional: true
       - waitForAnimationToEnd
 
 # Same household reset as login.yaml — nanny sessions inherit the parent's

@@ -35,4 +35,15 @@ config.resolver.extraNodeModules = {
   ...config.resolver.extraNodeModules,
 };
 
+// `@better-auth/expo` does `import('expo-network')` (optional peer, not
+// installed) whenever its session refresher re-inits — e.g. after sign-out.
+// Unresolved, Metro makes that import throw SYNCHRONOUSLY, past the library's
+// `.catch`, so getSession() rejects and the next sign-in shows "Network
+// error". An empty module lets the library's own fallback (assume online) run.
+const upstreamResolveRequest = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === 'expo-network') return { type: 'empty' };
+  return (upstreamResolveRequest ?? context.resolveRequest)(context, moduleName, platform);
+};
+
 module.exports = withNativeWind(config, { input: './global.css' });

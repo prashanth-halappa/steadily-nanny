@@ -315,11 +315,13 @@ tags:
     id: 'name-input'
 - eraseText
 - inputText: 'Phase4 Decline Nanny'
-- hideKeyboard
+- hideKeyboard:
+    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 - tapOn:
     id: 'code-input'
 - inputText: ${maestro.copiedText}
-- hideKeyboard
+- hideKeyboard:
+    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 - tapOn:
     text: 'Join your household'
 - waitForAnimationToEnd
