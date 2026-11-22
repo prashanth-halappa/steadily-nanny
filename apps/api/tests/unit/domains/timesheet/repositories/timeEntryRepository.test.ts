@@ -1,724 +1,479 @@
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+/**
+ * TimeEntryRepository against a real Miniflare D1 (tests/helpers/testDb.ts).
+ * Real predicates instead of a recording chain, so an inverted comparison or a
+ * missing carer filter fails (F-B1-1, F-B1-3); plus the app-side `local_date`
+ * derivation that replaced the `sync_time_entries_local_date` trigger.
+ */
+import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
+import { eq } from 'drizzle-orm';
+import {
+  households,
+  shifts,
+  timeEntries,
+  user,
+  userProfiles,
+} from '../../../../../src/db/schema';
+import { DatabaseError } from '../../../../../src/errors';
+import { createTestDb, type TestDb } from '../../../../helpers/testDb';
 
-let TimeEntryRepository: any;
-let AlreadyClockedInError: any;
-let CancellationPaidAlreadyRecordedError: any;
-let mockSupabaseService: any;
+let t: TestDb;
+let TimeEntryRepository: typeof import('../../../../../src/domains/timesheet/repositories/timeEntryRepository').TimeEntryRepository;
+let AlreadyClockedInError: typeof import('../../../../../src/domains/timesheet/errors/timesheetErrors').AlreadyClockedInError;
+let CancellationPaidAlreadyRecordedError: typeof import('../../../../../src/domains/timesheet/errors/timesheetErrors').CancellationPaidAlreadyRecordedError;
 
-function createMockQueryChain(
-  finalResponse: { data: unknown; error: unknown; count?: number | null } = {
-    data: null,
-    error: null,
-  }
-): any {
-  const chain: any = {
-    select: mock(() => chain),
-    eq: mock(() => chain),
-    neq: mock(() => chain),
-    in: mock(() => chain),
-    gte: mock(() => chain),
-    lt: mock(() => chain),
-    order: mock(() => chain),
-    limit: mock(() => chain),
-    insert: mock(() => chain),
-    update: mock(() => chain),
-    maybeSingle: mock(() => Promise.resolve(finalResponse)),
-    single: mock(() => Promise.resolve(finalResponse)),
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-    then: (resolve: (value: unknown) => unknown) =>
-      Promise.resolve(finalResponse).then(resolve),
-  };
-  return chain;
-}
+const H1 = 'h1';
+const H2 = 'h2';
+const C1 = 'carer-1';
+const C2 = 'carer-2';
+const NY = 'America/New_York';
+const LONDON = 'Europe/London';
 
 beforeAll(async () => {
-  mock.module('../../../../../src/config/supabase', () => {
-    const obj = { from: mock(() => createMockQueryChain()) };
-    return { supabase: obj, supabaseService: obj };
-  });
-
-  const mod = await import(
+  t = await createTestDb();
+  mock.module('../../../../../src/db/client', () => ({ db: t.db }));
+  ({ TimeEntryRepository } = await import(
     '../../../../../src/domains/timesheet/repositories/timeEntryRepository'
+  ));
+  ({ AlreadyClockedInError, CancellationPaidAlreadyRecordedError } =
+    await import(
+      '../../../../../src/domains/timesheet/errors/timesheetErrors'
+    ));
+
+  for (const id of [C1, C2]) {
+    await t.db.insert(user).values({ id, name: id, email: `${id}@x.test` });
+    await t.db.insert(userProfiles).values({ user_id: id });
+  }
+  await t.db.insert(households).values([
+    { id: H1, name: 'One' },
+    { id: H2, name: 'Two' },
+  ]);
+  await t.db.insert(shifts).values(
+    ['s1', 's2', 's3', 's4', 's5'].map((id, i) => ({
+      id,
+      household_id: H1,
+      starts_at: `2020-01-1${i}T08:00:00.000Z`,
+      ends_at: `2020-01-1${i}T16:00:00.000Z`,
+      timezone: LONDON,
+      local_date: `2020-01-1${i}`,
+    }))
   );
-  TimeEntryRepository = mod.TimeEntryRepository;
-  const errors = await import(
-    '../../../../../src/domains/timesheet/errors/timesheetErrors'
-  );
-  AlreadyClockedInError = errors.AlreadyClockedInError;
-  CancellationPaidAlreadyRecordedError =
-    errors.CancellationPaidAlreadyRecordedError;
-  mockSupabaseService = (await import('../../../../../src/config/supabase'))
-    .supabaseService;
+});
+afterAll(() => t.dispose());
+
+type Insert = typeof timeEntries.$inferInsert;
+
+/** Raw seed for read-path tests; local_date given explicitly. */
+async function seed(row: Partial<Insert> & { id: string }) {
+  await t.db.insert(timeEntries).values({
+    household_id: H1,
+    carer_id: C1,
+    carer_display_name: 'Carer',
+    timezone: LONDON,
+    local_date: '2026-08-03',
+    status: 'submitted',
+    ...row,
+  });
+}
+
+const submitted = (over: Record<string, unknown> = {}) => ({
+  household_id: H1,
+  carer_id: C1,
+  carer_display_name: 'Carer',
+  shift_id: null,
+  clock_in_at: '2026-09-01T08:00:00.000Z',
+  clock_out_at: '2026-09-01T12:00:00.000Z',
+  break_minutes: 0,
+  scheduled_minutes: null,
+  timezone: LONDON,
+  kind: 'worked' as const,
+  status: 'submitted' as const,
+  ...over,
 });
 
-beforeEach(() => {
-  mockSupabaseService.from.mockClear?.();
-});
+const ids = (rows: { id: string }[]) => rows.map(r => r.id).sort();
 
-describe('TimeEntryRepository.clockIn', () => {
-  it('creates a running entry', async () => {
-    const created = {
-      id: 't1',
-      carer_id: 'carer-1',
-      carer_display_name: 'Nia Rowe',
-      status: 'running',
-    };
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: created, error: null })
-    );
+describe('clockIn', () => {
+  it('creates a running entry with local_date derived from clock_in_at in its timezone', async () => {
     const repo = new TimeEntryRepository();
-    const result = await repo.clockIn({
-      household_id: 'h1',
-      carer_id: 'carer-1',
-      carer_display_name: 'Nia Rowe',
+    // 02:00 UTC on the 10th is still the 9th in New York.
+    const row = await repo.clockIn({
+      household_id: H2,
+      carer_id: C2,
+      carer_display_name: 'Two',
       shift_id: null,
-      clock_in_at: '2026-08-03T08:00:00.000Z',
-      timezone: 'Europe/London',
+      clock_in_at: '2026-10-10T02:00:00.000Z',
+      observed_clock_in_at: '2026-10-10T02:00:00.000Z',
+      timezone: NY,
       kind: 'worked',
       status: 'running',
     });
-    expect(result).toEqual(created);
-    expect(mockSupabaseService.from).toHaveBeenCalledWith('time_entries');
+    expect(row).toMatchObject({ status: 'running', local_date: '2026-10-09' });
   });
 
-  it('translates a 23505 unique-violation into AlreadyClockedInError, not a raw 500', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({
-        data: null,
-        error: { code: '23505', message: 'duplicate key' },
-      })
-    );
-    const repo = new TimeEntryRepository();
-    await expect(
-      repo.clockIn({
-        household_id: 'h1',
-        carer_id: 'carer-1',
-        carer_display_name: 'Nia Rowe',
+  it('turns the one-running-per-carer unique violation into AlreadyClockedInError', async () => {
+    const err = await new TimeEntryRepository()
+      .clockIn({
+        household_id: H1,
+        carer_id: C2,
+        carer_display_name: 'Two',
         shift_id: null,
-        clock_in_at: '2026-08-03T08:00:00.000Z',
-        timezone: 'Europe/London',
+        clock_in_at: '2026-10-11T09:00:00.000Z',
+        timezone: LONDON,
         kind: 'worked',
         status: 'running',
       })
-    ).rejects.toBeInstanceOf(AlreadyClockedInError);
+      .catch(e => e);
+    expect(err).toBeInstanceOf(AlreadyClockedInError);
   });
 });
 
-describe('TimeEntryRepository.createSubmitted', () => {
-  it('translates a cancellation_paid 23505 into CancellationPaidAlreadyRecordedError', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({
-        data: null,
-        error: { code: '23505', message: 'duplicate key' },
+describe('update — local_date re-derivation', () => {
+  it('a clock-out after midnight keeps the clock-in day', async () => {
+    const repo = new TimeEntryRepository();
+    const running = await repo.findRunningForCarer(C2);
+    if (!running) throw new Error('expected the running entry');
+    const out = await repo.update(running.id, {
+      clock_out_at: '2026-10-10T07:00:00.000Z',
+      status: 'submitted',
+    });
+    expect(out.local_date).toBe('2026-10-09');
+  });
+
+  it('moving clock_in_at re-derives local_date', async () => {
+    const repo = new TimeEntryRepository();
+    const row = await repo.createSubmitted(
+      submitted({
+        clock_in_at: '2026-09-02T10:00:00.000Z',
+        clock_out_at: '2026-09-02T12:00:00.000Z',
       })
     );
-    const repo = new TimeEntryRepository();
-    await expect(
-      repo.createSubmitted({
-        household_id: 'h1',
-        carer_id: 'carer-1',
-        carer_display_name: 'Nia Rowe',
-        shift_id: 's1',
-        clock_in_at: '2026-08-03T09:00:00.000Z',
-        clock_out_at: '2026-08-03T17:00:00.000Z',
-        break_minutes: 0,
-        scheduled_minutes: 480,
-        timezone: 'Europe/London',
-        kind: 'cancellation_paid',
-        status: 'submitted',
-        note: null,
-      })
-    ).rejects.toBeInstanceOf(CancellationPaidAlreadyRecordedError);
-  });
-});
-
-describe('TimeEntryRepository.findRunningForCarer', () => {
-  it('returns the running entry when one exists', async () => {
-    const running = { id: 't1', carer_id: 'carer-1', status: 'running' };
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: running, error: null })
-    );
-    const repo = new TimeEntryRepository();
-    expect(await repo.findRunningForCarer('carer-1')).toEqual(running);
-  });
-
-  it('returns null when no entry is running', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
-    );
-    const repo = new TimeEntryRepository();
-    expect(await repo.findRunningForCarer('carer-1')).toBeNull();
-  });
-});
-
-describe('TimeEntryRepository.findRunningInHousehold', () => {
-  it('scopes the running lookup to ONE household', async () => {
-    // `findRunningForCarer` is global (one running entry per carer, anywhere),
-    // which is right for the clock-in guard and wrong for member removal:
-    // without this predicate Family A cannot remove a nanny clocked in at
-    // Family B, and is told "This person is clocked in" about another family.
-    const chain = createMockQueryChain({ data: null, error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-    const repo = new TimeEntryRepository();
-
-    await repo.findRunningInHousehold('h1', 'carer-1');
-
-    expect(chain.eq.mock.calls).toEqual([
-      ['household_id', 'h1'],
-      ['carer_id', 'carer-1'],
-      ['status', 'running'],
-    ]);
-  });
-
-  it('returns the entry when the carer is running in THIS household', async () => {
-    const running = {
-      id: 't1',
-      household_id: 'h1',
-      carer_id: 'carer-1',
-      status: 'running',
-    };
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: running, error: null })
-    );
-    const repo = new TimeEntryRepository();
-    expect(await repo.findRunningInHousehold('h1', 'carer-1')).toEqual(running);
-  });
-
-  it('throws a DatabaseError when the lookup fails', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: { message: 'boom' } })
-    );
-    const repo = new TimeEntryRepository();
-    await expect(repo.findRunningInHousehold('h1', 'carer-1')).rejects.toThrow(
-      'Failed to look up running time entry'
-    );
-  });
-});
-
-describe('TimeEntryRepository.hasTimeEntries', () => {
-  it('excludes voided rows — a fully-voided shift must un-freeze for shift edits', async () => {
-    const chain = createMockQueryChain({
-      data: null,
-      error: null,
-      count: 0,
+    expect(row.local_date).toBe('2026-09-02');
+    const moved = await repo.update(row.id, {
+      clock_in_at: '2026-09-01T22:30:00.000Z',
     });
-    mockSupabaseService.from.mockImplementation(() => chain);
-    const repo = new TimeEntryRepository();
-    await repo.hasTimeEntries('shift-1');
-    expect(chain.neq).toHaveBeenCalledWith('status', 'voided');
+    expect(moved.local_date).toBe('2026-09-01');
+    // ...and a timezone change alone re-derives it from the stored clock.
+    const tz = await repo.update(row.id, { timezone: 'Asia/Tokyo' });
+    expect(tz.local_date).toBe('2026-09-02');
   });
 
-  it('returns true when at least one entry exists for the shift', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null, count: 2 })
-    );
+  it('a patch that touches no clock leaves local_date alone', async () => {
     const repo = new TimeEntryRepository();
-    expect(await repo.hasTimeEntries('shift-1')).toBe(true);
-  });
-
-  it('returns false when the count is zero', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null, count: 0 })
-    );
-    const repo = new TimeEntryRepository();
-    expect(await repo.hasTimeEntries('shift-1')).toBe(false);
-  });
-
-  it('returns false when count is null', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null, count: null })
-    );
-    const repo = new TimeEntryRepository();
-    expect(await repo.hasTimeEntries('shift-1')).toBe(false);
-  });
-});
-
-// The batched form the schedule domain's materialiser asks once per run
-// instead of once per occurrence — see WS-J / scheduleMaterialisationService.
-describe('TimeEntryRepository.shiftIdsWithTimeEntries', () => {
-  it('excludes voided rows — schedule materialisation must not treat a voided-only shift as paid-for reality', async () => {
-    const chain = createMockQueryChain({ data: [], error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-    const repo = new TimeEntryRepository();
-    await repo.shiftIdsWithTimeEntries(['shift-1']);
-    expect(chain.neq).toHaveBeenCalledWith('status', 'voided');
-  });
-
-  it('returns the set of shift ids that have entries, deduped, in one query', async () => {
-    const chain = createMockQueryChain({
-      data: [
-        { shift_id: 'shift-1' },
-        { shift_id: 'shift-1' },
-        { shift_id: 'shift-3' },
-      ],
-      error: null,
-    });
-    mockSupabaseService.from.mockImplementation(() => chain);
-    const repo = new TimeEntryRepository();
-
-    const result = await repo.shiftIdsWithTimeEntries([
-      'shift-1',
-      'shift-2',
-      'shift-3',
-    ]);
-
-    expect([...result].sort()).toEqual(['shift-1', 'shift-3']);
-    expect(chain.in).toHaveBeenCalledWith('shift_id', [
-      'shift-1',
-      'shift-2',
-      'shift-3',
-    ]);
-  });
-
-  it('drops the null shift_id of a shiftless entry rather than poisoning the set', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({
-        data: [{ shift_id: null }, { shift_id: 'shift-1' }],
-        error: null,
+    const row = await repo.createSubmitted(
+      submitted({
+        clock_in_at: '2026-09-03T10:00:00.000Z',
+        clock_out_at: '2026-09-03T12:00:00.000Z',
       })
     );
-    const repo = new TimeEntryRepository();
-    expect(await repo.shiftIdsWithTimeEntries(['shift-1'])).toEqual(
-      new Set(['shift-1'])
-    );
+    const noted = await repo.update(row.id, { note: 'hi' });
+    expect(noted).toMatchObject({ note: 'hi', local_date: '2026-09-03' });
   });
 
-  it('asks the DB nothing for an empty list', async () => {
-    mockSupabaseService.from.mockClear();
-    const repo = new TimeEntryRepository();
-    expect(await repo.shiftIdsWithTimeEntries([])).toEqual(new Set());
-    expect(mockSupabaseService.from).not.toHaveBeenCalled();
+  it('still throws for a missing row', async () => {
+    const err = await new TimeEntryRepository()
+      .update('missing', { clock_out_at: '2026-09-03T12:00:00.000Z' })
+      .catch(e => e);
+    expect(err).toBeInstanceOf(DatabaseError);
   });
 });
 
-describe('TimeEntryRepository.listForHouseholdWeek', () => {
-  it('lists a household week, newest clock-in first', async () => {
-    const rows = [{ id: 't1', household_id: 'h1' }];
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: rows, error: null })
+describe('createSubmitted', () => {
+  it('derives local_date from clock_in_at', async () => {
+    const row = await new TimeEntryRepository().createSubmitted(
+      submitted({
+        clock_in_at: '2026-09-04T23:30:00.000Z',
+        clock_out_at: '2026-09-05T03:00:00.000Z',
+      })
     );
-    const repo = new TimeEntryRepository();
-    const result = await repo.listForHouseholdWeek(
-      'h1',
-      '2026-08-03',
-      '2026-08-10'
-    );
-    expect(result).toEqual(rows);
+    expect(row.local_date).toBe('2026-09-05'); // BST: 00:30 on the 5th
   });
 
-  it('returns [] when the query returns no rows', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
-    );
+  it('a duplicate cancellation_paid span → CancellationPaidAlreadyRecordedError', async () => {
     const repo = new TimeEntryRepository();
-    expect(
-      await repo.listForHouseholdWeek('h1', '2026-08-03', '2026-08-10')
-    ).toEqual([]);
-  });
-
-  // C1 (058). `household_member_id` appears NOWHERE in apps/api/src: it
-  // reaches the parent's screen only because this read is `select('*')` and
-  // nothing in between picks columns. That makes it silently droppable — a
-  // future narrowed select here would leave two departed carers merging on
-  // the client again, with no API test going red. This is that test.
-  it('C1: keeps household_member_id on the rows it returns, and selects every column', async () => {
-    const chain = createMockQueryChain({
-      data: [{ id: 't1', household_id: 'h1', household_member_id: 'member-1' }],
-      error: null,
+    const span = submitted({
+      carer_id: C2,
+      shift_id: 's1',
+      kind: 'cancellation_paid',
+      clock_in_at: '2026-09-10T08:00:00.000Z',
+      clock_out_at: '2026-09-10T16:00:00.000Z',
     });
-    mockSupabaseService.from.mockImplementation(() => chain);
-    const repo = new TimeEntryRepository();
-    const result = await repo.listForHouseholdWeek(
-      'h1',
-      '2026-08-03',
-      '2026-08-10'
-    );
-    expect(result[0].household_member_id).toBe('member-1');
-    expect(chain.select).toHaveBeenCalledWith('*');
+    await repo.createSubmitted(span);
+    const err = await repo.createSubmitted(span).catch(e => e);
+    expect(err).toBeInstanceOf(CancellationPaidAlreadyRecordedError);
   });
 
-  // 069: deliberately NOT filtered here. The mobile week screen renders
-  // voided rows struck through, so this read must keep returning them; the
-  // exclusion lives in `entryMinutes` / the client sum, not in this query.
-  it('069: still returns voided rows for the household week payload', async () => {
-    const voidedRow = {
-      id: 't-voided',
-      household_id: 'h1',
-      carer_id: 'carer-1',
+  it('any other failure is a DatabaseError', async () => {
+    const err = await new TimeEntryRepository()
+      .createSubmitted(submitted({ break_minutes: -1 }))
+      .catch(e => e);
+    expect(err).toBeInstanceOf(DatabaseError);
+  });
+});
+
+describe('voidById', () => {
+  it('voids once, then returns null', async () => {
+    await seed({
+      id: 'v1',
+      clock_in_at: '2025-01-01T08:00:00.000Z',
+      clock_out_at: '2025-01-01T09:00:00.000Z',
+    });
+    const repo = new TimeEntryRepository();
+    expect((await repo.voidById('v1'))?.status).toBe('voided');
+    expect(await repo.voidById('v1')).toBeNull();
+  });
+});
+
+describe('cancellation-paid lookups (069: voided is not pay)', () => {
+  beforeAll(async () => {
+    const base = {
+      kind: 'cancellation_paid',
+      clock_out_at: '2025-02-01T16:00:00.000Z',
+      carer_id: null,
+    } as const;
+    await seed({
+      id: 'cp-void',
+      shift_id: 's2',
+      clock_in_at: '2025-02-01T08:00:00.000Z',
       status: 'voided',
-      local_date: '2026-08-03',
-    };
-    mockSupabaseService.from.mockImplementation(() =>
-      createStatefulQuery([mondayDay, voidedRow])
-    );
-    const repo = new TimeEntryRepository();
-    const result = await repo.listForHouseholdWeek(
-      'h1',
-      '2026-08-03',
-      '2026-08-10'
-    );
-    expect(result.map((r: FakeRow) => r.id)).toContain('t-voided');
-    expect(result.map((r: FakeRow) => r.id)).toContain('t-monday');
-  });
-});
-
-describe('TimeEntryRepository.findCancellationPaidForShift', () => {
-  it('excludes voided rows — a voided cancellation-pay row must not read as settled', async () => {
-    const chain = createMockQueryChain({ data: null, error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-    const repo = new TimeEntryRepository();
-    await repo.findCancellationPaidForShift('shift-1');
-    expect(chain.neq).toHaveBeenCalledWith('status', 'voided');
+      ...base,
+    });
+    await seed({
+      id: 'cp-a',
+      shift_id: 's3',
+      clock_in_at: '2025-02-01T08:00:00.000Z',
+      ...base,
+    });
+    await seed({
+      id: 'cp-b',
+      shift_id: 's3',
+      clock_in_at: '2025-02-01T12:00:00.000Z',
+      ...base,
+    });
   });
 
-  it('returns null when the only matching row is voided', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({
-        data: {
-          id: 'te-voided',
-          shift_id: 'shift-1',
-          kind: 'cancellation_paid',
-          status: 'voided',
-        },
-        error: null,
-      })
-    );
+  it('findCancellationPaidForShift ignores voided rows and tolerates several fragments', async () => {
     const repo = new TimeEntryRepository();
-    expect(await repo.findCancellationPaidForShift('shift-1')).toBeNull();
-  });
-});
-
-describe('TimeEntryRepository.findCancellationPaidForSpan', () => {
-  it('excludes voided rows from the 23505 recovery lookup', async () => {
-    const chain = createMockQueryChain({ data: null, error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-    const repo = new TimeEntryRepository();
-    await repo.findCancellationPaidForSpan(
-      'shift-1',
-      '2026-08-03T09:00:00.000Z'
+    expect(await repo.findCancellationPaidForShift('s2')).toBeNull();
+    expect(['cp-a', 'cp-b']).toContain(
+      (await repo.findCancellationPaidForShift('s3'))?.id ?? ''
     );
-    expect(chain.neq).toHaveBeenCalledWith('status', 'voided');
   });
 
-  it('returns null when the span winner is voided — voided is not a successful write', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({
-        data: {
-          id: 'te-voided',
-          shift_id: 'shift-1',
-          kind: 'cancellation_paid',
-          status: 'voided',
-          clock_in_at: '2026-08-03T09:00:00.000Z',
-        },
-        error: null,
-      })
-    );
+  it('findCancellationPaidForSpan picks the fragment by clock_in_at, never a voided one', async () => {
     const repo = new TimeEntryRepository();
     expect(
-      await repo.findCancellationPaidForSpan(
-        'shift-1',
-        '2026-08-03T09:00:00.000Z'
-      )
+      (await repo.findCancellationPaidForSpan('s3', '2025-02-01T12:00:00.000Z'))
+        ?.id
+    ).toBe('cp-b');
+    expect(
+      await repo.findCancellationPaidForSpan('s2', '2025-02-01T08:00:00.000Z')
     ).toBeNull();
   });
 });
 
-describe('TimeEntryRepository.listForCarerWeek', () => {
-  it('lists one carer entries for the week, scoped to household + carer', async () => {
-    const rows = [{ id: 't1', household_id: 'h1', carer_id: 'carer-1' }];
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: rows, error: null })
-    );
+describe('running lookups', () => {
+  it('findRunningForCarer is global; findRunningInHousehold is scoped to ONE household', async () => {
     const repo = new TimeEntryRepository();
-    const result = await repo.listForCarerWeek(
-      'h1',
-      'carer-1',
+    const running = await repo.clockIn({
+      household_id: H2,
+      carer_id: C1,
+      carer_display_name: 'One',
+      shift_id: null,
+      clock_in_at: '2026-11-01T09:00:00.000Z',
+      timezone: LONDON,
+      kind: 'worked',
+      status: 'running',
+    });
+    expect((await repo.findRunningForCarer(C1))?.id).toBe(running.id);
+    expect((await repo.findRunningInHousehold(H2, C1))?.id).toBe(running.id);
+    expect(await repo.findRunningInHousehold(H1, C1)).toBeNull();
+    await repo.update(running.id, {
+      clock_out_at: '2026-11-01T10:00:00.000Z',
+      status: 'submitted',
+    });
+    expect(await repo.findRunningForCarer(C1)).toBeNull();
+  });
+});
+
+describe('hasTimeEntries / shiftIdsWithTimeEntries (069: voided-only shifts un-freeze)', () => {
+  it('answers per shift, excluding voided rows', async () => {
+    const repo = new TimeEntryRepository();
+    expect(await repo.hasTimeEntries('s3')).toBe(true);
+    expect(await repo.hasTimeEntries('s2')).toBe(false);
+    expect(await repo.hasTimeEntries('s5')).toBe(false);
+  });
+
+  it('returns the set in one pass, deduped, and asks nothing for an empty list', async () => {
+    const repo = new TimeEntryRepository();
+    expect(await repo.shiftIdsWithTimeEntries([])).toEqual(new Set());
+    // >100 ids exercises the chunking under D1's bound-parameter cap.
+    const many = [
+      's1',
+      's2',
+      's3',
+      ...Array.from({ length: 150 }, (_, i) => `x${i}`),
+    ];
+    expect(await repo.shiftIdsWithTimeEntries(many)).toEqual(
+      new Set(['s1', 's3'])
+    );
+  });
+});
+
+describe('week listings', () => {
+  beforeAll(async () => {
+    const day = (d: string, h: number) =>
+      `2026-08-0${d}T${String(h).padStart(2, '0')}:00:00.000Z`;
+    await seed({
+      id: 'w-mon',
+      household_id: H2,
+      clock_in_at: day('3', 8),
+      clock_out_at: day('3', 9),
+      local_date: '2026-08-03',
+      household_member_id: 'm1',
+    });
+    await seed({
+      id: 'w-tue',
+      household_id: H2,
+      clock_in_at: day('4', 8),
+      clock_out_at: day('4', 9),
+      local_date: '2026-08-04',
+    });
+    await seed({
+      id: 'w-adj',
+      household_id: H2,
+      kind: 'manual_adjustment',
+      local_date: '2026-08-05',
+    });
+    await seed({
+      id: 'w-void',
+      household_id: H2,
+      clock_in_at: day('5', 8),
+      clock_out_at: day('5', 9),
+      local_date: '2026-08-05',
+      status: 'voided',
+    });
+    await seed({
+      id: 'w-c2',
+      household_id: H2,
+      carer_id: C2,
+      clock_in_at: day('6', 8),
+      clock_out_at: day('6', 9),
+      local_date: '2026-08-06',
+    });
+    await seed({
+      id: 'w-next',
+      household_id: H2,
+      clock_in_at: '2026-08-10T08:00:00.000Z',
+      clock_out_at: '2026-08-10T09:00:00.000Z',
+      local_date: '2026-08-10',
+    });
+  });
+
+  it('listForHouseholdWeek: [start, end), newest clock-in first (NULLs first, as Postgres), voided kept', async () => {
+    const rows = await new TimeEntryRepository().listForHouseholdWeek(
+      H2,
       '2026-08-03',
       '2026-08-10'
     );
-    expect(result).toEqual(rows);
-    expect(mockSupabaseService.from).toHaveBeenCalledWith('time_entries');
-  });
-
-  it('returns [] when the query returns no rows', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
-    );
-    const repo = new TimeEntryRepository();
-    expect(
-      await repo.listForCarerWeek('h1', 'carer-1', '2026-08-03', '2026-08-10')
-    ).toEqual([]);
-  });
-});
-
-/**
- * The overlap and carer-scoping queries run against a STATEFUL fake chain that
- * actually evaluates eq/gte/lte/or against in-memory rows — a recording-only
- * chain passes even with an inverted predicate or a missing carer filter,
- * which is exactly what these tests exist to catch (F-B1-1, F-B1-3).
- */
-interface FakeRow {
-  [key: string]: unknown;
-}
-
-function matchesOrTerm(row: FakeRow, term: string): boolean {
-  const [column, op, ...rest] = term.split('.');
-  const value = rest.join('.');
-  const actual = row[column as string];
-  if (op === 'is') return value === 'null' ? actual === null : false;
-  if (op === 'gte') return actual !== null && String(actual) >= value;
-  if (op === 'lte') return actual !== null && String(actual) <= value;
-  return false;
-}
-
-function createStatefulQuery(rows: FakeRow[], error: unknown = null): any {
-  const predicates: ((row: FakeRow) => boolean)[] = [];
-  const chain: any = {
-    select: mock(() => chain),
-    eq: mock((key: string, value: unknown) => {
-      predicates.push(row => row[key] === value);
-      return chain;
-    }),
-    gte: mock((key: string, value: unknown) => {
-      predicates.push(row => String(row[key]) >= String(value));
-      return chain;
-    }),
-    lte: mock((key: string, value: unknown) => {
-      predicates.push(row => String(row[key]) <= String(value));
-      return chain;
-    }),
-    lt: mock((key: string, value: unknown) => {
-      predicates.push(row => String(row[key]) < String(value));
-      return chain;
-    }),
-    or: mock((expression: string) => {
-      const terms = expression.split(',');
-      predicates.push(row => terms.some(term => matchesOrTerm(row, term)));
-      return chain;
-    }),
-    order: mock(() => chain),
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-    then: (resolve: (value: unknown) => unknown) =>
-      Promise.resolve(
-        error
-          ? { data: null, error }
-          : {
-              data: rows.filter(row => predicates.every(p => p(row))),
-              error: null,
-            }
-      ).then(resolve),
-  };
-  return chain;
-}
-
-const overnightPriorWeek: FakeRow = {
-  id: 't-overnight',
-  household_id: 'h1',
-  carer_id: 'carer-1',
-  clock_in_at: '2026-08-02T22:00:00.000Z',
-  clock_out_at: '2026-08-03T05:00:00.000Z',
-  local_date: '2026-08-02',
-  status: 'submitted',
-};
-const mondayDay: FakeRow = {
-  id: 't-monday',
-  household_id: 'h1',
-  carer_id: 'carer-1',
-  clock_in_at: '2026-08-03T08:00:00.000Z',
-  clock_out_at: '2026-08-03T16:00:00.000Z',
-  local_date: '2026-08-03',
-  status: 'submitted',
-};
-const stillRunning: FakeRow = {
-  id: 't-running',
-  household_id: 'h1',
-  carer_id: 'carer-1',
-  clock_in_at: '2026-08-04T09:00:00.000Z',
-  clock_out_at: null,
-  local_date: '2026-08-04',
-  status: 'running',
-};
-const otherCarer: FakeRow = {
-  ...mondayDay,
-  id: 't-other-carer',
-  carer_id: 'carer-2',
-};
-const otherHousehold: FakeRow = {
-  ...mondayDay,
-  id: 't-other-household',
-  household_id: 'h2',
-};
-const voidedMonday: FakeRow = {
-  ...mondayDay,
-  id: 't-voided',
-  status: 'voided',
-};
-
-const allRows = [
-  overnightPriorWeek,
-  mondayDay,
-  stillRunning,
-  otherCarer,
-  otherHousehold,
-];
-
-describe('TimeEntryRepository.listOverlapCandidatesForCarer', () => {
-  it('excludes voided rows — a voided entry must not block re-clock or underpay cancellation gaps', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createStatefulQuery([voidedMonday, mondayDay])
-    );
-    const repo = new TimeEntryRepository();
-
-    const result = await repo.listOverlapCandidatesForCarer(
-      'carer-1',
-      '2026-08-03T09:00:00.000Z',
-      '2026-08-03T10:00:00.000Z'
-    );
-
-    expect(result.map((r: FakeRow) => r.id)).toEqual(['t-monday']);
-  });
-
-  it('finds an entry filed under the PREVIOUS week whose clock span still reaches into this one', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createStatefulQuery(allRows)
-    );
-    const repo = new TimeEntryRepository();
-
-    const result = await repo.listOverlapCandidatesForCarer(
-      'carer-1',
-      '2026-08-03T01:00:00.000Z',
-      '2026-08-03T03:00:00.000Z'
-    );
-
-    expect(result.map((r: FakeRow) => r.id)).toEqual(['t-overnight']);
-  });
-
-  it('catches an entry that STARTED before the window and ends inside it', async () => {
-    // The half-covered case: `clock_in_at <= to` alone would miss nothing
-    // here, but an inverted `clock_out_at` bound would — the finish sits
-    // between `from` and `to`, not past either end.
-    mockSupabaseService.from.mockImplementation(() =>
-      createStatefulQuery(allRows)
-    );
-    const repo = new TimeEntryRepository();
-
-    const result = await repo.listOverlapCandidatesForCarer(
-      'carer-1',
-      '2026-08-03T04:00:00.000Z',
-      '2026-08-03T09:00:00.000Z'
-    );
-
-    // t-overnight ends 05:00 (inside the window); t-monday starts 08:00
-    // (inside it too) — both genuinely collide with 04:00-09:00. The
-    // other-household row is this same carer, so it collides as well.
-    expect(result.map((r: FakeRow) => r.id).sort()).toEqual([
-      't-monday',
-      't-other-household',
-      't-overnight',
+    expect(rows.map(r => r.id)).toEqual([
+      'w-adj',
+      'w-c2',
+      'w-void',
+      'w-tue',
+      'w-mon',
     ]);
+    expect(rows.find(r => r.id === 'w-mon')?.household_member_id).toBe('m1');
   });
 
-  it('includes a still-running entry — it has no finish, so it is never filtered out by one', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createStatefulQuery(allRows)
-    );
-    const repo = new TimeEntryRepository();
-
-    const result = await repo.listOverlapCandidatesForCarer(
-      'carer-1',
-      '2026-08-04T10:00:00.000Z',
-      '2026-08-04T11:00:00.000Z'
-    );
-
-    expect(result.map((r: FakeRow) => r.id)).toEqual(['t-running']);
-  });
-
-  it('never returns another CARER rows', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createStatefulQuery(allRows)
-    );
-    const repo = new TimeEntryRepository();
-
-    const result = await repo.listOverlapCandidatesForCarer(
-      'carer-1',
-      '2026-08-03T09:00:00.000Z',
-      '2026-08-03T10:00:00.000Z'
-    );
-
-    expect(result.map((r: FakeRow) => r.id)).not.toContain('t-other-carer');
-  });
-
-  it('DOES return this carer rows in another household — she cannot be in two places at once', async () => {
-    // `time_entries_one_running_per_carer` is keyed on carer_id with no
-    // household predicate, so the DB already treats "on the clock" as
-    // carer-global. Scoping overlap to one household would let the same hour
-    // be double-booked across two families.
-    mockSupabaseService.from.mockImplementation(() =>
-      createStatefulQuery(allRows)
-    );
-    const repo = new TimeEntryRepository();
-
-    const result = await repo.listOverlapCandidatesForCarer(
-      'carer-1',
-      '2026-08-03T09:00:00.000Z',
-      '2026-08-03T10:00:00.000Z'
-    );
-
-    expect(result.map((r: FakeRow) => r.id).sort()).toEqual([
-      't-monday',
-      't-other-household',
-    ]);
-  });
-
-  it('returns [] when nothing intersects the span', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createStatefulQuery(allRows)
-    );
-    const repo = new TimeEntryRepository();
-
-    expect(
-      await repo.listOverlapCandidatesForCarer(
-        'carer-1',
-        '2026-08-03T06:00:00.000Z',
-        '2026-08-03T07:00:00.000Z'
-      )
-    ).toEqual([]);
-  });
-});
-
-describe('TimeEntryRepository.listForHouseholdWeek — optional carer filter (F-B1-3)', () => {
-  it('returns only the named carer entries when a carer is given', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createStatefulQuery(allRows)
-    );
-    const repo = new TimeEntryRepository();
-
-    const result = await repo.listForHouseholdWeek(
-      'h1',
+  it('listForHouseholdWeek narrows to one carer when given (F-B1-3)', async () => {
+    const rows = await new TimeEntryRepository().listForHouseholdWeek(
+      H2,
       '2026-08-03',
       '2026-08-10',
-      'carer-2'
+      C2
     );
-
-    expect(result.map((r: FakeRow) => r.id)).toEqual(['t-other-carer']);
+    expect(ids(rows)).toEqual(['w-c2']);
   });
 
-  it('returns every carer entries when no carer is given — unchanged behaviour', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createStatefulQuery(allRows)
-    );
+  it('listForCarerWeek scopes to household + carer', async () => {
     const repo = new TimeEntryRepository();
+    expect(
+      ids(await repo.listForCarerWeek(H2, C1, '2026-08-03', '2026-08-10'))
+    ).toEqual(['w-adj', 'w-mon', 'w-tue', 'w-void']);
+    expect(
+      await repo.listForCarerWeek(H2, C1, '2030-01-07', '2030-01-14')
+    ).toEqual([]);
+  });
+});
 
-    const result = await repo.listForHouseholdWeek(
-      'h1',
-      '2026-08-03',
-      '2026-08-10'
-    );
+describe('listOverlapCandidatesForCarer', () => {
+  beforeAll(async () => {
+    await seed({
+      id: 'o-overnight',
+      clock_in_at: '2027-08-01T22:00:00.000Z',
+      clock_out_at: '2027-08-02T05:00:00.000Z',
+      local_date: '2027-08-01',
+    });
+    await seed({
+      id: 'o-monday',
+      clock_in_at: '2027-08-02T08:00:00.000Z',
+      clock_out_at: '2027-08-02T16:00:00.000Z',
+      local_date: '2027-08-02',
+    });
+    await seed({
+      id: 'o-voided',
+      clock_in_at: '2027-08-02T08:00:00.000Z',
+      clock_out_at: '2027-08-02T16:00:00.000Z',
+      local_date: '2027-08-02',
+      status: 'voided',
+    });
+    await seed({
+      id: 'o-other-carer',
+      carer_id: C2,
+      clock_in_at: '2027-08-02T08:00:00.000Z',
+      clock_out_at: '2027-08-02T16:00:00.000Z',
+      local_date: '2027-08-02',
+    });
+    await seed({
+      id: 'o-other-household',
+      household_id: H2,
+      clock_in_at: '2027-08-02T17:00:00.000Z',
+      clock_out_at: '2027-08-02T18:00:00.000Z',
+      local_date: '2027-08-02',
+    });
+  });
 
-    expect(result.map((r: FakeRow) => r.id)).toEqual([
-      't-monday',
-      't-running',
-      't-other-carer',
-    ]);
+  const span = (from: string, to: string) =>
+    new TimeEntryRepository().listOverlapCandidatesForCarer(C1, from, to);
+
+  it('finds an entry filed under the previous day whose span reaches into this one', async () => {
+    expect(
+      ids(await span('2027-08-02T04:00:00.000Z', '2027-08-02T04:30:00.000Z'))
+    ).toEqual(['o-overnight']);
+  });
+
+  it('excludes voided and other carers, includes other households of the same carer', async () => {
+    expect(
+      ids(await span('2027-08-02T09:00:00.000Z', '2027-08-02T17:30:00.000Z'))
+    ).toEqual(['o-monday', 'o-other-household']);
+  });
+
+  it('includes a still-running entry', async () => {
+    await seed({
+      id: 'o-running',
+      clock_in_at: '2027-08-03T09:00:00.000Z',
+      local_date: '2027-08-03',
+      status: 'running',
+    });
+    expect(
+      ids(await span('2027-08-03T12:00:00.000Z', '2027-08-03T13:00:00.000Z'))
+    ).toEqual(['o-running']);
+    await t.db.delete(timeEntries).where(eq(timeEntries.id, 'o-running'));
+  });
+
+  it('returns [] when nothing intersects', async () => {
+    expect(
+      await span('2027-09-01T00:00:00.000Z', '2027-09-01T01:00:00.000Z')
+    ).toEqual([]);
   });
 });

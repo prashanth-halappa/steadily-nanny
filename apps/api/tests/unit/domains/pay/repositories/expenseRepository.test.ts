@@ -1,661 +1,363 @@
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
-
 /**
- * `ExpenseRepository` runs against a fake PostgREST chain that actually
- * applies eq/gte/lt/order/update/delete to an in-memory row set, exactly like
- * `payArrangementRepository.test.ts` — a recording-only chain would pass with
- * a missing `household_id` filter or a guard that doesn't actually gate the
- * write, which is precisely what these tests exist to catch (every write on
- * this table MUST filter household_id explicitly; RLS is select-only,
- * docs/11-MONEY.md §8/§9).
+ * ExpenseRepository against a real Miniflare D1 (tests/helpers/testDb.ts).
+ *
+ * The guarded writes run as real SQL: the owner+pending CAS on edit and
+ * withdraw, the `expenses_one_pending_claim_idx` dedupe, and `reviewPending`
+ * — the D1 replacement for `review_pending_expense` (051, MIGRATION-NOTES
+ * §5.4), whose week-freeze guard is a `NOT EXISTS (approved timesheet)` in
+ * the expense UPDATE itself, batched with a gated `updated_at` bump of that
+ * week's timesheet.
  */
+import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
+import { eq } from 'drizzle-orm';
+import { type AnyD1Database, drizzle } from 'drizzle-orm/d1';
+import * as schema from '../../../../../src/db/schema';
+import {
+  expenses,
+  households,
+  timesheets,
+  user,
+  userProfiles,
+} from '../../../../../src/db/schema';
+import { DuplicatePendingClaimError } from '../../../../../src/domains/pay/errors/payErrors';
+import { DatabaseError } from '../../../../../src/errors';
+import { createTestDb, type TestDb } from '../../../../helpers/testDb';
 
-interface FakeRow {
-  [key: string]: unknown;
-}
+let t: TestDb;
+let repo: InstanceType<
+  typeof import('../../../../../src/domains/pay/repositories/expenseRepository').ExpenseRepository
+>;
+let broken = false;
+const brokenDb = drizzle(
+  {
+    prepare: () => {
+      throw new Error('boom');
+    },
+  } as unknown as AnyD1Database,
+  { schema }
+);
 
-let ExpenseRepository: any;
-let ExpenseValidationError: any;
-let DuplicatePendingClaimError: any;
-let ConflictError: any;
-let DatabaseError: any;
-let mockSupabaseService: any;
-let lastCalls: { method: string; args: unknown[] }[] = [];
-let rpcCalls: { name: string; args: Record<string, unknown> }[] = [];
-
-function createFakeQuery(rows: FakeRow[], error: unknown = null): any {
-  const eqFilters: [string, unknown][] = [];
-  const gteFilters: [string, unknown][] = [];
-  const ltFilters: [string, unknown][] = [];
-  const orderKeys: [string, boolean][] = [];
-  let updatePatch: Record<string, unknown> | null = null;
-  let insertRow: Record<string, unknown> | null = null;
-  let isDelete = false;
-
-  const record = (method: string, ...args: unknown[]) => {
-    lastCalls.push({ method, args });
-  };
-
-  const matches = (row: FakeRow): boolean =>
-    eqFilters.every(([key, value]) => row[key] === value) &&
-    gteFilters.every(([key, value]) => String(row[key]) >= String(value)) &&
-    ltFilters.every(([key, value]) => String(row[key]) < String(value));
-
-  const resolveRows = (): FakeRow[] => {
-    let out = rows.filter(matches);
-    for (const [key, ascending] of [...orderKeys].reverse()) {
-      out = [...out].sort((a, b) => {
-        const left = String(a[key]);
-        const right = String(b[key]);
-        if (left === right) return 0;
-        return (left < right ? -1 : 1) * (ascending ? 1 : -1);
-      });
-    }
-    return out;
-  };
-
-  const chain: any = {
-    select: mock((...args: unknown[]) => {
-      record('select', ...args);
-      return chain;
-    }),
-    eq: mock((key: string, value: unknown) => {
-      record('eq', key, value);
-      eqFilters.push([key, value]);
-      return chain;
-    }),
-    gte: mock((key: string, value: unknown) => {
-      record('gte', key, value);
-      gteFilters.push([key, value]);
-      return chain;
-    }),
-    lt: mock((key: string, value: unknown) => {
-      record('lt', key, value);
-      ltFilters.push([key, value]);
-      return chain;
-    }),
-    order: mock((key: string, opts?: { ascending?: boolean }) => {
-      record('order', key, opts);
-      orderKeys.push([key, opts?.ascending !== false]);
-      return chain;
-    }),
-    update: mock((patch: Record<string, unknown>) => {
-      record('update', patch);
-      updatePatch = patch;
-      return chain;
-    }),
-    insert: mock((row: Record<string, unknown>) => {
-      record('insert', row);
-      insertRow = row;
-      return chain;
-    }),
-    single: mock(async () => {
-      if (error) return { data: null, error };
-      return { data: insertRow ?? resolveRows()[0] ?? null, error: null };
-    }),
-    delete: mock(() => {
-      record('delete');
-      isDelete = true;
-      return chain;
-    }),
-    maybeSingle: mock(async () => {
-      if (error) return { data: null, error };
-      const matched = resolveRows();
-      const row = matched[0];
-      if (!row) return { data: null, error: null };
-      return {
-        data: updatePatch ? { ...row, ...updatePatch } : row,
-        error: null,
-      };
-    }),
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-    then: (resolve: (value: unknown) => unknown) =>
-      Promise.resolve(
-        error
-          ? { data: null, error }
-          : { data: isDelete ? resolveRows() : resolveRows(), error: null }
-      ).then(resolve),
-  };
-  return chain;
-}
-
-function expense(overrides: FakeRow = {}): FakeRow {
-  return {
-    id: 'exp-1',
-    household_id: 'h1',
-    carer_id: 'carer-1',
-    local_date: '2026-08-04',
-    kind: 'expense',
-    description: 'Nappies',
-    amount_minor: 1200,
-    miles: null,
-    currency: 'GBP',
-    status: 'pending',
-    reviewed_by: null,
-    reviewed_at: null,
-    review_note: null,
-    carer_display_name: 'Nia Rowe',
-    created_at: '2026-08-04T09:00:00.000Z',
-    updated_at: '2026-08-04T09:00:00.000Z',
-    ...overrides,
-  };
-}
-
-function withRows(rows: FakeRow[], error: unknown = null): void {
-  mockSupabaseService.from.mockImplementation(() =>
-    createFakeQuery(rows, error)
-  );
-}
-
-/**
- * A STATEFUL stand-in for `public.review_pending_expense` (migration 051) —
- * it really evaluates the timesheet lock and the `status = 'pending'` CAS
- * against in-memory rows, for the same reason the PostgREST chain above does:
- * a recording-only fake would pass even if the repository forgot to pass the
- * week lock at all, which is exactly the F-B4-1 defect.
- */
-function withRpc(expenses: FakeRow[], timesheets: FakeRow[] = []): void {
-  mockSupabaseService.rpc.mockImplementation(
-    async (name: string, args: Record<string, unknown>) => {
-      rpcCalls.push({ name, args });
-      if (name !== 'review_pending_expense') {
-        return { data: null, error: { message: `no such function: ${name}` } };
-      }
-
-      let timesheet: FakeRow | undefined;
-      if (args.p_week_start != null && args.p_carer_id != null) {
-        timesheet = timesheets.find(
-          row =>
-            row.household_id === args.p_household_id &&
-            row.carer_id === args.p_carer_id &&
-            row.week_start === args.p_week_start
-        );
-        if (timesheet?.status === 'approved') {
-          return {
-            data: {
-              outcome: 'week_locked',
-              week_start: args.p_week_start,
-              timesheet_status: timesheet.status,
-            },
-            error: null,
-          };
-        }
-      }
-
-      const row = expenses.find(
-        candidate =>
-          candidate.id === args.p_expense_id &&
-          candidate.household_id === args.p_household_id &&
-          candidate.status === 'pending'
-      );
-      if (!row) {
-        return { data: { outcome: 'not_pending' }, error: null };
-      }
-      Object.assign(row, {
-        status: args.p_status,
-        reviewed_by: args.p_reviewed_by,
-        reviewed_at: args.p_reviewed_at,
-        review_note: args.p_review_note,
-        amount_minor: args.p_amount_minor ?? row.amount_minor,
-      });
-      if (timesheet) {
-        timesheet.updated_at = 'touched-by-review';
-      }
-      return {
-        data: { outcome: 'reviewed', expense: { ...row } },
-        error: null,
-      };
-    }
-  );
-}
-
-function timesheet(overrides: FakeRow = {}): FakeRow {
-  return {
-    id: 'ts-1',
-    household_id: 'h1',
-    carer_id: 'carer-1',
-    week_start: '2026-08-03',
-    status: 'submitted',
-    updated_at: '2026-08-04T09:00:00.000Z',
-    ...overrides,
-  };
-}
-
-const REVIEW_PATCH = {
-  status: 'approved' as const,
-  reviewed_by: 'parent-1',
-  reviewed_at: '2026-08-04T10:00:00.000Z',
-  review_note: null,
-};
+const H1 = 'h1';
+const H2 = 'h2';
+const PARENT = 'parent-1';
+const CARER = 'carer-1';
+const CARER2 = 'carer-2';
+const PAST = '2026-01-01T00:00:00.000Z';
+const REVIEWED_AT = '2026-08-12T10:00:00.000Z';
 
 beforeAll(async () => {
-  mock.module('../../../../../src/config/supabase', () => {
-    const obj = {
-      from: mock(() => createFakeQuery([])),
-      rpc: mock(async () => ({ data: null, error: null })),
-    };
-    return { supabase: obj, supabaseService: obj };
-  });
+  t = await createTestDb();
+  mock.module('../../../../../src/db/client', () => ({
+    db: new Proxy(
+      {},
+      { get: (_t, key) => Reflect.get(broken ? brokenDb : t.db, key) }
+    ),
+  }));
+  for (const id of [PARENT, CARER, CARER2]) {
+    await t.db.insert(user).values({ id, name: id, email: `${id}@x.test` });
+    await t.db.insert(userProfiles).values({ user_id: id });
+  }
+  await t.db.insert(households).values([
+    { id: H1, name: 'One' },
+    { id: H2, name: 'Two' },
+  ]);
+  const { ExpenseRepository } = await import(
+    '../../../../../src/domains/pay/repositories/expenseRepository'
+  );
+  repo = new ExpenseRepository();
+});
+afterAll(() => t.dispose());
 
-  ExpenseRepository = (
-    await import(
-      '../../../../../src/domains/pay/repositories/expenseRepository'
-    )
-  ).ExpenseRepository;
-  ({ ExpenseValidationError, DuplicatePendingClaimError } = await import(
-    '../../../../../src/domains/pay/errors/payErrors'
-  ));
-  ({ ConflictError, DatabaseError } = await import(
-    '../../../../../src/errors'
-  ));
-  mockSupabaseService = (await import('../../../../../src/config/supabase'))
-    .supabaseService;
+let seq = 0;
+async function claim(
+  overrides: Partial<typeof expenses.$inferInsert> = {}
+): Promise<string> {
+  const [row] = await t.db
+    .insert(expenses)
+    .values({
+      household_id: H1,
+      carer_id: CARER,
+      local_date: '2026-08-11',
+      kind: 'expense',
+      description: `Snacks ${seq++}`,
+      amount_minor: 1200,
+      currency: 'GBP',
+      carer_display_name: 'Carer',
+      household_member_id: 'member-1',
+      ...overrides,
+    })
+    .returning();
+  if (!row) throw new Error('seed failed');
+  return row.id;
+}
+
+async function read(id: string) {
+  const [row] = await t.db.select().from(expenses).where(eq(expenses.id, id));
+  return row;
+}
+
+let weekSeq = 0;
+async function weekTimesheet(status: 'submitted' | 'approved') {
+  const week_start = new Date(Date.UTC(2024, 0, 1 + 7 * weekSeq++))
+    .toISOString()
+    .slice(0, 10);
+  const snapshot =
+    status === 'approved'
+      ? {
+          approved_by: PARENT,
+          approved_at: PAST,
+          gross_minor: 1,
+          currency: 'GBP',
+          earnings: { status: 'ok' },
+          earnings_computed_at: PAST,
+        }
+      : {};
+  const [row] = await t.db
+    .insert(timesheets)
+    .values({
+      household_id: H1,
+      carer_id: CARER,
+      carer_display_name: 'Carer',
+      week_start,
+      status,
+      household_member_id: 'member-1',
+      updated_at: PAST,
+      ...snapshot,
+    })
+    .returning();
+  if (!row) throw new Error('seed failed');
+  return row;
+}
+
+const approve = (extra: { amount_minor?: number } = {}) => ({
+  status: 'approved' as const,
+  reviewed_by: PARENT,
+  reviewed_at: REVIEWED_AT,
+  review_note: null,
+  ...extra,
 });
 
-beforeEach(() => {
-  lastCalls = [];
-  rpcCalls = [];
-  mockSupabaseService.from.mockClear?.();
-  mockSupabaseService.rpc.mockClear?.();
-});
-
-describe('ExpenseRepository.listForWeek', () => {
-  it('filters by household_id and the [weekStart, weekEndExclusive) local_date range', async () => {
-    withRows([
-      expense({ id: 'in-range', local_date: '2026-08-04' }),
-      expense({ id: 'before', local_date: '2026-08-02' }),
-      expense({ id: 'after', local_date: '2026-08-11' }),
-      expense({
-        id: 'other-household',
-        household_id: 'h2',
-        local_date: '2026-08-05',
-      }),
-    ]);
-    const repo = new ExpenseRepository();
-    const rows = await repo.listForWeek('h1', '2026-08-03', '2026-08-10');
-    expect(rows.map((r: FakeRow) => r.id)).toEqual(['in-range']);
-    expect(mockSupabaseService.from).toHaveBeenCalledWith('expenses');
+describe('ExpenseRepository reads', () => {
+  it('listForWeek: this household, [start, endExclusive), every status, keeps household_member_id', async () => {
+    const inWeek = await claim({ household_id: H2, local_date: '2026-03-02' });
+    const reviewed = await claim({
+      household_id: H2,
+      local_date: '2026-03-08',
+      status: 'rejected',
+    });
+    await claim({ household_id: H2, local_date: '2026-03-09' });
+    await claim({ household_id: H1, local_date: '2026-03-03' });
+    const rows = await repo.listForWeek(H2, '2026-03-02', '2026-03-09');
+    expect(rows.map(r => r.id)).toEqual([inWeek, reviewed]);
+    expect(rows[0]?.household_member_id).toBe('member-1');
   });
 
-  it('includes every status — the caller filters visibility, not this query', async () => {
-    withRows([
-      expense({ id: 'pending', status: 'pending' }),
-      expense({ id: 'approved', status: 'approved' }),
-      expense({ id: 'rejected', status: 'rejected' }),
-    ]);
-    const repo = new ExpenseRepository();
-    const rows = await repo.listForWeek('h1', '2026-08-03', '2026-08-10');
-    expect(rows).toHaveLength(3);
-  });
-
-  it('returns [] for an empty week', async () => {
-    withRows([]);
-    const repo = new ExpenseRepository();
-    expect(await repo.listForWeek('h1', '2026-08-03', '2026-08-10')).toEqual(
-      []
+  it('listPending / listApprovedForWeek / listApprovedForHousehold scope by status', async () => {
+    const p = await claim({ household_id: H2, local_date: '2026-04-06' });
+    const a = await claim({
+      household_id: H2,
+      local_date: '2026-04-07',
+      status: 'approved',
+    });
+    const pending = (await repo.listPending(H2)).map(r => r.id);
+    expect(pending).toContain(p);
+    expect(pending).not.toContain(a);
+    expect(
+      (await repo.listApprovedForWeek(H2, '2026-04-06', '2026-04-13')).map(
+        r => r.id
+      )
+    ).toEqual([a]);
+    expect((await repo.listApprovedForHousehold(H2)).map(r => r.id)).toContain(
+      a
     );
   });
 
-  it('throws a DatabaseError on query failure', async () => {
-    withRows([], { message: 'boom' });
-    const repo = new ExpenseRepository();
-    await expect(
-      repo.listForWeek('h1', '2026-08-03', '2026-08-10')
-    ).rejects.toThrow();
-  });
-
-  // C1 (058) — see the twins in timeEntryRepository/timesheetRepository tests.
-  // `household_member_id` is named nowhere in apps/api/src; it survives to the
-  // wire purely because this read selects every column. The parent's statement
-  // buckets approved expenses by the same carer key as the hours, so a
-  // narrowed select here would quietly drop a departed carer's claims off her
-  // own statement.
-  it('C1: keeps household_member_id on the rows it returns', async () => {
-    withRows([expense({ household_member_id: 'member-1' })]);
-    const repo = new ExpenseRepository();
-    const rows = await repo.listForWeek('h1', '2026-08-03', '2026-08-10');
-    expect(rows[0].household_member_id).toBe('member-1');
+  it('wraps a failing query in a DatabaseError', async () => {
+    broken = true;
+    try {
+      await expect(repo.listPending(H1)).rejects.toBeInstanceOf(DatabaseError);
+    } finally {
+      broken = false;
+    }
   });
 });
-
-describe('ExpenseRepository.listPending', () => {
-  it('scopes to household_id and status = pending only', async () => {
-    withRows([
-      expense({ id: 'p1', status: 'pending' }),
-      expense({ id: 'p2', status: 'pending', household_id: 'h2' }),
-      expense({ id: 'a1', status: 'approved' }),
-    ]);
-    const repo = new ExpenseRepository();
-    const rows = await repo.listPending('h1');
-    expect(rows.map((r: FakeRow) => r.id)).toEqual(['p1']);
-  });
-
-  it('returns [] when nothing is pending', async () => {
-    withRows([expense({ status: 'approved' })]);
-    const repo = new ExpenseRepository();
-    expect(await repo.listPending('h1')).toEqual([]);
-  });
-});
-
-describe('ExpenseRepository.listApprovedForWeek', () => {
-  it('scopes to household_id, status = approved, and the date range', async () => {
-    withRows([
-      expense({
-        id: 'approved-in-range',
-        status: 'approved',
-        local_date: '2026-08-05',
-      }),
-      expense({
-        id: 'pending-in-range',
-        status: 'pending',
-        local_date: '2026-08-05',
-      }),
-      expense({
-        id: 'approved-out-of-range',
-        status: 'approved',
-        local_date: '2026-09-01',
-      }),
-    ]);
-    const repo = new ExpenseRepository();
-    const rows = await repo.listApprovedForWeek(
-      'h1',
-      '2026-08-03',
-      '2026-08-10'
-    );
-    expect(rows.map((r: FakeRow) => r.id)).toEqual(['approved-in-range']);
-  });
-});
-
-describe('ExpenseRepository.updateOwnedPending', () => {
-  it('updates the row when it is the caller’s own AND still pending', async () => {
-    withRows([
-      expense({ id: 'exp-1', carer_id: 'carer-1', status: 'pending' }),
-    ]);
-    const repo = new ExpenseRepository();
-    const updated = await repo.updateOwnedPending('exp-1', 'h1', 'carer-1', {
-      description: 'Nappies (corrected)',
-    });
-    expect(updated?.description).toBe('Nappies (corrected)');
-  });
-
-  it('returns null when the row belongs to a different carer', async () => {
-    withRows([
-      expense({ id: 'exp-1', carer_id: 'carer-OTHER', status: 'pending' }),
-    ]);
-    const repo = new ExpenseRepository();
-    const updated = await repo.updateOwnedPending('exp-1', 'h1', 'carer-1', {
-      description: 'x',
-    });
-    expect(updated).toBeNull();
-  });
-
-  it('returns null when the row is no longer pending (already reviewed)', async () => {
-    withRows([
-      expense({ id: 'exp-1', carer_id: 'carer-1', status: 'approved' }),
-    ]);
-    const repo = new ExpenseRepository();
-    const updated = await repo.updateOwnedPending('exp-1', 'h1', 'carer-1', {
-      description: 'x',
-    });
-    expect(updated).toBeNull();
-  });
-
-  it('returns null for a different household even with matching id/carer', async () => {
-    withRows([
-      expense({
-        id: 'exp-1',
-        household_id: 'h2',
-        carer_id: 'carer-1',
-        status: 'pending',
-      }),
-    ]);
-    const repo = new ExpenseRepository();
-    const updated = await repo.updateOwnedPending('exp-1', 'h1', 'carer-1', {
-      description: 'x',
-    });
-    expect(updated).toBeNull();
-  });
-});
-
-describe('ExpenseRepository.deleteOwnedPending', () => {
-  it('deletes and returns true for the owning carer’s own pending row', async () => {
-    withRows([
-      expense({ id: 'exp-1', carer_id: 'carer-1', status: 'pending' }),
-    ]);
-    const repo = new ExpenseRepository();
-    expect(await repo.deleteOwnedPending('exp-1', 'h1', 'carer-1')).toBe(true);
-  });
-
-  it('returns false (no-op) for another carer’s row', async () => {
-    withRows([
-      expense({ id: 'exp-1', carer_id: 'carer-OTHER', status: 'pending' }),
-    ]);
-    const repo = new ExpenseRepository();
-    expect(await repo.deleteOwnedPending('exp-1', 'h1', 'carer-1')).toBe(false);
-  });
-
-  it('returns false for a reviewed row — nothing is deleted', async () => {
-    withRows([
-      expense({ id: 'exp-1', carer_id: 'carer-1', status: 'rejected' }),
-    ]);
-    const repo = new ExpenseRepository();
-    expect(await repo.deleteOwnedPending('exp-1', 'h1', 'carer-1')).toBe(false);
-  });
-});
-
-describe('ExpenseRepository.reviewPending', () => {
-  it('applies the review patch when the row is pending in this household', async () => {
-    withRpc([expense({ id: 'exp-1', household_id: 'h1', status: 'pending' })]);
-    const repo = new ExpenseRepository();
-    const result = await repo.reviewPending('exp-1', 'h1', REVIEW_PATCH, null);
-    expect(result.outcome).toBe('reviewed');
-    expect(result.expense.status).toBe('approved');
-    expect(result.expense.reviewed_by).toBe('parent-1');
-  });
-
-  it('freezes amount_minor on a mileage approval in the SAME update', async () => {
-    withRpc([
-      expense({
-        id: 'exp-mileage',
-        household_id: 'h1',
-        kind: 'mileage',
-        miles: 12.3,
-        amount_minor: null,
-        status: 'pending',
-      }),
-    ]);
-    const repo = new ExpenseRepository();
-    const result = await repo.reviewPending(
-      'exp-mileage',
-      'h1',
-      { ...REVIEW_PATCH, amount_minor: 554 },
-      null
-    );
-    expect(result.expense.amount_minor).toBe(554);
-    expect(result.expense.status).toBe('approved');
-  });
-
-  it('leaves amount_minor alone when the patch carries none', async () => {
-    withRpc([expense({ id: 'exp-1', household_id: 'h1', amount_minor: 1200 })]);
-    const repo = new ExpenseRepository();
-    const result = await repo.reviewPending(
-      'exp-1',
-      'h1',
-      { ...REVIEW_PATCH, status: 'rejected' },
-      null
-    );
-    expect(result.expense.amount_minor).toBe(1200);
-  });
-
-  it('reports not_pending when the row is already reviewed (lost race)', async () => {
-    withRpc([expense({ id: 'exp-1', household_id: 'h1', status: 'approved' })]);
-    const repo = new ExpenseRepository();
-    const result = await repo.reviewPending(
-      'exp-1',
-      'h1',
-      { ...REVIEW_PATCH, status: 'rejected' },
-      null
-    );
-    expect(result.outcome).toBe('not_pending');
-  });
-
-  it('reports not_pending for a different household', async () => {
-    withRpc([expense({ id: 'exp-1', household_id: 'h2', status: 'pending' })]);
-    const repo = new ExpenseRepository();
-    const result = await repo.reviewPending('exp-1', 'h1', REVIEW_PATCH, null);
-    expect(result.outcome).toBe('not_pending');
-  });
-
-  it('throws a DatabaseError when the RPC itself fails', async () => {
-    mockSupabaseService.rpc.mockImplementation(async () => ({
-      data: null,
-      error: { message: 'boom' },
-    }));
-    const repo = new ExpenseRepository();
-    await expect(
-      repo.reviewPending('exp-1', 'h1', REVIEW_PATCH, null)
-    ).rejects.toThrow();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// F-B4-1 — the freeze guard lives in the WRITE, not a pre-check.
-//
-// The service's `assertWeekNotFrozen` is a plain read; the write it guards
-// used to be a CAS on `status = 'pending'` alone, so a timesheet approve that
-// landed between the two froze a week's earnings without this reimbursement
-// and the expense still committed `approved`. `reviewPending` now routes
-// through `review_pending_expense` (051), which locks the week's timesheet row
-// FOR UPDATE before it touches the expense.
-// ---------------------------------------------------------------------------
-
-describe('ExpenseRepository.reviewPending — the week freeze is IN the write', () => {
-  it('refuses the approval when the locked week is already approved', async () => {
-    const rows = [expense({ id: 'exp-1', household_id: 'h1' })];
-    withRpc(rows, [timesheet({ status: 'approved' })]);
-    const repo = new ExpenseRepository();
-    const result = await repo.reviewPending('exp-1', 'h1', REVIEW_PATCH, {
-      carerId: 'carer-1',
-      weekStart: '2026-08-03',
-    });
-    expect(result.outcome).toBe('week_locked');
-    expect(result.timesheetStatus).toBe('approved');
-    expect(result.weekStart).toBe('2026-08-03');
-    // The row is untouched — nothing was approved into the frozen week.
-    expect(rows[0]?.status).toBe('pending');
-  });
-
-  it('passes the household, carer and week to the lock so the RIGHT row is locked', async () => {
-    withRpc([expense({ id: 'exp-1', household_id: 'h1' })], [timesheet()]);
-    const repo = new ExpenseRepository();
-    await repo.reviewPending('exp-1', 'h1', REVIEW_PATCH, {
-      carerId: 'carer-1',
-      weekStart: '2026-08-03',
-    });
-    expect(rpcCalls[0]?.name).toBe('review_pending_expense');
-    expect(rpcCalls[0]?.args).toMatchObject({
-      p_expense_id: 'exp-1',
-      p_household_id: 'h1',
-      p_carer_id: 'carer-1',
-      p_week_start: '2026-08-03',
-      p_status: 'approved',
-    });
-  });
-
-  it('BUMPS the week’s timesheet so an in-flight approve’s updated_at CAS loses', async () => {
-    const weeks = [timesheet({ status: 'submitted' })];
-    withRpc([expense({ id: 'exp-1', household_id: 'h1' })], weeks);
-    const repo = new ExpenseRepository();
-    const result = await repo.reviewPending('exp-1', 'h1', REVIEW_PATCH, {
-      carerId: 'carer-1',
-      weekStart: '2026-08-03',
-    });
-    expect(result.outcome).toBe('reviewed');
-    expect(weeks[0]?.updated_at).not.toBe('2026-08-04T09:00:00.000Z');
-  });
-
-  it('an unfrozen week approves normally — the lock costs the happy path nothing', async () => {
-    withRpc(
-      [expense({ id: 'exp-1', household_id: 'h1' })],
-      [timesheet({ status: 'submitted' })]
-    );
-    const repo = new ExpenseRepository();
-    const result = await repo.reviewPending('exp-1', 'h1', REVIEW_PATCH, {
-      carerId: 'carer-1',
-      weekStart: '2026-08-03',
-    });
-    expect(result.outcome).toBe('reviewed');
-    expect(result.expense.status).toBe('approved');
-  });
-
-  it('no timesheet for that week at all approves normally', async () => {
-    withRpc([expense({ id: 'exp-1', household_id: 'h1' })], []);
-    const repo = new ExpenseRepository();
-    const result = await repo.reviewPending('exp-1', 'h1', REVIEW_PATCH, {
-      carerId: 'carer-1',
-      weekStart: '2026-08-03',
-    });
-    expect(result.outcome).toBe('reviewed');
-  });
-
-  it('a null week lock (rejection / carer-less row) skips the lock entirely', async () => {
-    withRpc(
-      [expense({ id: 'exp-1', household_id: 'h1' })],
-      [timesheet({ status: 'approved' })]
-    );
-    const repo = new ExpenseRepository();
-    const result = await repo.reviewPending(
-      'exp-1',
-      'h1',
-      { ...REVIEW_PATCH, status: 'rejected' },
-      null
-    );
-    expect(result.outcome).toBe('reviewed');
-    expect(rpcCalls[0]?.args.p_week_start).toBeNull();
-    expect(rpcCalls[0]?.args.p_carer_id).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// F-B4-6 — a double-tapped POST used to create two payable rows.
-// ---------------------------------------------------------------------------
 
 describe('ExpenseRepository.create — pending-claim dedupe', () => {
-  it('inserts the claim normally', async () => {
-    withRows([]);
-    const repo = new ExpenseRepository();
-    const created = await repo.create(expense({ id: undefined }));
-    expect(created.description).toBe('Nappies');
-  });
+  const fresh = {
+    household_id: H1,
+    carer_id: CARER,
+    local_date: '2026-05-04',
+    kind: 'expense' as const,
+    description: 'Museum',
+    amount_minor: 900,
+    currency: 'GBP',
+    carer_display_name: 'Carer',
+  };
 
-  // A double-tap is a RACE, not bad input: the same claim, filed twice before
-  // either was reviewed. Nothing about the request is malformed, so a 400
-  // ("check what you typed") mislabels it — 409 is the honest status, and the
-  // retry-after-refresh advice it carries is the right advice.
-  it('translates the 23505 from expenses_one_pending_claim_idx into a 409 conflict', async () => {
-    withRows([], {
-      code: '23505',
-      message:
-        'duplicate key value violates unique constraint "expenses_one_pending_claim_idx"',
-    });
-    const repo = new ExpenseRepository();
-    const err = await repo.create(expense()).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(DuplicatePendingClaimError);
-    expect(err).toBeInstanceOf(ConflictError);
-    expect(err).not.toBeInstanceOf(ExpenseValidationError);
-    expect((err as { statusCode?: number }).statusCode).toBe(409);
-    expect((err as { code?: string }).code).toBe('CONFLICT');
-    // The discriminator survives the status change, so nothing greps dead.
-    expect((err as { metadata?: { reason?: string } }).metadata?.reason).toBe(
-      'DUPLICATE_PENDING_CLAIM'
+  it('inserts the claim, then refuses the identical double-tap as DuplicatePendingClaimError', async () => {
+    const row = await repo.create(fresh);
+    expect(row).toMatchObject({ ...fresh, status: 'pending' });
+    await expect(repo.create(fresh)).rejects.toBeInstanceOf(
+      DuplicatePendingClaimError
     );
   });
 
-  it('leaves any OTHER database error as a DatabaseError', async () => {
-    withRows([], { code: '23503', message: 'fk violation' });
-    const repo = new ExpenseRepository();
-    const err = await repo.create(expense()).catch((e: unknown) => e);
-    expect(err).not.toBeInstanceOf(DuplicatePendingClaimError);
+  it('leaves any other failure (a CHECK) as a DatabaseError', async () => {
+    const err = await repo
+      .create({ ...fresh, description: 'bad', currency: 'gbp' })
+      .catch(e => e);
     expect(err).toBeInstanceOf(DatabaseError);
+    expect(err).not.toBeInstanceOf(DuplicatePendingClaimError);
+  });
+});
+
+describe('ExpenseRepository.updateOwnedPending / deleteOwnedPending', () => {
+  it('updates the caller’s own pending row, and nobody else’s', async () => {
+    const id = await claim();
+    expect(
+      await repo.updateOwnedPending(id, H1, CARER2, { description: 'x' })
+    ).toBeNull();
+    expect(
+      await repo.updateOwnedPending(id, H2, CARER, { description: 'x' })
+    ).toBeNull();
+    const row = await repo.updateOwnedPending(id, H1, CARER, {
+      description: 'Lunch',
+    });
+    expect(row?.description).toBe('Lunch');
+  });
+
+  it('returns null once the row is reviewed', async () => {
+    const id = await claim({ status: 'rejected' });
+    expect(
+      await repo.updateOwnedPending(id, H1, CARER, { description: 'x' })
+    ).toBeNull();
+  });
+
+  it('deletes only the owner’s pending row', async () => {
+    const id = await claim();
+    const reviewed = await claim({ status: 'approved' });
+    expect(await repo.deleteOwnedPending(id, H1, CARER2)).toBe(false);
+    expect(await repo.deleteOwnedPending(reviewed, H1, CARER)).toBe(false);
+    expect(await repo.deleteOwnedPending(id, H1, CARER)).toBe(true);
+    expect(await read(id)).toBeUndefined();
+    expect(await read(reviewed)).toBeDefined();
+  });
+});
+
+describe('ExpenseRepository.reviewPending (review_pending_expense)', () => {
+  it('reviews a pending row in this household', async () => {
+    const id = await claim();
+    const out = await repo.reviewPending(id, H1, approve(), null);
+    expect(out.outcome).toBe('reviewed');
+    if (out.outcome !== 'reviewed') throw new Error('unreachable');
+    expect(out.expense).toMatchObject({
+      id,
+      status: 'approved',
+      reviewed_by: PARENT,
+      reviewed_at: REVIEWED_AT,
+      amount_minor: 1200,
+    });
+  });
+
+  it('freezes a mileage amount in the same write, and leaves it alone when absent', async () => {
+    const id = await claim({ kind: 'mileage', amount_minor: null, miles: 12 });
+    const out = await repo.reviewPending(
+      id,
+      H1,
+      approve({ amount_minor: 540 }),
+      null
+    );
+    expect(out.outcome).toBe('reviewed');
+    expect((await read(id))?.amount_minor).toBe(540);
+  });
+
+  it('answers not_pending for an already-reviewed row or another household', async () => {
+    const id = await claim({ status: 'rejected' });
+    expect(await repo.reviewPending(id, H1, approve(), null)).toEqual({
+      outcome: 'not_pending',
+    });
+    const other = await claim();
+    expect(await repo.reviewPending(other, H2, approve(), null)).toEqual({
+      outcome: 'not_pending',
+    });
+    expect((await read(other))?.status).toBe('pending');
+  });
+
+  it('refuses when the locked week is already approved, writing nothing', async () => {
+    const ts = await weekTimesheet('approved');
+    const id = await claim();
+    expect(
+      await repo.reviewPending(id, H1, approve(), {
+        carerId: CARER,
+        weekStart: ts.week_start,
+      })
+    ).toEqual({
+      outcome: 'week_locked',
+      weekStart: ts.week_start,
+      timesheetStatus: 'approved',
+    });
+    expect((await read(id))?.status).toBe('pending');
+  });
+
+  it('BUMPS the unfrozen week’s timesheet updated_at so an in-flight approve’s CAS loses', async () => {
+    const ts = await weekTimesheet('submitted');
+    const id = await claim();
+    const out = await repo.reviewPending(id, H1, approve(), {
+      carerId: CARER,
+      weekStart: ts.week_start,
+    });
+    expect(out.outcome).toBe('reviewed');
+    const [after] = await t.db
+      .select()
+      .from(timesheets)
+      .where(eq(timesheets.id, ts.id));
+    expect(after?.updated_at).not.toBe(PAST);
+  });
+
+  it('a lost review does NOT bump the week (the bump is gated on the review)', async () => {
+    const ts = await weekTimesheet('submitted');
+    const id = await claim({ status: 'rejected' });
+    expect(
+      (
+        await repo.reviewPending(id, H1, approve(), {
+          carerId: CARER,
+          weekStart: ts.week_start,
+        })
+      ).outcome
+    ).toBe('not_pending');
+    const [after] = await t.db
+      .select()
+      .from(timesheets)
+      .where(eq(timesheets.id, ts.id));
+    expect(after?.updated_at).toBe(PAST);
+  });
+
+  it('a week with no timesheet at all reviews normally', async () => {
+    const id = await claim();
+    expect(
+      (
+        await repo.reviewPending(id, H1, approve(), {
+          carerId: CARER,
+          weekStart: '1999-01-04',
+        })
+      ).outcome
+    ).toBe('reviewed');
+  });
+
+  it('RACE: two parents reviewing at once — exactly one lands', async () => {
+    const id = await claim();
+    const results = await Promise.all([
+      repo.reviewPending(id, H1, approve(), null),
+      repo.reviewPending(
+        id,
+        H1,
+        { ...approve(), status: 'rejected', review_note: 'no' },
+        null
+      ),
+    ]);
+    expect(results.map(r => r.outcome).sort()).toEqual([
+      'not_pending',
+      'reviewed',
+    ]);
   });
 });

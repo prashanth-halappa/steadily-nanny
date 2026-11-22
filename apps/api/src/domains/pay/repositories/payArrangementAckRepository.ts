@@ -3,10 +3,9 @@
  * `pay_arrangement_acks` table (supabase/migrations/081_pay_arrangement_acks.sql).
  * Extends BaseRepository for `findById`; `create` is OVERRIDDEN to translate
  * the table's `unique (arrangement_id, carer_id, kind)` index into an
- * idempotent no-op rather than a raw 500 — see its doc below. Uses the
- * service-role client, so it bypasses RLS entirely: authorization lives in
- * the SERVICE layer, never here (same discipline as every repository in this
- * domain, docs/11-MONEY.md §9).
+ * idempotent no-op rather than a raw 500 — see its doc below. D1 has no RLS:
+ * authorization lives in the SERVICE layer, never here (same discipline as
+ * every repository in this domain, docs/11-MONEY.md §9).
  *
  * There is deliberately NO update or delete helper: "there is no
  * un-acknowledge" (spec §8.1) and no un-disagree either — a change of mind
@@ -18,12 +17,11 @@ import type {
   PayArrangementAck,
   PayArrangementAckKind,
 } from '@steadily-nanny/shared-types/schemas/payArrangementAck.schema';
-import { supabaseService } from '../../../config/supabase';
-import { DatabaseError } from '../../../errors';
+import { and, desc, eq } from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { mapDbError } from '../../../db/errors';
+import { payArrangementAcks } from '../../../db/schema';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
-
-/** Postgres unique_violation error code. */
-const UNIQUE_VIOLATION = '23505';
 
 export interface NewPayArrangementAckRow {
   arrangement_id: string;
@@ -32,9 +30,12 @@ export interface NewPayArrangementAckRow {
   note: string | null;
 }
 
-export class PayArrangementAckRepository extends BaseRepository<PayArrangementAck> {
+export class PayArrangementAckRepository extends BaseRepository<
+  PayArrangementAck,
+  typeof payArrangementAcks
+> {
   constructor() {
-    super('pay_arrangement_acks');
+    super(payArrangementAcks);
   }
 
   /**
@@ -45,20 +46,18 @@ export class PayArrangementAckRepository extends BaseRepository<PayArrangementAc
   async listForArrangement(
     arrangementId: string
   ): Promise<PayArrangementAck[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('arrangement_id', arrangementId)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list pay arrangement acks',
-        'DATABASE_ERROR',
-        { details: error.message, arrangementId }
-      );
+    try {
+      const rows = await db
+        .select()
+        .from(payArrangementAcks)
+        .where(eq(payArrangementAcks.arrangement_id, arrangementId))
+        .orderBy(desc(payArrangementAcks.created_at));
+      return rows as PayArrangementAck[];
+    } catch (err) {
+      throw this.dbError('Failed to list pay arrangement acks', err, {
+        arrangementId,
+      });
     }
-    return (data ?? []) as PayArrangementAck[];
   }
 
   /**
@@ -67,17 +66,18 @@ export class PayArrangementAckRepository extends BaseRepository<PayArrangementAc
    * un-acknowledge" (spec §8.1) means re-tapping "I've seen these terms" on
    * a version she has already seen is idempotent — the caller gets the
    * ORIGINAL row back, timestamp and all, rather than a 409 for pressing a
-   * button twice.
+   * button twice. A unique violation whose row can't be re-read (none other
+   * exists today) still surfaces as a `DatabaseError`.
    */
   async create(row: NewPayArrangementAckRow): Promise<PayArrangementAck> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .insert(row)
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === UNIQUE_VIOLATION) {
+    try {
+      const [created] = await db
+        .insert(payArrangementAcks)
+        .values(row)
+        .returning();
+      return created as PayArrangementAck;
+    } catch (err) {
+      if (mapDbError(err)?.kind === 'unique') {
         const existing = await this.findExisting(
           row.arrangement_id,
           row.carer_id,
@@ -85,13 +85,10 @@ export class PayArrangementAckRepository extends BaseRepository<PayArrangementAc
         );
         if (existing) return existing;
       }
-      throw new DatabaseError(
-        'Failed to create pay arrangement ack',
-        'DATABASE_ERROR',
-        { details: error.message, code: error.code, kind: row.kind }
-      );
+      throw this.dbError('Failed to create pay arrangement ack', err, {
+        kind: row.kind,
+      });
     }
-    return data as PayArrangementAck;
   }
 
   private async findExisting(
@@ -99,21 +96,29 @@ export class PayArrangementAckRepository extends BaseRepository<PayArrangementAc
     carerId: string,
     kind: PayArrangementAckKind
   ): Promise<PayArrangementAck | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('arrangement_id', arrangementId)
-      .eq('carer_id', carerId)
-      .eq('kind', kind)
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
+    try {
+      const [found] = await db
+        .select()
+        .from(payArrangementAcks)
+        .where(
+          and(
+            eq(payArrangementAcks.arrangement_id, arrangementId),
+            eq(payArrangementAcks.carer_id, carerId),
+            eq(payArrangementAcks.kind, kind)
+          )
+        )
+        .limit(1);
+      return (found as PayArrangementAck | undefined) ?? null;
+    } catch (err) {
+      throw this.dbError(
         'Failed to re-read existing pay arrangement ack',
-        'DATABASE_ERROR',
-        { details: error.message, arrangementId, carerId, kind }
+        err,
+        {
+          arrangementId,
+          carerId,
+          kind,
+        }
       );
     }
-    return data as PayArrangementAck | null;
   }
 }

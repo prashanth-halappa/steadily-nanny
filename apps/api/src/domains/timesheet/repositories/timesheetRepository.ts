@@ -3,8 +3,8 @@
  * roll-up a parent approves in one tap). Extends BaseRepository for standard
  * CRUD and adds the find-by-week query the clock-out flow uses to keep a
  * running total, plus the ONE conditional write that freezes a week's
- * earnings. Uses the service-role client, so ownership/authorization is
- * enforced in the SERVICE layer, never here.
+ * earnings. Talks to D1 through Drizzle with no row-level security, so
+ * ownership/authorization is enforced in the SERVICE layer, never here.
  *
  * @module domains/timesheet/repositories/timesheetRepository
  */
@@ -13,7 +13,19 @@ import type {
   Timesheet,
   TimesheetStatus,
 } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
-import { supabaseService } from '../../../config/supabase';
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  type SQL,
+  sql,
+} from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { timesheets } from '../../../db/schema';
 import { DatabaseError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
 
@@ -26,8 +38,8 @@ import { BaseRepository } from '../../../shared/repositories/baseRepository';
  * client read the frozen jsonb without the legacy/corrupt handling the
  * server does on its behalf (`docs/11-MONEY.md` §3).
  *
- * `earnings` is `unknown`, not `WeekEarnings`: it is whatever Postgres has in
- * that jsonb column, which for a hand-edited or pre-042 row may be anything
+ * `earnings` is `unknown`, not `WeekEarnings`: it is whatever the database has
+ * in that JSON column, which for a hand-edited or pre-042 row may be anything
  * at all. Every reader must parse it through `WeekEarningsSchema` — typing it
  * as the happy shape here would let a caller skip exactly the validation the
  * corrupt-snapshot arm exists for.
@@ -118,9 +130,27 @@ const WITHDRAWABLE_FROM: TimesheetStatus = 'queried';
 /** The status a reopen may transition FROM. Anything else is a lost race. */
 const REOPENABLE_FROM: TimesheetStatus = 'approved';
 
-export class TimesheetRepository extends BaseRepository<TimesheetRow> {
+/** The message `timesheets_refuse_reopen_when_paid` raises (102 → 0001_triggers). */
+const HAS_PAYMENTS = 'TIMESHEET_HAS_PAYMENTS';
+
+/** Whether `token` appears anywhere on the error's `cause` chain (Drizzle wraps the driver error). */
+function causeChainIncludes(err: unknown, token: string): boolean {
+  for (let cur = err, depth = 0; cur && depth < 5; depth++) {
+    if (cur instanceof Error && cur.message.includes(token)) return true;
+    cur = cur instanceof Error ? cur.cause : undefined;
+  }
+  return false;
+}
+
+/** `earnings` / `previous_approval` are JSON columns; the snapshot types them `unknown`. */
+type JsonColumn = Record<string, unknown> | null;
+
+export class TimesheetRepository extends BaseRepository<
+  TimesheetRow,
+  typeof timesheets
+> {
   constructor() {
-    super('timesheets');
+    super(timesheets);
   }
 
   /** The one timesheet for (household, carer, week), or null. Unique per `timesheets_household_carer_week_idx`. */
@@ -129,22 +159,26 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
     carerId: string,
     weekStart: string
   ): Promise<TimesheetRow | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('household_id', householdId)
-      .eq('carer_id', carerId)
-      .eq('week_start', weekStart)
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to look up timesheet for week',
-        'DATABASE_ERROR',
-        { details: error.message, householdId, carerId, weekStart }
-      );
+    try {
+      const rows = await db
+        .select()
+        .from(timesheets)
+        .where(
+          and(
+            eq(timesheets.household_id, householdId),
+            eq(timesheets.carer_id, carerId),
+            eq(timesheets.week_start, weekStart)
+          )
+        )
+        .limit(1);
+      return (rows[0] as TimesheetRow | undefined) ?? null;
+    } catch (err) {
+      throw this.dbError('Failed to look up week in', err, {
+        householdId,
+        carerId,
+        weekStart,
+      });
     }
-    return data as TimesheetRow | null;
   }
 
   /**
@@ -157,25 +191,23 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
     householdId: string,
     carerId?: string
   ): Promise<TimesheetRow[]> {
-    let query = supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('household_id', householdId);
-    if (carerId) {
-      query = query.eq('carer_id', carerId);
+    try {
+      const rows = await db
+        .select()
+        .from(timesheets)
+        .where(
+          and(
+            eq(timesheets.household_id, householdId),
+            carerId ? eq(timesheets.carer_id, carerId) : undefined
+          )
+        )
+        .orderBy(desc(timesheets.week_start));
+      return rows as TimesheetRow[];
+    } catch (err) {
+      throw this.dbError('Failed to list household rows in', err, {
+        householdId,
+      });
     }
-    const { data, error } = await query.order('week_start', {
-      ascending: false,
-    });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list timesheets for household',
-        'DATABASE_ERROR',
-        { details: error.message, householdId }
-      );
-    }
-    return (data ?? []) as TimesheetRow[];
   }
 
   /**
@@ -197,27 +229,31 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
     beforeWeekStart: string,
     limit: number
   ): Promise<number[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('gross_minor')
-      .eq('household_id', householdId)
-      .eq('carer_id', carerId)
-      .eq('status', 'approved')
-      .lt('week_start', beforeWeekStart)
-      .not('gross_minor', 'is', null)
-      .order('week_start', { ascending: false })
-      .limit(limit);
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list recent approved gross for carer',
-        'DATABASE_ERROR',
-        { details: error.message, householdId, carerId, beforeWeekStart }
-      );
+    try {
+      const rows = await db
+        .select({ gross_minor: timesheets.gross_minor })
+        .from(timesheets)
+        .where(
+          and(
+            eq(timesheets.household_id, householdId),
+            eq(timesheets.carer_id, carerId),
+            eq(timesheets.status, 'approved'),
+            lt(timesheets.week_start, beforeWeekStart),
+            isNotNull(timesheets.gross_minor)
+          )
+        )
+        .orderBy(desc(timesheets.week_start))
+        .limit(limit);
+      return rows
+        .map(row => row.gross_minor)
+        .filter((value): value is number => value !== null);
+    } catch (err) {
+      throw this.dbError('Failed to list recent approved gross in', err, {
+        householdId,
+        carerId,
+        beforeWeekStart,
+      });
     }
-    return ((data ?? []) as { gross_minor: number | null }[])
-      .map(row => row.gross_minor)
-      .filter((value): value is number => value !== null);
   }
 
   /**
@@ -242,15 +278,16 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
    * 28h of hours signed off at a 20h price, on a row that looks internally
    * consistent forever. So the predicate also pins `updated_at` to the value
    * the service read BEFORE it computed: `expectedUpdatedAt`. `timesheets`
-   * carries `updated_at` maintained by the `set_timesheets_updated_at` trigger
-   * (017 → `public.set_updated_at`; 100 → timesheets-own
-   * `public.set_timesheets_updated_at`, which preserves `OLD.updated_at` for a
-   * `parent_viewed_at`-only write and still bumps every other update), which
-   * fires on EVERY update of the row including the roll-up's, so it is a true
-   * row version and needs no new column. Its precision is Postgres's
-   * transaction timestamp at microseconds; the roll-up and the approve are
-   * separate requests and therefore separate transactions, so they can never
-   * share one.
+   * carries `updated_at` maintained by the AFTER UPDATE
+   * `set_timesheets_updated_at` trigger (migrations/0001_triggers.sql, ported
+   * from 100: it preserves `updated_at` for a `parent_viewed_at`-only write
+   * and bumps every other update), which fires on every update of the row
+   * including the roll-up's, so it is a true row version and needs no new
+   * column. Its precision is milliseconds (`strftime('%f')`).
+   *
+   * RETURNING does not see that AFTER-trigger stamp, so the row this returns
+   * carries the PRE-write `updated_at`. Services re-read before every CAS, so
+   * nothing feeds it back as a version.
    *
    * The predicate is deliberately conservative in one direction: a roll-up
    * that rewrote the row with identical values still bumps `updated_at` and
@@ -261,8 +298,8 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
    * `expectedUpdatedAt` is a WHERE, never a SET: the trigger owns that column,
    * and writing it here would both fight the trigger and destroy the version.
    *
-   * Same shape as `shiftRepository.confirmPending` — one guarded UPDATE,
-   * `maybeSingle()`, and `null` for "lost the race". The caller turns that
+   * Same shape as `shiftRepository.confirmPending` — one guarded UPDATE
+   * … RETURNING, and `null` for "lost the race" (zero rows returned). The caller turns that
    * null into the domain's existing status-race error rather than the
    * repository inventing a second one.
    *
@@ -278,9 +315,10 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
     patch: ApproveWithEarningsPatch,
     expectedUpdatedAt: string
   ): Promise<TimesheetRow | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .update({
+    return this.guardedUpdate(
+      'Failed to approve',
+      timesheetId,
+      {
         status: 'approved',
         query_note: null,
         reopen_reason: null,
@@ -303,23 +341,12 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
         approved_at: patch.approved_at,
         gross_minor: patch.gross_minor,
         currency: patch.currency,
-        earnings: patch.earnings,
+        earnings: patch.earnings as JsonColumn,
         earnings_computed_at: patch.earnings_computed_at,
-      })
-      .eq('id', timesheetId)
-      .eq('status', APPROVABLE_FROM)
-      .eq('updated_at', expectedUpdatedAt)
-      .select()
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to approve timesheet with earnings',
-        'DATABASE_ERROR',
-        { details: error.message, timesheetId }
-      );
-    }
-    return data as TimesheetRow | null;
+      },
+      eq(timesheets.status, APPROVABLE_FROM),
+      expectedUpdatedAt
+    );
   }
 
   /**
@@ -336,29 +363,20 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
    * interleavings a lost race the caller retries against what is actually
    * there.
    *
-   * Same `maybeSingle()` + `null`-for-lost-race contract as approve.
+   * Same `null`-for-lost-race contract as approve.
    */
   async queryFromActionable(
     timesheetId: string,
     expectedUpdatedAt: string,
     note: string
   ): Promise<TimesheetRow | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .update({ status: 'queried', query_note: note })
-      .eq('id', timesheetId)
-      .in('status', QUERYABLE_FROM)
-      .eq('updated_at', expectedUpdatedAt)
-      .select()
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError('Failed to query timesheet', 'DATABASE_ERROR', {
-        details: error.message,
-        timesheetId,
-      });
-    }
-    return data as TimesheetRow | null;
+    return this.guardedUpdate(
+      'Failed to query',
+      timesheetId,
+      { status: 'queried', query_note: note },
+      inArray(timesheets.status, [...QUERYABLE_FROM]),
+      expectedUpdatedAt
+    );
   }
 
   /**
@@ -385,29 +403,20 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
     timesheetId: string,
     expectedUpdatedAt: string
   ): Promise<TimesheetRow | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .update({ status: 'submitted', query_note: null })
-      .eq('id', timesheetId)
-      .eq('status', WITHDRAWABLE_FROM)
-      .eq('updated_at', expectedUpdatedAt)
-      .select()
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to withdraw timesheet query',
-        'DATABASE_ERROR',
-        { details: error.message, timesheetId }
-      );
-    }
-    return data as TimesheetRow | null;
+    return this.guardedUpdate(
+      'Failed to withdraw query on',
+      timesheetId,
+      { status: 'submitted', query_note: null },
+      eq(timesheets.status, WITHDRAWABLE_FROM),
+      expectedUpdatedAt
+    );
   }
 
   /**
-   * THE CLOCK-OUT'S ONE WRITE — `roll_up_timesheet_hours` (migration 102).
-   *
-   * It is an RPC, not an update, and neither half of that is optional:
+   * THE CLOCK-OUT'S ONE WRITE — Postgres's `roll_up_timesheet_hours` RPC
+   * (migration 102), rebuilt as ONE `UPDATE … SET col = CASE WHEN paid …`
+   * statement (MIGRATION-NOTES §5.3). Neither half of the RPC's design is
+   * optional:
    *
    * - **It has to consult `payments`.** Clearing an approved week's
    *   `gross_minor` is what every payment recorded against that week was
@@ -417,20 +426,26 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
    *   snapshot cleared — D1's rule, unchanged. A PAID week keeps its status,
    *   its approver and all four snapshot columns, records the minutes, and
    *   gets `hours_changed_after_payment_at` stamped instead.
-   * - **The consulting has to happen inside the lock.** A read here followed
-   *   by a conditional update is the identical TOCTOU one level up, and even
-   *   in SQL an `exists` subquery inside an UPDATE reads the STATEMENT
-   *   snapshot — taken before the row lock was granted — so a payment that
-   *   committed while the statement queued would be invisible and the week
-   *   would be demoted out from under it anyway. plpgsql after
-   *   `select ... for update` sees what the winner committed. 077's rule,
-   *   applied to the other side of the same lock.
+   * - **The consulting has to happen inside the write.** A read here
+   *   followed by a conditional update is the identical TOCTOU one level up.
+   *   Postgres needed plpgsql + `select ... for update` for this; on D1 one
+   *   statement is atomic and writes are serialised, so the `EXISTS
+   *   (payments)` inside each CASE sees every committed payment. 077's rule,
+   *   applied to the other side of the same write.
+   * - **`previous_approval` (111)** is copied from the OLD row (SQLite's SET
+   *   reads OLD values) only when the OLD status was `approved`; otherwise it
+   *   keeps its value, so a second clock-out never erases the receipt.
+   *
+   * The paid branch leaves `status` unchanged, so it can never trip
+   * `timesheets_refuse_reopen_when_paid`; the unpaid branch moves out of
+   * `approved` only when there are no payments, which is the trigger's
+   * complement.
    *
    * A CLOCK-OUT MUST NEVER FAIL, so there is no compare-and-swap here and no
    * lost-race null to handle: the hours happened and have to be recorded. The
    * caller reads the RETURNED row's status to decide whether the week moved.
    *
-   * `single()` rather than `maybeSingle()`: the caller has already found this
+   * Zero rows is an error, not a null: the caller has already found this
    * timesheet, and a roll-up that matched nothing means the row vanished
    * mid-write, which is a real failure rather than a race to absorb.
    */
@@ -438,21 +453,39 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
     timesheetId: string,
     totalMinutes: number
   ): Promise<TimesheetRow> {
-    const { data, error } = await supabaseService
-      .rpc('roll_up_timesheet_hours', {
-        p_timesheet_id: timesheetId,
-        p_total_minutes: totalMinutes,
-      })
-      .single();
-
-    if (error || !data) {
+    const paid = sql`EXISTS (SELECT 1 FROM payments WHERE payments.timesheet_id = timesheets.id)`;
+    const keepIfPaid = (column: string, unpaid = sql`NULL`) =>
+      sql`CASE WHEN ${paid} THEN ${sql.raw(column)} ELSE ${unpaid} END`;
+    let rows: unknown[];
+    try {
+      rows = await db
+        .update(timesheets)
+        .set({
+          total_minutes: totalMinutes,
+          // previous_approval first is cosmetic: every SET reads the OLD row.
+          previous_approval: sql`CASE WHEN NOT ${paid} AND status = 'approved' THEN json_object('approved_at', approved_at, 'approved_by', approved_by, 'gross_minor', gross_minor, 'currency', currency, 'worked_minutes', CAST(json_extract(earnings, '$.worked_minutes') AS INTEGER)) ELSE previous_approval END`,
+          status: keepIfPaid('status', sql`'submitted'`),
+          approved_by: keepIfPaid('approved_by'),
+          approved_at: keepIfPaid('approved_at'),
+          gross_minor: keepIfPaid('gross_minor'),
+          currency: keepIfPaid('currency'),
+          earnings: keepIfPaid('earnings'),
+          earnings_computed_at: keepIfPaid('earnings_computed_at'),
+          hours_changed_after_payment_at: sql`CASE WHEN ${paid} THEN ${new Date().toISOString()} ELSE NULL END`,
+        })
+        .where(eq(timesheets.id, timesheetId))
+        .returning();
+    } catch (err) {
+      throw this.dbError('Failed to roll hours into', err, { timesheetId });
+    }
+    if (!rows[0]) {
       throw new DatabaseError(
         'Failed to roll hours into timesheet',
         'DATABASE_ERROR',
-        { details: error?.message, timesheetId }
+        { details: 'No row with that id', timesheetId }
       );
     }
-    return data as TimesheetRow;
+    return rows[0] as TimesheetRow;
   }
 
   /**
@@ -474,9 +507,9 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
    * that column as an open dispute.
    *
    * `previous_approval` IS written (111), from a read taken here. The
-   * clock-out's demote branch gets this for free — `roll_up_timesheet_hours`
-   * reads the OLD values off the right-hand side of its own `SET` — but a
-   * PostgREST update has no `OLD` to reference, so the values have to be read
+   * clock-out's demote branch gets this for free — `rollUpHours` reads the
+   * OLD values off the right-hand side of its own `SET` — but here the receipt
+   * is built in JS (`previousApprovalOf`), so the values have to be read
    * before the write. That read cannot go stale: the CAS below pins
    * `updated_at` to `expectedUpdatedAt`, so the write lands only against the
    * row version the SERVICE read, and any row carrying that version carries
@@ -484,6 +517,11 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
    * writes nothing at all rather than writing a receipt for the wrong figures.
    * `reopen_reason` alone carries no figures, and the parent's own undo
    * deserves the same legibility the clock-out's demotion now has.
+   *
+   * A week with payments is refused by `timesheets_refuse_reopen_when_paid`
+   * (the service's `has_payments` pre-check normally answers first). That
+   * surfaces, as before, as a `DatabaseError`; its metadata carries
+   * `code: 'TIMESHEET_HAS_PAYMENTS'`.
    */
   async reopenFromApproved(
     timesheetId: string,
@@ -496,33 +534,25 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
     // on every `approved` row (approve clears it), so writing null here is a
     // no-op rather than an erasure.
     const previous = await this.findById(timesheetId).catch(() => null);
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .update({
+    return this.guardedUpdate(
+      'Failed to reopen',
+      timesheetId,
+      {
         status: 'submitted',
         approved_by: null,
         approved_at: null,
         reopen_reason: reason,
-        previous_approval: previousApprovalOf(previous),
+        previous_approval: previousApprovalOf(previous) as JsonColumn,
         ...CLEARED_EARNINGS_SNAPSHOT,
-      })
-      .eq('id', timesheetId)
-      .eq('status', REOPENABLE_FROM)
-      .eq('updated_at', expectedUpdatedAt)
-      .select()
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError('Failed to reopen timesheet', 'DATABASE_ERROR', {
-        details: error.message,
-        timesheetId,
-      });
-    }
-    return data as TimesheetRow | null;
+        earnings: null, // same value; narrows `unknown` for the JSON column
+      },
+      eq(timesheets.status, REOPENABLE_FROM),
+      expectedUpdatedAt
+    );
   }
 
   /**
-   * One-way Hours receipt. `.is('parent_viewed_at', null)` makes this one-way
+   * One-way Hours receipt. `WHERE parent_viewed_at IS NULL` makes this one-way
    * in the database rather than in a service branch: the FIRST open wins and
    * every later one matches nothing, so the timestamp answers "did this
    * reach them" and can never drift into "when did they last look at it" —
@@ -533,50 +563,79 @@ export class TimesheetRepository extends BaseRepository<TimesheetRow> {
    *
    * A write of ONLY this column must not bump `updated_at`: approve's
    * compare-and-swap pins the row version, and the timesheets-own trigger
-   * (`set_timesheets_updated_at`, migration 100) preserves `OLD.updated_at`
+   * (`set_timesheets_updated_at`, ported from 100) preserves `updated_at`
    * for a receipt-only write. See GOLDEN-FIXES.
    */
   async stampParentViewed(
     id: string,
     viewedAt: string
   ): Promise<TimesheetRow | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .update({ parent_viewed_at: viewedAt })
-      .eq('id', id)
-      .is('parent_viewed_at', null)
-      .select()
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to stamp timesheet as viewed',
-        'DATABASE_ERROR',
-        { details: error.message, id }
-      );
+    try {
+      const rows = await db
+        .update(timesheets)
+        .set({ parent_viewed_at: viewedAt })
+        .where(and(eq(timesheets.id, id), isNull(timesheets.parent_viewed_at)))
+        .returning();
+      return (rows[0] as TimesheetRow | undefined) ?? null;
+    } catch (err) {
+      throw this.dbError('Failed to stamp viewed on', err, { id });
     }
-    return data as TimesheetRow | null;
   }
 
   /**
    * Whether ANY timesheet has ever been recorded for a household — the
    * household domain's `week_starts_on` lock guard (it defines pay-week
    * boundaries, so it may not move once a week has been recorded against the
-   * old one). Same head/count shape as `timeEntryRepository.hasTimeEntries`.
+   * old one). Same `LIMIT 1` shape as `timeEntryRepository.hasTimeEntries`.
    */
   async existsForHousehold(householdId: string): Promise<boolean> {
-    const { count, error } = await supabaseService
-      .from(this.table)
-      .select('id', { count: 'exact', head: true })
-      .eq('household_id', householdId);
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to check timesheets for household',
-        'DATABASE_ERROR',
-        { details: error.message, householdId }
-      );
+    try {
+      const rows = await db
+        .select({ id: timesheets.id })
+        .from(timesheets)
+        .where(eq(timesheets.household_id, householdId))
+        .limit(1);
+      return rows.length > 0;
+    } catch (err) {
+      throw this.dbError('Failed to check household rows in', err, {
+        householdId,
+      });
     }
-    return (count ?? 0) > 0;
+  }
+
+  /**
+   * The shared compare-and-set: ONE `UPDATE … WHERE id AND <status guard> AND
+   * updated_at = expected RETURNING *`. Zero rows returned is the lost race
+   * (`null`); a thrown error is a real failure. Guarded on RETURNING length,
+   * never `meta.changes` (which also counts the updated_at trigger's write).
+   */
+  private async guardedUpdate(
+    message: string,
+    timesheetId: string,
+    patch: Partial<typeof timesheets.$inferInsert>,
+    statusGuard: SQL,
+    expectedUpdatedAt: string
+  ): Promise<TimesheetRow | null> {
+    try {
+      const rows = await db
+        .update(timesheets)
+        .set(patch)
+        .where(
+          and(
+            eq(timesheets.id, timesheetId),
+            statusGuard,
+            eq(timesheets.updated_at, expectedUpdatedAt)
+          )
+        )
+        .returning();
+      return (rows[0] as TimesheetRow | undefined) ?? null;
+    } catch (err) {
+      throw this.dbError(message, err, {
+        timesheetId,
+        ...(causeChainIncludes(err, HAS_PAYMENTS)
+          ? { code: HAS_PAYMENTS }
+          : {}),
+      });
+    }
   }
 }

@@ -6,8 +6,9 @@
  * (migration 041's header, `docs/11-MONEY.md` §2) — is written TWICE:
  *
  *   1. As SQL, in `PayArrangementRepository.effectiveOn`
- *      (`.lte('valid_from', date).order('valid_from', desc)
- *        .order('created_at', desc).limit(1)`).
+ *      (`valid_from <= date ORDER BY valid_from DESC,
+ *        julianday(created_at) DESC LIMIT 1`), run here against a real
+ *      Miniflare D1 (tests/helpers/testDb.ts).
  *   2. As a loop, in `earningsService.effectiveOn` — because the engine is
  *      pure and prices seven dates from one fetch, so it cannot round-trip.
  *
@@ -23,7 +24,7 @@
  * D-16 (3-U1, `docs/design/screens-pay-terms.md` §6): "future `valid_from`
  * allowed, engine must never price a future row early — extend `effectiveOn`
  * tests." Both implementations ALREADY exclude `valid_from > date` (the
- * `.lte('valid_from', date)` filter / the `candidate.valid_from > date`
+ * `valid_from <= date` filter / the `candidate.valid_from > date`
  * `continue` — see each file's own doc), so allowing
  * `payArrangementCommandService.create` to WRITE a future-dated row required
  * no change here: the resolution rule already treats "not yet in force" and
@@ -35,121 +36,36 @@
  * force" (below) together are the whole round trip: SCHEDULED → stays inert
  * → becomes the answer the instant its date arrives, never a day early.
  */
-import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
+import {
+  households,
+  payArrangements,
+  user,
+  userProfiles,
+} from '../../../../../src/db/schema';
 import type { PayArrangement } from '../../../../../src/domains/pay/types';
+import { createTestDb, type TestDb } from '../../../../helpers/testDb';
 
 interface FakeRow {
   [key: string]: unknown;
 }
 
 let PayArrangementRepository: any;
-let mockSupabaseService: any;
+let t: TestDb;
 let engineEffectiveOn: (
   arrangements: readonly PayArrangement[],
   date: string
 ) => PayArrangement | null;
 
-/**
- * Minimal PostgREST emulator — adapted from `payArrangementRepository.test.ts`
- * (which is where this pattern comes from).
- *
- * WHY BOTH COPIES COMPARE INSTANTS: the sibling file's `order` originally
- * compared values as STRINGS — writing these vectors is what exposed it, and
- * it has since been fixed there too (`payArrangementRepository.test.ts:63-79`),
- * so the two emulators now agree. Do not "restore" a string compare in either.
- * For `valid_from` (a `date` column, always `YYYY-MM-DD`) the two are
- * indistinguishable. For `created_at` they are NOT —
- * `timestamptz` is ordered by INSTANT in Postgres, and the same instant has
- * two legal ISO-8601 spellings (`+00:00` from PostgREST, `.000Z` from
- * `toISOString()`; GOLDEN-FIXES #25). A string sort therefore models a
- * database that does not exist, and the #25 vectors below — the whole reason
- * this file has to exist — would be graded against a fiction. So this copy
- * compares anything date-parseable as an instant and falls back to a string
- * compare otherwise, which is what `order by … desc` actually does.
- * Equal instants tie, and `Array.prototype.sort` is stable, so a tie keeps
- * input order — Postgres's own choice there is arbitrary, and the
- * serialisation-independence test at the bottom is what pins the part that
- * IS well-defined.
+/*
+ * WHY `created_at` IS ORDERED BY INSTANT: on D1 it is ISO-8601 TEXT, and the
+ * same instant has more than one legal spelling (`+00:00`, `+01:00`, `.000Z`;
+ * GOLDEN-FIXES #25). Postgres ordered the old timestamptz by instant, so the
+ * repository orders by `julianday(created_at)` — a text ORDER BY would model
+ * a database that no longer exists and fail the #25 vectors below, which are
+ * the reason this file has to exist. Rows are inserted with their
+ * `created_at` spelled exactly as the vector writes it.
  */
-function createFakeQuery(rows: FakeRow[], error: unknown = null): any {
-  const eqFilters: [string, unknown][] = [];
-  const lteFilters: [string, string][] = [];
-  const orderKeys: [string, boolean][] = [];
-  let rowLimit: number | null = null;
-  const orGroups: { column: string; op: string; value?: string }[][] = [];
-
-  const compare = (left: string, right: string): number => {
-    const leftMs = Date.parse(left);
-    const rightMs = Date.parse(right);
-    if (!(Number.isNaN(leftMs) || Number.isNaN(rightMs))) {
-      return leftMs === rightMs ? 0 : leftMs < rightMs ? -1 : 1;
-    }
-    if (left === right) return 0;
-    return left < right ? -1 : 1;
-  };
-
-  const resolveRows = (): FakeRow[] => {
-    let out = rows.filter(
-      row =>
-        eqFilters.every(([key, value]) => row[key] === value) &&
-        lteFilters.every(([key, value]) => String(row[key]) <= value) &&
-        orGroups.every(branches =>
-          branches.some(({ column, op, value }) =>
-            op === 'is'
-              ? (row[column] ?? null) === null
-              : row[column] != null && String(row[column]) >= String(value)
-          )
-        )
-    );
-    for (const [key, ascending] of [...orderKeys].reverse()) {
-      out = [...out].sort(
-        (a, b) => compare(String(a[key]), String(b[key])) * (ascending ? 1 : -1)
-      );
-    }
-    if (rowLimit !== null) out = out.slice(0, rowLimit);
-    return out;
-  };
-
-  const chain: any = {
-    select: mock(() => chain),
-    eq: mock((key: string, value: unknown) => {
-      eqFilters.push([key, value]);
-      return chain;
-    }),
-    lte: mock((key: string, value: string) => {
-      lteFilters.push([key, value]);
-      return chain;
-    }),
-    order: mock((key: string, opts?: { ascending?: boolean }) => {
-      orderKeys.push([key, opts?.ascending !== false]);
-      return chain;
-    }),
-    limit: mock((count: number) => {
-      rowLimit = count;
-      return chain;
-    }),
-    // 065's exclusion: `.or('valid_to.is.null,valid_to.gte.<date>')`.
-    or: mock((expression: string) => {
-      orGroups.push(
-        expression.split(',').map(branch => {
-          const [column = '', op = '', value] = branch.split('.');
-          return { column, op, value };
-        })
-      );
-      return chain;
-    }),
-    maybeSingle: mock(async () => {
-      const found = resolveRows();
-      return { data: error ? null : (found[0] ?? null), error };
-    }),
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-    then: (resolve: (value: unknown) => unknown) =>
-      Promise.resolve({ data: error ? null : resolveRows(), error }).then(
-        resolve
-      ),
-  };
-  return chain;
-}
 
 const HOUSEHOLD_ID = 'h1';
 const CARER_ID = 'carer-1';
@@ -163,6 +79,7 @@ function row(overrides: FakeRow = {}): FakeRow {
     currency: 'GBP',
     valid_from: '2026-01-01',
     created_at: '2026-01-01T09:00:00.000Z',
+    carer_display_name: 'Maria',
     ...overrides,
   };
 }
@@ -414,10 +331,13 @@ const VECTORS: Vector[] = [
 ];
 
 beforeAll(async () => {
-  mock.module('../../../../../src/config/supabase', () => {
-    const obj = { from: mock(() => createFakeQuery([])) };
-    return { supabase: obj, supabaseService: obj };
-  });
+  t = await createTestDb();
+  mock.module('../../../../../src/db/client', () => ({ db: t.db }));
+  await t.db
+    .insert(user)
+    .values({ id: CARER_ID, name: 'Maria', email: 'maria@x.test' });
+  await t.db.insert(userProfiles).values({ user_id: CARER_ID });
+  await t.db.insert(households).values({ id: HOUSEHOLD_ID, name: 'One' });
 
   PayArrangementRepository = (
     await import(
@@ -427,16 +347,16 @@ beforeAll(async () => {
   engineEffectiveOn = (
     await import('../../../../../src/domains/pay/services/earningsService')
   ).effectiveOn;
-  mockSupabaseService = (await import('../../../../../src/config/supabase'))
-    .supabaseService;
 });
+afterAll(() => t.dispose());
 
 /** The repository's answer for a vector — the SQL side. */
 async function resolveViaRepository(
   rows: FakeRow[],
   date: string
 ): Promise<string | null> {
-  mockSupabaseService.from.mockImplementation(() => createFakeQuery(rows));
+  await t.d1.prepare('DELETE FROM pay_arrangements').run();
+  if (rows.length) await t.db.insert(payArrangements).values(rows as any);
   const found = await new PayArrangementRepository().effectiveOn(
     HOUSEHOLD_ID,
     CARER_ID,
@@ -486,8 +406,8 @@ describe('effectiveOn parity — repository SQL vs the engine loop (F-B10-7)', (
    * The one part of the rule the vector table CANNOT express: two rows with
    * the same `valid_from` AND the same created_at INSTANT, written in the two
    * different ISO-8601 spellings (GOLDEN-FIXES #25). Which of the two wins is
-   * genuinely undefined — Postgres's `order by … desc` makes an arbitrary
-   * choice between equal keys — so there is no id to pin. What IS defined is
+   * genuinely undefined — `ORDER BY … DESC` makes an arbitrary choice
+   * between equal keys — so there is no id to pin. What IS defined is
    * that the answer must not depend on the SPELLING: swap which row carries
    * `+00:00` and which carries `.000Z`, change nothing else, and the same row
    * must still win. A string compare fails this immediately ('+' sorts below

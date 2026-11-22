@@ -1,634 +1,386 @@
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
-
 /**
- * Repository tests run against a fake PostgREST chain that ACTUALLY applies
- * eq/gte/lte/order to an in-memory row set — the same discipline as
- * `payArrangementRepository.test.ts` — so these tests prove the real filter
- * shape (household_id AND carer_id, the calendar-year window, the `kind`
- * discriminator) rather than a canned response.
+ * PtoLedgerRepository against a real Miniflare D1 (tests/helpers/testDb.ts).
+ *
+ * Reads are checked for their scoping (household AND carer, or the one
+ * deliberate cross-household read), `create` for its translation of the two
+ * real partial unique indexes, and `applyCorrection` — the D1 replacement for
+ * `apply_pto_correction` (050/079, MIGRATION-NOTES §5.5) — for the
+ * compare-and-set on the ledger aggregate: each insert is gated on the
+ * per-day fingerprint the ledger must have just before it, so a competing
+ * write between the caller's read and the batch makes NOTHING land.
  */
+import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
+import { eq, sql } from 'drizzle-orm';
+import {
+  carerTimeOff,
+  households,
+  ptoLedger,
+  user,
+  userProfiles,
+} from '../../../../../src/db/schema';
+import {
+  PtoAccrualGrantRaceError,
+  PtoAlreadyMarkedPaidError,
+  PtoTimeOffNotConfirmedError,
+  PtoTimeOffNotFoundError,
+} from '../../../../../src/domains/pay/errors/payErrors';
+import type { NewPtoLedgerRow } from '../../../../../src/domains/pay/repositories/ptoLedgerRepository';
+import { DatabaseError } from '../../../../../src/errors';
+import { createTestDb, type TestDb } from '../../../../helpers/testDb';
 
-interface FakeRow {
-  [key: string]: unknown;
-}
+type Mod =
+  typeof import('../../../../../src/domains/pay/repositories/ptoLedgerRepository');
+let t: TestDb;
+let repo: InstanceType<Mod['PtoLedgerRepository']>;
+let canonicalPaidByDate: Mod['canonicalPaidByDate'];
 
-let PtoLedgerRepository: any;
-let PtoAlreadyMarkedPaidError: any;
-let PtoAccrualGrantRaceError: any;
-let mockSupabaseService: any;
-let lastCalls: { method: string; args: unknown[] }[] = [];
-
-function createFakeQuery(rows: FakeRow[], error: unknown = null): any {
-  const eqFilters: [string, unknown][] = [];
-  const gteFilters: [string, string][] = [];
-  const lteFilters: [string, string][] = [];
-  const orderKeys: [string, boolean][] = [];
-
-  const resolveRows = (): FakeRow[] => {
-    let out = rows.filter(
-      row =>
-        eqFilters.every(([key, value]) => row[key] === value) &&
-        gteFilters.every(([key, value]) => String(row[key]) >= value) &&
-        lteFilters.every(([key, value]) => String(row[key]) <= value)
-    );
-    for (const [key, ascending] of [...orderKeys].reverse()) {
-      out = [...out].sort((a, b) => {
-        const left = String(a[key]);
-        const right = String(b[key]);
-        if (left === right) return 0;
-        return (left < right ? -1 : 1) * (ascending ? 1 : -1);
-      });
-    }
-    return out;
-  };
-
-  const record = (method: string, ...args: unknown[]) => {
-    lastCalls.push({ method, args });
-  };
-
-  const chain: any = {
-    select: mock((...args: unknown[]) => {
-      record('select', ...args);
-      return chain;
-    }),
-    eq: mock((key: string, value: unknown) => {
-      record('eq', key, value);
-      eqFilters.push([key, value]);
-      return chain;
-    }),
-    gte: mock((key: string, value: string) => {
-      record('gte', key, value);
-      gteFilters.push([key, value]);
-      return chain;
-    }),
-    lte: mock((key: string, value: string) => {
-      record('lte', key, value);
-      lteFilters.push([key, value]);
-      return chain;
-    }),
-    order: mock((key: string, opts?: { ascending?: boolean }) => {
-      record('order', key, opts);
-      orderKeys.push([key, opts?.ascending !== false]);
-      return chain;
-    }),
-    maybeSingle: mock(async () => {
-      const found = resolveRows();
-      return { data: error ? null : (found[0] ?? null), error };
-    }),
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-    then: (resolve: (value: unknown) => unknown) =>
-      Promise.resolve({
-        data: error ? null : resolveRows(),
-        error,
-      }).then(resolve),
-  };
-  return chain;
-}
-
-/** A separate, minimal chain for insert().select().single(), with its own error injection. */
-function createFakeInsertChain(
-  created: FakeRow | null,
-  error: { code?: string; message?: string } | null = null
-): any {
-  const chain: any = {
-    insert: mock((row: FakeRow) => {
-      lastCalls.push({ method: 'insert', args: [row] });
-      return chain;
-    }),
-    select: mock(() => chain),
-    single: mock(async () => ({ data: error ? null : created, error })),
-  };
-  return chain;
-}
-
-function usageRow(overrides: FakeRow = {}): FakeRow {
-  return {
-    id: 'ptl-1',
-    household_id: 'h1',
-    carer_id: 'carer-1',
-    kind: 'usage',
-    minutes: -480,
-    effective_date: '2026-08-01',
-    time_off_id: 'to-1',
-    carer_display_name: 'Nia Rowe',
-    note: null,
-    created_by: 'parent-1',
-    created_at: '2026-08-01T09:00:00.000Z',
-    ...overrides,
-  };
-}
-
-function accrualRow(overrides: FakeRow = {}): FakeRow {
-  return {
-    id: 'ptl-accrual',
-    household_id: 'h1',
-    carer_id: 'carer-1',
-    kind: 'accrual',
-    minutes: 16800,
-    effective_date: '2026-01-01',
-    time_off_id: null,
-    carer_display_name: 'Nia Rowe',
-    note: '2026 annual grant',
-    created_by: null,
-    created_at: '2026-01-01T00:00:00.000Z',
-    ...overrides,
-  };
-}
-
-function withRows(rows: FakeRow[], error: unknown = null): void {
-  mockSupabaseService.from.mockImplementation(() =>
-    createFakeQuery(rows, error)
-  );
-}
-
-function withInsertResult(
-  created: FakeRow | null,
-  error: { code?: string; message?: string } | null = null
-): void {
-  mockSupabaseService.from.mockImplementation(() =>
-    createFakeInsertChain(created, error)
-  );
-}
+const H1 = 'h1';
+const H2 = 'h2';
+const PARENT = 'parent-1';
+const CARER = 'carer-1';
+const CARER2 = 'carer-2';
 
 beforeAll(async () => {
-  mock.module('../../../../../src/config/supabase', () => {
-    const obj = {
-      from: mock(() => createFakeQuery([])),
-      // Migration 050's `apply_pto_correction` — the outcome envelope is
-      // injected per test by `withRpcResult`.
-      rpc: mock(async () => ({ data: null, error: null })),
-    };
-    return { supabase: obj, supabaseService: obj };
-  });
-
-  const repoModule = await import(
+  t = await createTestDb();
+  mock.module('../../../../../src/db/client', () => ({ db: t.db }));
+  for (const id of [PARENT, CARER, CARER2]) {
+    await t.db.insert(user).values({ id, name: id, email: `${id}@x.test` });
+    await t.db.insert(userProfiles).values({ user_id: id });
+  }
+  await t.db.insert(households).values([
+    { id: H1, name: 'One' },
+    { id: H2, name: 'Two' },
+  ]);
+  const mod: Mod = await import(
     '../../../../../src/domains/pay/repositories/ptoLedgerRepository'
   );
-  PtoLedgerRepository = repoModule.PtoLedgerRepository;
-
-  const errorsModule = await import(
-    '../../../../../src/domains/pay/errors/payErrors'
-  );
-  PtoAlreadyMarkedPaidError = errorsModule.PtoAlreadyMarkedPaidError;
-  PtoAccrualGrantRaceError = errorsModule.PtoAccrualGrantRaceError;
-
-  mockSupabaseService = (await import('../../../../../src/config/supabase'))
-    .supabaseService;
+  repo = new mod.PtoLedgerRepository();
+  canonicalPaidByDate = mod.canonicalPaidByDate;
 });
+afterAll(() => t.dispose());
 
-beforeEach(() => {
-  lastCalls = [];
-  mockSupabaseService.from.mockClear?.();
-  mockSupabaseService.rpc.mockClear?.();
-});
-
-/** Inject one `apply_pto_correction` outcome envelope (migration 050). */
-function withRpcResult(
-  data: unknown,
-  error: { message?: string } | null = null
-): void {
-  mockSupabaseService.rpc.mockImplementation(async () => ({ data, error }));
+async function timeOff(
+  overrides: Partial<typeof carerTimeOff.$inferInsert> = {}
+): Promise<string> {
+  const [row] = await t.db
+    .insert(carerTimeOff)
+    .values({
+      user_id: CARER,
+      starts_at: '2026-03-02T00:00:00.000Z',
+      ends_at: '2026-03-04T00:00:00.000Z',
+      ...overrides,
+    })
+    .returning();
+  if (!row) throw new Error('seed failed');
+  return row.id;
 }
 
-const CORRECTION = {
-  householdId: 'h1',
-  timeOffId: 'to-1',
-  expected: { '2026-08-01': 480 },
-  rows: [
-    {
-      household_id: 'h1',
-      carer_id: 'carer-1',
-      kind: 'adjustment' as const,
-      minutes: 120,
-      effective_date: '2026-08-01',
-      time_off_id: 'to-1',
-      carer_display_name: 'Nia Rowe',
-      note: 'marked_paid_adjusted',
-      created_by: 'parent-1',
-    },
-  ],
-  requireConfirmed: true,
-};
-
-describe('PtoLedgerRepository.listForCarerYear', () => {
-  it('returns every row for the carer within the calendar year window', async () => {
-    withRows([
-      accrualRow({ id: 'a', effective_date: '2026-01-01' }),
-      usageRow({ id: 'u', effective_date: '2026-08-01' }),
-    ]);
-    const repo = new PtoLedgerRepository();
-    const rows = await repo.listForCarerYear('h1', 'carer-1', 2026);
-    expect(rows.map((r: FakeRow) => r.id)).toEqual(['a', 'u']);
-  });
-
-  it('excludes a row dated in an ADJACENT year', async () => {
-    withRows([
-      accrualRow({ id: 'prev-dec', effective_date: '2025-12-31' }),
-      accrualRow({ id: 'next-jan', effective_date: '2027-01-01' }),
-    ]);
-    const repo = new PtoLedgerRepository();
-    const rows = await repo.listForCarerYear('h1', 'carer-1', 2026);
-    expect(rows).toEqual([]);
-  });
-
-  it('filters BOTH household_id AND carer_id explicitly (no RLS backstop here)', async () => {
-    withRows([
-      accrualRow({ id: 'mine' }),
-      accrualRow({ id: 'other-household', household_id: 'h2' }),
-      accrualRow({ id: 'other-carer', carer_id: 'carer-2' }),
-    ]);
-    const repo = new PtoLedgerRepository();
-    const rows = await repo.listForCarerYear('h1', 'carer-1', 2026);
-    expect(rows.map((r: FakeRow) => r.id)).toEqual(['mine']);
-    expect(lastCalls).toContainEqual({
-      method: 'eq',
-      args: ['household_id', 'h1'],
-    });
-    expect(lastCalls).toContainEqual({
-      method: 'eq',
-      args: ['carer_id', 'carer-1'],
-    });
-  });
-
-  it('uses the boundary dates of the calendar year, inclusive', async () => {
-    withRows([]);
-    const repo = new PtoLedgerRepository();
-    await repo.listForCarerYear('h1', 'carer-1', 2026);
-    expect(lastCalls).toContainEqual({
-      method: 'gte',
-      args: ['effective_date', '2026-01-01'],
-    });
-    expect(lastCalls).toContainEqual({
-      method: 'lte',
-      args: ['effective_date', '2026-12-31'],
-    });
-  });
-
-  it('returns [] when the carer has no ledger rows that year', async () => {
-    withRows([]);
-    const repo = new PtoLedgerRepository();
-    expect(await repo.listForCarerYear('h1', 'carer-1', 2026)).toEqual([]);
-  });
-
-  it('throws a DatabaseError when the query fails', async () => {
-    withRows([], { message: 'boom' });
-    const repo = new PtoLedgerRepository();
-    await expect(
-      repo.listForCarerYear('h1', 'carer-1', 2026)
-    ).rejects.toThrow();
-  });
+const row = (overrides: Partial<NewPtoLedgerRow> = {}): NewPtoLedgerRow => ({
+  household_id: H1,
+  carer_id: CARER,
+  kind: 'usage',
+  minutes: -480,
+  effective_date: '2026-03-02',
+  time_off_id: null,
+  carer_display_name: 'Carer',
+  note: null,
+  created_by: PARENT,
+  ...overrides,
 });
 
-describe('PtoLedgerRepository.listForHouseholdTimeOff', () => {
-  it('returns EVERY kind of row this household holds for the time off — usage AND its corrections', async () => {
-    withRows([
-      usageRow(),
-      usageRow({ id: 'ptl-adj', kind: 'adjustment', minutes: 120 }),
+async function seedRows(rows: NewPtoLedgerRow[]) {
+  for (const r of rows) await t.db.insert(ptoLedger).values(r);
+}
+
+describe('PtoLedgerRepository reads', () => {
+  it('listForCarerYear: this household AND carer, inclusive calendar year, oldest first', async () => {
+    await seedRows([
+      row({ kind: 'accrual', minutes: 1, effective_date: '2025-12-31' }),
+      row({ kind: 'accrual', minutes: 2, effective_date: '2025-01-01' }),
+      row({ kind: 'adjustment', minutes: 3, effective_date: '2025-06-01' }),
+      row({ kind: 'accrual', minutes: 4, effective_date: '2024-12-31' }),
+      row({
+        kind: 'adjustment',
+        minutes: 5,
+        effective_date: '2025-06-01',
+        carer_id: CARER2,
+      }),
+      row({
+        kind: 'adjustment',
+        minutes: 6,
+        effective_date: '2025-06-01',
+        household_id: H2,
+      }),
     ]);
-    const repo = new PtoLedgerRepository();
-    const rows = await repo.listForHouseholdTimeOff('h1', 'to-1');
-    expect(rows.map((r: FakeRow) => r.id).sort()).toEqual(['ptl-1', 'ptl-adj']);
+    const rows = await repo.listForCarerYear(H1, CARER, 2025);
+    expect(rows.map(r => r.minutes)).toEqual([2, 3, 1]);
+    expect(await repo.listForCarerYear(H1, CARER, 1990)).toEqual([]);
   });
 
-  it('returns [] when this household never marked it paid', async () => {
-    withRows([]);
-    const repo = new PtoLedgerRepository();
-    expect(await repo.listForHouseholdTimeOff('h1', 'to-1')).toEqual([]);
-  });
-
-  it("never crosses into another household's rows for the SAME time off", async () => {
-    withRows([usageRow({ id: 'theirs', household_id: 'h2' })]);
-    const repo = new PtoLedgerRepository();
-    expect(await repo.listForHouseholdTimeOff('h1', 'to-1')).toEqual([]);
-  });
-
-  it('filters household_id AND time_off_id explicitly (no RLS backstop here)', async () => {
-    withRows([usageRow()]);
-    const repo = new PtoLedgerRepository();
-    await repo.listForHouseholdTimeOff('h1', 'to-1');
-    const eqPairs = lastCalls
-      .filter(call => call.method === 'eq')
-      .map(call => [call.args[0], call.args[1]]);
-    expect(eqPairs).toContainEqual(['household_id', 'h1']);
-    expect(eqPairs).toContainEqual(['time_off_id', 'to-1']);
-  });
-
-  it('does NOT filter by kind — the netted total needs the corrections too', async () => {
-    withRows([usageRow()]);
-    const repo = new PtoLedgerRepository();
-    await repo.listForHouseholdTimeOff('h1', 'to-1');
-    expect(
-      lastCalls.some(call => call.method === 'eq' && call.args[0] === 'kind')
-    ).toBe(false);
-  });
-
-  it('throws a DatabaseError when the query fails', async () => {
-    withRows([], { message: 'boom' });
-    const repo = new PtoLedgerRepository();
-    await expect(repo.listForHouseholdTimeOff('h1', 'to-1')).rejects.toThrow();
-  });
-});
-
-describe('PtoLedgerRepository.listAllForTimeOff — cross-household, for reconcile', () => {
-  it('returns EVERY household’s rows for one shared time off', async () => {
-    withRows([
-      usageRow({ id: 'u1', household_id: 'h1' }),
-      usageRow({ id: 'u2', household_id: 'h2' }),
+  it('listForHouseholdYear: every carer in this household, including a departed one', async () => {
+    await seedRows([
+      row({
+        kind: 'adjustment',
+        minutes: 7,
+        effective_date: '2023-02-01',
+        carer_id: null,
+      }),
+      row({
+        kind: 'adjustment',
+        minutes: 8,
+        effective_date: '2023-03-01',
+        carer_id: CARER2,
+      }),
+      row({
+        kind: 'adjustment',
+        minutes: 9,
+        effective_date: '2023-03-01',
+        household_id: H2,
+      }),
     ]);
-    const repo = new PtoLedgerRepository();
-    const rows = await repo.listAllForTimeOff('to-1');
-    expect(rows.map((r: FakeRow) => r.id).sort()).toEqual(['u1', 'u2']);
-  });
-
-  it('returns [] when nobody marked it paid', async () => {
-    withRows([]);
-    const repo = new PtoLedgerRepository();
-    expect(await repo.listAllForTimeOff('to-1')).toEqual([]);
-  });
-
-  it('does NOT filter by household_id (the one deliberate exception)', async () => {
-    withRows([usageRow()]);
-    const repo = new PtoLedgerRepository();
-    await repo.listAllForTimeOff('to-1');
     expect(
-      lastCalls.some(
-        call => call.method === 'eq' && call.args[0] === 'household_id'
-      )
-    ).toBe(false);
+      (await repo.listForHouseholdYear(H1, 2023)).map(r => r.minutes)
+    ).toEqual([7, 8]);
   });
 
-  // Phase 3/4 review, BLOCKER 1(b): reconcile has to see the ADJUSTMENT rows
-  // too, or it cannot tell an already-reversed marking from an un-reversed
-  // one and double-reverses on every retry.
-  it('does NOT filter by kind — adjustment rows are what make reconcile idempotent', async () => {
-    withRows([
-      usageRow({ id: 'u1' }),
-      usageRow({ id: 'adj1', kind: 'adjustment', minutes: 480 }),
+  it('listForHouseholdTimeOff is household-scoped and kind-blind; listAllForTimeOff crosses households', async () => {
+    const to = await timeOff();
+    await seedRows([
+      row({ time_off_id: to }),
+      row({ time_off_id: to, kind: 'adjustment', minutes: 120 }),
+      row({ time_off_id: to, household_id: H2 }),
     ]);
-    const repo = new PtoLedgerRepository();
-    const rows = await repo.listAllForTimeOff('to-1');
-    expect(rows.map((r: FakeRow) => r.id).sort()).toEqual(['adj1', 'u1']);
-    expect(
-      lastCalls.some(call => call.method === 'eq' && call.args[0] === 'kind')
-    ).toBe(false);
-  });
-
-  it('throws a DatabaseError when the query fails', async () => {
-    withRows([], { message: 'boom' });
-    const repo = new PtoLedgerRepository();
-    await expect(repo.listAllForTimeOff('to-1')).rejects.toThrow();
+    const mine = await repo.listForHouseholdTimeOff(H1, to);
+    expect(mine.map(r => r.kind).sort()).toEqual(['adjustment', 'usage']);
+    expect(await repo.listAllForTimeOff(to)).toHaveLength(3);
+    expect(await repo.listForHouseholdTimeOff(H1, 'nope')).toEqual([]);
   });
 });
 
 describe('PtoLedgerRepository.create', () => {
-  it('inserts a usage row and returns it', async () => {
-    const created = usageRow();
-    withInsertResult(created);
-    const repo = new PtoLedgerRepository();
-    const row = await repo.create({
-      household_id: 'h1',
-      carer_id: 'carer-1',
-      kind: 'usage',
+  it('inserts and returns the row', async () => {
+    const to = await timeOff();
+    const created = await repo.create(row({ time_off_id: to }));
+    expect(created).toMatchObject({
+      time_off_id: to,
       minutes: -480,
-      effective_date: '2026-08-01',
-      time_off_id: 'to-1',
-      carer_display_name: 'Nia Rowe',
-      note: null,
-      created_by: 'parent-1',
+      kind: 'usage',
     });
-    expect(row).toEqual(created);
   });
 
-  it('translates a UNIQUE VIOLATION on a usage insert into PtoAlreadyMarkedPaidError', async () => {
-    withInsertResult(null, { code: '23505', message: 'duplicate key' });
-    const repo = new PtoLedgerRepository();
-    await expect(
-      repo.create({
-        household_id: 'h1',
-        carer_id: 'carer-1',
-        kind: 'usage',
-        minutes: -480,
-        effective_date: '2026-08-01',
-        time_off_id: 'to-1',
-        carer_display_name: 'Nia Rowe',
-        note: null,
-        created_by: 'parent-1',
-      })
-    ).rejects.toBeInstanceOf(PtoAlreadyMarkedPaidError);
-  });
-
-  it('translates a UNIQUE VIOLATION on an accrual insert into PtoAccrualGrantRaceError', async () => {
-    withInsertResult(null, { code: '23505', message: 'duplicate key' });
-    const repo = new PtoLedgerRepository();
-    await expect(
-      repo.create({
-        household_id: 'h1',
-        carer_id: 'carer-1',
-        kind: 'accrual',
-        minutes: 16800,
-        effective_date: '2026-01-01',
-        time_off_id: null,
-        carer_display_name: 'Nia Rowe',
-        note: '2026 annual grant',
-        created_by: null,
-      })
-    ).rejects.toBeInstanceOf(PtoAccrualGrantRaceError);
-  });
-
-  it('a UNIQUE VIOLATION on an adjustment insert is a genuine DatabaseError (no index guards it)', async () => {
-    withInsertResult(null, { code: '23505', message: 'duplicate key' });
-    const repo = new PtoLedgerRepository();
-    await expect(
-      repo.create({
-        household_id: 'h1',
-        carer_id: 'carer-1',
-        kind: 'adjustment',
-        minutes: 480,
-        effective_date: '2026-08-01',
-        time_off_id: 'to-1',
-        carer_display_name: 'Nia Rowe',
-        note: 'reversal',
-        created_by: null,
-      })
-    ).rejects.not.toBeInstanceOf(PtoAlreadyMarkedPaidError);
-  });
-
-  it('a non-unique-violation error is a plain DatabaseError', async () => {
-    withInsertResult(null, { code: '23000', message: 'boom' });
-    const repo = new PtoLedgerRepository();
-    await expect(
-      repo.create({
-        household_id: 'h1',
-        carer_id: 'carer-1',
-        kind: 'usage',
-        minutes: -480,
-        effective_date: '2026-08-01',
-        time_off_id: 'to-1',
-        carer_display_name: 'Nia Rowe',
-        note: null,
-        created_by: 'parent-1',
-      })
-    ).rejects.not.toBeInstanceOf(PtoAlreadyMarkedPaidError);
-  });
-});
-
-// =============================================================================
-// applyCorrection — migration 050's serialised correction/reversal seam
-// (F-B4-2). Every `adjustment` row in the system goes through here; `create`
-// above is left to the FIRST marking's `usage` rows, which 045's per-day
-// partial unique index already serialises.
-// =============================================================================
-
-describe('PtoLedgerRepository.applyCorrection', () => {
-  it('sends the intent AND the state it was computed from, so the function can compare', async () => {
-    withRpcResult({ outcome: 'applied', rows: [] });
-    const repo = new PtoLedgerRepository();
-    await repo.applyCorrection(CORRECTION);
-
-    expect(mockSupabaseService.rpc).toHaveBeenCalledWith(
-      'apply_pto_correction',
-      {
-        p_household_id: 'h1',
-        p_time_off_id: 'to-1',
-        p_expected: { '2026-08-01': 480 },
-        p_rows: CORRECTION.rows,
-        p_require_confirmed: true,
-      }
+  it('a duplicate usage day is PtoAlreadyMarkedPaidError', async () => {
+    const to = await timeOff();
+    await repo.create(row({ time_off_id: to }));
+    await expect(repo.create(row({ time_off_id: to }))).rejects.toBeInstanceOf(
+      PtoAlreadyMarkedPaidError
     );
   });
 
-  it('returns the rows the function wrote', async () => {
-    const written = [
-      usageRow({ id: 'adj-1', kind: 'adjustment', minutes: 120 }),
-    ];
-    withRpcResult({ outcome: 'applied', rows: written });
-    const repo = new PtoLedgerRepository();
-
-    expect(await repo.applyCorrection(CORRECTION)).toEqual(written);
-  });
-
-  it('an `applied` outcome that wrote nothing is an empty array, NOT a failure', async () => {
-    // Re-submitting an unchanged total has to stay a true no-op.
-    withRpcResult({ outcome: 'applied' });
-    const repo = new PtoLedgerRepository();
-
-    expect(await repo.applyCorrection(CORRECTION)).toEqual([]);
-  });
-
-  it('a `stale` outcome is null — the signal to re-read, never an error', async () => {
-    withRpcResult({ outcome: 'stale', current: { '2026-08-01': 420 } });
-    const repo = new PtoLedgerRepository();
-
-    expect(await repo.applyCorrection(CORRECTION)).toBeNull();
-  });
-
-  it('`not_confirmed` becomes the typed 400, carrying the status the lock saw', async () => {
-    withRpcResult({ outcome: 'not_confirmed', current_status: 'cancelled' });
-    const repo = new PtoLedgerRepository();
-
-    await expect(repo.applyCorrection(CORRECTION)).rejects.toMatchObject({
-      name: 'PtoTimeOffNotConfirmedError',
-      metadata: expect.objectContaining({ status: 'cancelled' }),
+  it('a duplicate annual accrual is PtoAccrualGrantRaceError', async () => {
+    const accrual = row({
+      kind: 'accrual',
+      minutes: 100,
+      effective_date: '2030-01-01',
     });
+    await repo.create(accrual);
+    await expect(repo.create(accrual)).rejects.toBeInstanceOf(
+      PtoAccrualGrantRaceError
+    );
   });
 
-  it('`time_off_not_found` becomes the D12-class 404', async () => {
-    withRpcResult({ outcome: 'time_off_not_found' });
-    const repo = new PtoLedgerRepository();
-
-    await expect(repo.applyCorrection(CORRECTION)).rejects.toMatchObject({
-      name: 'PtoTimeOffNotFoundError',
-    });
-  });
-
-  it('a transport error is a DatabaseError, never a silent no-op', async () => {
-    withRpcResult(null, { message: 'connection reset' });
-    const repo = new PtoLedgerRepository();
-
-    await expect(repo.applyCorrection(CORRECTION)).rejects.toMatchObject({
-      name: 'DatabaseError',
-    });
-  });
-
-  it('an outcome nobody declared is a DatabaseError, not an assumed success', async () => {
-    withRpcResult({ outcome: 'who_knows' });
-    const repo = new PtoLedgerRepository();
-
-    await expect(repo.applyCorrection(CORRECTION)).rejects.toMatchObject({
-      name: 'DatabaseError',
-    });
+  it('any other failure is a plain DatabaseError', async () => {
+    const err = await repo
+      .create(row({ kind: 'adjustment', minutes: 0 }))
+      .catch(e => e);
+    expect(err).toBeInstanceOf(DatabaseError);
   });
 });
 
-/**
- * 033/058: once the carer deletes her account her ledger rows keep
- * `carer_id = null`, so `listForCarerYear` — the only read the PTO routes had
- * — can never reach them again. This is the household-scoped read that can.
- */
-describe('PtoLedgerRepository.listForHouseholdYear', () => {
-  it('returns every carer’s rows for the year, including a departed carer’s', async () => {
-    withRows([
-      accrualRow({ id: 'live', carer_id: 'carer-1' }),
-      usageRow({
-        id: 'departed',
-        carer_id: null,
-        household_member_id: 'hm-2',
-        effective_date: '2026-06-01',
-      }),
+describe('PtoLedgerRepository.applyCorrection (apply_pto_correction)', () => {
+  const adj = (to: string, minutes: number, effective_date: string) =>
+    row({ kind: 'adjustment', time_off_id: to, minutes, effective_date });
+
+  it('canonicalPaidByDate matches what SQLite emits for the same ledger, byte for byte', async () => {
+    const to = await timeOff();
+    await seedRows([
+      row({ time_off_id: to, effective_date: '2026-03-03', minutes: -240 }),
+      row({ time_off_id: to, effective_date: '2026-03-02', minutes: -480 }),
+      adj(to, 480, '2026-03-02'), // a fully reversed day nets to 0 and stays
     ]);
-    const repo = new PtoLedgerRepository();
-
-    const rows = await repo.listForHouseholdYear('h1', 2026);
-
-    expect(rows.map((r: FakeRow) => r.id)).toEqual(['live', 'departed']);
+    const got = await t.db.get<{ fp: string }>(
+      sql`SELECT (SELECT coalesce(json_group_object(d, -m), '{}') FROM (SELECT effective_date AS d, sum(minutes) AS m FROM pto_ledger WHERE household_id = ${H1} AND time_off_id = ${to} GROUP BY effective_date ORDER BY effective_date)) AS fp`
+    );
+    expect(got?.fp).toBe(
+      canonicalPaidByDate({ '2026-03-03': 240, '2026-03-02': 0 })
+    );
+    expect(got?.fp).toBe('{"2026-03-02":0,"2026-03-03":240}');
   });
 
-  it('never filters carer_id — that is the whole point', async () => {
-    withRows([]);
-    const repo = new PtoLedgerRepository();
-
-    await repo.listForHouseholdYear('h1', 2026);
-
-    expect(lastCalls).toContainEqual({
-      method: 'eq',
-      args: ['household_id', 'h1'],
-    });
-    expect(
-      lastCalls.some(c => c.method === 'eq' && c.args[0] === 'carer_id')
-    ).toBe(false);
-  });
-
-  it('keeps the same inclusive calendar-year window as listForCarerYear', async () => {
-    withRows([]);
-    const repo = new PtoLedgerRepository();
-
-    await repo.listForHouseholdYear('h1', 2026);
-
-    expect(lastCalls).toContainEqual({
-      method: 'gte',
-      args: ['effective_date', '2026-01-01'],
-    });
-    expect(lastCalls).toContainEqual({
-      method: 'lte',
-      args: ['effective_date', '2026-12-31'],
-    });
-  });
-
-  it('still scopes to ONE household', async () => {
-    withRows([
-      accrualRow({ id: 'mine' }),
-      accrualRow({ id: 'theirs', household_id: 'h2' }),
+  it('applies against the expected state, stamping household, time off and leave_kind from the TIME OFF', async () => {
+    const to = await timeOff({ kind: 'sick' });
+    await seedRows([
+      row({ time_off_id: to, effective_date: '2026-03-02' }),
+      row({ time_off_id: to, effective_date: '2026-03-03' }),
     ]);
-    const repo = new PtoLedgerRepository();
-
-    expect(
-      (await repo.listForHouseholdYear('h1', 2026)).map((r: FakeRow) => r.id)
-    ).toEqual(['mine']);
+    const written = await repo.applyCorrection({
+      householdId: H1,
+      timeOffId: to,
+      expected: { '2026-03-03': 480, '2026-03-02': 480 },
+      rows: [adj(to, 120, '2026-03-03'), adj(to, 120, '2026-03-02')],
+      requireConfirmed: true,
+    });
+    expect(written?.map(r => [r.effective_date, r.minutes])).toEqual([
+      ['2026-03-02', 120],
+      ['2026-03-03', 120],
+    ]);
+    expect(written?.every(r => r.leave_kind === 'sick')).toBe(true);
+    expect(written?.every(r => r.household_id === H1)).toBe(true);
   });
 
-  it('throws a DatabaseError when the query fails', async () => {
-    withRows([], { message: 'boom' });
-    const repo = new PtoLedgerRepository();
-    await expect(repo.listForHouseholdYear('h1', 2026)).rejects.toThrow();
+  it('a first marking (expected {}) can write several rows, two on one day', async () => {
+    const to = await timeOff();
+    const written = await repo.applyCorrection({
+      householdId: H1,
+      timeOffId: to,
+      expected: {},
+      rows: [
+        row({ time_off_id: to, effective_date: '2026-03-02', minutes: -480 }),
+        adj(to, 60, '2026-03-02'),
+      ],
+      requireConfirmed: true,
+    });
+    expect(written).toHaveLength(2);
+  });
+
+  it('nothing to write against an unchanged ledger is [] — applied, not a failure', async () => {
+    const to = await timeOff();
+    expect(
+      await repo.applyCorrection({
+        householdId: H1,
+        timeOffId: to,
+        expected: {},
+        rows: [],
+        requireConfirmed: true,
+      })
+    ).toEqual([]);
+  });
+
+  it('a stale expected state is null and writes nothing', async () => {
+    const to = await timeOff();
+    await seedRows([row({ time_off_id: to })]);
+    expect(
+      await repo.applyCorrection({
+        householdId: H1,
+        timeOffId: to,
+        expected: { '2026-03-02': 360 },
+        rows: [adj(to, 60, '2026-03-02')],
+        requireConfirmed: true,
+      })
+    ).toBeNull();
+    expect(await repo.listForHouseholdTimeOff(H1, to)).toHaveLength(1);
+  });
+
+  it('RACE: a competing write between the read and the guarded write makes the batch a no-op (stale)', async () => {
+    const to = await timeOff();
+    await seedRows([
+      row({ time_off_id: to, effective_date: '2026-03-02' }),
+      row({ time_off_id: to, effective_date: '2026-03-03' }),
+    ]);
+    // Parent A reads 8h/8h …
+    const read = await repo.listForHouseholdTimeOff(H1, to);
+    const expected = Object.fromEntries(
+      read.map(r => [r.effective_date, -r.minutes])
+    );
+    // … parent B's correction lands first …
+    await seedRows([adj(to, 120, '2026-03-03')]);
+    // … so A's two-row correction must write NEITHER row.
+    expect(
+      await repo.applyCorrection({
+        householdId: H1,
+        timeOffId: to,
+        expected,
+        rows: [adj(to, 120, '2026-03-02'), adj(to, 120, '2026-03-03')],
+        requireConfirmed: true,
+      })
+    ).toBeNull();
+    const after = await repo.listForHouseholdTimeOff(H1, to);
+    expect(after.reduce((s, r) => s + r.minutes, 0)).toBe(-960 + 120);
+  });
+
+  it('RACE: two parents correcting from the same state in parallel — exactly one applies', async () => {
+    const to = await timeOff();
+    await seedRows([row({ time_off_id: to })]);
+    const args = {
+      householdId: H1,
+      timeOffId: to,
+      expected: { '2026-03-02': 480 },
+      rows: [adj(to, 120, '2026-03-02')],
+      requireConfirmed: true,
+    };
+    const results = await Promise.all([
+      repo.applyCorrection(args),
+      repo.applyCorrection(args),
+    ]);
+    expect(results.filter(r => r === null)).toHaveLength(1);
+    const after = await repo.listForHouseholdTimeOff(H1, to);
+    expect(-after.reduce((s, r) => s + r.minutes, 0)).toBe(360);
+  });
+
+  it('refuses an unconfirmed time off when required, carrying its status', async () => {
+    const to = await timeOff({ status: 'cancelled' });
+    const err = await repo
+      .applyCorrection({
+        householdId: H1,
+        timeOffId: to,
+        expected: {},
+        rows: [adj(to, 60, '2026-03-02')],
+        requireConfirmed: true,
+      })
+      .catch(e => e);
+    expect(err).toBeInstanceOf(PtoTimeOffNotConfirmedError);
+    expect(await repo.listForHouseholdTimeOff(H1, to)).toEqual([]);
+  });
+
+  it('writes against a cancelled time off when confirmation is not required (reversal)', async () => {
+    const to = await timeOff({ status: 'cancelled' });
+    await seedRows([row({ time_off_id: to })]);
+    const written = await repo.applyCorrection({
+      householdId: H1,
+      timeOffId: to,
+      expected: { '2026-03-02': 480 },
+      rows: [adj(to, 480, '2026-03-02')],
+      requireConfirmed: false,
+    });
+    expect(written).toHaveLength(1);
+  });
+
+  it('a missing time off is PtoTimeOffNotFoundError', async () => {
+    await expect(
+      repo.applyCorrection({
+        householdId: H1,
+        timeOffId: 'missing',
+        expected: {},
+        rows: [],
+        requireConfirmed: false,
+      })
+    ).rejects.toBeInstanceOf(PtoTimeOffNotFoundError);
+  });
+
+  it('does not touch another household’s marking of the same time off', async () => {
+    const to = await timeOff();
+    await seedRows([row({ time_off_id: to, household_id: H2 })]);
+    const written = await repo.applyCorrection({
+      householdId: H1,
+      timeOffId: to,
+      expected: {},
+      rows: [row({ time_off_id: to })],
+      requireConfirmed: true,
+    });
+    expect(written).toHaveLength(1);
+    const h2 = await t.db
+      .select()
+      .from(ptoLedger)
+      .where(eq(ptoLedger.household_id, H2));
+    expect(h2.filter(r => r.time_off_id === to)).toHaveLength(1);
   });
 });

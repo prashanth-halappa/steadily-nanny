@@ -1,625 +1,445 @@
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
-
 /**
- * Payment repository tests — the settlement ledger's data access
- * (migration 067, `docs/11-MONEY.md`).
+ * PaymentRepository against a real Miniflare D1 (tests/helpers/testDb.ts).
  *
- * Same discipline as `ptoLedgerRepository.test.ts`/
- * `payArrangementRepository.test.ts`: the fake PostgREST chain ACTUALLY
- * applies `eq`/`order` to an in-memory row set rather than handing back a
- * canned response, so these tests prove the real filter shape
- * (`timesheet_id`, and ONLY this timesheet's rows) instead of proving that a
- * mock returns what it was told to return.
- *
- * `listForTimesheet` is the number every paid-to-date read is built on, so its
- * scoping is the security-relevant part: a sum that leaked another week's
- * rows would refuse legitimate payments; a sum that dropped rows would let a
- * week be paid twice. It survives 077 — the CSV export and the paid-state
- * reads still ask for it — even though the WRITE gate no longer uses it.
- *
- * `recordForTimesheet` is the 077 wiring. The arithmetic it guards happens in
- * Postgres, under a row lock no unit test can reach, so what is testable here
- * is the seam: the real function name, the real five `p_*` parameter names,
- * and the mapping from each jsonb payload to the typed outcome the service
- * branches on. The name and the parameters are asserted verbatim against what
- * `077_payment_atomic_insert.sql` actually declares (D53) — a mock-shaped name
- * would pass this file and 500 in production.
+ * The two money writes are the D1 replacements for `record_timesheet_payment`
+ * (077/102) and `record_payment_correction` (085) — one guarded
+ * `INSERT … SELECT … WHERE` each (MIGRATION-NOTES §5.1/§5.2). These tests run
+ * the real SQL, so they prove the over-gross / over-reversal arithmetic, the
+ * stamping from the timesheet / original row, the outcome classification on
+ * a refused insert, and the race behaviour (parallel calls produce exactly
+ * one success). They also carry the intent of the Postgres-only
+ * tests/integration/recordTimesheetPayment.integration.test.ts.
  */
+import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
+import { type AnyD1Database, drizzle } from 'drizzle-orm/d1';
+import * as schema from '../../../../../src/db/schema';
+import {
+  households,
+  payments,
+  timesheets,
+  user,
+  userProfiles,
+} from '../../../../../src/db/schema';
+import { DatabaseError } from '../../../../../src/errors';
+import { createTestDb, type TestDb } from '../../../../helpers/testDb';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-const FIXTURE_TS = new Date(Date.now() - 2 * DAY_MS).toISOString();
-const FIXTURE_TS_RECENT_BASE = new Date(Date.now() - 1 * DAY_MS);
-FIXTURE_TS_RECENT_BASE.setUTCHours(9, 0, 0, 0);
-const FIXTURE_TS_MORNING = FIXTURE_TS_RECENT_BASE.toISOString();
-const FIXTURE_TS_EVENING = new Date(
-  FIXTURE_TS_RECENT_BASE.getTime() + 8 * 60 * 60 * 1000
-).toISOString();
+let t: TestDb;
+let repo: InstanceType<
+  typeof import('../../../../../src/domains/pay/repositories/paymentRepository').PaymentRepository
+>;
+let broken = false;
+const brokenDb = drizzle(
+  {
+    prepare: () => {
+      throw new Error('boom');
+    },
+  } as unknown as AnyD1Database,
+  { schema }
+);
 
-interface FakeRow {
-  [key: string]: unknown;
-}
-
-let PaymentRepository: any;
-let mockSupabaseService: any;
-let lastCalls: { method: string; args: unknown[] }[] = [];
-let rpcCalls: { name: string; args: Record<string, unknown> }[] = [];
-
-function createFakeQuery(rows: FakeRow[], error: unknown = null): any {
-  const eqFilters: [string, unknown][] = [];
-  const orderKeys: [string, boolean][] = [];
-
-  const resolveRows = (): FakeRow[] => {
-    let out = rows.filter(row =>
-      eqFilters.every(([key, value]) => row[key] === value)
-    );
-    for (const [key, ascending] of [...orderKeys].reverse()) {
-      out = [...out].sort((a, b) => {
-        const left = String(a[key]);
-        const right = String(b[key]);
-        if (left === right) return 0;
-        return (left < right ? -1 : 1) * (ascending ? 1 : -1);
-      });
-    }
-    return out;
-  };
-
-  const record = (method: string, ...args: unknown[]) => {
-    lastCalls.push({ method, args });
-  };
-
-  const chain: any = {
-    select: mock((...args: unknown[]) => {
-      record('select', ...args);
-      return chain;
-    }),
-    eq: mock((key: string, value: unknown) => {
-      record('eq', key, value);
-      eqFilters.push([key, value]);
-      return chain;
-    }),
-    order: mock((key: string, opts?: { ascending?: boolean }) => {
-      record('order', key, opts);
-      orderKeys.push([key, opts?.ascending !== false]);
-      return chain;
-    }),
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-    then: (resolve: (value: unknown) => unknown) =>
-      Promise.resolve({ data: error ? null : resolveRows(), error }).then(
-        resolve
-      ),
-  };
-  return chain;
-}
-
-function paymentRow(overrides: FakeRow = {}): FakeRow {
-  return {
-    id: 'pay-1',
-    timesheet_id: 'ts-1',
-    household_id: 'h1',
-    carer_id: 'carer-1',
-    amount_minor: 5_000,
-    currency: 'GBP',
-    paid_at: '2026-08-10',
-    method_note: 'Bank transfer',
-    recorded_by: 'parent-1',
-    created_at: FIXTURE_TS,
-    ...overrides,
-  };
-}
-
-function withRows(rows: FakeRow[], error: unknown = null): void {
-  mockSupabaseService.from.mockImplementation(() =>
-    createFakeQuery(rows, error)
-  );
-}
-
-/**
- * Stand-in for `public.record_timesheet_payment` (077). It records the call
- * and answers with whatever payload the test is pinning — the function's own
- * behaviour (lock, sum, refuse, insert) is pinned by
- * `tests/unit/migration077PaymentAtomicInsert.test.ts` against the SQL source,
- * because it cannot be reached from here.
- */
-function withRpc(data: unknown, error: unknown = null): void {
-  mockSupabaseService.rpc.mockImplementation(
-    async (name: string, args: Record<string, unknown>) => {
-      rpcCalls.push({ name, args });
-      return { data: error ? null : data, error };
-    }
-  );
-}
-
-const RECORD_ENTRY = {
-  amount_minor: 5_000,
-  paid_at: '2026-08-11',
-  method_note: 'Bank transfer',
-  recorded_by: 'parent-1',
-};
+const H1 = 'h1';
+const H2 = 'h2';
+const PARENT = 'parent-1';
+const CARER = 'carer-1';
+const CARER2 = 'carer-2';
+const GROSS = 80_000;
+const FROZEN_AT = '2026-08-10T18:00:00.000Z';
 
 beforeAll(async () => {
-  mock.module('../../../../../src/config/supabase', () => {
-    const obj = {
-      from: mock(() => createFakeQuery([])),
-      rpc: mock(async () => ({ data: null, error: null })),
-    };
-    return { supabase: obj, supabaseService: obj };
-  });
-
-  ({ PaymentRepository } = await import(
+  t = await createTestDb();
+  mock.module('../../../../../src/db/client', () => ({
+    db: new Proxy(
+      {},
+      { get: (_t, key) => Reflect.get(broken ? brokenDb : t.db, key) }
+    ),
+  }));
+  for (const id of [PARENT, CARER, CARER2]) {
+    await t.db.insert(user).values({ id, name: id, email: `${id}@x.test` });
+    await t.db.insert(userProfiles).values({ user_id: id });
+  }
+  await t.db.insert(households).values([
+    { id: H1, name: 'One' },
+    { id: H2, name: 'Two' },
+  ]);
+  const { PaymentRepository } = await import(
     '../../../../../src/domains/pay/repositories/paymentRepository'
-  ));
+  );
+  repo = new PaymentRepository();
+});
+afterAll(() => t.dispose());
 
-  mockSupabaseService = (await import('../../../../../src/config/supabase'))
-    .supabaseService;
+let weekSeq = 0;
+const nextWeek = () =>
+  new Date(Date.UTC(2025, 0, 6 + 7 * weekSeq++)).toISOString().slice(0, 10);
+
+/** An approved, priced week (the approved-has-snapshot CHECK needs all four). */
+async function week(
+  overrides: Partial<typeof timesheets.$inferInsert> = {}
+): Promise<string> {
+  const [row] = await t.db
+    .insert(timesheets)
+    .values({
+      household_id: H1,
+      carer_id: CARER,
+      carer_display_name: 'Carer',
+      week_start: nextWeek(),
+      total_minutes: 2400,
+      status: 'approved',
+      approved_by: PARENT,
+      approved_at: FROZEN_AT,
+      gross_minor: GROSS,
+      currency: 'GBP',
+      earnings: { status: 'ok', gross_minor: GROSS },
+      earnings_computed_at: FROZEN_AT,
+      household_member_id: 'member-1',
+      ...overrides,
+    })
+    .returning();
+  if (!row) throw new Error('seed failed');
+  return row.id;
+}
+
+const entry = (amount_minor: number, extra: Record<string, unknown> = {}) => ({
+  amount_minor,
+  paid_at: '2026-08-14',
+  method_note: null,
+  recorded_by: PARENT,
+  ...extra,
 });
 
-beforeEach(() => {
-  lastCalls = [];
-  rpcCalls = [];
-  mockSupabaseService.from.mockClear();
-  mockSupabaseService.rpc.mockClear?.();
-});
+async function rowsFor(timesheetId: string) {
+  return repo.listForTimesheet(timesheetId);
+}
 
-describe('PaymentRepository.listForTimesheet', () => {
-  it('returns only the rows for THIS timesheet', async () => {
-    withRows([
-      paymentRow({ id: 'pay-1', amount_minor: 5_000 }),
-      paymentRow({
-        id: 'pay-other',
-        timesheet_id: 'ts-2',
-        amount_minor: 99_000,
-      }),
+describe('PaymentRepository.listForTimesheet / listForHousehold', () => {
+  it('scopes to the timesheet and orders oldest settlement first', async () => {
+    const a = await week();
+    const b = await week();
+    await t.db.insert(payments).values([
+      {
+        timesheet_id: a,
+        household_id: H1,
+        carer_id: CARER,
+        amount_minor: 100,
+        currency: 'GBP',
+        paid_at: '2026-08-18',
+        created_at: '2026-08-18T09:00:00.000Z',
+      },
+      {
+        timesheet_id: a,
+        household_id: H1,
+        carer_id: CARER,
+        amount_minor: 200,
+        currency: 'GBP',
+        paid_at: '2026-08-11',
+        created_at: '2026-08-11T09:00:00.000Z',
+      },
+      {
+        timesheet_id: b,
+        household_id: H1,
+        carer_id: CARER,
+        amount_minor: 300,
+        currency: 'GBP',
+        paid_at: '2026-08-11',
+      },
     ]);
-
-    const rows = await new PaymentRepository().listForTimesheet('ts-1');
-
-    expect(rows.map((r: FakeRow) => r.id)).toEqual(['pay-1']);
-    expect(lastCalls).toContainEqual({
-      method: 'eq',
-      args: ['timesheet_id', 'ts-1'],
-    });
+    const rows = await repo.listForTimesheet(a);
+    expect(rows.map(r => r.amount_minor)).toEqual([200, 100]);
+    expect(await repo.listForTimesheet('nope')).toEqual([]);
   });
 
-  it('orders oldest settlement first, so a partial-payment history reads forwards', async () => {
-    withRows([
-      paymentRow({ id: 'pay-late', paid_at: '2026-08-12' }),
-      paymentRow({ id: 'pay-early', paid_at: '2026-08-09' }),
+  it('scopes to the household, narrows by carer, newest first with a created_at tie-break', async () => {
+    const mine = await week({ household_id: H2, carer_id: CARER });
+    const theirs = await week({ household_id: H2, carer_id: CARER2 });
+    await t.db.insert(payments).values([
+      {
+        timesheet_id: mine,
+        household_id: H2,
+        carer_id: CARER,
+        amount_minor: 1,
+        currency: 'GBP',
+        paid_at: '2026-08-11',
+        created_at: '2026-08-11T09:00:00.000Z',
+      },
+      {
+        timesheet_id: mine,
+        household_id: H2,
+        carer_id: CARER,
+        amount_minor: 2,
+        currency: 'GBP',
+        paid_at: '2026-08-11',
+        created_at: '2026-08-11T17:00:00.000Z',
+      },
+      {
+        timesheet_id: theirs,
+        household_id: H2,
+        carer_id: CARER2,
+        amount_minor: 3,
+        currency: 'GBP',
+        paid_at: '2026-08-20',
+      },
     ]);
-
-    const rows = await new PaymentRepository().listForTimesheet('ts-1');
-
-    expect(rows.map((r: FakeRow) => r.id)).toEqual(['pay-early', 'pay-late']);
-  });
-
-  it('returns [] when the week has never been paid against', async () => {
-    withRows([]);
-    expect(await new PaymentRepository().listForTimesheet('ts-1')).toEqual([]);
-  });
-
-  it('throws a DatabaseError when the query fails', async () => {
-    withRows([], { message: 'boom' });
-    await expect(
-      new PaymentRepository().listForTimesheet('ts-1')
-    ).rejects.toThrow('Failed to list payments for timesheet');
-  });
-});
-
-describe('PaymentRepository.listForHousehold', () => {
-  it('returns only THIS household’s rows — the filter is mandatory under bypassed RLS', async () => {
-    withRows([
-      paymentRow({ id: 'pay-mine' }),
-      paymentRow({ id: 'pay-other-household', household_id: 'h2' }),
+    expect((await repo.listForHousehold(H2)).map(r => r.amount_minor)).toEqual([
+      3, 2, 1,
     ]);
-
-    const rows = await new PaymentRepository().listForHousehold('h1');
-
-    expect(rows.map((r: FakeRow) => r.id)).toEqual(['pay-mine']);
-    expect(lastCalls).toContainEqual({
-      method: 'eq',
-      args: ['household_id', 'h1'],
-    });
-  });
-
-  it('narrows to ONE carer when a carerId is given', async () => {
-    withRows([
-      paymentRow({ id: 'pay-carer-1', carer_id: 'carer-1' }),
-      paymentRow({ id: 'pay-carer-2', carer_id: 'carer-2' }),
-    ]);
-
-    const rows = await new PaymentRepository().listForHousehold(
-      'h1',
-      'carer-1'
-    );
-
-    expect(rows.map((r: FakeRow) => r.id)).toEqual(['pay-carer-1']);
-    expect(lastCalls).toContainEqual({
-      method: 'eq',
-      args: ['carer_id', 'carer-1'],
-    });
-  });
-
-  it('applies NO carer filter when none is given', async () => {
-    withRows([paymentRow({ id: 'pay-1' })]);
-
-    await new PaymentRepository().listForHousehold('h1');
-
     expect(
-      lastCalls.filter(c => c.method === 'eq').map(c => c.args[0])
-    ).toEqual(['household_id']);
+      (await repo.listForHousehold(H2, CARER)).map(r => r.amount_minor)
+    ).toEqual([2, 1]);
   });
 
-  it('orders NEWEST settlement first — history across weeks reads backwards', async () => {
-    withRows([
-      paymentRow({ id: 'pay-early', paid_at: '2026-08-04' }),
-      paymentRow({ id: 'pay-late', paid_at: '2026-08-11' }),
-    ]);
-
-    const rows = await new PaymentRepository().listForHousehold('h1');
-
-    expect(rows.map((r: FakeRow) => r.id)).toEqual(['pay-late', 'pay-early']);
-  });
-
-  it('breaks a same-day tie on created_at, newest first', async () => {
-    withRows([
-      paymentRow({
-        id: 'pay-first',
-        paid_at: '2026-08-11',
-        created_at: FIXTURE_TS_MORNING,
-      }),
-      paymentRow({
-        id: 'pay-second',
-        paid_at: '2026-08-11',
-        created_at: FIXTURE_TS_EVENING,
-      }),
-    ]);
-
-    const rows = await new PaymentRepository().listForHousehold('h1');
-
-    expect(rows.map((r: FakeRow) => r.id)).toEqual(['pay-second', 'pay-first']);
-  });
-
-  it('returns [] for a household that has never paid anyone', async () => {
-    withRows([]);
-    expect(await new PaymentRepository().listForHousehold('h1')).toEqual([]);
-  });
-
-  it('throws a DatabaseError when the query fails', async () => {
-    withRows([], { message: 'boom' });
-    await expect(
-      new PaymentRepository().listForHousehold('h1')
-    ).rejects.toThrow('Failed to list payments for household');
+  it('wraps a failing query in a DatabaseError', async () => {
+    broken = true;
+    try {
+      await expect(repo.listForTimesheet('x')).rejects.toBeInstanceOf(
+        DatabaseError
+      );
+      await expect(
+        repo.recordForTimesheet('x', entry(1))
+      ).rejects.toBeInstanceOf(DatabaseError);
+    } finally {
+      broken = false;
+    }
   });
 });
 
-// ---------------------------------------------------------------------------
-// 077 — the sum and the insert are one statement behind a row lock.
-// ---------------------------------------------------------------------------
-
-describe('PaymentRepository.recordForTimesheet', () => {
-  it('calls the REAL function name with the REAL six parameter names', async () => {
-    withRpc({ outcome: 'recorded', payment: paymentRow() });
-
-    await new PaymentRepository().recordForTimesheet('ts-1', RECORD_ENTRY);
-
-    expect(rpcCalls[0]?.name).toBe('record_timesheet_payment');
-    expect(rpcCalls[0]?.args).toEqual({
-      p_timesheet_id: 'ts-1',
-      p_amount_minor: 5_000,
-      p_paid_at: '2026-08-11',
-      p_method_note: 'Bank transfer',
-      p_recorded_by: 'parent-1',
-      // Explicit null rather than omitted, for the same reason `method_note`
-      // is: 102's sixth parameter is DEFAULTED, and a missing key in the
-      // PostgREST body would bind the default silently. Sending it says "this
-      // client had no intent key", which is a different fact from "this
-      // client is older than 102" and is worth being able to read.
-      p_idempotency_key: null,
-    });
-  });
-
-  it('passes an intent key through when the client minted one (102)', async () => {
-    withRpc({ outcome: 'recorded', payment: paymentRow() });
-
-    await new PaymentRepository().recordForTimesheet('ts-1', {
-      ...RECORD_ENTRY,
-      idempotency_key: '11111111-2222-3333-4444-555555555555',
-    });
-
-    expect(rpcCalls[0]?.args.p_idempotency_key).toBe(
-      '11111111-2222-3333-4444-555555555555'
-    );
-  });
-
-  it('maps the FIRST payment back when the key repeats — a retry is a success, not a duplicate', async () => {
-    // The function answers 'recorded' with the row the first attempt wrote
-    // (102). `payments` is append-only, so the alternative — an error the
-    // client has to interpret — ends with a parent recording the payment
-    // again and then having to correct it.
-    withRpc({
-      outcome: 'recorded',
-      payment: paymentRow({ id: 'pay-first', amount_minor: 5_000 }),
-    });
-
-    const result = await new PaymentRepository().recordForTimesheet('ts-1', {
-      ...RECORD_ENTRY,
-      idempotency_key: '11111111-2222-3333-4444-555555555555',
-    });
-
-    expect(result).toEqual({
-      outcome: 'recorded',
-      payment: expect.objectContaining({ id: 'pay-first' }),
-    });
-  });
-
-  it('sends NOTHING that describes the week — 077 stamps those from the locked row', async () => {
-    withRpc({ outcome: 'recorded', payment: paymentRow() });
-
-    await new PaymentRepository().recordForTimesheet('ts-1', RECORD_ENTRY);
-
-    const args = Object.keys(rpcCalls[0]?.args ?? {});
-    expect(args).not.toContain('p_household_id');
-    expect(args).not.toContain('p_carer_id');
-    expect(args).not.toContain('p_currency');
-  });
-
-  it('passes an absent method_note through as an explicit null', async () => {
-    withRpc({ outcome: 'recorded', payment: paymentRow() });
-
-    await new PaymentRepository().recordForTimesheet('ts-1', {
-      ...RECORD_ENTRY,
+describe('PaymentRepository.recordForTimesheet (record_timesheet_payment)', () => {
+  it('records a payment, stamping household, carer and currency FROM THE WEEK', async () => {
+    const id = await week({ currency: 'EUR' });
+    const out = await repo.recordForTimesheet(id, entry(30_000));
+    expect(out.outcome).toBe('recorded');
+    if (out.outcome !== 'recorded') throw new Error('unreachable');
+    expect(out.payment).toMatchObject({
+      timesheet_id: id,
+      household_id: H1,
+      carer_id: CARER,
+      currency: 'EUR',
+      amount_minor: 30_000,
+      kind: 'payment',
+      paid_at: '2026-08-14',
       method_note: null,
-    });
-
-    expect(rpcCalls[0]?.args.p_method_note).toBeNull();
-  });
-
-  it('maps a recorded payload to the recorded outcome, carrying the row', async () => {
-    withRpc({
-      outcome: 'recorded',
-      payment: paymentRow({ id: 'pay-new', amount_minor: 5_000 }),
-    });
-
-    const result = await new PaymentRepository().recordForTimesheet(
-      'ts-1',
-      RECORD_ENTRY
-    );
-
-    expect(result).toEqual({
-      outcome: 'recorded',
-      payment: expect.objectContaining({ id: 'pay-new', amount_minor: 5_000 }),
+      recorded_by: PARENT,
     });
   });
 
-  it('maps an exceeds_gross payload to the under-lock figures the error reports', async () => {
-    withRpc({
-      outcome: 'exceeds_gross',
-      already_paid_minor: 50_000,
-      gross_minor: 80_000,
-    });
-
-    const result = await new PaymentRepository().recordForTimesheet(
-      'ts-1',
-      RECORD_ENTRY
-    );
-
-    expect(result).toEqual({
+  it('accepts a partial payment, then refuses the one that would tip it over — with the figures', async () => {
+    const id = await week();
+    await repo.recordForTimesheet(id, entry(50_000));
+    expect(await repo.recordForTimesheet(id, entry(30_001))).toEqual({
       outcome: 'exceeds_gross',
       alreadyPaidMinor: 50_000,
-      grossMinor: 80_000,
+      grossMinor: GROSS,
+    });
+    // Exactly to gross is fine: the guard is `<=`, never a clamp.
+    expect((await repo.recordForTimesheet(id, entry(30_000))).outcome).toBe(
+      'recorded'
+    );
+    expect(await rowsFor(id)).toHaveLength(2);
+  });
+
+  it('counts corrections SIGNED: a reversal frees that much room again', async () => {
+    const id = await week();
+    const first = await repo.recordForTimesheet(id, entry(GROSS));
+    if (first.outcome !== 'recorded') throw new Error('setup');
+    await repo.recordCorrection(id, first.payment.id, {
+      amount_minor: -10_000,
+      paid_at: '2026-08-15',
+      reason: 'overpaid',
+      recorded_by: PARENT,
+    });
+    expect((await repo.recordForTimesheet(id, entry(10_000))).outcome).toBe(
+      'recorded'
+    );
+    expect((await repo.recordForTimesheet(id, entry(1))).outcome).toBe(
+      'exceeds_gross'
+    );
+  });
+
+  it('answers not_payable on a submitted week, carrying the status it read', async () => {
+    const id = await week({
+      status: 'submitted',
+      approved_by: null,
+      approved_at: null,
+      gross_minor: null,
+      currency: null,
+      earnings: null,
+      earnings_computed_at: null,
+    });
+    expect(await repo.recordForTimesheet(id, entry(1))).toEqual({
+      outcome: 'not_payable',
+      status: 'submitted',
+    });
+    expect(await rowsFor(id)).toEqual([]);
+  });
+
+  it('answers not_payable with a null status for a week that does not exist', async () => {
+    expect(await repo.recordForTimesheet('missing', entry(1))).toEqual({
+      outcome: 'not_payable',
+      status: null,
     });
   });
 
-  it('maps a not_payable payload, carrying the status the locked row actually had', async () => {
-    withRpc({ outcome: 'not_payable', status: 'open' });
-
-    const result = await new PaymentRepository().recordForTimesheet(
-      'ts-1',
-      RECORD_ENTRY
-    );
-
-    expect(result).toEqual({ outcome: 'not_payable', status: 'open' });
+  it('RACE: two parallel payments whose sum exceeds gross produce exactly one success', async () => {
+    const id = await week();
+    const results = await Promise.all([
+      repo.recordForTimesheet(id, entry(50_000)),
+      repo.recordForTimesheet(id, entry(50_000)),
+    ]);
+    expect(results.map(r => r.outcome).sort()).toEqual([
+      'exceeds_gross',
+      'recorded',
+    ]);
+    expect(await rowsFor(id)).toHaveLength(1);
   });
 
-  it('survives a not_payable payload with no status (the week vanished under the lock)', async () => {
-    withRpc({ outcome: 'not_payable' });
-
-    const result = await new PaymentRepository().recordForTimesheet(
-      'ts-1',
-      RECORD_ENTRY
-    );
-
-    expect(result).toEqual({ outcome: 'not_payable', status: null });
+  it('RACE: a payment against a week reopened under it is not_payable, and writes nothing', async () => {
+    const id = await week();
+    // The reopen lands first (no payments yet, so the trigger allows it).
+    await t.d1
+      .prepare(
+        "UPDATE timesheets SET status = 'submitted', approved_by = NULL, approved_at = NULL, gross_minor = NULL, currency = NULL, earnings = NULL, earnings_computed_at = NULL WHERE id = ?"
+      )
+      .bind(id)
+      .run();
+    expect(await repo.recordForTimesheet(id, entry(1))).toEqual({
+      outcome: 'not_payable',
+      status: 'submitted',
+    });
+    expect(await rowsFor(id)).toEqual([]);
   });
 
-  it('throws a DatabaseError when the RPC itself fails', async () => {
-    withRpc(null, { message: 'boom' });
+  describe('idempotency key (102)', () => {
+    it('writes ONE row for a repeated key and hands back the row it already wrote', async () => {
+      const id = await week();
+      const key = crypto.randomUUID();
+      const a = await repo.recordForTimesheet(
+        id,
+        entry(GROSS, { idempotency_key: key })
+      );
+      const b = await repo.recordForTimesheet(
+        id,
+        entry(GROSS, { idempotency_key: key })
+      );
+      expect(a.outcome).toBe('recorded');
+      // Fully paid, so without the key this would be exceeds_gross: the key
+      // is answered BEFORE any payable check.
+      expect(b).toEqual(a);
+      expect(await rowsFor(id)).toHaveLength(1);
+    });
 
-    await expect(
-      new PaymentRepository().recordForTimesheet('ts-1', RECORD_ENTRY)
-    ).rejects.toThrow('Failed to record payment');
-  });
+    it('RACE: two parallel retries of one intent both answer recorded, with one row', async () => {
+      const id = await week();
+      const key = crypto.randomUUID();
+      const [a, b] = await Promise.all([
+        repo.recordForTimesheet(id, entry(1000, { idempotency_key: key })),
+        repo.recordForTimesheet(id, entry(1000, { idempotency_key: key })),
+      ]);
+      expect(a.outcome).toBe('recorded');
+      expect(b).toEqual(a);
+      expect(await rowsFor(id)).toHaveLength(1);
+    });
 
-  it('refuses a recorded payload with no row rather than reporting not_payable', async () => {
-    withRpc({ outcome: 'recorded' });
-
-    await expect(
-      new PaymentRepository().recordForTimesheet('ts-1', RECORD_ENTRY)
-    ).rejects.toThrow('Unrecognised payment outcome');
-  });
-
-  it('refuses an empty answer rather than reporting not_payable', async () => {
-    withRpc(null);
-
-    await expect(
-      new PaymentRepository().recordForTimesheet('ts-1', RECORD_ENTRY)
-    ).rejects.toThrow('Unrecognised payment outcome');
+    it('does NOT dedupe two payments that carry no key', async () => {
+      const id = await week();
+      await repo.recordForTimesheet(id, entry(1000));
+      await repo.recordForTimesheet(id, entry(1000));
+      expect(await rowsFor(id)).toHaveLength(2);
+    });
   });
 });
 
-// ---------------------------------------------------------------------------
-// 085 — the correction seam. Untested until now (audit gap #2): every other
-// outcome mapping in this file was pinned while the function name and the six
-// `p_*` parameter names it is reached by were not, and a mock-shaped name
-// passes a unit test and 500s in production (D53). Asserted verbatim against
-// what `085_payment_corrections.sql` declares.
-// ---------------------------------------------------------------------------
+describe('PaymentRepository.recordCorrection (record_payment_correction)', () => {
+  const correction = (amount_minor: number) => ({
+    amount_minor,
+    paid_at: '2026-08-15',
+    reason: 'typo',
+    recorded_by: PARENT,
+  });
 
-const CORRECTION_ENTRY = {
-  // ALREADY NEGATIVE here — the service negates the positive magnitude the
-  // wire carries, so every layer below it sees the number that will be stored.
-  amount_minor: -5_000,
-  paid_at: '2026-08-12',
-  reason: 'recorded twice',
-  recorded_by: 'parent-1',
-};
+  async function paid(amount = GROSS) {
+    const id = await week();
+    const out = await repo.recordForTimesheet(id, entry(amount));
+    if (out.outcome !== 'recorded') throw new Error('setup');
+    return { id, payment: out.payment };
+  }
 
-describe('PaymentRepository.recordCorrection', () => {
-  it('calls the REAL function name with the REAL six parameter names', async () => {
-    withRpc({ outcome: 'recorded', correction: paymentRow() });
-
-    await new PaymentRepository().recordCorrection(
-      'ts-1',
-      'pay-1',
-      CORRECTION_ENTRY
-    );
-
-    expect(rpcCalls[0]?.name).toBe('record_payment_correction');
-    expect(rpcCalls[0]?.args).toEqual({
-      p_timesheet_id: 'ts-1',
-      p_corrects_payment_id: 'pay-1',
-      p_amount_minor: -5_000,
-      p_paid_at: '2026-08-12',
-      p_reason: 'recorded twice',
-      p_recorded_by: 'parent-1',
+  it('records a negative correction, copying household, carer and currency from the ORIGINAL', async () => {
+    const { id, payment } = await paid();
+    const out = await repo.recordCorrection(id, payment.id, correction(-500));
+    expect(out.outcome).toBe('recorded');
+    if (out.outcome !== 'recorded') throw new Error('unreachable');
+    expect(out.correction).toMatchObject({
+      timesheet_id: id,
+      household_id: H1,
+      carer_id: CARER,
+      currency: 'GBP',
+      amount_minor: -500,
+      kind: 'correction',
+      corrects_payment_id: payment.id,
+      correction_reason: 'typo',
     });
   });
 
-  it('sends NOTHING that describes the money — 085 stamps those from the ORIGINAL payment', async () => {
-    withRpc({ outcome: 'recorded', correction: paymentRow() });
-
-    await new PaymentRepository().recordCorrection(
-      'ts-1',
-      'pay-1',
-      CORRECTION_ENTRY
-    );
-
-    const args = Object.keys(rpcCalls[0]?.args ?? {});
-    expect(args).not.toContain('p_household_id');
-    expect(args).not.toContain('p_carer_id');
-    expect(args).not.toContain('p_currency');
-    expect(args).not.toContain('p_kind');
-  });
-
-  it('maps a recorded payload to the recorded outcome, carrying the negative row', async () => {
-    withRpc({
-      outcome: 'recorded',
-      correction: paymentRow({
-        id: 'corr-1',
-        amount_minor: -5_000,
-        kind: 'correction',
-      }),
-    });
-
+  it('refuses an over-reversal against what REMAINS, with the figures', async () => {
+    const { id, payment } = await paid(10_000);
+    await repo.recordCorrection(id, payment.id, correction(-4000));
     expect(
-      await new PaymentRepository().recordCorrection(
-        'ts-1',
-        'pay-1',
-        CORRECTION_ENTRY
-      )
-    ).toEqual({
-      outcome: 'recorded',
-      correction: expect.objectContaining({
-        id: 'corr-1',
-        amount_minor: -5_000,
-      }),
-    });
-  });
-
-  it('maps exceeds_original to the under-lock figures the error reports', async () => {
-    withRpc({
-      outcome: 'exceeds_original',
-      original_amount_minor: 46_200,
-      remaining_minor: 12_000,
-    });
-
-    expect(
-      await new PaymentRepository().recordCorrection(
-        'ts-1',
-        'pay-1',
-        CORRECTION_ENTRY
-      )
+      await repo.recordCorrection(id, payment.id, correction(-6001))
     ).toEqual({
       outcome: 'exceeds_original',
-      originalAmountMinor: 46_200,
-      remainingMinor: 12_000,
+      originalAmountMinor: 10_000,
+      remainingMinor: 6000,
     });
+    expect(
+      (await repo.recordCorrection(id, payment.id, correction(-6000))).outcome
+    ).toBe('recorded');
   });
 
-  it('maps not_correctable, carrying the reason the lock actually saw', async () => {
-    withRpc({ outcome: 'not_correctable', reason: 'not_a_payment' });
-
+  it('refuses a non-negative amount as exceeds_original', async () => {
+    const { id, payment } = await paid(10_000);
     expect(
-      await new PaymentRepository().recordCorrection(
-        'ts-1',
-        'pay-1',
-        CORRECTION_ENTRY
-      )
+      (await repo.recordCorrection(id, payment.id, correction(0))).outcome
+    ).toBe('exceeds_original');
+  });
+
+  it('classifies each not_correctable reason', async () => {
+    const { id, payment } = await paid(10_000);
+    const other = await paid(10_000);
+    expect(
+      await repo.recordCorrection('missing', payment.id, correction(-1))
+    ).toEqual({ outcome: 'not_correctable', reason: 'week_missing' });
+    expect(
+      await repo.recordCorrection(id, other.payment.id, correction(-1))
+    ).toEqual({ outcome: 'not_correctable', reason: 'payment_missing' });
+    const corr = await repo.recordCorrection(id, payment.id, correction(-1));
+    if (corr.outcome !== 'recorded') throw new Error('setup');
+    expect(
+      await repo.recordCorrection(id, corr.correction.id, correction(-1))
     ).toEqual({ outcome: 'not_correctable', reason: 'not_a_payment' });
   });
 
-  it('refuses an unrecognised answer rather than reporting nothing happened', async () => {
-    withRpc({ outcome: 'recorded' });
-
-    await expect(
-      new PaymentRepository().recordCorrection(
-        'ts-1',
-        'pay-1',
-        CORRECTION_ENTRY
-      )
-    ).rejects.toThrow('Unrecognised correction outcome');
-  });
-
-  it('throws a DatabaseError when the RPC itself fails', async () => {
-    withRpc(null, { message: 'boom' });
-
-    await expect(
-      new PaymentRepository().recordCorrection(
-        'ts-1',
-        'pay-1',
-        CORRECTION_ENTRY
-      )
-    ).rejects.toThrow('Failed to record correction');
+  it('RACE: two parallel reversals that together exceed the payment produce exactly one success', async () => {
+    const { id, payment } = await paid(10_000);
+    const results = await Promise.all([
+      repo.recordCorrection(id, payment.id, correction(-6000)),
+      repo.recordCorrection(id, payment.id, correction(-6000)),
+    ]);
+    expect(results.map(r => r.outcome).sort()).toEqual([
+      'exceeds_original',
+      'recorded',
+    ]);
+    const sum = (await rowsFor(id)).reduce((s, r) => s + r.amount_minor, 0);
+    expect(sum).toBe(4000);
   });
 });
 
-// ---------------------------------------------------------------------------
-// P8 — append-only, structurally (`docs/AS-BUILT-PAYMENT.md` §7).
-//
-// The audit's words: "`BaseRepository.update`/`delete` are inherited and
-// callable on every append-only table including `payments`, running as service
-// role where RLS cannot stop them. Append-only there is enforced by nobody
-// having written the call." A comment saying "nothing should start" is not a
-// guard; a method that throws is.
-// ---------------------------------------------------------------------------
-
 describe('PaymentRepository — append-only', () => {
-  it('refuses update: a payment is a fact about money that already moved', async () => {
-    await expect(
-      new PaymentRepository().update('pay-1', { amount_minor: 1 })
-    ).rejects.toThrow('payments is append-only');
-  });
-
-  it('refuses delete: the way back is a correction row, not an erasure', async () => {
-    await expect(new PaymentRepository().delete('pay-1')).rejects.toThrow(
-      'payments is append-only'
-    );
-  });
-
-  it('never reaches the database to find that out', async () => {
-    // The refusal is structural, so it must not depend on a query failing.
-    mockSupabaseService.from.mockClear();
-    await new PaymentRepository().update('pay-1', {}).catch(() => undefined);
-    await new PaymentRepository().delete('pay-1').catch(() => undefined);
-    expect(mockSupabaseService.from).not.toHaveBeenCalled();
+  it('refuses update and delete before touching the database', async () => {
+    broken = true;
+    try {
+      await expect(repo.update('x', {})).rejects.toThrow(/append-only/);
+      await expect(repo.delete('x')).rejects.toThrow(/append-only/);
+    } finally {
+      broken = false;
+    }
   });
 });

@@ -2,8 +2,8 @@
  * Pay arrangement repository — data access for the append-only
  * `pay_arrangements` table (supabase/migrations/041_pay_arrangements.sql).
  * Extends BaseRepository for `create`/`findById` and adds the two queries the
- * domain needs. Uses the service-role client, so it bypasses RLS entirely:
- * authorization lives in the SERVICE layer, never here (docs/11-MONEY.md §9).
+ * domain needs. D1 has no RLS: authorization lives in the SERVICE layer,
+ * never here (docs/11-MONEY.md §9).
  *
  * There is deliberately NO update or delete helper. Arrangements are
  * append-only — a change is a new row, and immutability in this stack is the
@@ -14,13 +14,29 @@
  * @module domains/pay/repositories/payArrangementRepository
  */
 import type { PayArrangement } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
-import { supabaseService } from '../../../config/supabase';
-import { DatabaseError } from '../../../errors';
+import { and, desc, eq, gte, isNull, lte, or, sql } from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { payArrangements } from '../../../db/schema';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
 
-export class PayArrangementRepository extends BaseRepository<PayArrangement> {
+/**
+ * The resolution ordering: greatest `valid_from`, ties broken by `created_at`
+ * desc. `valid_from` is a `YYYY-MM-DD` text, so a text sort is a date sort.
+ * `created_at` is ISO-8601 TEXT on D1, and Postgres ordered the old
+ * timestamptz by INSTANT — `julianday()` restores that, so a `+01:00` and a
+ * `.000Z` spelling compare chronologically, not lexically (GOLDEN-FIXES #25).
+ */
+const NEWEST_FIRST = [
+  desc(payArrangements.valid_from),
+  desc(sql`julianday(${payArrangements.created_at})`),
+];
+
+export class PayArrangementRepository extends BaseRepository<
+  PayArrangement,
+  typeof payArrangements
+> {
   constructor() {
-    super('pay_arrangements');
+    super(payArrangements);
   }
 
   /**
@@ -29,12 +45,12 @@ export class PayArrangementRepository extends BaseRepository<PayArrangement> {
    * broken by `created_at desc` (migration 041's header, docs/11-MONEY.md §2).
    *
    * Every part of that sentence is load-bearing:
-   * - `lte('valid_from', date)` is what makes a backdated change recompute an
-   *   open week while a future-dated row (which v1 never writes) stays inert.
+   * - `valid_from <= date` is what makes a backdated change recompute an
+   *   open week while a future-dated row stays inert.
    * - `created_at desc` is the ONLY correction mechanism for a same-day typo:
    *   a second row with the same `valid_from` and the right rate supersedes
    *   the wrong one without mutating it.
-   * - `limit(1)` keeps the resolution in Postgres. Pulling the history and
+   * - `limit(1)` keeps the resolution in SQL. Pulling the history and
    *   picking in JS would duplicate the rule at every call site, which is
    *   exactly what this method exists to prevent.
    *
@@ -51,26 +67,31 @@ export class PayArrangementRepository extends BaseRepository<PayArrangement> {
     carerId: string,
     date: string
   ): Promise<PayArrangement | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('household_id', householdId)
-      .eq('carer_id', carerId)
-      .lte('valid_from', date)
-      .or(`valid_to.is.null,valid_to.gte.${date}`)
-      .order('valid_from', { ascending: false })
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
+    try {
+      const [found] = await db
+        .select()
+        .from(payArrangements)
+        .where(
+          and(
+            eq(payArrangements.household_id, householdId),
+            eq(payArrangements.carer_id, carerId),
+            lte(payArrangements.valid_from, date),
+            or(
+              isNull(payArrangements.valid_to),
+              gte(payArrangements.valid_to, date)
+            )
+          )
+        )
+        .orderBy(...NEWEST_FIRST)
+        .limit(1);
+      return (found as PayArrangement | undefined) ?? null;
+    } catch (err) {
+      throw this.dbError(
         'Failed to resolve the effective pay arrangement',
-        'DATABASE_ERROR',
-        { details: error.message, householdId, carerId, date }
+        err,
+        { householdId, carerId, date }
       );
     }
-    return data as PayArrangement | null;
   }
 
   /**
@@ -86,8 +107,7 @@ export class PayArrangementRepository extends BaseRepository<PayArrangement> {
    * already-ended window frozen: remove → rejoin → remove again must not drag
    * the first end date forward over history that has already been priced.
    * `valid_from <= endOn` skips a future-dated row rather than letting the
-   * `valid_to >= valid_from` CHECK turn a removal into a 500 — v1 never writes
-   * one (041's header), so this is belt-and-braces, not a live case.
+   * `valid_to >= valid_from` CHECK turn a removal into a 500.
    *
    * `endOn` is a household-LOCAL `YYYY-MM-DD` and is INCLUSIVE: terms still
    * price for the whole of the removal day, so a morning already worked is
@@ -98,23 +118,27 @@ export class PayArrangementRepository extends BaseRepository<PayArrangement> {
     carerId: string,
     endOn: string
   ): Promise<PayArrangement[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .update({ valid_to: endOn })
-      .eq('household_id', householdId)
-      .eq('carer_id', carerId)
-      .is('valid_to', null)
-      .lte('valid_from', endOn)
-      .select();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to end pay arrangements for carer',
-        'DATABASE_ERROR',
-        { details: error.message, householdId, carerId, endOn }
-      );
+    try {
+      const rows = await db
+        .update(payArrangements)
+        .set({ valid_to: endOn })
+        .where(
+          and(
+            eq(payArrangements.household_id, householdId),
+            eq(payArrangements.carer_id, carerId),
+            isNull(payArrangements.valid_to),
+            lte(payArrangements.valid_from, endOn)
+          )
+        )
+        .returning();
+      return rows as PayArrangement[];
+    } catch (err) {
+      throw this.dbError('Failed to end pay arrangements for carer', err, {
+        householdId,
+        carerId,
+        endOn,
+      });
     }
-    return (data ?? []) as PayArrangement[];
   }
 
   /**
@@ -128,22 +152,24 @@ export class PayArrangementRepository extends BaseRepository<PayArrangement> {
     householdId: string,
     carerId: string
   ): Promise<PayArrangement[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('household_id', householdId)
-      .eq('carer_id', carerId)
-      .order('valid_from', { ascending: false })
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list pay arrangements for carer',
-        'DATABASE_ERROR',
-        { details: error.message, householdId, carerId }
-      );
+    try {
+      const rows = await db
+        .select()
+        .from(payArrangements)
+        .where(
+          and(
+            eq(payArrangements.household_id, householdId),
+            eq(payArrangements.carer_id, carerId)
+          )
+        )
+        .orderBy(...NEWEST_FIRST);
+      return rows as PayArrangement[];
+    } catch (err) {
+      throw this.dbError('Failed to list pay arrangements for carer', err, {
+        householdId,
+        carerId,
+      });
     }
-    return (data ?? []) as PayArrangement[];
   }
 
   /**
@@ -162,20 +188,17 @@ export class PayArrangementRepository extends BaseRepository<PayArrangement> {
    * audit trail, not a resolution.
    */
   async listForHousehold(householdId: string): Promise<PayArrangement[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('household_id', householdId)
-      .order('valid_from', { ascending: false })
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list pay arrangements for household',
-        'DATABASE_ERROR',
-        { details: error.message, householdId }
-      );
+    try {
+      const rows = await db
+        .select()
+        .from(payArrangements)
+        .where(eq(payArrangements.household_id, householdId))
+        .orderBy(...NEWEST_FIRST);
+      return rows as PayArrangement[];
+    } catch (err) {
+      throw this.dbError('Failed to list pay arrangements for household', err, {
+        householdId,
+      });
     }
-    return (data ?? []) as PayArrangement[];
   }
 }

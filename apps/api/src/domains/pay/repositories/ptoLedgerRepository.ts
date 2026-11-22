@@ -3,8 +3,7 @@
  * table (supabase/migrations/043_pto_ledger.sql). Extends BaseRepository for
  * `findById`; `create` is OVERRIDDEN (not the inherited plain insert) to
  * translate the table's two partial unique indexes into typed domain errors
- * instead of a raw 500 — see its doc below. Uses the service-role client, so
- * it bypasses RLS entirely: authorization lives in the SERVICE layer, never
+ * instead of a raw 500 — see its doc below. There is no RLS behind D1: authorization lives in the SERVICE layer, never
  * here (docs/11-MONEY.md §9). Every query below therefore filters
  * `household_id` AND, where the resource has one, `carer_id` explicitly —
  * this repository has no RLS backstop of its own. The one deliberate
@@ -21,7 +20,10 @@ import {
   type PtoLedgerEntry,
   type PtoLedgerKind,
 } from '@steadily-nanny/shared-types/schemas/pto.schema';
-import { supabaseService } from '../../../config/supabase';
+import { and, asc, eq, gte, inArray, lte, type SQL, sql } from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { mapDbError } from '../../../db/errors';
+import { carerTimeOff, ptoLedger } from '../../../db/schema';
 import { DatabaseError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
 import {
@@ -30,9 +32,6 @@ import {
   PtoTimeOffNotConfirmedError,
   PtoTimeOffNotFoundError,
 } from '../errors/payErrors';
-
-/** Postgres unique_violation error code. */
-const UNIQUE_VIOLATION = '23505';
 
 /** The insertable shape of a new ledger row — every field a caller must supply. */
 export interface NewPtoLedgerRow {
@@ -54,7 +53,7 @@ export interface NewPtoLedgerRow {
  */
 export type PtoPaidByDate = Readonly<Record<string, number>>;
 
-/** The arguments of the `apply_pto_correction` RPC, in TS naming. */
+/** The arguments of `applyCorrection` (the old `apply_pto_correction` RPC). */
 export interface ApplyPtoCorrectionArgs {
   householdId: string;
   timeOffId: string;
@@ -64,16 +63,31 @@ export interface ApplyPtoCorrectionArgs {
   requireConfirmed: boolean;
 }
 
-/** The RPC's outcome envelope — see `050_serialise_pto_corrections.sql`. */
-interface ApplyPtoCorrectionPayload {
-  outcome: 'applied' | 'stale' | 'not_confirmed' | 'time_off_not_found';
-  rows?: PtoLedgerEntry[];
-  current_status?: string;
+const asEntries = (rows: unknown[]) => rows as PtoLedgerEntry[];
+
+/**
+ * The canonical form of a paid-minutes-by-day map: keys sorted, compact JSON.
+ * Must match, byte for byte, what `ledgerFingerprint` below makes SQLite emit
+ * (pinned by a unit test), because the correction guard compares the two.
+ */
+export function canonicalPaidByDate(paid: PtoPaidByDate): string {
+  return JSON.stringify(
+    Object.fromEntries(
+      Object.entries(paid).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    )
+  );
 }
 
-export class PtoLedgerRepository extends BaseRepository<PtoLedgerEntry> {
+/** The ledger's current paid-by-day map for one time off, as canonical JSON. */
+const ledgerFingerprint = (householdId: string, timeOffId: string): SQL =>
+  sql`(SELECT coalesce(json_group_object(d, -m), '{}') FROM (SELECT effective_date AS d, sum(minutes) AS m FROM pto_ledger WHERE household_id = ${householdId} AND time_off_id = ${timeOffId} GROUP BY effective_date ORDER BY effective_date))`;
+
+export class PtoLedgerRepository extends BaseRepository<
+  PtoLedgerEntry,
+  typeof ptoLedger
+> {
   constructor() {
-    super('pto_ledger');
+    super(ptoLedger);
   }
 
   /**
@@ -90,24 +104,28 @@ export class PtoLedgerRepository extends BaseRepository<PtoLedgerEntry> {
     carerId: string,
     year: number
   ): Promise<PtoLedgerEntry[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('household_id', householdId)
-      .eq('carer_id', carerId)
-      .gte('effective_date', `${year}-01-01`)
-      .lte('effective_date', `${year}-12-31`)
-      .order('effective_date', { ascending: true })
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list PTO ledger rows for carer year',
-        'DATABASE_ERROR',
-        { details: error.message, householdId, carerId, year }
+    try {
+      return asEntries(
+        await db
+          .select()
+          .from(ptoLedger)
+          .where(
+            and(
+              eq(ptoLedger.household_id, householdId),
+              eq(ptoLedger.carer_id, carerId),
+              gte(ptoLedger.effective_date, `${year}-01-01`),
+              lte(ptoLedger.effective_date, `${year}-12-31`)
+            )
+          )
+          .orderBy(asc(ptoLedger.effective_date), asc(ptoLedger.created_at))
       );
+    } catch (err) {
+      throw this.dbError('Failed to list carer year of', err, {
+        householdId,
+        carerId,
+        year,
+      });
     }
-    return (data ?? []) as PtoLedgerEntry[];
   }
 
   /**
@@ -133,23 +151,26 @@ export class PtoLedgerRepository extends BaseRepository<PtoLedgerEntry> {
     householdId: string,
     year: number
   ): Promise<PtoLedgerEntry[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('household_id', householdId)
-      .gte('effective_date', `${year}-01-01`)
-      .lte('effective_date', `${year}-12-31`)
-      .order('effective_date', { ascending: true })
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list PTO ledger rows for household year',
-        'DATABASE_ERROR',
-        { details: error.message, householdId, year }
+    try {
+      return asEntries(
+        await db
+          .select()
+          .from(ptoLedger)
+          .where(
+            and(
+              eq(ptoLedger.household_id, householdId),
+              gte(ptoLedger.effective_date, `${year}-01-01`),
+              lte(ptoLedger.effective_date, `${year}-12-31`)
+            )
+          )
+          .orderBy(asc(ptoLedger.effective_date), asc(ptoLedger.created_at))
       );
+    } catch (err) {
+      throw this.dbError('Failed to list household year of', err, {
+        householdId,
+        year,
+      });
     }
-    return (data ?? []) as PtoLedgerEntry[];
   }
 
   /**
@@ -171,20 +192,24 @@ export class PtoLedgerRepository extends BaseRepository<PtoLedgerEntry> {
     householdId: string,
     timeOffId: string
   ): Promise<PtoLedgerEntry[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('household_id', householdId)
-      .eq('time_off_id', timeOffId);
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to look up PTO ledger rows for time off',
-        'DATABASE_ERROR',
-        { details: error.message, householdId, timeOffId }
+    try {
+      return asEntries(
+        await db
+          .select()
+          .from(ptoLedger)
+          .where(
+            and(
+              eq(ptoLedger.household_id, householdId),
+              eq(ptoLedger.time_off_id, timeOffId)
+            )
+          )
       );
+    } catch (err) {
+      throw this.dbError('Failed to look up time off rows in', err, {
+        householdId,
+        timeOffId,
+      });
     }
-    return (data ?? []) as PtoLedgerEntry[];
   }
 
   /**
@@ -207,19 +232,18 @@ export class PtoLedgerRepository extends BaseRepository<PtoLedgerEntry> {
    * fire-and-forget reconciliation write another full reversal.
    */
   async listAllForTimeOff(timeOffId: string): Promise<PtoLedgerEntry[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('time_off_id', timeOffId);
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to look up PTO ledger rows across households for time off',
-        'DATABASE_ERROR',
-        { details: error.message, timeOffId }
+    try {
+      return asEntries(
+        await db
+          .select()
+          .from(ptoLedger)
+          .where(eq(ptoLedger.time_off_id, timeOffId))
       );
+    } catch (err) {
+      throw this.dbError('Failed to look up cross-household rows in', err, {
+        timeOffId,
+      });
     }
-    return (data ?? []) as PtoLedgerEntry[];
   }
 
   /**
@@ -242,18 +266,15 @@ export class PtoLedgerRepository extends BaseRepository<PtoLedgerEntry> {
    *   re-reads the winner rather than erroring (the "race re-read, not a
    *   500" rule from the module's own doc).
    * - `kind: 'adjustment'` has no unique index at all — unlimited correction
-   *   rows are the whole point — so a 23505 there (if it somehow occurred)
+   *   rows are the whole point — so a unique violation there (if it somehow occurred)
    *   falls through to a genuine `DatabaseError`.
    */
   async create(row: NewPtoLedgerRow): Promise<PtoLedgerEntry> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .insert(row)
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === UNIQUE_VIOLATION) {
+    try {
+      const [created] = await db.insert(ptoLedger).values(row).returning();
+      return created as PtoLedgerEntry;
+    } catch (err) {
+      if (mapDbError(err)?.kind === 'unique') {
         if (row.kind === PTO_LEDGER_KINDS.USAGE) {
           throw new PtoAlreadyMarkedPaidError(
             row.household_id,
@@ -268,28 +289,26 @@ export class PtoLedgerRepository extends BaseRepository<PtoLedgerEntry> {
           );
         }
       }
-      throw new DatabaseError(
-        'Failed to create PTO ledger row',
-        'DATABASE_ERROR',
-        { details: error.message, code: error.code, kind: row.kind }
-      );
+      throw this.dbError('Failed to create', err, { kind: row.kind });
     }
-    return data as PtoLedgerEntry;
   }
 
   /**
-   * Append a batch of `adjustment` rows under migration 050's row lock —
-   * the ONLY way a correction or a reversal is written (F-B4-2).
+   * Append a batch of `adjustment` rows as ONE compare-and-set on the
+   * ledger aggregate — the ONLY way a correction or a reversal is written
+   * (F-B4-2; the old `apply_pto_correction` RPC, MIGRATION-NOTES §5.5).
    *
    * Sends the caller's INTENT plus the per-day state it computed that intent
-   * from. `apply_pto_correction` locks the `carer_time_off` row FOR UPDATE,
-   * re-derives that state, and writes only if it still matches — so two
-   * parents correcting 8h → 6h at the same instant can no longer both
-   * subtract 2h from the same stale 8h and land on 4h. Same shape as
-   * `shiftChangeRequestRepository.acceptAndApply`'s: the RPC returns an
-   * outcome envelope, and the typed domain errors are mapped here.
+   * from. D1 has no row locks, so every insert is an `INSERT … SELECT …
+   * WHERE <ledger fingerprint> = <the state just before this row> AND <time
+   * off exists / is confirmed> AND <previous row landed>`, and all of them go
+   * in one batch: a concurrent writer moves the fingerprint and NOTHING
+   * lands — so two parents correcting 8h → 6h at the same instant can no
+   * longer both subtract 2h from the same stale 8h and land on 4h. Zero rows
+   * written is then re-read and classified into the RPC's outcomes; the typed
+   * domain errors are thrown here.
    *
-   * Returns the rows written, or `null` when the ledger MOVED under the lock
+   * Returns the rows written, or `null` when the ledger MOVED under the write
    * — not an error, a signal: the caller must re-read, recompute its deltas
    * from the new state and call again. Writing nothing is a legitimate
    * `applied` result (an empty array), and is how re-submitting an unchanged
@@ -302,58 +321,129 @@ export class PtoLedgerRepository extends BaseRepository<PtoLedgerEntry> {
   async applyCorrection(
     args: ApplyPtoCorrectionArgs
   ): Promise<PtoLedgerEntry[] | null> {
-    const { data, error } = await supabaseService.rpc('apply_pto_correction', {
-      p_household_id: args.householdId,
-      p_time_off_id: args.timeOffId,
-      p_expected: args.expected,
-      // household_id, kind and time_off_id are ignored by the function —
-      // it takes them from the locked parameters (050's header). Since 079,
-      // `leave_kind` is stamped the same way, from the locked
-      // `carer_time_off` row, so `NewPtoLedgerRow` deliberately has no such
-      // field: no caller can label (or mislabel) its own draw.
-      p_rows: args.rows,
-      p_require_confirmed: args.requireConfirmed,
+    const meta = { householdId: args.householdId, timeOffId: args.timeOffId };
+    // Row k is gated on the ledger fingerprint the state must have just
+    // before it: fp_0 is the caller's expected map, fp_k folds in row k.
+    const paid: Record<string, number> = { ...args.expected };
+    const ids: string[] = [];
+    const inserts = args.rows.map(row => {
+      const before = canonicalPaidByDate(paid);
+      paid[row.effective_date] = (paid[row.effective_date] ?? 0) - row.minutes;
+      const id = crypto.randomUUID();
+      // Chain on the previous row too, so a concurrent writer that happens to
+      // leave the ledger at fp_{k-1} cannot land a suffix without row 1.
+      const prevId = ids.at(-1);
+      ids.push(id);
+      const value = <T>(v: T, column: string) => sql<T>`${v}`.as(column);
+      // FROM the time off row: household_id and time_off_id come from the
+      // arguments, and leave_kind (079) from carer_time_off in the same
+      // statement — never from the row, so no caller can label its own draw.
+      return db.insert(ptoLedger).select(
+        db
+          .select({
+            id: value(id, 'id'),
+            household_id: value(args.householdId, 'household_id'),
+            carer_id: value(row.carer_id, 'carer_id'),
+            kind: value(row.kind, 'kind'),
+            minutes: value(row.minutes, 'minutes'),
+            effective_date: value(row.effective_date, 'effective_date'),
+            time_off_id: carerTimeOff.id,
+            carer_display_name: value(
+              row.carer_display_name,
+              'carer_display_name'
+            ),
+            note: value(row.note, 'note'),
+            created_by: value(row.created_by, 'created_by'),
+            // Insert-select must list every column, in table order.
+            created_at: value(new Date().toISOString(), 'created_at'),
+            household_member_id: value(null, 'household_member_id'),
+            leave_kind: carerTimeOff.kind,
+          })
+          .from(carerTimeOff)
+          .where(
+            and(
+              eq(carerTimeOff.id, args.timeOffId),
+              args.requireConfirmed
+                ? eq(carerTimeOff.status, 'confirmed')
+                : undefined,
+              sql`${ledgerFingerprint(args.householdId, args.timeOffId)} = ${before}`,
+              prevId
+                ? sql`EXISTS (SELECT 1 FROM pto_ledger WHERE id = ${prevId})`
+                : undefined
+            )
+          )
+      );
     });
 
-    if (error || !data) {
-      throw new DatabaseError(
-        'Failed to apply PTO correction',
-        'DATABASE_ERROR',
-        {
-          details: error?.message,
-          householdId: args.householdId,
-          timeOffId: args.timeOffId,
+    try {
+      const [first, ...rest] = inserts;
+      if (first) {
+        const results = await db.batch([first, ...rest]);
+        // Each insert is gated on its predecessor having landed, so either all
+        // land or none do. `> 0`, not `=== 1`: meta.changes also counts the
+        // household_member_id stamp trigger's write.
+        const landed = results.filter(r => r.meta.changes > 0).length;
+        if (landed === ids.length) {
+          return asEntries(
+            await db
+              .select()
+              .from(ptoLedger)
+              .where(inArray(ptoLedger.id, ids))
+              .orderBy(asc(ptoLedger.effective_date))
+          );
         }
-      );
+        if (landed !== 0) {
+          // Unreachable by construction; refusing beats guessing.
+          throw new DatabaseError(
+            'PTO correction partially applied',
+            'DATABASE_ERROR',
+            { ...meta, landed, expected: ids.length }
+          );
+        }
+      }
+    } catch (err) {
+      if (err instanceof DatabaseError) throw err;
+      throw this.dbError('Failed to apply correction to', err, meta);
     }
 
-    const payload = data as ApplyPtoCorrectionPayload;
-    if (payload.outcome === 'applied') {
-      return payload.rows ?? [];
-    }
-    if (payload.outcome === 'stale') {
-      return null;
-    }
-    if (payload.outcome === 'not_confirmed') {
-      throw new PtoTimeOffNotConfirmedError(
-        args.timeOffId,
-        payload.current_status ?? 'unknown'
+    // Nothing landed (or there was nothing to write): re-read and answer what
+    // the RPC would have — its typed refusals throw; a moved ledger is `null`
+    // (the caller recomputes and retries); an empty write against an
+    // unchanged ledger is `applied` with no rows.
+    const state = await this.classifyCorrectionRefusal(args);
+    return state === 'ok' && ids.length === 0 ? [] : null;
+  }
+
+  /**
+   * Re-read after a correction wrote nothing: throws the RPC's typed refusals
+   * (`time_off_not_found`, `not_confirmed`), else says whether the ledger has
+   * moved off `expected` (`stale`) or not (`ok` — the batch lost a race that
+   * has since settled back, which the caller treats like `stale` and retries).
+   */
+  private async classifyCorrectionRefusal(
+    args: ApplyPtoCorrectionArgs
+  ): Promise<'stale' | 'ok'> {
+    let row: { status: string; fingerprint: string } | undefined;
+    try {
+      row = await db.get<{ status: string; fingerprint: string }>(
+        sql`SELECT status, ${ledgerFingerprint(args.householdId, args.timeOffId)} AS fingerprint FROM carer_time_off WHERE id = ${args.timeOffId}`
       );
+    } catch (err) {
+      throw this.dbError('Failed to re-read correction state in', err, {
+        householdId: args.householdId,
+        timeOffId: args.timeOffId,
+      });
     }
-    if (payload.outcome === 'time_off_not_found') {
+    if (!row) {
       throw new PtoTimeOffNotFoundError(args.householdId, args.timeOffId, {
         reason: 'time_off_not_found',
       });
     }
-
-    throw new DatabaseError(
-      'Unexpected outcome from apply_pto_correction',
-      'DATABASE_ERROR',
-      {
-        outcome: payload.outcome,
-        householdId: args.householdId,
-        timeOffId: args.timeOffId,
-      }
-    );
+    if (args.requireConfirmed && row.status !== 'confirmed') {
+      throw new PtoTimeOffNotConfirmedError(args.timeOffId, row.status);
+    }
+    return row.fingerprint === canonicalPaidByDate(args.expected)
+      ? 'ok'
+      : 'stale';
   }
 }

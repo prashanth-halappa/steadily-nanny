@@ -3,10 +3,10 @@
  * (supabase/migrations/092_terms_proposals.sql). Extends `BaseRepository` for
  * `findById`; everything else here exists because the base cannot express it.
  *
- * Uses the service-role client, so it bypasses RLS entirely — authorization
- * lives in the two services, never here (docs/11-MONEY.md §9) — but every
- * read below still filters `household_id` and `carer_id` explicitly, because
- * a bypassed-RLS query with no filter of its own reads across households.
+ * D1 has no RLS — authorization lives in the two services, never here
+ * (docs/11-MONEY.md §9) — so every read below filters `household_id` and
+ * `carer_id` explicitly; a query with no filter of its own reads across
+ * households.
  *
  * APPEND-ONLY, WITH TWO EXCEPTIONS THAT ARE NOT EDITS. There is no `update`
  * helper for `terms` and no `delete` helper at all: a counter is a NEW row
@@ -20,8 +20,10 @@
  * @module domains/termsProposal/repositories/termsProposalRepository
  */
 import type { CreatePayArrangementRequest } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
-import { supabaseService } from '../../../config/supabase';
-import { DatabaseError } from '../../../errors';
+import { and, desc, eq, isNull } from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { mapDbError } from '../../../db/errors';
+import { termsProposals } from '../../../db/schema';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
 import { OpenTermsProposalExistsError } from '../errors/termsProposalErrors';
 import {
@@ -31,13 +33,10 @@ import {
   type TermsProposalStatus,
 } from '../schemas';
 
-/** Postgres unique_violation error code. */
-const UNIQUE_VIOLATION = '23505';
-
 /**
- * The PARTIAL unique index from 092. Named explicitly in the 23505 catch
- * below rather than trusted from the bare code — GOLDEN-FIXES #31: "don't
- * skip a 23505 on the bare error code; name the index, or an unrelated
+ * The PARTIAL unique index from 092. Matched by NAME (via `mapDbError`)
+ * rather than on any unique violation — GOLDEN-FIXES #31: "don't skip a
+ * unique violation on the bare kind; name the index, or an unrelated
  * constraint violation becomes a silently dropped row."
  */
 const OPEN_PROPOSAL_INDEX = 'terms_proposals_open_unique_idx';
@@ -69,64 +68,73 @@ export interface TermsProposalResolution {
   responsibility_confirmed?: boolean;
 }
 
-export class TermsProposalRepository extends BaseRepository<TermsProposalRow> {
+/**
+ * Writes `updated_at` explicitly on every update: the D1 trigger only stamps
+ * it when the statement didn't, and RETURNING can't see the trigger's write
+ * (MIGRATION-NOTES §3) — this keeps the returned row's `updated_at` current,
+ * as Postgres' BEFORE trigger did.
+ */
+const nowIso = () => new Date().toISOString();
+
+export class TermsProposalRepository extends BaseRepository<
+  TermsProposalRow,
+  typeof termsProposals
+> {
   constructor() {
-    super('terms_proposals');
+    super(termsProposals);
   }
 
   /**
-   * Insert one proposal. A 23505 naming `terms_proposals_open_unique_idx`
-   * means this (household, carer) pair already has an open round — see
-   * `OpenTermsProposalExistsError` for why that cannot be an `onConflict`
-   * clause. Any OTHER 23505 falls through to the `DatabaseError` below on
-   * purpose: swallowing it would report an unrelated broken constraint as
-   * "there is already a proposal", and the caller would retry forever.
+   * Insert one proposal. A unique violation naming
+   * `terms_proposals_open_unique_idx` means this (household, carer) pair
+   * already has an open round — see `OpenTermsProposalExistsError` for why
+   * that cannot be an `onConflict` clause. Any OTHER unique violation falls
+   * through to the `DatabaseError` below on purpose: swallowing it would
+   * report an unrelated broken constraint as "there is already a proposal",
+   * and the caller would retry forever.
    */
   async create(row: NewTermsProposalRow): Promise<TermsProposalRow> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .insert(row)
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === UNIQUE_VIOLATION && namesOpenIndex(error)) {
+    try {
+      const [created] = await db.insert(termsProposals).values(row).returning();
+      return created as TermsProposalRow;
+    } catch (err) {
+      if (mapDbError(err)?.constraint === OPEN_PROPOSAL_INDEX) {
         throw new OpenTermsProposalExistsError(row.household_id, row.carer_id);
       }
-      throw new DatabaseError(
-        'Failed to create terms proposal',
-        'DATABASE_ERROR',
-        { details: error.message, code: error.code }
-      );
+      throw this.dbError('Failed to create terms proposal', err, {
+        operation: 'create',
+      });
     }
-    return data as TermsProposalRow;
   }
 
   /**
-   * The one open round for a (household, carer) pair, or null. `maybeSingle`
-   * is safe rather than optimistic here: 092's partial unique index makes "at
-   * most one" a database invariant, not a service hope.
+   * The one open round for a (household, carer) pair, or null. Taking the
+   * first row is safe rather than optimistic here: 092's partial unique index
+   * makes "at most one" a database invariant, not a service hope.
    */
   async findOpenForCarer(
     householdId: string,
     carerId: string
   ): Promise<TermsProposalRow | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('household_id', householdId)
-      .eq('carer_id', carerId)
-      .eq('status', TERMS_PROPOSAL_STATUSES.PROPOSED)
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to find the open terms proposal',
-        'DATABASE_ERROR',
-        { details: error.message, householdId, carerId }
-      );
+    try {
+      const [found] = await db
+        .select()
+        .from(termsProposals)
+        .where(
+          and(
+            eq(termsProposals.household_id, householdId),
+            eq(termsProposals.carer_id, carerId),
+            eq(termsProposals.status, TERMS_PROPOSAL_STATUSES.PROPOSED)
+          )
+        )
+        .limit(1);
+      return (found as TermsProposalRow | undefined) ?? null;
+    } catch (err) {
+      throw this.dbError('Failed to find the open terms proposal', err, {
+        householdId,
+        carerId,
+      });
     }
-    return data as TermsProposalRow | null;
   }
 
   /**
@@ -140,21 +148,24 @@ export class TermsProposalRepository extends BaseRepository<TermsProposalRow> {
     householdId: string,
     carerId: string
   ): Promise<TermsProposalRow[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('household_id', householdId)
-      .eq('carer_id', carerId)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list terms proposals',
-        'DATABASE_ERROR',
-        { details: error.message, householdId, carerId }
-      );
+    try {
+      const rows = await db
+        .select()
+        .from(termsProposals)
+        .where(
+          and(
+            eq(termsProposals.household_id, householdId),
+            eq(termsProposals.carer_id, carerId)
+          )
+        )
+        .orderBy(desc(termsProposals.created_at));
+      return rows as TermsProposalRow[];
+    } catch (err) {
+      throw this.dbError('Failed to list terms proposals', err, {
+        householdId,
+        carerId,
+      });
     }
-    return (data ?? []) as TermsProposalRow[];
   }
 
   /**
@@ -162,31 +173,34 @@ export class TermsProposalRepository extends BaseRepository<TermsProposalRow> {
    *
    * COMPARE-AND-SET on `status = 'proposed'`, and that filter IS the
    * concurrency control: two parents tapping Agree in the same instant both
-   * read a `proposed` row, and only one of them matches here. The loser gets
-   * `null` and the service raises `TermsProposalNotActionableError` rather
-   * than writing a second acceptance over the first. Returning the row (not a
-   * boolean) means the winner never needs a re-read to answer the request.
+   * read a `proposed` row, and only one of them matches here (one guarded
+   * statement — atomic on D1). The loser gets `null` and the service raises
+   * `TermsProposalNotActionableError` rather than writing a second acceptance
+   * over the first. Returning the row (not a boolean) means the winner never
+   * needs a re-read to answer the request.
    */
   async resolve(
     id: string,
     resolution: TermsProposalResolution
   ): Promise<TermsProposalRow | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .update(resolution)
-      .eq('id', id)
-      .eq('status', TERMS_PROPOSAL_STATUSES.PROPOSED)
-      .select()
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to resolve terms proposal',
-        'DATABASE_ERROR',
-        { details: error.message, id, status: resolution.status }
-      );
+    try {
+      const [updated] = await db
+        .update(termsProposals)
+        .set({ ...resolution, updated_at: nowIso() })
+        .where(
+          and(
+            eq(termsProposals.id, id),
+            eq(termsProposals.status, TERMS_PROPOSAL_STATUSES.PROPOSED)
+          )
+        )
+        .returning();
+      return (updated as TermsProposalRow | undefined) ?? null;
+    } catch (err) {
+      throw this.dbError('Failed to resolve terms proposal', err, {
+        id,
+        status: resolution.status,
+      });
     }
-    return data as TermsProposalRow | null;
   }
 
   /**
@@ -207,34 +221,38 @@ export class TermsProposalRepository extends BaseRepository<TermsProposalRow> {
     householdId: string,
     carerId: string
   ): Promise<TermsProposalRow | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .update({
-        status: TERMS_PROPOSAL_STATUSES.WITHDRAWN,
-        responded_at: new Date().toISOString(),
-      })
-      .eq('household_id', householdId)
-      .eq('carer_id', carerId)
-      .eq('status', TERMS_PROPOSAL_STATUSES.PROPOSED)
-      .select()
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to withdraw open terms proposal',
-        'DATABASE_ERROR',
-        { details: error.message, householdId, carerId }
-      );
+    const now = nowIso();
+    try {
+      const [withdrawn] = await db
+        .update(termsProposals)
+        .set({
+          status: TERMS_PROPOSAL_STATUSES.WITHDRAWN,
+          responded_at: now,
+          updated_at: now,
+        })
+        .where(
+          and(
+            eq(termsProposals.household_id, householdId),
+            eq(termsProposals.carer_id, carerId),
+            eq(termsProposals.status, TERMS_PROPOSAL_STATUSES.PROPOSED)
+          )
+        )
+        .returning();
+      return (withdrawn as TermsProposalRow | undefined) ?? null;
+    } catch (err) {
+      throw this.dbError('Failed to withdraw open terms proposal', err, {
+        householdId,
+        carerId,
+      });
     }
-    return data as TermsProposalRow | null;
   }
 
   /**
-   * §5.3's "Viewed" receipt. `.is('viewed_at', null)` makes this one-way in
-   * the database rather than in a service branch: the FIRST open wins and
-   * every later one matches nothing, so the timestamp answers "did this reach
-   * them" and can never drift into "when did they last look at it" — whether,
-   * never how many times (092's column comment).
+   * §5.3's "Viewed" receipt. `viewed_at IS NULL` in the WHERE makes this
+   * one-way in the database rather than in a service branch: the FIRST open
+   * wins and every later one matches nothing, so the timestamp answers "did
+   * this reach them" and can never drift into "when did they last look at
+   * it" — whether, never how many times (092's column comment).
    *
    * Returns null when there was nothing to stamp, which the caller reads as
    * "already viewed", not as an error.
@@ -243,37 +261,17 @@ export class TermsProposalRepository extends BaseRepository<TermsProposalRow> {
     id: string,
     viewedAt: string
   ): Promise<TermsProposalRow | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .update({ viewed_at: viewedAt })
-      .eq('id', id)
-      .is('viewed_at', null)
-      .select()
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to stamp terms proposal as viewed',
-        'DATABASE_ERROR',
-        { details: error.message, id }
-      );
+    try {
+      const [stamped] = await db
+        .update(termsProposals)
+        .set({ viewed_at: viewedAt, updated_at: nowIso() })
+        .where(and(eq(termsProposals.id, id), isNull(termsProposals.viewed_at)))
+        .returning();
+      return (stamped as TermsProposalRow | undefined) ?? null;
+    } catch (err) {
+      throw this.dbError('Failed to stamp terms proposal as viewed', err, {
+        id,
+      });
     }
-    return data as TermsProposalRow | null;
   }
-}
-
-/**
- * Does this Postgres error name the open-proposal index? Checks `details` as
- * well as `message` because PostgREST splits the constraint name across the
- * two inconsistently between versions, and a check that only reads one of
- * them fails open into the "swallowed unrelated violation" bug #31 warns
- * about.
- */
-function namesOpenIndex(error: {
-  message?: string;
-  details?: string | null;
-}): boolean {
-  return `${error.message ?? ''} ${error.details ?? ''}`.includes(
-    OPEN_PROPOSAL_INDEX
-  );
 }

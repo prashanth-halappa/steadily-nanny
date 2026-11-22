@@ -8,6 +8,14 @@
  * explicitly, because a bypassed-RLS query with no filter of its own reads
  * across households.
  *
+ * The two money writes are the D1 replacements for the 077/085/102 RPCs
+ * (src/db/MIGRATION-NOTES.md §5.1/§5.2): D1 has no row locks, so each is ONE
+ * `INSERT … SELECT … WHERE <precondition>` statement — the over-gross /
+ * over-reversal sum is evaluated inside the same atomic statement that
+ * inserts, which is what the `FOR UPDATE` used to buy. Zero rows inserted
+ * means the precondition failed; the row is then re-read to classify the
+ * outcome the RPC would have returned.
+ *
  * There is deliberately NO update or delete PATH. A payment row is a fact
  * about money that already moved outside the app, not app state under review:
  * 067 gives it no `updated_at` and no trigger. The inherited
@@ -19,7 +27,10 @@
  * @module domains/pay/repositories/paymentRepository
  */
 import type { Payment } from '@steadily-nanny/shared-types/schemas/payment.schema';
-import { supabaseService } from '../../../config/supabase';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { mapDbError } from '../../../db/errors';
+import { payments, timesheets } from '../../../db/schema';
 import { DatabaseError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
 
@@ -57,15 +68,6 @@ export type RecordPaymentOutcome =
   | { outcome: 'recorded'; payment: Payment }
   | { outcome: 'exceeds_gross'; alreadyPaidMinor: number; grossMinor: number }
   | { outcome: 'not_payable'; status: string | null };
-
-/** The raw jsonb shape 077's function returns. */
-interface RecordPaymentRpcPayload {
-  outcome: 'recorded' | 'exceeds_gross' | 'not_payable';
-  payment?: Payment;
-  already_paid_minor?: number;
-  gross_minor?: number;
-  status?: string | null;
-}
 
 /**
  * The caller's half of a CORRECTION row (D-20, migration 085) — the three
@@ -106,38 +108,26 @@ export type RecordCorrectionOutcome =
     }
   | { outcome: 'not_correctable'; reason: string };
 
-/** The raw jsonb shape 085's correction function returns. */
-interface RecordCorrectionRpcPayload {
-  outcome: 'recorded' | 'exceeds_original' | 'not_correctable';
-  correction?: Payment;
-  original_amount_minor?: number;
-  remaining_minor?: number;
-  reason?: string;
-}
+/** A `payments` row as D1 returns it — the wire shape, column for column. */
+const asPayment = (row: unknown) => row as Payment;
 
-export class PaymentRepository extends BaseRepository<Payment> {
+export class PaymentRepository extends BaseRepository<
+  Payment,
+  typeof payments
+> {
   constructor() {
-    super('payments');
+    super(payments);
   }
 
   /**
    * APPEND-ONLY, STRUCTURALLY (`docs/AS-BUILT-PAYMENT.md` §7 P8).
    *
-   * The module header used to say there was "deliberately no update or delete
-   * helper" and that inheriting `BaseRepository`'s was "a known, accepted
-   * wart". It was not accepted so much as unenforced: both methods were
-   * inherited, callable, and run as service role, where RLS cannot stop them.
-   * Append-only was true only because nobody had written the call.
-   *
-   * These two make it true because nobody CAN. A payment is a fact about money
-   * that already moved outside the app, and the way back is a `correction`
-   * row (085) that leaves the original at its full amount forever — never an
-   * edit, and never an erasure. Throwing here rather than deleting the methods
-   * because they exist on the base class: a subclass that simply omits them
-   * still inherits working ones.
-   *
-   * Refused before any query, so the guarantee does not depend on the database
-   * being reachable or a policy being present.
+   * Both inherited mutators are overridden to throw, before any query, so the
+   * guarantee does not depend on the database being reachable. A payment is a
+   * fact about money that already moved outside the app, and the way back is a
+   * `correction` row (085) that leaves the original at its full amount forever
+   * — never an edit, and never an erasure. Throwing rather than omitting:
+   * a subclass that simply omits them still inherits working ones.
    */
   async update(_id: string, _data: Partial<Payment>): Promise<Payment> {
     throw new Error(
@@ -161,204 +151,272 @@ export class PaymentRepository extends BaseRepository<Payment> {
    * keep the order they were entered in — `paid_at` is a DATE and cannot.
    */
   async listForTimesheet(timesheetId: string): Promise<Payment[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('timesheet_id', timesheetId)
-      .order('paid_at', { ascending: true })
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list payments for timesheet',
-        'DATABASE_ERROR',
-        { details: error.message, timesheetId }
-      );
+    try {
+      return (await db
+        .select()
+        .from(payments)
+        .where(eq(payments.timesheet_id, timesheetId))
+        .orderBy(asc(payments.paid_at), asc(payments.created_at))) as Payment[];
+    } catch (err) {
+      throw this.dbError('Failed to list payments for timesheet in', err, {
+        timesheetId,
+      });
     }
-    return (data ?? []) as Payment[];
   }
 
   /**
    * A household's payments, NEWEST settlement first, optionally narrowed to
    * one carer.
    *
-   * Descending, the deliberate REVERSE of `listForTimesheet` above: partial
-   * payments inside ONE week are a running story read forwards, but history
+   * Descending, the deliberate REVERSE of `listForTimesheet` above: history
    * ACROSS weeks is a feed — the last thing that happened belongs at the top.
-   * `created_at` breaks a same-day tie the same way, newest first.
    *
-   * `carerId` narrows to one carer. It is not a convenience: the service
-   * FORCES it for a nanny caller (`assertPaymentReader`), so an unfiltered
-   * call here can only come from a caller already resolved to household
-   * scope. The `household_id` filter itself is mandatory for the reason in
-   * the module header — this query bypasses RLS.
+   * `carerId` narrows to one carer. The service FORCES it for a nanny caller
+   * (`assertPaymentReader`), so an unfiltered call here can only come from a
+   * caller already resolved to household scope. The `household_id` filter
+   * itself is mandatory: there is no RLS behind this query.
    */
   async listForHousehold(
     householdId: string,
     carerId?: string
   ): Promise<Payment[]> {
-    let query = supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('household_id', householdId);
-    if (carerId) {
-      query = query.eq('carer_id', carerId);
+    try {
+      return (await db
+        .select()
+        .from(payments)
+        .where(
+          and(
+            eq(payments.household_id, householdId),
+            carerId ? eq(payments.carer_id, carerId) : undefined
+          )
+        )
+        .orderBy(
+          desc(payments.paid_at),
+          desc(payments.created_at)
+        )) as Payment[];
+    } catch (err) {
+      throw this.dbError('Failed to list payments for household in', err, {
+        householdId,
+      });
     }
-    const { data, error } = await query
-      .order('paid_at', { ascending: false })
-      .order('created_at', { ascending: false });
+  }
 
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list payments for household',
-        'DATABASE_ERROR',
-        { details: error.message, householdId }
-      );
-    }
-    return (data ?? []) as Payment[];
+  private async findByIdempotencyKey(key: string): Promise<Payment | null> {
+    const [row] = await db
+      .select()
+      .from(payments)
+      .where(eq(payments.idempotency_key, key))
+      .limit(1);
+    return row ? asPayment(row) : null;
   }
 
   /**
    * The ONLY write path into the ledger — one payment, recorded atomically
-   * against the week's frozen gross (migration 077).
+   * against the week's frozen gross (077, 102; MIGRATION-NOTES §5.1).
    *
-   * IT GOES THROUGH AN RPC BECAUSE THE OVER-PAYMENT GATE BELONGS IN THE WRITE,
-   * the same argument `expenseRepository.reviewPending` makes for the freeze
-   * guard. A sum here plus `BaseRepository.create` is a read then a write with
-   * no lock in between: two parents recording a payment in the same instant
-   * both saw `sum = 0` and both committed, settling the week at twice its
-   * gross — and `payments` is append-only, so nothing takes the second row
-   * back. `record_timesheet_payment` locks the week's timesheet row FOR
-   * UPDATE, re-checks that it is still approved and priced, sums, refuses
-   * over-gross, and inserts, all in one statement.
+   * THE OVER-PAYMENT GATE BELONGS IN THE WRITE. A sum here plus a plain
+   * insert is a read then a write: two parents recording a payment in the
+   * same instant both saw `sum = 0` and both committed, settling the week at
+   * twice its gross — and `payments` is append-only, so nothing takes the
+   * second row back. So the insert below is ONE statement whose `WHERE`
+   * re-checks that the week is approved and priced and that the SIGNED sum of
+   * every payment and correction already on it, plus this amount, stays
+   * within `gross_minor`. D1 runs one statement atomically, so two racing
+   * inserts cannot both see the pre-race sum.
    *
-   * THERE IS DELIBERATELY NO `sumForTimesheet` HELPER ANY MORE. It survived
-   * 077 as a read-path convenience and D-20 removed its last caller: the CSV
-   * export now takes the ROWS and derives the total from them, so the total
-   * and the rows it is printed beside cannot disagree. Re-adding a standalone
+   * Steps, in the RPC's order:
+   * 1. A known `idempotency_key` answers `recorded` with the row the first
+   *    attempt wrote, BEFORE any payable check — even if the week has been
+   *    reopened since.
+   * 2. The guarded insert. `household_id`, `carer_id` and `currency` come
+   *    from the timesheet row in the same statement, never from arguments.
+   * 3. Zero rows: re-read and classify `not_payable` / `exceeds_gross` with
+   *    the figures. A unique violation on `payments_idempotency_key_uidx` is a
+   *    concurrent retry of the same intent: answer with the winner's row.
+   *
+   * THERE IS DELIBERATELY NO `sumForTimesheet` HELPER. Re-adding a standalone
    * sum is how the `where kind = 'payment'` trap gets typed somewhere nobody
    * is looking — sum `listForTimesheet` at the point of use, signed.
-   *
-   * Only the settlement's own fields cross the wire: `household_id`,
-   * `carer_id` and `currency` are stamped inside the function from the locked
-   * timesheet, never sent.
    */
   async recordForTimesheet(
     timesheetId: string,
     entry: RecordPaymentEntry
   ): Promise<RecordPaymentOutcome> {
-    const { data, error } = await supabaseService.rpc(
-      'record_timesheet_payment',
-      {
-        p_timesheet_id: timesheetId,
-        p_amount_minor: entry.amount_minor,
-        p_paid_at: entry.paid_at,
-        p_method_note: entry.method_note,
-        p_recorded_by: entry.recorded_by,
-        // Explicit null rather than omitted: 102's sixth parameter is
-        // DEFAULTED, so a missing key would bind the default silently. Saying
-        // it out loud keeps "this client sent no intent key" readable.
-        p_idempotency_key: entry.idempotency_key ?? null,
+    const key = entry.idempotency_key ?? null;
+    try {
+      if (key) {
+        const existing = await this.findByIdempotencyKey(key);
+        if (existing) return { outcome: 'recorded', payment: existing };
       }
-    );
 
-    if (error) {
-      throw new DatabaseError('Failed to record payment', 'DATABASE_ERROR', {
-        details: error.message,
-        timesheetId,
-      });
-    }
+      // Bounded: each pass either inserts, or re-reads a state that refuses.
+      // A third pass means the week flapped twice under us — refuse loudly.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        let inserted: unknown[];
+        try {
+          inserted = await db.all(sql`
+            INSERT INTO payments (id, timesheet_id, household_id, carer_id,
+              amount_minor, currency, paid_at, kind, method_note, recorded_by,
+              idempotency_key)
+            SELECT ${crypto.randomUUID()}, t.id, t.household_id, t.carer_id,
+              ${entry.amount_minor}, t.currency, ${entry.paid_at}, 'payment',
+              ${entry.method_note}, ${entry.recorded_by}, ${key}
+            FROM timesheets t
+            WHERE t.id = ${timesheetId}
+              AND t.status = 'approved'
+              AND t.gross_minor IS NOT NULL
+              AND t.currency IS NOT NULL
+              AND (SELECT coalesce(sum(p.amount_minor), 0) FROM payments p
+                   WHERE p.timesheet_id = t.id) + ${entry.amount_minor}
+                  <= t.gross_minor
+            RETURNING *`);
+        } catch (err) {
+          const mapped = mapDbError(err);
+          if (
+            key &&
+            mapped?.kind === 'unique' &&
+            mapped.constraint === 'payments_idempotency_key_uidx'
+          ) {
+            const winner = await this.findByIdempotencyKey(key);
+            if (winner) return { outcome: 'recorded', payment: winner };
+          }
+          throw err;
+        }
+        if (inserted[0]) {
+          return { outcome: 'recorded', payment: asPayment(inserted[0]) };
+        }
 
-    const payload = data as RecordPaymentRpcPayload | null;
-    if (payload?.outcome === 'recorded' && payload.payment) {
-      return { outcome: 'recorded', payment: payload.payment };
+        const [week] = await db
+          .select({
+            status: timesheets.status,
+            gross_minor: timesheets.gross_minor,
+            currency: timesheets.currency,
+          })
+          .from(timesheets)
+          .where(eq(timesheets.id, timesheetId));
+        if (
+          week?.status !== 'approved' ||
+          week.gross_minor === null ||
+          week.currency === null
+        ) {
+          return { outcome: 'not_payable', status: week?.status ?? null };
+        }
+        const [paid] = await db
+          .select({
+            total: sql<number>`coalesce(sum(${payments.amount_minor}), 0)`,
+          })
+          .from(payments)
+          .where(eq(payments.timesheet_id, timesheetId));
+        const alreadyPaidMinor = Number(paid?.total ?? 0);
+        if (alreadyPaidMinor + entry.amount_minor > week.gross_minor) {
+          return {
+            outcome: 'exceeds_gross',
+            alreadyPaidMinor,
+            grossMinor: week.gross_minor,
+          };
+        }
+      }
+    } catch (err) {
+      throw this.dbError('Failed to record payment in', err, { timesheetId });
     }
-    if (payload?.outcome === 'exceeds_gross') {
-      return {
-        outcome: 'exceeds_gross',
-        alreadyPaidMinor: payload.already_paid_minor ?? 0,
-        grossMinor: payload.gross_minor ?? 0,
-      };
-    }
-    if (payload?.outcome === 'not_payable') {
-      return { outcome: 'not_payable', status: payload.status ?? null };
-    }
-    // Anything else — a 'recorded' answer with no row, or no answer at all —
-    // is refused rather than folded into `not_payable`. Reporting "the week
-    // is not payable" for an insert that DID commit is the one lie an
-    // append-only ledger cannot take back.
+    // Never folded into `not_payable`: reporting "the week is not payable"
+    // when the state says it is would be a lie about money.
     throw new DatabaseError('Unrecognised payment outcome', 'DATABASE_ERROR', {
-      outcome: payload?.outcome ?? null,
+      outcome: null,
       timesheetId,
     });
   }
 
   /**
-   * The ONLY write path into a correction row (D-20, migration 085).
+   * The ONLY write path into a correction row (D-20, 085; MIGRATION-NOTES
+   * §5.2).
    *
-   * An RPC for the same reason `recordForTimesheet` is one: the invariant is a
-   * cross-row SUM — "this reversal, plus every reversal already filed against
-   * this payment, must not exceed the payment" — and reading that sum here and
-   * inserting there is a window two parents can both walk through, over an
-   * append-only table with no edit path back. 085 locks the WEEK's timesheet
-   * row FOR UPDATE (the same anchor 077 takes, so corrections serialise
-   * against concurrent payments as well as each other), loads the original
-   * pinned to that week, refuses a chain or an over-reversal, and inserts.
+   * One guarded statement for the same reason as `recordForTimesheet`: the
+   * invariant is a cross-row SUM — "this reversal, plus every reversal
+   * already filed against this payment, must not exceed the payment" — and
+   * reading it here and inserting there is a window two parents can both
+   * walk through. The insert's `WHERE` pins the original to this week,
+   * refuses a chain (`kind = 'payment'`) and the over-reversal, and copies
+   * household, carer and currency from the ORIGINAL (a reopened week's
+   * `currency` is NULL). There is deliberately no `approved` re-check: a
+   * reopened week is still correctable.
    *
-   * Every read that wants paid-to-date sums `listForTimesheet` SIGNED:
-   * correction rows carry a NEGATIVE `amount_minor`, so a plain reduce already
-   * answers paid-to-date WITH corrections. Do not "fix" it by filtering on
-   * `kind` — 085's header explains what that breaks.
+   * Every read that wants paid-to-date sums `listForTimesheet` SIGNED: a
+   * plain reduce already answers paid-to-date WITH corrections. Do not "fix"
+   * it by filtering on `kind`.
    */
   async recordCorrection(
     timesheetId: string,
     correctsPaymentId: string,
     entry: RecordCorrectionEntry
   ): Promise<RecordCorrectionOutcome> {
-    const { data, error } = await supabaseService.rpc(
-      'record_payment_correction',
-      {
-        p_timesheet_id: timesheetId,
-        p_corrects_payment_id: correctsPaymentId,
-        p_amount_minor: entry.amount_minor,
-        p_paid_at: entry.paid_at,
-        p_reason: entry.reason,
-        p_recorded_by: entry.recorded_by,
+    const meta = { timesheetId, correctsPaymentId };
+    try {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const inserted = await db.all(sql`
+          INSERT INTO payments (id, timesheet_id, household_id, carer_id,
+            amount_minor, currency, paid_at, kind, corrects_payment_id,
+            correction_reason, recorded_by)
+          SELECT ${crypto.randomUUID()}, o.timesheet_id, o.household_id,
+            o.carer_id, ${entry.amount_minor}, o.currency, ${entry.paid_at},
+            'correction', o.id, ${entry.reason}, ${entry.recorded_by}
+          FROM payments o
+          WHERE o.id = ${correctsPaymentId}
+            AND o.timesheet_id = ${timesheetId}
+            AND o.kind = 'payment'
+            AND ${entry.amount_minor} < 0
+            AND ${entry.amount_minor} >= -(o.amount_minor +
+              (SELECT coalesce(sum(c.amount_minor), 0) FROM payments c
+               WHERE c.corrects_payment_id = o.id))
+          RETURNING *`);
+        if (inserted[0]) {
+          return { outcome: 'recorded', correction: asPayment(inserted[0]) };
+        }
+
+        const [week] = await db
+          .select({ id: timesheets.id })
+          .from(timesheets)
+          .where(eq(timesheets.id, timesheetId));
+        if (!week)
+          return { outcome: 'not_correctable', reason: 'week_missing' };
+        const [original] = await db
+          .select()
+          .from(payments)
+          .where(
+            and(
+              eq(payments.id, correctsPaymentId),
+              eq(payments.timesheet_id, timesheetId)
+            )
+          );
+        if (!original) {
+          return { outcome: 'not_correctable', reason: 'payment_missing' };
+        }
+        if (original.kind !== 'payment') {
+          return { outcome: 'not_correctable', reason: 'not_a_payment' };
+        }
+        const [reversed] = await db
+          .select({
+            total: sql<number>`coalesce(sum(${payments.amount_minor}), 0)`,
+          })
+          .from(payments)
+          .where(eq(payments.corrects_payment_id, original.id));
+        const remainingMinor =
+          original.amount_minor + Number(reversed?.total ?? 0);
+        if (entry.amount_minor >= 0 || entry.amount_minor < -remainingMinor) {
+          return {
+            outcome: 'exceeds_original',
+            originalAmountMinor: original.amount_minor,
+            remainingMinor,
+          };
+        }
       }
-    );
-
-    if (error) {
-      throw new DatabaseError('Failed to record correction', 'DATABASE_ERROR', {
-        details: error.message,
-        timesheetId,
-        correctsPaymentId,
-      });
+    } catch (err) {
+      throw this.dbError('Failed to record correction in', err, meta);
     }
-
-    const payload = data as RecordCorrectionRpcPayload | null;
-    if (payload?.outcome === 'recorded' && payload.correction) {
-      return { outcome: 'recorded', correction: payload.correction };
-    }
-    if (payload?.outcome === 'exceeds_original') {
-      return {
-        outcome: 'exceeds_original',
-        originalAmountMinor: payload.original_amount_minor ?? 0,
-        remainingMinor: payload.remaining_minor ?? 0,
-      };
-    }
-    if (payload?.outcome === 'not_correctable') {
-      return {
-        outcome: 'not_correctable',
-        reason: payload.reason ?? 'unknown',
-      };
-    }
-    // Same refusal as `recordForTimesheet`'s, for the same reason: telling the
-    // caller nothing happened when a row DID commit is the one lie an
-    // append-only ledger cannot take back.
     throw new DatabaseError(
       'Unrecognised correction outcome',
       'DATABASE_ERROR',
-      { outcome: payload?.outcome ?? null, timesheetId, correctsPaymentId }
+      { outcome: null, ...meta }
     );
   }
 }
