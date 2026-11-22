@@ -12,6 +12,8 @@ let buildCoverAskExpiredKey: typeof import('../../../src/jobs/coverAskExpiryJob'
 let EXPIRING_ASK_KINDS: readonly string[];
 
 beforeAll(async () => {
+  // Deps are injected; the D1 handle is never queried, it only has to resolve.
+  mock.module('../../../src/db/client', () => ({ db: {} }));
   const mod = await import('../../../src/jobs/coverAskExpiryJob');
   runCoverAskExpiryJob = mod.runCoverAskExpiryJob;
   buildCoverAskExpiredKey = mod.buildCoverAskExpiredKey;

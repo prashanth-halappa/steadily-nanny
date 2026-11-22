@@ -1,7 +1,7 @@
 /**
  * @module tests/unit/jobs/jobHealthJob.test
- * J1-b — the job-health job. S2 found that cron "success" only proves pg_net
- * enqueued the call, `net._http_response` has zero readers, and five of
+ * J1-b — the job-health job. S2 found that cron "success" only proves the
+ * trigger fired, not that the job ran, and five of
  * scheduleHorizonJob's sweeps used to swallow their own errors (fixed by
  * J1-a). This job is the automated surface that was missing entirely.
  *
@@ -10,10 +10,11 @@
  * tested with every dependency injected.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
-import {
-  evaluateJobHealth,
-  REGISTERED_JOBS,
-} from '../../../src/jobs/jobHealthJob';
+import '../../helpers/stubDbClient';
+
+const { evaluateJobHealth, REGISTERED_JOBS } = await import(
+  '../../../src/jobs/jobHealthJob'
+);
 
 const HOUR_MS = 60 * 60 * 1000;
 const NOW = new Date('2026-08-17T12:00:00.000Z');
@@ -51,7 +52,7 @@ describe('evaluateJobHealth', () => {
       now: NOW,
       latestSuccess: allHealthy(),
       recentFailures: [],
-      httpFailures: [],
+      runCounts: [],
     });
 
     expect(result.healthy).toBe(true);
@@ -66,7 +67,7 @@ describe('evaluateJobHealth', () => {
       now: NOW,
       latestSuccess: withoutOne,
       recentFailures: [],
-      httpFailures: [],
+      runCounts: [],
     });
 
     expect(result.healthy).toBe(false);
@@ -88,7 +89,7 @@ describe('evaluateJobHealth', () => {
       now: NOW,
       latestSuccess: rows,
       recentFailures: [],
-      httpFailures: [],
+      runCounts: [],
     });
 
     expect(result.healthy).toBe(false);
@@ -109,7 +110,7 @@ describe('evaluateJobHealth', () => {
       now: NOW,
       latestSuccess: rows,
       recentFailures: [],
-      httpFailures: [],
+      runCounts: [],
     });
 
     expect(result.healthy).toBe(true);
@@ -122,7 +123,7 @@ describe('evaluateJobHealth', () => {
       recentFailures: [
         { job_name: 'no-show-sweep', status: 'failed', count: 2 },
       ],
-      httpFailures: [],
+      runCounts: [],
     });
 
     expect(result.healthy).toBe(false);
@@ -133,24 +134,27 @@ describe('evaluateJobHealth', () => {
     ).toBe(true);
   });
 
-  it('flags a non-zero pg_net http failure count', () => {
+  it('flags a job that started far fewer runs than its cron implies', () => {
     const result = evaluateJobHealth({
       now: NOW,
       latestSuccess: allHealthy(),
       recentFailures: [],
-      httpFailures: [{ statusCode: 401, count: 5 }],
+      // reminders fires hourly (24/day); 5 rows means ticks are being lost.
+      runCounts: [{ job_name: 'reminders', count: 5 }],
     });
 
     expect(result.healthy).toBe(false);
-    expect(result.issues.some(i => i.detail.includes('401'))).toBe(true);
+    expect(result.issues).toEqual([
+      expect.objectContaining({ jobName: 'reminders', kind: 'missed_runs' }),
+    ]);
   });
 
-  it('ignores an httpFailures row with count 0', () => {
+  it('accepts a job whose run count is near its cadence, and jobs with no rows', () => {
     const result = evaluateJobHealth({
       now: NOW,
       latestSuccess: allHealthy(),
       recentFailures: [],
-      httpFailures: [{ statusCode: 200, count: 0 }],
+      runCounts: [{ job_name: 'reminders', count: 23 }],
     });
 
     expect(result.healthy).toBe(true);
@@ -190,10 +194,10 @@ describe('runJobHealthJob — I/O wrapper', () => {
     const jobRuns = {
       latestPerJob: mock(async () => healthyFixtures(NOW)),
       countByStatusSince: mock(async () => []),
+      countRunsSince: mock(async () => []),
     };
     const result = await runJobHealthJob({
       jobRuns,
-      httpFailures: async () => [],
       clock: { now: () => NOW },
     });
 
@@ -207,10 +211,10 @@ describe('runJobHealthJob — I/O wrapper', () => {
     const jobRuns = {
       latestPerJob: mock(async () => []),
       countByStatusSince: mock(async () => []),
+      countRunsSince: mock(async () => []),
     };
     const result = await runJobHealthJob({
       jobRuns,
-      httpFailures: async () => [],
       clock: { now: () => NOW },
     });
 
@@ -225,10 +229,10 @@ describe('runJobHealthJob — I/O wrapper', () => {
     const jobRuns = {
       latestPerJob: mock(async () => []),
       countByStatusSince: mock(async () => []),
+      countRunsSince: mock(async () => []),
     };
     const result = await runJobHealthJob({
       jobRuns,
-      httpFailures: async () => [],
       clock: { now: () => NOW },
       notify,
     });
@@ -241,10 +245,10 @@ describe('runJobHealthJob — I/O wrapper', () => {
     const jobRuns = {
       latestPerJob: mock(async () => []),
       countByStatusSince: mock(async () => []),
+      countRunsSince: mock(async () => []),
     };
     const result = await runJobHealthJob({
       jobRuns,
-      httpFailures: async () => [],
       clock: { now: () => NOW },
     });
 
@@ -260,10 +264,10 @@ describe('runJobHealthJob — I/O wrapper', () => {
         throw new Error('job_runs unreachable');
       }),
       countByStatusSince: mock(async () => []),
+      countRunsSince: mock(async () => []),
     };
     const result = await runJobHealthJob({
       jobRuns,
-      httpFailures: async () => [],
       clock: { now: () => NOW },
     });
 

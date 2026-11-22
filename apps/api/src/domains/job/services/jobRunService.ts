@@ -7,7 +7,10 @@
  *
  * @module domains/job/services/jobRunService
  */
-import { supabaseService } from '../../../config/supabase';
+import { and, desc, eq } from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { mapDbError } from '../../../db/errors';
+import { jobRuns } from '../../../db/schema';
 import { DatabaseError } from '../../../errors';
 import { logger } from '../../../middlewares/logger';
 
@@ -51,6 +54,9 @@ export interface JobRun {
 
 const jobStartTimes = new Map<string, number>();
 
+const errorMessage = (e: unknown): string | undefined =>
+  e === undefined ? undefined : e instanceof Error ? e.message : String(e);
+
 /**
  * A 'running' job older than this is considered stale (crashed/abandoned) and
  * may be reclaimed by a retry.
@@ -61,17 +67,22 @@ export class JobRunService {
   static async start(jobName: string): Promise<string> {
     const startTime = Date.now();
 
-    const { data, error } = await supabaseService
-      .from('job_runs')
-      .insert({ job_name: jobName, status: 'running' })
-      .select('id')
-      .single();
+    let data: { id: string } | undefined;
+    let error: unknown;
+    try {
+      [data] = await db
+        .insert(jobRuns)
+        .values({ job_name: jobName, status: 'running' })
+        .returning({ id: jobRuns.id });
+    } catch (e) {
+      error = e;
+    }
 
     if (error || !data) {
       logger.error('Failed to start job run', { jobName, error });
       throw new DatabaseError('Failed to start job run', 'DATABASE_ERROR', {
         jobName,
-        error: error?.message,
+        error: errorMessage(error),
       });
     }
 
@@ -100,7 +111,7 @@ export class JobRunService {
       ...jobSpecificSummary
     } = summary;
 
-    const updateData: Record<string, unknown> = {
+    const updateData: Partial<typeof jobRuns.$inferInsert> = {
       status,
       completed_at: new Date().toISOString(),
       duration_ms: duration,
@@ -125,10 +136,14 @@ export class JobRunService {
       }
     }
 
-    const { error } = await supabaseService
-      .from('job_runs')
-      .update(updateData)
-      .eq('id', runId);
+    const error = await db
+      .update(jobRuns)
+      .set(updateData)
+      .where(eq(jobRuns.id, runId))
+      .then(
+        () => null,
+        (e: unknown) => e
+      );
 
     if (error) {
       logger.error('Failed to complete job run', { runId, error });
@@ -153,7 +168,7 @@ export class JobRunService {
     const duration = startTime ? Date.now() - startTime : null;
     jobStartTimes.delete(runId);
 
-    const updateData: Record<string, unknown> = {
+    const updateData: Partial<typeof jobRuns.$inferInsert> = {
       status: 'failed',
       completed_at: new Date().toISOString(),
       duration_ms: duration,
@@ -182,10 +197,14 @@ export class JobRunService {
         Object.keys(jobSpecificSummary).length > 0 ? jobSpecificSummary : null;
     }
 
-    const { error: dbError } = await supabaseService
-      .from('job_runs')
-      .update(updateData)
-      .eq('id', runId);
+    const dbError = await db
+      .update(jobRuns)
+      .set(updateData)
+      .where(eq(jobRuns.id, runId))
+      .then(
+        () => null,
+        (e: unknown) => e
+      );
 
     if (dbError) {
       logger.error('Failed to record job failure', { runId, dbError });
@@ -199,28 +218,31 @@ export class JobRunService {
     limit = 50,
     status?: string
   ): Promise<JobRun[]> {
-    let query = supabaseService.from('job_runs').select('*');
-    if (jobName) query = query.eq('job_name', jobName);
-    if (status) query = query.eq('status', status);
-
-    const { data, error } = await query
-      .order('started_at', { ascending: false })
-      .limit(limit);
-
-    if (error) {
+    try {
+      const rows = await db
+        .select()
+        .from(jobRuns)
+        .where(
+          and(
+            jobName ? eq(jobRuns.job_name, jobName) : undefined,
+            status ? eq(jobRuns.status, status) : undefined
+          )
+        )
+        .orderBy(desc(jobRuns.started_at))
+        .limit(limit);
+      return rows as JobRun[];
+    } catch (error) {
       logger.error('Failed to fetch job history', { error });
       throw new DatabaseError('Failed to fetch job history', 'DATABASE_ERROR', {
-        error: error.message,
+        error: errorMessage(error),
       });
     }
-
-    return (data || []) as JobRun[];
   }
 
   /**
    * True when `jobName` has a 'running' row that isn't stale yet. The seam
    * `createTrackedJobHandler` checks before starting a new run — an
-   * overlapping cron invocation (pg_net retry, manual POST) sees `true` and
+   * overlapping cron invocation (manual POST, slow previous tick) sees `true` and
    * bails without touching job_runs; a crashed run's stale 'running' row
    * must not block forever, so it reads as `false` here.
    */
@@ -233,22 +255,20 @@ export class JobRunService {
   static async findByIdempotencyKey(
     idempotencyKey: string
   ): Promise<JobRun | null> {
-    const { data, error } = await supabaseService
-      .from('job_runs')
-      .select('*')
-      .eq('idempotency_key', idempotencyKey)
-      .limit(1)
-      .maybeSingle();
-
-    if (error) {
+    try {
+      const [row] = await db
+        .select()
+        .from(jobRuns)
+        .where(eq(jobRuns.idempotency_key, idempotencyKey))
+        .limit(1);
+      return (row as JobRun | undefined) ?? null;
+    } catch (error) {
       logger.error('Failed to find job by idempotency key', {
         idempotencyKey,
         error,
       });
       return null;
     }
-
-    return data as JobRun | null;
   }
 
   static async startWithIdempotencyKey(
@@ -266,20 +286,26 @@ export class JobRunService {
 
     const startTime = Date.now();
 
-    const { data, error } = await supabaseService
-      .from('job_runs')
-      .insert({
-        job_name: jobName,
-        idempotency_key: idempotencyKey,
-        status: 'running',
-      })
-      .select('id')
-      .single();
+    let data: { id: string } | undefined;
+    let error: unknown;
+    try {
+      [data] = await db
+        .insert(jobRuns)
+        .values({
+          job_name: jobName,
+          idempotency_key: idempotencyKey,
+          status: 'running',
+        })
+        .returning({ id: jobRuns.id });
+    } catch (e) {
+      error = e;
+    }
 
     if (error || !data) {
-      // A concurrent runner may have inserted the same key first (23505).
-      // Reconcile against the winning row rather than leaving the key un-runnable.
-      if (error?.code === '23505') {
+      // A concurrent runner may have inserted the same key first (unique
+      // violation). Reconcile against the winning row rather than leaving the
+      // key un-runnable.
+      if (mapDbError(error)?.kind === 'unique') {
         const raced = await JobRunService.findByIdempotencyKey(idempotencyKey);
         if (raced) {
           return JobRunService.resolveExistingRun(
@@ -298,7 +324,7 @@ export class JobRunService {
       throw new DatabaseError('Failed to start job run', 'DATABASE_ERROR', {
         jobName,
         idempotencyKey,
-        error: error?.message,
+        error: errorMessage(error),
       });
     }
 
@@ -333,21 +359,30 @@ export class JobRunService {
 
     // CAS guarded by the observed status AND started_at: two callers reclaiming
     // the same stale/failed row cannot both win (the loser matches zero rows).
-    const { data, error } = await supabaseService
-      .from('job_runs')
-      .update({
-        status: 'running',
-        started_at: new Date(startTime).toISOString(),
-        completed_at: null,
-        duration_ms: null,
-        error_message: null,
-        error_details: null,
-      })
-      .eq('id', runId)
-      .eq('status', existing.status)
-      .eq('started_at', existing.started_at)
-      .select('id')
-      .maybeSingle();
+    let data: { id: string } | undefined;
+    let error: unknown;
+    try {
+      [data] = await db
+        .update(jobRuns)
+        .set({
+          status: 'running',
+          started_at: new Date(startTime).toISOString(),
+          completed_at: null,
+          duration_ms: null,
+          error_message: null,
+          error_details: null,
+        })
+        .where(
+          and(
+            eq(jobRuns.id, runId),
+            eq(jobRuns.status, existing.status),
+            eq(jobRuns.started_at, existing.started_at)
+          )
+        )
+        .returning({ id: jobRuns.id });
+    } catch (e) {
+      error = e;
+    }
 
     if (error) {
       logger.error('Failed to reclaim job run', {
@@ -359,7 +394,7 @@ export class JobRunService {
       throw new DatabaseError('Failed to start job run', 'DATABASE_ERROR', {
         jobName,
         idempotencyKey,
-        error: error.message,
+        error: errorMessage(error),
       });
     }
 

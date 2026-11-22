@@ -89,7 +89,9 @@ import {
   SHIFT_KINDS,
   SHIFT_STATUSES,
 } from '@steadily-nanny/shared-types/schemas/shift.schema';
-import { supabaseService } from '../config/supabase';
+import { and, asc, eq, gte, inArray, isNotNull, lte, or } from 'drizzle-orm';
+import { db } from '../db/client';
+import { shifts } from '../db/schema';
 import { formatPushTime12h } from '../domains/child/services/uncoveredCareService';
 import { ReminderLogRepository } from '../domains/notification/repositories/reminderLogRepository';
 import type { PushPayload } from '../domains/notification/types';
@@ -174,67 +176,72 @@ export class DefaultCoverAskExpirySource implements CoverAskExpirySource {
   async listDueAsks(now: Date): Promise<ExpiringAsk[]> {
     const nowIso = now.toISOString();
     const floorIso = new Date(now.getTime() - EXPIRY_LOOKBACK_MS).toISOString();
-    const { data, error } = await supabaseService
-      .from('shifts')
-      .select(
-        'id, household_id, carer_id, starts_at, timezone, local_date, cover_ask_expires_at'
-      )
-      .eq('status', SHIFT_STATUSES.PENDING)
-      .in('kind', [...EXPIRING_ASK_KINDS])
-      .not('carer_id', 'is', null)
-      // THE FLOOR — see `EXPIRY_LOOKBACK_MS`. Anchored on `starts_at` because
-      // that is the one instant both arms below share; the deadline arm is
-      // always earlier than its own shift's start, so a floor here bounds both.
-      .gte('starts_at', floorIso)
-      // Two arms, and the second is not redundant. Asks created before
-      // migration 088 have a null deadline, and an ask whose shift has already
-      // started is over however it got there — §5.2's "expiry never fires
-      // after the shift has started" cuts both ways: not later than the start,
-      // and not still open past it either.
-      .or(`cover_ask_expires_at.lte.${nowIso},starts_at.lte.${nowIso}`)
-      // Oldest first, so a capped batch drains over the next ticks rather than
-      // re-picking the same slice forever.
-      .order('starts_at', { ascending: true })
-      .limit(EXPIRY_BATCH_LIMIT);
-
-    if (error) {
+    try {
+      return (await db
+        .select({
+          id: shifts.id,
+          household_id: shifts.household_id,
+          carer_id: shifts.carer_id,
+          starts_at: shifts.starts_at,
+          timezone: shifts.timezone,
+          local_date: shifts.local_date,
+          cover_ask_expires_at: shifts.cover_ask_expires_at,
+        })
+        .from(shifts)
+        .where(
+          and(
+            eq(shifts.status, SHIFT_STATUSES.PENDING),
+            inArray(shifts.kind, [...EXPIRING_ASK_KINDS]),
+            isNotNull(shifts.carer_id),
+            // THE FLOOR — see `EXPIRY_LOOKBACK_MS`. Anchored on `starts_at`
+            // because both arms below share it.
+            gte(shifts.starts_at, floorIso),
+            // Two arms, and the second is not redundant: pre-088 asks have a
+            // null deadline, and an ask whose shift already started is over.
+            or(
+              lte(shifts.cover_ask_expires_at, nowIso),
+              lte(shifts.starts_at, nowIso)
+            )
+          )
+        )
+        // Oldest first, so a capped batch drains over the next ticks.
+        .orderBy(asc(shifts.starts_at))
+        .limit(EXPIRY_BATCH_LIMIT)) as ExpiringAsk[];
+    } catch (error) {
       throw new DatabaseError(
         'Failed to list due cover asks',
         'DATABASE_ERROR',
-        { details: error.message }
+        { details: error instanceof Error ? error.message : String(error) }
       );
     }
-    return (data ?? []) as ExpiringAsk[];
   }
 }
 
 export class DefaultCoverAskExpiryWriter implements CoverAskExpiryWriter {
   async expireAsk(shiftId: string, at: string): Promise<boolean> {
-    const { data, error } = await supabaseService
-      .from('shifts')
-      .update({
-        status: SHIFT_STATUSES.CANCELLED,
-        cancelled_at: at,
-        // NULL ON PURPOSE — see the module header. Nobody cancelled this; it
-        // ran out. A non-null actor here turns an expiry into a withdrawal on
-        // every surface that reads it.
-        cancelled_by: null,
-        cancellation_paid: false,
-      })
-      .eq('id', shiftId)
-      // CAS: a carer who accepted or declined in the last five minutes wins.
-      // Silence lost the race, and it should.
-      .eq('status', SHIFT_STATUSES.PENDING)
-      .select('id')
-      .maybeSingle();
-
-    if (error) {
+    try {
+      const rows = await db
+        .update(shifts)
+        .set({
+          status: SHIFT_STATUSES.CANCELLED,
+          cancelled_at: at,
+          // NULL ON PURPOSE — see the module header. Nobody cancelled this; it
+          // ran out. A non-null actor turns an expiry into a withdrawal.
+          cancelled_by: null,
+          cancellation_paid: false,
+        })
+        // CAS: a carer who accepted or declined in the last five minutes wins.
+        .where(
+          and(eq(shifts.id, shiftId), eq(shifts.status, SHIFT_STATUSES.PENDING))
+        )
+        .returning({ id: shifts.id });
+      return rows.length > 0;
+    } catch (error) {
       throw new DatabaseError('Failed to expire cover ask', 'DATABASE_ERROR', {
-        details: error.message,
+        details: error instanceof Error ? error.message : String(error),
         shiftId,
       });
     }
-    return data !== null;
   }
 }
 

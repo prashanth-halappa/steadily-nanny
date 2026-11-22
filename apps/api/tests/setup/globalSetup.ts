@@ -1,8 +1,13 @@
-import { afterAll, beforeAll } from 'bun:test';
+import { afterAll, beforeAll, mock } from 'bun:test';
 import dotenv from 'dotenv';
 
 // Load test environment variables (optional).
 dotenv.config({ path: '.env.test' });
+
+// `cloudflare:workers` only exists inside workerd. src/db/client.ts imports it
+// at module scope, so stub it for Bun; a test that needs a real database
+// mocks src/db/client with tests/helpers/testDb.ts instead.
+mock.module('cloudflare:workers', () => ({ env: {} }));
 
 const originalConsole = {
   log: console.log,

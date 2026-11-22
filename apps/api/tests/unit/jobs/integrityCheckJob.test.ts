@@ -8,9 +8,22 @@
  * success envelope is worth nothing. The last describe block proves the two
  * halves compose.
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+} from 'bun:test';
 import type { NextFunction, Request } from 'express';
+import { createTestDb, type TestDb } from '../../helpers/testDb';
 
+let t: TestDb;
+
+type IntegrityCheckRunner =
+  import('../../../src/jobs/integrityCheckJob').IntegrityCheckRunner;
 let runIntegrityCheckJob: typeof import('../../../src/jobs/integrityCheckJob').runIntegrityCheckJob;
 let createTrackedJobHandler: typeof import('../../../src/controllers/jobHandlerFactory').createTrackedJobHandler;
 let JobRunService: any;
@@ -37,21 +50,10 @@ beforeAll(async () => {
   mock.module('../../../src/config/sentry', () => ({
     default: { captureException: mock(() => undefined) },
   }));
-  // The default memberless-household reaper builds a real repository, so the
-  // tests that don't inject one still need a client under it. Empty rows =>
-  // no candidates => no delete.
-  mock.module('../../../src/config/supabase', () => {
-    const chain: any = {
-      select: mock(() => chain),
-      delete: mock(() => chain),
-      in: mock(() => chain),
-      // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-      then: (resolve: any) =>
-        Promise.resolve({ data: [], error: null }).then(resolve),
-    };
-    const obj = { from: mock(() => chain), rpc: mock(() => chain) };
-    return { supabase: obj, supabaseService: obj };
-  });
+  // The default memberless-household reaper queries D1; an empty database
+  // means no candidates, so nothing is deleted.
+  t = await createTestDb();
+  mock.module('../../../src/db/client', () => ({ db: t.db }));
 
   runIntegrityCheckJob = (await import('../../../src/jobs/integrityCheckJob'))
     .runIntegrityCheckJob;
@@ -63,6 +65,8 @@ beforeAll(async () => {
   ).JobRunService;
   logger = (await import('../../../src/middlewares/logger')).logger;
 });
+
+afterAll(() => t.dispose());
 
 beforeEach(() => {
   logger.error.mockClear?.();
@@ -78,12 +82,9 @@ const violation = (checkName: string, entityId: string) => ({
   details: { household_id: 'h1' },
 });
 
-/** A fake in the shape of `supabaseService.rpc`'s resolved value. */
+/** A fake runner resolving to the given violations. */
 const rpcReturning = (rows: unknown[]) =>
-  mock(async () => ({
-    data: rows,
-    error: null,
-  }));
+  mock(async () => rows as Awaited<ReturnType<IntegrityCheckRunner>>);
 
 describe('runIntegrityCheckJob', () => {
   it('reports a clean database as a clean run and logs no errors', async () => {
@@ -140,14 +141,13 @@ describe('runIntegrityCheckJob', () => {
     ]);
   });
 
-  it('throws when the rpc itself fails', async () => {
+  it('throws when the check query itself fails', async () => {
     // A sweep that cannot run is NOT a clean database. Returning errorCount 0
     // here would report "no violations" for a function that never executed —
     // the failure mode that makes monitoring actively misleading.
-    const failingRpc = mock(async () => ({
-      data: null,
-      error: { message: 'function run_integrity_checks() does not exist' },
-    }));
+    const failingRpc = mock(async () => {
+      throw new Error('D1_ERROR: no such table: timesheets');
+    });
 
     await expect(runIntegrityCheckJob(failingRpc)).rejects.toThrow();
   });

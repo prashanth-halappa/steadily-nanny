@@ -1,7 +1,7 @@
 /**
  * TDD tests for the no-show morning catch-up digest (A1/D-26, matrix row
  * N11). Every dependency is injected via `runNoShowDigestJob`'s parameters
- * so these never touch Supabase — same shape as `uncoveredDigestJob.test.ts`,
+ * so these never touch the database — same shape as `uncoveredDigestJob.test.ts`,
  * which this job's structure is copied from.
  */
 import { describe, expect, it, mock } from 'bun:test';
@@ -12,18 +12,18 @@ import type {
   NoShowDigestConfirmedChecker,
   NoShowDigestShiftCandidate,
 } from '../../../src/jobs/noShowDigestJob';
-import {
-  buildNoShowDigestKey,
-  runNoShowDigestJob,
-} from '../../../src/jobs/noShowDigestJob';
-import {
-  buildNoShowKey,
-  type NoShowTimeEntry,
-} from '../../../src/jobs/noShowJob';
+import type { NoShowTimeEntry } from '../../../src/jobs/noShowJob';
 import type {
   ReminderLogClaim,
   ReminderPushService,
 } from '../../../src/jobs/reminderJob';
+
+// Deps are injected; the D1 handle is never queried, it only has to resolve.
+mock.module('../../../src/db/client', () => ({ db: {} }));
+const { buildNoShowDigestKey, runNoShowDigestJob } = await import(
+  '../../../src/jobs/noShowDigestJob'
+);
+const { buildNoShowKey } = await import('../../../src/jobs/noShowJob');
 
 const CARER_ID = 'carer-11111111-1111-1111-1111-111111111111';
 const PARENT_ID = 'parent-11111111-1111-1111-1111-111111111111';
@@ -130,7 +130,7 @@ function parentsAre(...ids: string[]) {
 
 /**
  * D-48: no shift here has a declined cancellation. Stubbed in every call
- * because the default lookup would otherwise reach for a real Supabase
+ * because the default lookup would otherwise reach for a real database
  * client and time the whole file out.
  */
 function noneDisputed() {

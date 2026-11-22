@@ -23,6 +23,7 @@ import type {
 let runShiftCompletionJob: typeof import('../../../src/jobs/shiftCompletionJob').runShiftCompletionJob;
 
 beforeAll(async () => {
+  mock.module('../../../src/db/client', () => ({ db: {} }));
   ({ runShiftCompletionJob } = await import(
     '../../../src/jobs/shiftCompletionJob'
   ));

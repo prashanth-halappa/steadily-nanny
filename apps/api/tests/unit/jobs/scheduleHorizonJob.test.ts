@@ -12,6 +12,7 @@ import {
   mock,
   setSystemTime,
 } from 'bun:test';
+import '../../helpers/stubDbClient';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type { SchedulePattern } from '../../../src/domains/schedule/types';
 import type {

@@ -1,87 +1,96 @@
 /**
  * F6 — `DefaultCoverAskExpirySource` must not reach back to the beginning of
- * time. The `starts_at.lte.now` arm matches every pending extra/cover shift
+ * time. The `starts_at <= now` arm matches every pending extra/cover shift
  * ever created, including pre-088 rows with a null deadline whose start is
  * months past; unbounded, the first tick after 088 ships pushes "Nobody is
  * booked for the ..." to every parent about all of them.
  *
- * Its own file because `mock.module` on the Supabase client must land before
- * the job module is imported, and the rest of the suite exercises the injected
- * seams instead.
+ * Runs against the real D1 test database so the floor, the two-arm OR, the
+ * ordering and the cap are exercised through the actual SQL.
  */
-import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
+import { households, shifts, user, userProfiles } from '../../../src/db/schema';
+import { createTestDb, type TestDb } from '../../helpers/testDb';
 
-// biome-ignore lint/suspicious/noExplicitAny: mocked supabase client
-let mockSupabaseService: any;
-let listDueAsks: () => Promise<unknown>;
+let t: TestDb;
+let source: { listDueAsks: (now: Date) => Promise<Array<{ id: string }>> };
 let EXPIRY_BATCH_LIMIT: number;
 let EXPIRY_LOOKBACK_MS: number;
 
-const calls: Array<{ method: string; args: unknown[] }> = [];
+const NOW = new Date('2026-06-15T12:00:00.000Z');
+const HOUR = 60 * 60 * 1000;
+const iso = (offsetMs: number) =>
+  new Date(NOW.getTime() + offsetMs).toISOString();
 
-// biome-ignore lint/suspicious/noExplicitAny: mocked supabase chain
-function createSupabaseQueryChain(): any {
-  const record =
-    (method: string) =>
-    // biome-ignore lint/suspicious/noExplicitAny: mocked supabase chain
-    (...args: unknown[]): any => {
-      calls.push({ method, args });
-      return chain;
-    };
-  // biome-ignore lint/suspicious/noExplicitAny: mocked supabase chain
-  const chain: any = {
-    select: record('select'),
-    eq: record('eq'),
-    in: record('in'),
-    not: record('not'),
-    or: record('or'),
-    gte: record('gte'),
-    order: record('order'),
-    limit: record('limit'),
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-    then: (resolve: (value: unknown) => unknown) =>
-      Promise.resolve({ data: [], error: null }).then(resolve),
-  };
-  return chain;
+let seq = 0;
+async function seedShift(
+  id: string,
+  startsOffsetMs: number,
+  deadlineOffsetMs: number | null,
+  status = 'pending'
+) {
+  seq++;
+  await t.db.insert(shifts).values({
+    id,
+    household_id: 'h1',
+    carer_id: 'u1',
+    starts_at: iso(startsOffsetMs),
+    ends_at: iso(startsOffsetMs + 500),
+    timezone: 'UTC',
+    local_date: '2026-06-15',
+    kind: 'extra',
+    status,
+    ical_uid: `ical-${seq}`,
+    cover_ask_expires_at:
+      deadlineOffsetMs === null ? null : iso(deadlineOffsetMs),
+  });
 }
 
 beforeAll(async () => {
-  mock.module('../../../src/config/supabase', () => {
-    const obj = { from: mock(() => createSupabaseQueryChain()) };
-    return { supabase: obj, supabaseService: obj };
-  });
-
+  t = await createTestDb();
+  mock.module('../../../src/db/client', () => ({ db: t.db }));
   const mod = await import('../../../src/jobs/coverAskExpiryJob');
   EXPIRY_BATCH_LIMIT = mod.EXPIRY_BATCH_LIMIT;
   EXPIRY_LOOKBACK_MS = mod.EXPIRY_LOOKBACK_MS;
-  const source = new mod.DefaultCoverAskExpirySource();
-  listDueAsks = () => source.listDueAsks(NOW);
-  mockSupabaseService = (await import('../../../src/config/supabase'))
-    .supabaseService;
-});
+  source = new mod.DefaultCoverAskExpirySource();
 
-const NOW = new Date();
+  await t.db
+    .insert(user)
+    .values({ id: 'u1', name: 'Carer', email: 'c@example.com' });
+  await t.db.insert(userProfiles).values({ user_id: 'u1' });
+  await t.db.insert(households).values({ id: 'h1', name: 'Home' });
+});
+afterAll(() => t.dispose());
 
 describe('DefaultCoverAskExpirySource — the sweep has a floor and a ceiling', () => {
-  it('floors how far back it reaches, and caps the batch', async () => {
-    calls.length = 0;
-    await listDueAsks();
+  it('floors how far back it reaches, and returns oldest first', async () => {
+    // Older than the floor: excluded even though the shift has started.
+    await seedShift('ancient', -EXPIRY_LOOKBACK_MS - HOUR, null);
+    // Null deadline, started 2h ago: included (second OR arm).
+    await seedShift('legacy-started', -2 * HOUR, null);
+    // Started 3h ago, deadline passed: included, and older than the above.
+    await seedShift('lapsed', -3 * HOUR, -4 * HOUR);
+    // Future shift, deadline still ahead: excluded.
+    await seedShift('live', 5 * HOUR, 4 * HOUR);
+    // Future shift, deadline already passed: included.
+    await seedShift('deadline-passed', 6 * HOUR, -HOUR);
+    // Not pending: excluded.
+    await seedShift('accepted', -2 * HOUR + 1000, null, 'confirmed');
 
-    expect(mockSupabaseService.from).toHaveBeenCalled();
+    const due = await source.listDueAsks(NOW);
+    expect(due.map(a => a.id)).toEqual([
+      'lapsed',
+      'legacy-started',
+      'deadline-passed',
+    ]);
+  });
 
-    const floor = calls.find(
-      c => c.method === 'gte' && c.args[0] === 'starts_at'
-    );
-    expect(floor?.args[1]).toBe(
-      new Date(NOW.getTime() - EXPIRY_LOOKBACK_MS).toISOString()
-    );
-
-    const limit = calls.find(c => c.method === 'limit');
-    expect(limit?.args[0]).toBe(EXPIRY_BATCH_LIMIT);
-
-    // Oldest first, so a capped batch drains deterministically over the next
-    // five-minute ticks instead of re-picking the same slice forever.
-    const order = calls.find(c => c.method === 'order');
-    expect(order?.args[0]).toBe('starts_at');
+  it('caps the batch', async () => {
+    await t.d1.prepare('DELETE FROM shifts').run();
+    for (let i = 0; i < EXPIRY_BATCH_LIMIT + 5; i++) {
+      await seedShift(`s${i}`, -HOUR - i * 1000, null);
+    }
+    const due = await source.listDueAsks(NOW);
+    expect(due).toHaveLength(EXPIRY_BATCH_LIMIT);
   });
 });

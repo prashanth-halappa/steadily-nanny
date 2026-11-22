@@ -1,106 +1,107 @@
 /**
- * `DefaultReminderCandidateSource.listScheduleNotSet` — the six firing
- * conditions that live in the query rather than in the hour gate.
- *
- * Its own file because `mock.module` on the Supabase client must land before
- * `reminderJob` is imported; the injected-seam behaviour is covered in
+ * `DefaultReminderCandidateSource.listScheduleNotSet` — the firing conditions
+ * that live in the query rather than in the hour gate, run against a real D1
+ * (tests/helpers/testDb.ts). The injected-seam behaviour is covered in
  * `reminderJob.scheduleNotSet.test.ts`.
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+} from 'bun:test';
+import * as schema from '../../../src/db/schema';
 import type { ScheduleNotSetCandidate } from '../../../src/jobs/reminderJob';
+import { createTestDb, type TestDb } from '../../helpers/testDb';
 
-const CARER_ID = 'carer-11111111-1111-1111-1111-111111111111';
-const OTHER_CARER_ID = 'carer-22222222-2222-2222-2222-222222222222';
-const HOUSEHOLD_ID = 'house-11111111-1111-1111-1111-111111111111';
+const CARER_ID = 'carer-1';
+const OTHER_CARER_ID = 'carer-2';
+const HOUSEHOLD_ID = 'house-1';
 
 const NOW = new Date('2026-08-05T16:00:00.000Z');
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const OLD = new Date(NOW.getTime() - 2 * MS_PER_DAY).toISOString();
 
-interface RecordedCall {
-  table: string;
-  method: string;
-  args: unknown[];
-}
-
-/** Rows each table returns on this run — set per test. */
-const rows: Record<string, unknown[]> = {};
-let calls: RecordedCall[] = [];
-
-// biome-ignore lint/suspicious/noExplicitAny: mocked supabase chain
-function createChain(table: string): any {
-  const record =
-    (method: string) =>
-    // biome-ignore lint/suspicious/noExplicitAny: mocked supabase chain
-    (...args: unknown[]): any => {
-      calls.push({ table, method, args });
-      return chain;
-    };
-  // biome-ignore lint/suspicious/noExplicitAny: mocked supabase chain
-  const chain: any = {
-    select: record('select'),
-    eq: record('eq'),
-    in: record('in'),
-    not: record('not'),
-    lte: record('lte'),
-    gte: record('gte'),
-    or: record('or'),
-    order: record('order'),
-    limit: record('limit'),
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-    then: (resolve: (value: unknown) => unknown) =>
-      Promise.resolve({ data: rows[table] ?? [], error: null }).then(resolve),
-  };
-  return chain;
-}
-
+let t: TestDb;
 let listScheduleNotSet: (now: Date) => Promise<ScheduleNotSetCandidate[]>;
 
 beforeAll(async () => {
-  mock.module('../../../src/config/supabase', () => {
-    const obj = { from: mock((table: string) => createChain(table)) };
-    return { supabase: obj, supabaseService: obj };
-  });
-
+  t = await createTestDb();
+  mock.module('../../../src/db/client', () => ({ db: t.db }));
   const mod = await import('../../../src/jobs/reminderJob');
   const source = new mod.DefaultReminderCandidateSource();
   listScheduleNotSet = (now: Date) => source.listScheduleNotSet(now);
 });
+afterAll(() => t.dispose());
 
-/** An active nanny in a live household — condition 1 and 2 satisfied. */
-function activeNannyRow(overrides: Record<string, unknown> = {}) {
-  return {
-    household_id: HOUSEHOLD_ID,
-    user_id: CARER_ID,
-    display_name_override: null,
-    ...overrides,
-  };
-}
-
-/** A current arrangement — condition 3 satisfied. */
-function arrangementRow(overrides: Record<string, unknown> = {}) {
-  return {
-    household_id: HOUSEHOLD_ID,
-    carer_id: CARER_ID,
-    carer_display_name: 'Marisol',
-    ...overrides,
-  };
-}
-
-function callsFor(table: string, method: string): RecordedCall[] {
-  return calls.filter(c => c.table === table && c.method === method);
-}
-
-beforeEach(() => {
-  calls = [];
-  rows.household_members = [];
-  rows.pay_arrangements = [];
-  rows.schedule_patterns = [];
+beforeEach(async () => {
+  for (const table of [
+    'schedule_patterns',
+    'pay_arrangements',
+    'household_members',
+    'households',
+    'user_profiles',
+    'user',
+  ]) {
+    await t.d1.prepare(`DELETE FROM ${table}`).run();
+  }
+  for (const id of [CARER_ID, OTHER_CARER_ID]) {
+    await t.d1
+      .prepare('INSERT INTO user (id, name, email) VALUES (?, ?, ?)')
+      .bind(id, id, `${id}@x.test`)
+      .run();
+    await t.d1
+      .prepare('INSERT INTO user_profiles (user_id) VALUES (?)')
+      .bind(id)
+      .run();
+  }
+  await t.db
+    .insert(schema.households)
+    .values({ id: HOUSEHOLD_ID, name: 'Home' });
 });
+
+const nanny = (
+  user_id = CARER_ID,
+  extra: Partial<typeof schema.householdMembers.$inferInsert> = {}
+) =>
+  t.db.insert(schema.householdMembers).values({
+    household_id: HOUSEHOLD_ID,
+    user_id,
+    role: 'nanny',
+    ...extra,
+  });
+
+const arrangement = (
+  carer_id = CARER_ID,
+  carer_display_name = 'Marisol',
+  created_at = OLD
+) =>
+  t.db.insert(schema.payArrangements).values({
+    household_id: HOUSEHOLD_ID,
+    carer_id,
+    carer_display_name,
+    rate_minor: 1500,
+    valid_from: '2026-08-01',
+    created_at,
+  });
+
+const pattern = (carer_id: string | null) =>
+  t.db.insert(schema.schedulePatterns).values({
+    household_id: HOUSEHOLD_ID,
+    carer_id,
+    rrule: 'FREQ=WEEKLY',
+    dtstart: '2026-08-03',
+    timezone: 'UTC',
+    ical_uid: crypto.randomUUID(),
+  });
 
 describe('DefaultReminderCandidateSource.listScheduleNotSet', () => {
   it('returns the pair when every condition holds', async () => {
-    rows.household_members = [activeNannyRow()];
-    rows.pay_arrangements = [arrangementRow()];
+    await nanny();
+    await arrangement();
 
     expect(await listScheduleNotSet(NOW)).toEqual([
       {
@@ -111,95 +112,68 @@ describe('DefaultReminderCandidateSource.listScheduleNotSet', () => {
     ]);
   });
 
-  // Conditions 1 and 2: a live household with an ACTIVE nanny. Both are
-  // filters on the first query, so assert the filters rather than trusting
-  // that a fake with no rows proves anything.
-  it('asks only for active nannies in live households', async () => {
-    await listScheduleNotSet(NOW);
+  it('ignores non-active nannies, non-nannies and non-live households', async () => {
+    await nanny(CARER_ID, { status: 'removed' });
+    await t.db.insert(schema.householdMembers).values({
+      household_id: HOUSEHOLD_ID,
+      user_id: OTHER_CARER_ID,
+      role: 'parent',
+    });
+    await arrangement();
+    await arrangement(OTHER_CARER_ID);
+    expect(await listScheduleNotSet(NOW)).toEqual([]);
 
-    const select = callsFor('household_members', 'select')[0];
-    expect(String(select?.args[0])).toContain('households!inner(state)');
-
-    const eqs = callsFor('household_members', 'eq').map(c => c.args);
-    expect(eqs).toContainEqual(['role', 'nanny']);
-    expect(eqs).toContainEqual(['status', 'active']);
-    expect(eqs).toContainEqual(['households.state', 'live']);
+    await t.d1.prepare("UPDATE household_members SET status = 'active'").run();
+    await t.d1.prepare("UPDATE households SET state = 'draft'").run();
+    expect(await listScheduleNotSet(NOW)).toEqual([]);
   });
 
   it('yields nothing when the household has no active nanny', async () => {
-    rows.pay_arrangements = [arrangementRow()];
-
+    await arrangement();
     expect(await listScheduleNotSet(NOW)).toEqual([]);
-    // Nothing to look up terms for, so it must not even ask.
-    expect(callsFor('pay_arrangements', 'select')).toHaveLength(0);
   });
 
   it('yields nothing when no arrangement exists for the pair', async () => {
-    rows.household_members = [activeNannyRow()];
-
+    await nanny();
     expect(await listScheduleNotSet(NOW)).toEqual([]);
   });
 
-  // Condition 5: terms are often agreed the same day the family already
-  // talked the schedule through out loud — day 0 is not a stall.
+  // Terms are often agreed the same day the family already talked the
+  // schedule through out loud — day 0 is not a stall.
   it('ignores arrangements younger than a day', async () => {
-    rows.household_members = [activeNannyRow()];
-    await listScheduleNotSet(NOW);
-
-    expect(callsFor('pay_arrangements', 'lte')[0]?.args).toEqual([
-      'created_at',
-      new Date(NOW.getTime() - MS_PER_DAY).toISOString(),
-    ]);
-  });
-
-  // Condition 4: STARTING the builder proves she found it, so any pattern row
-  // suppresses this forever — `draft` included, which is the status a
-  // half-built week sits in and the easy one to get wrong.
-  it('suppresses forever once a pattern exists for the pair', async () => {
-    rows.household_members = [activeNannyRow()];
-    rows.pay_arrangements = [arrangementRow()];
-    rows.schedule_patterns = [
-      { household_id: HOUSEHOLD_ID, carer_id: CARER_ID },
-    ];
-
+    await nanny();
+    await arrangement(
+      CARER_ID,
+      'Marisol',
+      new Date(NOW.getTime() - MS_PER_DAY + 60_000).toISOString()
+    );
     expect(await listScheduleNotSet(NOW)).toEqual([]);
   });
 
-  // The status arm of condition 4 is enforced by ASKING FOR NO STATUS. A
-  // filter here would be the bug: `draft` is exactly the status that must
-  // suppress, and it is the one a status filter would most plausibly omit.
-  it('never filters schedule_patterns by status', async () => {
-    rows.household_members = [activeNannyRow()];
-    rows.pay_arrangements = [arrangementRow()];
-    await listScheduleNotSet(NOW);
-
-    const eqs = callsFor('schedule_patterns', 'eq').map(c => c.args[0]);
-    expect(eqs).not.toContain('status');
+  // STARTING the builder proves she found it, so any pattern row suppresses
+  // this forever, `draft` (the default status) included.
+  it('suppresses forever once a pattern exists for the pair', async () => {
+    await nanny();
+    await arrangement();
+    await pattern(CARER_ID);
+    expect(await listScheduleNotSet(NOW)).toEqual([]);
   });
 
-  // 014's column comment: a parent can sketch a usual week before any nanny
-  // exists, leaving `carer_id` null. That still proves the builder was found,
-  // so it suppresses every carer in that household.
+  // 014's column comment: an unassigned sketch still proves the builder was
+  // found, so it suppresses every carer in that household.
   it('treats an unassigned household pattern as proof the builder was found', async () => {
-    rows.household_members = [activeNannyRow()];
-    rows.pay_arrangements = [arrangementRow()];
-    rows.schedule_patterns = [{ household_id: HOUSEHOLD_ID, carer_id: null }];
-
+    await nanny();
+    await arrangement();
+    await pattern(null);
     expect(await listScheduleNotSet(NOW)).toEqual([]);
   });
 
   it('does not let one carer’s pattern suppress a second carer', async () => {
-    rows.household_members = [
-      activeNannyRow(),
-      activeNannyRow({ user_id: OTHER_CARER_ID }),
-    ];
-    rows.pay_arrangements = [
-      arrangementRow(),
-      arrangementRow({ carer_id: OTHER_CARER_ID, carer_display_name: 'Ada' }),
-    ];
-    rows.schedule_patterns = [
-      { household_id: HOUSEHOLD_ID, carer_id: CARER_ID },
-    ];
+    await nanny();
+    await nanny(OTHER_CARER_ID);
+    await arrangement();
+    await arrangement(OTHER_CARER_ID, 'Ada');
+    await pattern(CARER_ID);
 
     expect(await listScheduleNotSet(NOW)).toEqual([
       {
@@ -210,14 +184,10 @@ describe('DefaultReminderCandidateSource.listScheduleNotSet', () => {
     ]);
   });
 
-  // Same precedence `resolveCarerDisplayName` uses in the pay domain: the
-  // per-household override is what this family calls her.
+  // Same precedence `resolveCarerDisplayName` uses in the pay domain.
   it('prefers the household display-name override over the stored name', async () => {
-    rows.household_members = [
-      activeNannyRow({ display_name_override: 'Mari' }),
-    ];
-    rows.pay_arrangements = [arrangementRow()];
-
+    await nanny(CARER_ID, { display_name_override: 'Mari' });
+    await arrangement();
     expect((await listScheduleNotSet(NOW))[0]?.carer_display_name).toBe('Mari');
   });
 });

@@ -1,13 +1,15 @@
 /**
  * Job-run repository — read-only queries over `job_runs` for `jobHealthJob`
  * (J1-b). `JobRunService` owns the write-side lifecycle (start/complete/fail)
- * and already talks to Supabase directly; this repository exists only for
+ * and talks to D1 (Drizzle) directly; this repository exists only for
  * the two read shapes the health check needs, kept separate so the health
  * job can inject a fake instead of touching a real client in tests.
  *
  * @module domains/job/repositories/jobRunRepository
  */
-import { supabaseService } from '../../../config/supabase';
+import { and, desc, eq, gte, inArray, sql } from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { jobRuns } from '../../../db/schema';
 import { DatabaseError } from '../../../errors';
 
 export interface LatestJobRun {
@@ -22,6 +24,11 @@ export interface JobStatusCount {
   count: number;
 }
 
+export interface JobRunCount {
+  job_name: string;
+  count: number;
+}
+
 export class JobRunRepository {
   /**
    * The latest SUCCESSFUL run per job, among runs started after `sinceIso`.
@@ -31,23 +38,29 @@ export class JobRunRepository {
    * each job's own expected cadence, not on this query.
    */
   async latestPerJob(sinceIso: string): Promise<LatestJobRun[]> {
-    const { data, error } = await supabaseService
-      .from('job_runs')
-      .select('job_name, status, started_at')
-      .eq('status', 'success')
-      .gte('started_at', sinceIso)
-      .order('started_at', { ascending: false });
-
-    if (error) {
+    let data: LatestJobRun[];
+    try {
+      data = (await db
+        .select({
+          job_name: jobRuns.job_name,
+          status: jobRuns.status,
+          started_at: jobRuns.started_at,
+        })
+        .from(jobRuns)
+        .where(
+          and(eq(jobRuns.status, 'success'), gte(jobRuns.started_at, sinceIso))
+        )
+        .orderBy(desc(jobRuns.started_at))) as LatestJobRun[];
+    } catch (error) {
       throw new DatabaseError(
         'Failed to load latest job runs',
         'DATABASE_ERROR',
-        { operation: 'latestPerJob', error: error.message }
+        { operation: 'latestPerJob', error: String(error) }
       );
     }
 
     const latestByJob = new Map<string, LatestJobRun>();
-    for (const row of (data ?? []) as LatestJobRun[]) {
+    for (const row of data) {
       // Rows are ordered started_at DESC, so the first row seen per job_name
       // is already its latest.
       if (!latestByJob.has(row.job_name)) {
@@ -59,24 +72,27 @@ export class JobRunRepository {
 
   /** Per-job counts of `failed`/`partial` runs started after `sinceIso`. */
   async countByStatusSince(sinceIso: string): Promise<JobStatusCount[]> {
-    const { data, error } = await supabaseService
-      .from('job_runs')
-      .select('job_name, status')
-      .in('status', ['failed', 'partial'])
-      .gte('started_at', sinceIso);
-
-    if (error) {
+    let data: Array<Pick<JobStatusCount, 'job_name' | 'status'>>;
+    try {
+      data = (await db
+        .select({ job_name: jobRuns.job_name, status: jobRuns.status })
+        .from(jobRuns)
+        .where(
+          and(
+            inArray(jobRuns.status, ['failed', 'partial']),
+            gte(jobRuns.started_at, sinceIso)
+          )
+        )) as Array<Pick<JobStatusCount, 'job_name' | 'status'>>;
+    } catch (error) {
       throw new DatabaseError(
         'Failed to count job runs by status',
         'DATABASE_ERROR',
-        { operation: 'countByStatusSince', error: error.message }
+        { operation: 'countByStatusSince', error: String(error) }
       );
     }
 
     const counts = new Map<string, JobStatusCount>();
-    for (const row of (data ?? []) as Array<
-      Pick<JobStatusCount, 'job_name' | 'status'>
-    >) {
+    for (const row of data) {
       const key = `${row.job_name}:${row.status}`;
       const existing = counts.get(key);
       if (existing) {
@@ -90,5 +106,24 @@ export class JobRunRepository {
       }
     }
     return [...counts.values()];
+  }
+
+  /** Per-job count of runs of ANY status started after `sinceIso`. */
+  async countRunsSince(sinceIso: string): Promise<JobRunCount[]> {
+    try {
+      return await db
+        .select({
+          job_name: jobRuns.job_name,
+          count: sql<number>`count(*)`,
+        })
+        .from(jobRuns)
+        .where(gte(jobRuns.started_at, sinceIso))
+        .groupBy(jobRuns.job_name);
+    } catch (error) {
+      throw new DatabaseError('Failed to count job runs', 'DATABASE_ERROR', {
+        operation: 'countRunsSince',
+        error: String(error),
+      });
+    }
   }
 }

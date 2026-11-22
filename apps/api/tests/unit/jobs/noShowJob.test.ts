@@ -1,11 +1,18 @@
 /**
  * TDD tests for the no-show sweep. Every dependency is injected via
- * `runNoShowJob`'s parameters so these never touch Supabase — same shape as
+ * `runNoShowJob`'s parameters so these never touch the database — same shape as
  * `reminderJob.test.ts`, which this job's structure is copied from.
  */
-import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import { SHIFT_STATUSES } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import {
+  households,
+  shifts,
+  timeEntries,
+  user,
+  userProfiles,
+} from '../../../src/db/schema';
 import type { PushPayload } from '../../../src/domains/notification/types';
 import type {
   NoShowCandidateSource,
@@ -13,11 +20,19 @@ import type {
   NoShowTimeEntry,
   NoShowTimeEntryLister,
 } from '../../../src/jobs/noShowJob';
-import { buildNoShowKey, runNoShowJob } from '../../../src/jobs/noShowJob';
 import type {
   ReminderLogClaim,
   ReminderPushService,
 } from '../../../src/jobs/reminderJob';
+import { createTestDb } from '../../helpers/testDb';
+
+// The default listers read D1; swap the app's handle BEFORE the dynamic import.
+const t = await createTestDb();
+mock.module('../../../src/db/client', () => ({ db: t.db }));
+const { buildNoShowKey, runNoShowJob } = await import(
+  '../../../src/jobs/noShowJob'
+);
+afterAll(() => t.dispose());
 
 const CARER_ID = 'carer-11111111-1111-1111-1111-111111111111';
 const PARENT_ID = 'parent-11111111-1111-1111-1111-111111111111';
@@ -538,75 +553,51 @@ describe('runNoShowJob — failure isolation', () => {
 });
 
 /**
- * DefaultNoShowTimeEntryLister is the only raw `time_entries` query outside
- * the repository. These tests mock Supabase and exercise the default lister
- * via `runNoShowJob` (entries param omitted).
+ * DefaultNoShowTimeEntryLister reads `time_entries` directly. These tests run
+ * it against the D1 test database via `runNoShowJob` (entries param omitted),
+ * so the voided exclusion is exercised through the real query.
  */
 describe('DefaultNoShowTimeEntryLister — voided entries are not coverage (069)', () => {
-  let runNoShowJobWithDefaults: typeof runNoShowJob;
-  // `any` matches the house style for a mocked supabase client (see
-  // scheduleShiftRepository.test.ts:16) — the mocked shape and the real
-  // SupabaseClient type do not line up, and tests get a relaxed no-any rule.
-  // biome-ignore lint/suspicious/noExplicitAny: mocked supabase client
-  let mockSupabaseService: any;
-
-  function createSupabaseQueryChain(finalResponse: {
-    data: unknown;
-    error: unknown;
-  }): any {
-    // D53-honest fake: `.neq` filters the rows the way the real client does,
-    // so the voided exclusion is exercised through the QUERY — production has
-    // no JS post-filter to lean on.
-    let rows = finalResponse.data;
-    const chain: any = {
-      select: mock(() => chain),
-      eq: mock(() => chain),
-      neq: mock((column: string, value: unknown) => {
-        if (Array.isArray(rows)) {
-          rows = rows.filter(
-            (row: Record<string, unknown>) => row[column] !== value
-          );
-        }
-        return chain;
-      }),
-      or: mock(() => chain),
-      // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-      then: (resolve: (value: unknown) => unknown) =>
-        Promise.resolve({ data: rows, error: finalResponse.error }).then(
-          resolve
-        ),
-    };
-    return chain;
-  }
+  const runNoShowJobWithDefaults = runNoShowJob;
 
   beforeAll(async () => {
-    mock.module('../../../src/config/supabase', () => {
-      const obj = {
-        from: mock(() => createSupabaseQueryChain({ data: [], error: null })),
-      };
-      return { supabase: obj, supabaseService: obj };
+    await t.db
+      .insert(user)
+      .values({ id: CARER_ID, name: 'Sarah', email: 'sarah@example.com' });
+    await t.db.insert(userProfiles).values({ user_id: CARER_ID });
+    await t.db
+      .insert(households)
+      .values({ id: HOUSEHOLD_ID, name: 'Home', timezone: 'Europe/London' });
+    await t.db.insert(shifts).values({
+      id: SHIFT_ID,
+      household_id: HOUSEHOLD_ID,
+      carer_id: CARER_ID,
+      starts_at: SHIFT_STARTS_AT,
+      ends_at: iso(minutes(60)),
+      timezone: 'Europe/London',
+      local_date: '2026-08-06',
+      kind: 'recurring',
+      status: 'confirmed',
     });
-
-    const mod = await import('../../../src/jobs/noShowJob');
-    runNoShowJobWithDefaults = mod.runNoShowJob;
-    mockSupabaseService = (await import('../../../src/config/supabase'))
-      .supabaseService;
   });
 
+  async function seedEntry(status: string) {
+    await t.d1.prepare('DELETE FROM time_entries').run();
+    await t.db.insert(timeEntries).values({
+      household_id: HOUSEHOLD_ID,
+      carer_id: CARER_ID,
+      shift_id: SHIFT_ID,
+      clock_in_at: iso(minutes(5)),
+      clock_out_at: iso(minutes(65)),
+      status,
+      local_date: '2026-08-06',
+      timezone: 'Europe/London',
+      carer_display_name: 'Sarah',
+    });
+  }
+
   it('alerts when the only covering entry is voided — voided did not happen', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createSupabaseQueryChain({
-        data: [
-          {
-            shift_id: SHIFT_ID,
-            clock_in_at: iso(minutes(5)),
-            clock_out_at: iso(minutes(65)),
-            status: 'voided',
-          },
-        ],
-        error: null,
-      })
-    );
+    await seedEntry('voided');
     const { push, sent } = capturingPush();
 
     const result = await runNoShowJobWithDefaults(
@@ -623,12 +614,11 @@ describe('DefaultNoShowTimeEntryLister — voided entries are not coverage (069)
     expect(sent).toHaveLength(1);
   });
 
-  it('excludes voided rows in the Supabase query', async () => {
-    const chain = createSupabaseQueryChain({ data: [], error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-    const { push } = capturingPush();
+  it('does not alert when a non-voided entry covers the shift', async () => {
+    await seedEntry('approved');
+    const { push, sent } = capturingPush();
 
-    await runNoShowJobWithDefaults(
+    const result = await runNoShowJobWithDefaults(
       candidates([shift()]),
       undefined,
       alwaysClaims(),
@@ -638,6 +628,7 @@ describe('DefaultNoShowTimeEntryLister — voided entries are not coverage (069)
       noneDisputed()
     );
 
-    expect(chain.neq).toHaveBeenCalledWith('status', 'voided');
+    expect(result.noShow.sent).toBe(0);
+    expect(sent).toHaveLength(0);
   });
 });

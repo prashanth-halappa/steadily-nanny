@@ -15,7 +15,9 @@ import type {
   ShiftReminderCandidate,
   TimesheetReminderCandidate,
 } from '../../../src/jobs/reminderJob';
-import { runReminderJob } from '../../../src/jobs/reminderJob';
+
+mock.module('../../../src/db/client', () => ({ db: {} }));
+const { runReminderJob } = await import('../../../src/jobs/reminderJob');
 
 const CARER_ID = 'carer-11111111-1111-1111-1111-111111111111';
 const PARENT_ID = 'parent-11111111-1111-1111-1111-111111111111';

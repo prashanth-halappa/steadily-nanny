@@ -1,137 +1,96 @@
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+} from 'bun:test';
+import { createTestDb, type TestDb } from '../../../../helpers/testDb';
 
-// biome-ignore lint/suspicious/noExplicitAny: test-only mock typing
-let JobRunRepository: any;
-// biome-ignore lint/suspicious/noExplicitAny: test-only mock typing
-let mockSupabaseService: any;
+let t: TestDb;
+let JobRunRepository: typeof import('../../../../../src/domains/job/repositories/jobRunRepository').JobRunRepository;
 
-// biome-ignore lint/suspicious/noExplicitAny: test-only mock typing
-function createMockQueryChain(finalResponse: {
-  data: unknown;
-  error: unknown;
-}): any {
-  const chain: any = {
-    select: mock(() => chain),
-    eq: mock(() => chain),
-    in: mock(() => chain),
-    gte: mock(() => chain),
-    order: mock(() => chain),
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-    then: (resolve: (value: unknown) => unknown) =>
-      Promise.resolve(finalResponse).then(resolve),
-  };
-  return chain;
-}
+const seed = (id: string, job: string, status: string, startedAt: string) =>
+  t.d1
+    .prepare(
+      'INSERT INTO job_runs (id, job_name, status, started_at) VALUES (?, ?, ?, ?)'
+    )
+    .bind(id, job, status, startedAt)
+    .run();
 
 beforeAll(async () => {
-  mock.module('../../../../../src/config/supabase', () => {
-    const obj = {
-      from: mock(() => createMockQueryChain({ data: [], error: null })),
-    };
-    return { supabase: obj, supabaseService: obj };
-  });
-
-  const mod = await import(
+  t = await createTestDb();
+  mock.module('../../../../../src/db/client', () => ({ db: t.db }));
+  ({ JobRunRepository } = await import(
     '../../../../../src/domains/job/repositories/jobRunRepository'
-  );
-  JobRunRepository = mod.JobRunRepository;
-  mockSupabaseService = (await import('../../../../../src/config/supabase'))
-    .supabaseService;
+  ));
 });
+afterAll(() => t.dispose());
+beforeEach(() => t.d1.prepare('DELETE FROM job_runs').run());
 
-beforeEach(() => {
-  mockSupabaseService.from.mockClear?.();
-});
+const SINCE = '2026-08-01T00:00:00.000Z';
 
 describe('JobRunRepository.latestPerJob', () => {
-  it('collapses to the latest success row per job_name (rows arrive started_at DESC)', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({
-        data: [
-          {
-            job_name: 'reminders',
-            status: 'success',
-            started_at: '2026-08-17T10:00:00Z',
-          },
-          {
-            job_name: 'reminders',
-            status: 'success',
-            started_at: '2026-08-17T09:00:00Z',
-          },
-          {
-            job_name: 'schedule-horizon',
-            status: 'success',
-            started_at: '2026-08-17T03:00:00Z',
-          },
-        ],
-        error: null,
-      })
-    );
+  it('collapses to the latest success per job inside the window', async () => {
+    await seed('a1', 'reminders', 'success', '2026-08-02T01:00:00.000Z');
+    await seed('a2', 'reminders', 'success', '2026-08-02T05:00:00.000Z');
+    await seed('a3', 'reminders', 'failed', '2026-08-02T09:00:00.000Z');
+    await seed('b1', 'no-show-sweep', 'success', '2026-07-01T00:00:00.000Z');
 
-    const repo = new JobRunRepository();
-    const result = await repo.latestPerJob('2026-08-16T00:00:00Z');
-
-    expect(result).toEqual([
+    const rows = await new JobRunRepository().latestPerJob(SINCE);
+    expect(rows).toEqual([
       {
         job_name: 'reminders',
         status: 'success',
-        started_at: '2026-08-17T10:00:00Z',
-      },
-      {
-        job_name: 'schedule-horizon',
-        status: 'success',
-        started_at: '2026-08-17T03:00:00Z',
+        started_at: '2026-08-02T05:00:00.000Z',
       },
     ]);
-    expect(mockSupabaseService.from).toHaveBeenCalledWith('job_runs');
   });
 
   it('returns [] when nothing succeeded in the window', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: [], error: null })
-    );
-    const repo = new JobRunRepository();
-    expect(await repo.latestPerJob('2026-08-16T00:00:00Z')).toEqual([]);
-  });
-
-  it('throws a DatabaseError on a query failure', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: { message: 'boom' } })
-    );
-    const repo = new JobRunRepository();
-    await expect(repo.latestPerJob('2026-08-16T00:00:00Z')).rejects.toThrow();
+    await seed('a1', 'reminders', 'failed', '2026-08-02T01:00:00.000Z');
+    expect(await new JobRunRepository().latestPerJob(SINCE)).toEqual([]);
   });
 });
 
 describe('JobRunRepository.countByStatusSince', () => {
-  it('counts failed/partial runs per job', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({
-        data: [
-          { job_name: 'no-show-sweep', status: 'failed' },
-          { job_name: 'no-show-sweep', status: 'failed' },
-          { job_name: 'reminders', status: 'partial' },
-        ],
-        error: null,
-      })
-    );
+  it('counts failed/partial runs per job and status', async () => {
+    await seed('a1', 'reminders', 'failed', '2026-08-02T01:00:00.000Z');
+    await seed('a2', 'reminders', 'failed', '2026-08-02T02:00:00.000Z');
+    await seed('a3', 'reminders', 'partial', '2026-08-02T03:00:00.000Z');
+    await seed('a4', 'reminders', 'success', '2026-08-02T04:00:00.000Z');
 
-    const repo = new JobRunRepository();
-    const result = await repo.countByStatusSince('2026-08-16T00:00:00Z');
-
-    expect(result).toEqual(
-      expect.arrayContaining([
-        { job_name: 'no-show-sweep', status: 'failed', count: 2 },
-        { job_name: 'reminders', status: 'partial', count: 1 },
-      ])
-    );
+    const rows = await new JobRunRepository().countByStatusSince(SINCE);
+    expect(rows).toHaveLength(2);
+    expect(rows).toContainEqual({
+      job_name: 'reminders',
+      status: 'failed',
+      count: 2,
+    });
+    expect(rows).toContainEqual({
+      job_name: 'reminders',
+      status: 'partial',
+      count: 1,
+    });
   });
 
   it('returns [] when nothing failed', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: [], error: null })
-    );
-    const repo = new JobRunRepository();
-    expect(await repo.countByStatusSince('2026-08-16T00:00:00Z')).toEqual([]);
+    expect(await new JobRunRepository().countByStatusSince(SINCE)).toEqual([]);
+  });
+});
+
+describe('JobRunRepository.countRunsSince', () => {
+  it('counts runs of any status per job inside the window', async () => {
+    await seed('a1', 'reminders', 'success', '2026-08-02T01:00:00.000Z');
+    await seed('a2', 'reminders', 'failed', '2026-08-02T02:00:00.000Z');
+    await seed('a3', 'reminders', 'running', '2026-07-01T00:00:00.000Z');
+    await seed('b1', 'no-show-sweep', 'success', '2026-08-02T02:00:00.000Z');
+
+    const rows = await new JobRunRepository().countRunsSince(SINCE);
+    expect(rows).toHaveLength(2);
+    expect(rows).toContainEqual({ job_name: 'reminders', count: 2 });
+    expect(rows).toContainEqual({ job_name: 'no-show-sweep', count: 1 });
   });
 });

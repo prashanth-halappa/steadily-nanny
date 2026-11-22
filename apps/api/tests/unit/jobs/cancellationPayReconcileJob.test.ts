@@ -3,8 +3,14 @@
  * `cancellation_paid` with no payable `time_entries` row behind them.
  */
 import { describe, expect, it, mock } from 'bun:test';
-import { TimeEntryNotEditableError } from '../../../src/domains/timesheet/errors/timesheetErrors';
-import { runCancellationPayReconcileJob } from '../../../src/jobs/cancellationPayReconcileJob';
+import '../../helpers/stubDbClient';
+
+const { TimeEntryNotEditableError } = await import(
+  '../../../src/domains/timesheet/errors/timesheetErrors'
+);
+const { runCancellationPayReconcileJob } = await import(
+  '../../../src/jobs/cancellationPayReconcileJob'
+);
 
 const stuckShift = {
   id: 's1',

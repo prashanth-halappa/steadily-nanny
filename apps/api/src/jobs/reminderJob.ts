@@ -43,7 +43,27 @@ import {
   SHIFT_STATUSES,
 } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import type { Timesheet } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
-import { supabaseService } from '../config/supabase';
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  lt,
+  lte,
+  or,
+} from 'drizzle-orm';
+import { db } from '../db/client';
+import {
+  householdMembers,
+  households,
+  payArrangements,
+  schedulePatterns,
+  shifts,
+  timesheets,
+  userDeviceInfo,
+} from '../db/schema';
 import { HouseholdMemberRepository } from '../domains/household/repositories/householdMemberRepository';
 import { HOUSEHOLD_ROLES } from '../domains/household/schemas';
 import { NotificationPrefsRepository } from '../domains/notification/repositories/notificationPrefsRepository';
@@ -361,25 +381,38 @@ export class DefaultReminderCandidateSource implements ReminderCandidateSource {
     // (`createExtraShift` → `SHIFT_KINDS.EXTRA`), so `cover_ask_reminder` had
     // zero possible candidates and N7 could never fire. `cover` stays in the
     // list so the kind means something the day it is written.
-    const { data, error } = await supabaseService
-      .from('shifts')
-      .select('id, household_id, carer_id, starts_at, kind, status')
-      .not('carer_id', 'is', null)
-      .gte('starts_at', windowStart)
-      .lt('starts_at', windowEnd)
-      .or(
-        `status.eq.${SHIFT_STATUSES.CONFIRMED},and(kind.in.(${SHIFT_KINDS.COVER},${SHIFT_KINDS.EXTRA}),status.eq.${SHIFT_STATUSES.PENDING})`
-      );
-
-    if (error) {
+    try {
+      return (await db
+        .select({
+          id: shifts.id,
+          household_id: shifts.household_id,
+          carer_id: shifts.carer_id,
+          starts_at: shifts.starts_at,
+          kind: shifts.kind,
+          status: shifts.status,
+        })
+        .from(shifts)
+        .where(
+          and(
+            isNotNull(shifts.carer_id),
+            gte(shifts.starts_at, windowStart),
+            lt(shifts.starts_at, windowEnd),
+            or(
+              eq(shifts.status, SHIFT_STATUSES.CONFIRMED),
+              and(
+                inArray(shifts.kind, [SHIFT_KINDS.COVER, SHIFT_KINDS.EXTRA]),
+                eq(shifts.status, SHIFT_STATUSES.PENDING)
+              )
+            )
+          )
+        )) as ShiftReminderCandidate[];
+    } catch (error) {
       throw new DatabaseError(
         'Failed to list shift reminder candidates',
         'DATABASE_ERROR',
-        { details: error.message }
+        { details: error instanceof Error ? error.message : String(error) }
       );
     }
-
-    return (data ?? []) as ShiftReminderCandidate[];
   }
 
   async listTimesheetAwaitingApproval(
@@ -389,21 +422,28 @@ export class DefaultReminderCandidateSource implements ReminderCandidateSource {
       now.getTime() - TIMESHEET_SUBMITTED_DAYS * 24 * 60 * 60 * 1000
     ).toISOString();
 
-    const { data, error } = await supabaseService
-      .from('timesheets')
-      .select('id, household_id, week_start, updated_at')
-      .eq('status', 'submitted')
-      .lte('updated_at', cutoff);
-
-    if (error) {
+    try {
+      return (await db
+        .select({
+          id: timesheets.id,
+          household_id: timesheets.household_id,
+          week_start: timesheets.week_start,
+          updated_at: timesheets.updated_at,
+        })
+        .from(timesheets)
+        .where(
+          and(
+            eq(timesheets.status, 'submitted'),
+            lte(timesheets.updated_at, cutoff)
+          )
+        )) as TimesheetReminderCandidate[];
+    } catch (error) {
       throw new DatabaseError(
         'Failed to list timesheet reminder candidates',
         'DATABASE_ERROR',
-        { details: error.message }
+        { details: error instanceof Error ? error.message : String(error) }
       );
     }
-
-    return (data ?? []) as TimesheetReminderCandidate[];
   }
 
   /**
@@ -423,60 +463,69 @@ export class DefaultReminderCandidateSource implements ReminderCandidateSource {
    *       `draft` is exactly the status a half-built week sits in.
    */
   async listScheduleNotSet(now: Date): Promise<ScheduleNotSetCandidate[]> {
-    const { data: memberData, error: memberError } = await supabaseService
-      .from('household_members')
-      .select(
-        'household_id, user_id, display_name_override, households!inner(state)'
-      )
-      .eq('role', HOUSEHOLD_ROLES.NANNY)
-      .eq('status', 'active')
-      .eq('households.state', 'live');
-
-    if (memberError) {
+    let nannies: ActiveNannyRow[];
+    try {
+      nannies = (await db
+        .select({
+          household_id: householdMembers.household_id,
+          user_id: householdMembers.user_id,
+          display_name_override: householdMembers.display_name_override,
+        })
+        .from(householdMembers)
+        .innerJoin(households, eq(households.id, householdMembers.household_id))
+        .where(
+          and(
+            eq(householdMembers.role, HOUSEHOLD_ROLES.NANNY),
+            eq(householdMembers.status, 'active'),
+            eq(households.state, 'live')
+          )
+        )) as ActiveNannyRow[];
+    } catch (error) {
       throw new DatabaseError(
         'Failed to list schedule-not-set nannies',
         'DATABASE_ERROR',
-        { details: memberError.message }
+        { details: error instanceof Error ? error.message : String(error) }
       );
     }
-
-    const nannies = (memberData ?? []) as ActiveNannyRow[];
     if (nannies.length === 0) {
       return [];
     }
 
-    const carerIds = [...new Set(nannies.map(row => row.user_id))];
-    const householdIds = [...new Set(nannies.map(row => row.household_id))];
     const cutoff = new Date(
       now.getTime() - SCHEDULE_NOT_SET_MIN_AGE_MS
     ).toISOString();
 
-    const [arrangements, patterns] = await Promise.all([
-      supabaseService
-        .from('pay_arrangements')
-        .select('household_id, carer_id, carer_display_name')
-        .in('household_id', householdIds)
-        .in('carer_id', carerIds)
-        .lte('created_at', cutoff),
-      supabaseService
-        .from('schedule_patterns')
-        .select('household_id, carer_id')
-        .in('household_id', householdIds),
-    ]);
-
-    if (arrangements.error || patterns.error) {
+    // No id lists in the WHERE (D1 caps bound params at 100): filter the two
+    // sets against `nannies` in JS below instead.
+    let arrangements: ArrangementPairRow[];
+    let patterns: PatternPairRow[];
+    try {
+      [arrangements, patterns] = await Promise.all([
+        db
+          .select({
+            household_id: payArrangements.household_id,
+            carer_id: payArrangements.carer_id,
+            carer_display_name: payArrangements.carer_display_name,
+          })
+          .from(payArrangements)
+          .where(lte(payArrangements.created_at, cutoff)),
+        db
+          .select({
+            household_id: schedulePatterns.household_id,
+            carer_id: schedulePatterns.carer_id,
+          })
+          .from(schedulePatterns),
+      ]);
+    } catch (error) {
       throw new DatabaseError(
         'Failed to list schedule-not-set candidates',
         'DATABASE_ERROR',
-        {
-          details:
-            arrangements.error?.message ?? patterns.error?.message ?? 'unknown',
-        }
+        { details: error instanceof Error ? error.message : String(error) }
       );
     }
 
     const agreedNames = new Map<string, string | null>();
-    for (const row of (arrangements.data ?? []) as ArrangementPairRow[]) {
+    for (const row of arrangements) {
       if (!row.carer_id) continue;
       agreedNames.set(
         pairKey(row.household_id, row.carer_id),
@@ -486,7 +535,7 @@ export class DefaultReminderCandidateSource implements ReminderCandidateSource {
 
     const startedPairs = new Set<string>();
     const startedHouseholds = new Set<string>();
-    for (const row of (patterns.data ?? []) as PatternPairRow[]) {
+    for (const row of patterns) {
       // 014's column comment: a parent can sketch a usual week before any
       // nanny exists, leaving `carer_id` null. That week is still proof the
       // builder was found, so it suppresses every carer in the household —
@@ -530,24 +579,28 @@ class DefaultUserTimezoneResolver implements UserTimezoneResolver {
       return prefs.timezone;
     }
 
-    const { data, error } = await supabaseService
-      .from('user_device_info')
-      .select('timezone')
-      .eq('user_id', userId)
-      .not('timezone', 'is', null)
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) {
+    let deviceTz: string | null | undefined;
+    try {
+      const rows = await db
+        .select({ timezone: userDeviceInfo.timezone })
+        .from(userDeviceInfo)
+        .where(
+          and(
+            eq(userDeviceInfo.user_id, userId),
+            isNotNull(userDeviceInfo.timezone)
+          )
+        )
+        .orderBy(desc(userDeviceInfo.updated_at))
+        .limit(1);
+      deviceTz = rows[0]?.timezone;
+    } catch (error) {
       logger.error('Failed to load device timezone for reminder job', {
         userId,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       });
       return 'UTC';
     }
 
-    const deviceTz = data?.timezone;
     if (typeof deviceTz === 'string' && isValidIanaTimezone(deviceTz)) {
       return deviceTz;
     }

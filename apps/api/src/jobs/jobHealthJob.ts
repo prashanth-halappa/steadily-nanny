@@ -10,12 +10,15 @@
  * sweep honest about that), so this job is the automated surface that reads
  * it and pages someone when it disagrees with "cron said success".
  *
- * TWO independent signals, both read-only:
- *  (i)  `job_runs` — is each of the 9 registered jobs' latest SUCCESS recent
- *       enough for its own cadence, and did any job fail/partial in the last
- *       24h (`JobRunRepository`, extended for this job).
- *  (ii) `net._http_response` — did pg_net itself see a non-2xx or missing
- *       response in the last 24h, via `public.job_http_failures` (105).
+ * TWO independent signals, both read from `job_runs`:
+ *  (i)  is each of the 9 registered jobs' latest SUCCESS recent enough for
+ *       its own cadence, and did any job fail/partial in the last 24h.
+ *  (ii) did each job actually START about as often as its cron says it
+ *       should in the last 24h (`runsPer24h`)? This replaces the old
+ *       `net._http_response` / `job_http_failures` probe: pg_net is gone on
+ *       Cloudflare (cron triggers call the job in-process), so "the cron
+ *       fired but the job never ran" is now detected as missing `job_runs`
+ *       rows instead of non-2xx HTTP responses.
  *
  * `evaluateJobHealth` is the pure decision function — no I/O, fixtures in,
  * an issue list out. `runJobHealthJob` is the thin wrapper that fetches the
@@ -25,23 +28,20 @@
  * is logged once and the health summary is still recorded on the `job_runs`
  * row, same as every other job.
  *
- * SETUP: scheduled daily via pg_cron in migration `105_job_health_cron.sql`
- * (POST `/api/jobs/job-health`), same Vault-secret prerequisites as every
- * other job cron.
+ * SETUP: scheduled daily by the `15 6 * * *` Workers cron (`scheduled.ts`).
  *
  * @module jobs/jobHealthJob
  */
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
-import { supabaseService } from '../config/supabase';
 import { EmailService } from '../domains/email/services/emailService';
 import {
+  type JobRunCount,
   JobRunRepository,
   type JobStatusCount,
   type LatestJobRun,
 } from '../domains/job/repositories/jobRunRepository';
 import { notifyUser } from '../domains/notification';
 import type { PushPayload } from '../domains/notification/types';
-import { DatabaseError } from '../errors';
 import { logger } from '../middlewares/logger';
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -50,11 +50,15 @@ export interface RegisteredJobHealthDef {
   jobName: string;
   /** Expected cadence's max acceptable gap since the last SUCCESS. */
   maxGapMs: number;
+  /** How many times its cron fires in 24h (see `scheduled.ts`). */
+  runsPer24h: number;
 }
 
+/** Fewer runs than this fraction of `runsPer24h` means ticks are being lost. */
+const MIN_RUN_FRACTION = 0.5;
+
 /**
- * The 9 jobs actually registered as pg_cron entries as of this audit (S2's
- * FACTS). `example-maintenance` is deliberately excluded — it is the SETUP
+ * The 9 jobs actually registered as Workers cron triggers (`scheduled.ts`). `example-maintenance` is deliberately excluded — it is the SETUP
  * template job, never scheduled in production.
  *
  * Budgets: hourly → 3h, daily → 30h, every 5-10 min → 1h — wide enough that
@@ -62,40 +66,38 @@ export interface RegisteredJobHealthDef {
  * that a genuinely dead job is caught same-day.
  */
 export const REGISTERED_JOBS: readonly RegisteredJobHealthDef[] = [
-  { jobName: 'schedule-horizon', maxGapMs: 30 * HOUR_MS },
-  { jobName: 'shift-completion', maxGapMs: 30 * HOUR_MS },
-  { jobName: 'integrity-checks', maxGapMs: 30 * HOUR_MS },
-  { jobName: 'reminders', maxGapMs: 3 * HOUR_MS },
-  { jobName: 'cancellation-pay-reconcile', maxGapMs: 3 * HOUR_MS },
-  { jobName: 'uncovered-digest', maxGapMs: 3 * HOUR_MS },
-  { jobName: 'no-show-digest', maxGapMs: 3 * HOUR_MS },
-  { jobName: 'no-show-sweep', maxGapMs: 1 * HOUR_MS },
-  { jobName: 'cover-ask-expiry', maxGapMs: 1 * HOUR_MS },
+  { jobName: 'schedule-horizon', maxGapMs: 30 * HOUR_MS, runsPer24h: 1 },
+  { jobName: 'shift-completion', maxGapMs: 30 * HOUR_MS, runsPer24h: 1 },
+  { jobName: 'integrity-checks', maxGapMs: 30 * HOUR_MS, runsPer24h: 1 },
+  { jobName: 'reminders', maxGapMs: 3 * HOUR_MS, runsPer24h: 24 },
+  {
+    jobName: 'cancellation-pay-reconcile',
+    maxGapMs: 3 * HOUR_MS,
+    runsPer24h: 24,
+  },
+  { jobName: 'uncovered-digest', maxGapMs: 3 * HOUR_MS, runsPer24h: 24 },
+  { jobName: 'no-show-digest', maxGapMs: 3 * HOUR_MS, runsPer24h: 24 },
+  { jobName: 'no-show-sweep', maxGapMs: 1 * HOUR_MS, runsPer24h: 144 },
+  { jobName: 'cover-ask-expiry', maxGapMs: 1 * HOUR_MS, runsPer24h: 288 },
 ];
 
 /** Wide enough to still see a daily job's last success from its longest budget. */
 const LOOKBACK_MS = 35 * HOUR_MS;
 /** (ii) — failed/partial runs in the last 24h. */
 const RECENT_FAILURE_WINDOW_MS = 24 * HOUR_MS;
-/** Matches the recent-failure window — same "last 24h" the check answers for. */
-const HTTP_FAILURE_LOOKBACK_INTERVAL = '24 hours';
 
 export interface JobHealthIssue {
   jobName: string;
-  kind: 'stale_or_missing' | 'failed_or_partial';
+  kind: 'stale_or_missing' | 'failed_or_partial' | 'missed_runs';
   detail: string;
-}
-
-export interface JobHttpFailure {
-  statusCode: number | null;
-  count: number;
 }
 
 export interface EvaluateJobHealthArgs {
   now: Date;
   latestSuccess: readonly LatestJobRun[];
   recentFailures: readonly JobStatusCount[];
-  httpFailures: readonly JobHttpFailure[];
+  /** Runs of any status started in the last 24h, per job. */
+  runCounts: readonly JobRunCount[];
 }
 
 export interface JobHealthEvaluation {
@@ -107,12 +109,12 @@ export interface JobHealthEvaluation {
  * Pure. (i) flags any registered job whose latest success is missing or
  * older than its own budget; (ii) flags any failed/partial `job_runs` row in
  * the last 24h even for a job that also succeeded since; (iii) flags any
- * non-zero pg_net failure count pg_cron's own enqueue history can't see.
+ * job that started far fewer runs in the last 24h than its cron implies.
  */
 export function evaluateJobHealth(
   args: EvaluateJobHealthArgs
 ): JobHealthEvaluation {
-  const { now, latestSuccess, recentFailures, httpFailures } = args;
+  const { now, latestSuccess, recentFailures, runCounts } = args;
   const issues: JobHealthIssue[] = [];
 
   const latestByJob = new Map(latestSuccess.map(row => [row.job_name, row]));
@@ -144,12 +146,16 @@ export function evaluateJobHealth(
     });
   }
 
-  for (const failure of httpFailures) {
-    if (failure.count > 0) {
+  const runsByJob = new Map(runCounts.map(row => [row.job_name, row.count]));
+  for (const def of REGISTERED_JOBS) {
+    const actual = runsByJob.get(def.jobName) ?? 0;
+    const floor = Math.floor(def.runsPer24h * MIN_RUN_FRACTION);
+    // A job with no rows at all is already reported as stale_or_missing above.
+    if (actual > 0 && actual < floor) {
       issues.push({
-        jobName: 'pg_net',
-        kind: 'failed_or_partial',
-        detail: `${failure.count} net._http_response row(s) with status ${failure.statusCode ?? 'null (no response)'} in the last 24h`,
+        jobName: def.jobName,
+        kind: 'missed_runs',
+        detail: `${actual} run(s) in the last 24h, expected about ${def.runsPer24h}`,
       });
     }
   }
@@ -170,12 +176,11 @@ export interface JobHealthJobResult {
 /** The narrow repository contract this job depends on, for injecting a fake in tests. */
 export type JobHealthRunRepository = Pick<
   JobRunRepository,
-  'latestPerJob' | 'countByStatusSince'
+  'latestPerJob' | 'countByStatusSince' | 'countRunsSince'
 >;
 
 export interface JobHealthJobDeps {
   jobRuns?: JobHealthRunRepository;
-  httpFailures?: () => Promise<JobHttpFailure[]>;
   sendEmail?: typeof EmailService.sendEmail;
   notify?: typeof notifyUser;
   clock?: { now: () => Date };
@@ -186,20 +191,6 @@ function parseCsvEnv(value: string | undefined): string[] {
     .split(',')
     .map(entry => entry.trim())
     .filter(Boolean);
-}
-
-async function defaultFetchHttpFailures(): Promise<JobHttpFailure[]> {
-  const { data, error } = await supabaseService.rpc('job_http_failures', {
-    p_since: HTTP_FAILURE_LOOKBACK_INTERVAL,
-  });
-  if (error) {
-    throw new DatabaseError(
-      'Failed to read pg_net failure counts',
-      'DATABASE_ERROR',
-      { error: error.message }
-    );
-  }
-  return (data ?? []) as JobHttpFailure[];
 }
 
 function buildAlertHtml(issues: readonly JobHealthIssue[]): string {
@@ -273,7 +264,6 @@ export async function runJobHealthJob(
   deps: JobHealthJobDeps = {}
 ): Promise<JobHealthJobResult> {
   const jobRuns = deps.jobRuns ?? new JobRunRepository();
-  const fetchHttpFailures = deps.httpFailures ?? defaultFetchHttpFailures;
   const now = (deps.clock ?? { now: () => new Date() }).now();
 
   if (
@@ -292,7 +282,7 @@ export async function runJobHealthJob(
 
   let latestSuccess: LatestJobRun[] = [];
   let recentFailures: JobStatusCount[] = [];
-  let httpFailures: JobHttpFailure[] = [];
+  let runCounts: JobRunCount[] = [];
   let errorCount = 0;
 
   try {
@@ -312,10 +302,10 @@ export async function runJobHealthJob(
   }
 
   try {
-    httpFailures = await fetchHttpFailures();
+    runCounts = await jobRuns.countRunsSince(sinceFailures);
   } catch (error) {
     errorCount++;
-    logger.error('Job health: failed to read pg_net failure counts', {
+    logger.error('Job health: failed to count recent runs', {
       error,
     });
   }
@@ -324,7 +314,7 @@ export async function runJobHealthJob(
     now,
     latestSuccess,
     recentFailures,
-    httpFailures,
+    runCounts,
   });
 
   let alerted = false;

@@ -47,7 +47,26 @@ import {
   SHIFT_STATUSES,
 } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import type { TimeEntry } from '@steadily-nanny/shared-types/schemas/timesheet.schema';
-import { supabaseService } from '../config/supabase';
+import {
+  and,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  or,
+} from 'drizzle-orm';
+import { db } from '../db/client';
+import {
+  households,
+  shiftChangeRequests,
+  shifts,
+  timeEntries,
+  userProfiles,
+} from '../db/schema';
 import { ReminderLogRepository } from '../domains/notification/repositories/reminderLogRepository';
 import { DatabaseError } from '../errors';
 import { logger } from '../middlewares/logger';
@@ -192,39 +211,49 @@ class DefaultNoShowCandidateSource implements NoShowCandidateSource {
     const windowStart = new Date(nowMs - NO_SHOW_WINDOW_END_MS).toISOString();
     const windowEnd = new Date(nowMs - NO_SHOW_GRACE_MS).toISOString();
 
-    const { data, error } = await supabaseService
-      .from('shifts')
-      .select('id, household_id, carer_id, starts_at, status')
-      .eq('status', SHIFT_STATUSES.CONFIRMED)
-      .not('carer_id', 'is', null)
-      .gt('starts_at', windowStart)
-      .lte('starts_at', windowEnd);
-
-    if (error) {
+    let found: Array<
+      Pick<Shift, 'id' | 'household_id' | 'carer_id' | 'starts_at' | 'status'>
+    >;
+    try {
+      found = (await db
+        .select({
+          id: shifts.id,
+          household_id: shifts.household_id,
+          carer_id: shifts.carer_id,
+          starts_at: shifts.starts_at,
+          status: shifts.status,
+        })
+        .from(shifts)
+        .where(
+          and(
+            eq(shifts.status, SHIFT_STATUSES.CONFIRMED),
+            isNotNull(shifts.carer_id),
+            gt(shifts.starts_at, windowStart),
+            lte(shifts.starts_at, windowEnd)
+          )
+        )) as typeof found;
+    } catch (error) {
       throw new DatabaseError(
         'Failed to list no-show candidates',
         'DATABASE_ERROR',
-        { details: error.message }
+        { details: error instanceof Error ? error.message : String(error) }
       );
     }
 
-    const shifts = (data ?? []) as Array<
-      Pick<Shift, 'id' | 'household_id' | 'carer_id' | 'starts_at' | 'status'>
-    >;
-    if (shifts.length === 0) {
+    if (found.length === 0) {
       return [];
     }
 
     const [timezones, names] = await Promise.all([
-      this.loadTimezones([...new Set(shifts.map(s => s.household_id))]),
+      this.loadTimezones([...new Set(found.map(s => s.household_id))]),
       this.loadCarerNames([
         ...new Set(
-          shifts.map(s => s.carer_id).filter((id): id is string => !!id)
+          found.map(s => s.carer_id).filter((id): id is string => !!id)
         ),
       ]),
     ]);
 
-    return shifts.map(shift => ({
+    return found.map(shift => ({
       ...shift,
       carer_display_name:
         (shift.carer_id ? names.get(shift.carer_id) : null) ??
@@ -236,21 +265,19 @@ class DefaultNoShowCandidateSource implements NoShowCandidateSource {
   private async loadTimezones(
     householdIds: string[]
   ): Promise<Map<string, string>> {
-    const { data, error } = await supabaseService
-      .from('households')
-      .select('id, timezone')
-      .in('id', householdIds);
-
-    if (error) {
+    try {
+      const rows = await db
+        .select({ id: households.id, timezone: households.timezone })
+        .from(households)
+        .where(inArray(households.id, householdIds));
+      return new Map(rows.map(row => [row.id, row.timezone]));
+    } catch (error) {
       throw new DatabaseError(
         'Failed to load household timezones for the no-show sweep',
         'DATABASE_ERROR',
-        { details: error.message }
+        { details: error instanceof Error ? error.message : String(error) }
       );
     }
-
-    const rows = (data ?? []) as Array<{ id: string; timezone: string }>;
-    return new Map(rows.map(row => [row.id, row.timezone]));
   }
 
   private async loadCarerNames(
@@ -260,23 +287,19 @@ class DefaultNoShowCandidateSource implements NoShowCandidateSource {
       return new Map();
     }
 
-    const { data, error } = await supabaseService
-      .from('user_profiles')
-      .select('user_id, name')
-      .in('user_id', carerIds);
-
-    if (error) {
+    let rows: Array<{ user_id: string; name: string | null }>;
+    try {
+      rows = await db
+        .select({ user_id: userProfiles.user_id, name: userProfiles.name })
+        .from(userProfiles)
+        .where(inArray(userProfiles.user_id, carerIds));
+    } catch (error) {
       throw new DatabaseError(
         'Failed to load carer names for the no-show sweep',
         'DATABASE_ERROR',
-        { details: error.message }
+        { details: error instanceof Error ? error.message : String(error) }
       );
     }
-
-    const rows = (data ?? []) as Array<{
-      user_id: string;
-      name: string | null;
-    }>;
     const names = new Map<string, string>();
     for (const row of rows) {
       if (row.name) {
@@ -303,27 +326,35 @@ export class DefaultNoShowTimeEntryLister implements NoShowTimeEntryLister {
     // parents still need telling. `kind` is not filtered — a cancellation-pay
     // row covering the span means nobody was expected, which is equally a
     // reason not to alert.
-    const { data, error } = await supabaseService
-      .from('time_entries')
-      .select('shift_id, clock_in_at, clock_out_at')
-      .eq('carer_id', carerId)
-      .eq('household_id', shift.household_id)
-      .neq('status', 'voided')
-      .or(
-        `clock_in_at.gte.${toleranceStart},clock_out_at.is.null,clock_out_at.gte.${startsAt}`
-      );
-
-    if (error) {
+    // 069: voided did not happen — it is not coverage. The `ne` below is
+    // the filter.
+    try {
+      return await db
+        .select({
+          shift_id: timeEntries.shift_id,
+          clock_in_at: timeEntries.clock_in_at,
+          clock_out_at: timeEntries.clock_out_at,
+        })
+        .from(timeEntries)
+        .where(
+          and(
+            eq(timeEntries.carer_id, carerId),
+            eq(timeEntries.household_id, shift.household_id),
+            ne(timeEntries.status, 'voided'),
+            or(
+              gte(timeEntries.clock_in_at, toleranceStart),
+              isNull(timeEntries.clock_out_at),
+              gte(timeEntries.clock_out_at, startsAt)
+            )
+          )
+        );
+    } catch (error) {
       throw new DatabaseError(
         'Failed to list time entries for the no-show sweep',
         'DATABASE_ERROR',
-        { details: error.message }
+        { details: error instanceof Error ? error.message : String(error) }
       );
     }
-
-    // 069: voided did not happen — it is not coverage. The `.neq` above is
-    // the filter.
-    return data ?? [];
   }
 }
 
@@ -356,24 +387,29 @@ export class DefaultDisputedCancellationLookup
     if (shiftIds.length === 0) {
       return new Set();
     }
-    const { data, error } = await supabaseService
-      .from('shift_change_requests')
-      .select('shift_id')
-      .in('shift_id', shiftIds)
-      .eq('kind', SHIFT_CHANGE_REQUEST_KINDS.CANCEL)
-      .eq('status', SHIFT_CHANGE_REQUEST_STATUSES.DECLINED)
-      .gte('responded_at', sinceIso);
-
-    if (error) {
+    try {
+      const rows = await db
+        .select({ shift_id: shiftChangeRequests.shift_id })
+        .from(shiftChangeRequests)
+        .where(
+          and(
+            inArray(shiftChangeRequests.shift_id, shiftIds),
+            eq(shiftChangeRequests.kind, SHIFT_CHANGE_REQUEST_KINDS.CANCEL),
+            eq(
+              shiftChangeRequests.status,
+              SHIFT_CHANGE_REQUEST_STATUSES.DECLINED
+            ),
+            gte(shiftChangeRequests.responded_at, sinceIso)
+          )
+        );
+      return new Set(rows.map(row => row.shift_id));
+    } catch (error) {
       throw new DatabaseError(
         'Failed to load declined cancellations for the no-show sweep',
         'DATABASE_ERROR',
-        { details: error.message }
+        { details: error instanceof Error ? error.message : String(error) }
       );
     }
-    return new Set(
-      ((data ?? []) as Array<{ shift_id: string }>).map(row => row.shift_id)
-    );
   }
 }
 

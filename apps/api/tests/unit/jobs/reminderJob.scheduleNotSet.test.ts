@@ -19,10 +19,11 @@ import type {
   ReminderPushService,
   ScheduleNotSetCandidate,
 } from '../../../src/jobs/reminderJob';
-import {
-  buildScheduleNotSetKey,
-  runReminderJob,
-} from '../../../src/jobs/reminderJob';
+
+mock.module('../../../src/db/client', () => ({ db: {} }));
+const { buildScheduleNotSetKey, runReminderJob } = await import(
+  '../../../src/jobs/reminderJob'
+);
 
 const CARER_ID = 'carer-11111111-1111-1111-1111-111111111111';
 const PARENT_ID = 'parent-11111111-1111-1111-1111-111111111111';

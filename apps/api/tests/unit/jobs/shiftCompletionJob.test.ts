@@ -8,6 +8,7 @@ let runShiftCompletionJob: typeof import('../../../src/jobs/shiftCompletionJob')
 let COMPLETION_GRACE_MS: number;
 
 beforeAll(async () => {
+  mock.module('../../../src/db/client', () => ({ db: {} }));
   const mod = await import('../../../src/jobs/shiftCompletionJob');
   runShiftCompletionJob = mod.runShiftCompletionJob;
   COMPLETION_GRACE_MS = mod.COMPLETION_GRACE_MS;

@@ -1,99 +1,143 @@
 /**
- * JobRunService.hasFreshRunningRun — the in-flight guard's seam.
- *
- * A second cron invocation (pg_net retry, manual POST) landing on top of a
- * still-running job must be told "no" cheaply, without racing the run
- * lifecycle. This is the read the handler factory checks before calling
- * start(): a fresh 'running' row blocks, a stale one (crashed/abandoned) does
- * not — a crashed run must never wedge the schedule forever.
+ * JobRunService against a real D1: the run lifecycle, the in-flight guard
+ * (`hasFreshRunningRun`) and idempotency-key reclaim. A stale 'running' row
+ * (crashed/abandoned) must never wedge the schedule forever.
  */
-import { beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  mock,
+  test,
+} from 'bun:test';
+import { createTestDb, type TestDb } from '../../../../helpers/testDb';
 
-let JobRunService: any;
-let mockSupabaseService: any;
+let t: TestDb;
+let JobRunService: typeof import('../../../../../src/domains/job/services/jobRunService').JobRunService;
 
-function createMockQueryChain(
-  finalResponse: { data: unknown; error: unknown } = { data: null, error: null }
-): any {
-  const chain: any = {
-    select: mock(() => chain),
-    eq: mock(() => chain),
-    order: mock(() => chain),
-    limit: mock(() => chain),
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-    then: (resolve: (value: unknown) => unknown) =>
-      Promise.resolve(finalResponse).then(resolve),
-  };
-  return chain;
-}
+const row = async (id: string) =>
+  (await t.d1
+    .prepare('SELECT * FROM job_runs WHERE id = ?')
+    .bind(id)
+    .first()) as Record<string, unknown> | null;
+const seed = (
+  id: string,
+  status: string,
+  startedAt: string,
+  key: string | null = null
+) =>
+  t.d1
+    .prepare(
+      'INSERT INTO job_runs (id, job_name, status, started_at, idempotency_key) VALUES (?, ?, ?, ?, ?)'
+    )
+    .bind(id, 'example-maintenance', status, startedAt, key)
+    .run();
 
 beforeAll(async () => {
-  mock.module('../../../../../src/config/supabase', () => {
-    const obj = { from: mock(() => createMockQueryChain()) };
-    return { supabase: obj, supabaseService: obj };
+  t = await createTestDb();
+  mock.module('../../../../../src/db/client', () => ({ db: t.db }));
+  ({ JobRunService } = await import(
+    '../../../../../src/domains/job/services/jobRunService'
+  ));
+});
+afterAll(() => t.dispose());
+beforeEach(() => t.d1.prepare('DELETE FROM job_runs').run());
+
+describe('JobRunService lifecycle', () => {
+  test('start → complete records status, counts and job-specific summary', async () => {
+    const id = await JobRunService.start('reminders');
+    expect((await row(id))?.status).toBe('running');
+
+    await JobRunService.complete(id, {
+      totalProcessed: 3,
+      successCount: 2,
+      errorCount: 1,
+      errorDetails: [{ error: 'boom' }],
+      extra: 'x',
+    });
+    const done = await row(id);
+    expect(done).toMatchObject({
+      status: 'partial',
+      total_processed: 3,
+      error_message: 'boom',
+    });
+    expect(JSON.parse(done?.summary as string)).toEqual({ extra: 'x' });
   });
 
-  const mod = await import(
-    '../../../../../src/domains/job/services/jobRunService'
-  );
-  JobRunService = mod.JobRunService;
-  mockSupabaseService = (await import('../../../../../src/config/supabase'))
-    .supabaseService;
-});
+  test('fail marks the run failed with the error message', async () => {
+    const id = await JobRunService.start('reminders');
+    await JobRunService.fail(id, new Error('kaput'));
+    expect(await row(id)).toMatchObject({
+      status: 'failed',
+      error_message: 'kaput',
+    });
+  });
 
-beforeEach(() => {
-  mockSupabaseService.from.mockClear?.();
+  test('getHistory filters by job and status, newest first', async () => {
+    await seed('a', 'success', '2026-08-01T00:00:00.000Z');
+    await seed('b', 'success', '2026-08-02T00:00:00.000Z');
+    await seed('c', 'failed', '2026-08-03T00:00:00.000Z');
+    const rows = await JobRunService.getHistory(
+      'example-maintenance',
+      10,
+      'success'
+    );
+    expect(rows.map(r => r.id)).toEqual(['b', 'a']);
+  });
 });
 
 describe('JobRunService.hasFreshRunningRun', () => {
   test('no running row → false', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: [], error: null })
-    );
-
     expect(await JobRunService.hasFreshRunningRun('example-maintenance')).toBe(
       false
     );
   });
 
   test('a running row started seconds ago → true', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({
-        data: [
-          {
-            id: 'run-1',
-            job_name: 'example-maintenance',
-            status: 'running',
-            started_at: new Date().toISOString(),
-          },
-        ],
-        error: null,
-      })
-    );
-
+    await seed('r', 'running', new Date().toISOString());
     expect(await JobRunService.hasFreshRunningRun('example-maintenance')).toBe(
       true
     );
   });
 
-  test('a running row started 20 minutes ago (stale) → false', async () => {
-    const staleStartedAt = new Date(Date.now() - 20 * 60 * 1000).toISOString();
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({
-        data: [
-          {
-            id: 'run-1',
-            job_name: 'example-maintenance',
-            status: 'running',
-            started_at: staleStartedAt,
-          },
-        ],
-        error: null,
-      })
+  test('a running row older than the stale threshold → false', async () => {
+    await seed(
+      'r',
+      'running',
+      new Date(Date.now() - 60 * 60 * 1000).toISOString()
     );
-
     expect(await JobRunService.hasFreshRunningRun('example-maintenance')).toBe(
       false
     );
+  });
+});
+
+describe('JobRunService.startWithIdempotencyKey', () => {
+  test('first call inserts; a completed key refuses; a fresh running key refuses', async () => {
+    const id = await JobRunService.startWithIdempotencyKey(
+      'example-maintenance',
+      'k1'
+    );
+    await expect(
+      JobRunService.startWithIdempotencyKey('example-maintenance', 'k1')
+    ).rejects.toThrow('already running');
+    await JobRunService.complete(id, { successCount: 1 });
+    await expect(
+      JobRunService.startWithIdempotencyKey('example-maintenance', 'k1')
+    ).rejects.toThrow('already completed');
+  });
+
+  test('a failed run under the key is reclaimed in place', async () => {
+    await seed('f', 'failed', '2026-08-01T00:00:00.000Z', 'k2');
+    const id = await JobRunService.startWithIdempotencyKey(
+      'example-maintenance',
+      'k2'
+    );
+    expect(id).toBe('f');
+    const reclaimed = await row('f');
+    expect(reclaimed).toMatchObject({ status: 'running', error_message: null });
+    expect(reclaimed?.started_at).not.toBe('2026-08-01T00:00:00.000Z');
   });
 });

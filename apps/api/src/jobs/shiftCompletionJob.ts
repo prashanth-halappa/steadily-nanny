@@ -74,7 +74,9 @@
 
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { SHIFT_STATUSES } from '@steadily-nanny/shared-types/schemas/shift.schema';
-import { supabaseService } from '../config/supabase';
+import { and, eq, inArray, lt, ne } from 'drizzle-orm';
+import { db } from '../db/client';
+import { shiftEvents, shifts, timeEntries } from '../db/schema';
 import { DatabaseError } from '../errors';
 import { logger } from '../middlewares/logger';
 
@@ -136,22 +138,39 @@ export interface ShiftCompletionJobResult {
   message: string;
 }
 
+/** D1 caps bound parameters per statement (100), so id lists go in slices. */
+const ID_CHUNK = 50;
+function chunk<T>(items: T[]): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += ID_CHUNK)
+    out.push(items.slice(i, i + ID_CHUNK));
+  return out;
+}
+
 export class DefaultShiftCompletionWriter implements ShiftCompletionWriter {
   async listEndedConfirmed(cutoffIso: string): Promise<EndedConfirmedShift[]> {
-    const { data, error } = await supabaseService
-      .from('shifts')
-      .select('id')
-      .eq('status', SHIFT_STATUSES.CONFIRMED)
-      .lt('ends_at', cutoffIso);
-
-    if (error) {
+    let ids: string[];
+    try {
+      const rows = await db
+        .select({ id: shifts.id })
+        .from(shifts)
+        .where(
+          and(
+            eq(shifts.status, SHIFT_STATUSES.CONFIRMED),
+            lt(shifts.ends_at, cutoffIso)
+          )
+        );
+      ids = rows.map(row => row.id);
+    } catch (error) {
       throw new DatabaseError(
         'Failed to list past confirmed shifts',
         'DATABASE_ERROR',
-        { details: error.message, cutoffIso }
+        {
+          details: error instanceof Error ? error.message : String(error),
+          cutoffIso,
+        }
       );
     }
-    const ids = ((data ?? []) as Array<Pick<Shift, 'id'>>).map(row => row.id);
     if (ids.length === 0) {
       return [];
     }
@@ -160,113 +179,150 @@ export class DefaultShiftCompletionWriter implements ShiftCompletionWriter {
     return ids.map(id => ({ id, worked: worked.has(id) }));
   }
 
-  /** ONE query for the whole batch, never one per shift (GOLDEN-FIXES #28). */
+  /** One query per id slice for the whole batch, never one per shift (GOLDEN-FIXES #28). */
   private async shiftIdsWithEntries(shiftIds: string[]): Promise<Set<string>> {
-    const { data, error } = await supabaseService
-      .from('time_entries')
-      .select('shift_id')
-      .in('shift_id', shiftIds)
-      // 069: a voided entry did not happen, so it is not evidence anybody
-      // worked — same reading `noShowJob`'s coverage test takes.
-      .neq('status', 'voided');
-
-    if (error) {
+    try {
+      const found = new Set<string>();
+      for (const ids of chunk(shiftIds)) {
+        const rows = await db
+          .select({ shift_id: timeEntries.shift_id })
+          .from(timeEntries)
+          // 069: a voided entry did not happen, so it is not evidence anybody
+          // worked — same reading `noShowJob`'s coverage test takes.
+          .where(
+            and(
+              inArray(timeEntries.shift_id, ids),
+              ne(timeEntries.status, 'voided')
+            )
+          );
+        for (const row of rows) if (row.shift_id) found.add(row.shift_id);
+      }
+      return found;
+    } catch (error) {
       throw new DatabaseError(
         'Failed to load time entries for the shift-completion sweep',
         'DATABASE_ERROR',
-        { details: error.message }
+        { details: error instanceof Error ? error.message : String(error) }
       );
     }
-    return new Set(
-      ((data ?? []) as Array<{ shift_id: string | null }>)
-        .map(row => row.shift_id)
-        .filter((id): id is string => id !== null)
-    );
   }
 
   async listEndedPendingRecurring(
     cutoffIso: string
   ): Promise<EndedPendingShift[]> {
-    const { data, error } = await supabaseService
-      .from('shifts')
-      .select('id, household_id, local_date')
-      .eq('status', SHIFT_STATUSES.PENDING)
-      .eq('kind', 'recurring')
-      .lt('ends_at', cutoffIso);
-
-    if (error) {
+    try {
+      return await db
+        .select({
+          id: shifts.id,
+          household_id: shifts.household_id,
+          local_date: shifts.local_date,
+        })
+        .from(shifts)
+        .where(
+          and(
+            eq(shifts.status, SHIFT_STATUSES.PENDING),
+            eq(shifts.kind, 'recurring'),
+            lt(shifts.ends_at, cutoffIso)
+          )
+        );
+    } catch (error) {
       throw new DatabaseError(
         'Failed to list past pending recurring shifts',
         'DATABASE_ERROR',
-        { details: error.message, cutoffIso }
+        {
+          details: error instanceof Error ? error.message : String(error),
+          cutoffIso,
+        }
       );
     }
-    return (data ?? []) as EndedPendingShift[];
   }
 
   async lapseByIds(shiftIds: string[]): Promise<Array<Pick<Shift, 'id'>>> {
-    const { data, error } = await supabaseService
-      .from('shifts')
-      .update({
-        status: SHIFT_STATUSES.CANCELLED,
-        // NOT `declined`, and NOT an actor: nobody answered. Same
-        // discriminator migration 088 gives cover-ask expiry.
-        cancelled_by: null,
-        cancelled_at: new Date().toISOString(),
-        cancellation_paid: false,
-        reason: 'unconfirmed_shift_lapsed',
-      })
-      // Doing double duty, exactly as in `completeByIds`: it selects the work
-      // AND it is the compare-and-set that keeps a shift somebody accepted in
-      // the meantime out of scope. Widening it is a guard removal.
-      .eq('status', SHIFT_STATUSES.PENDING)
-      .in('id', shiftIds)
-      .select('id');
-
-    if (error) {
+    try {
+      const out: Array<Pick<Shift, 'id'>> = [];
+      for (const ids of chunk(shiftIds)) {
+        out.push(
+          ...(await db
+            .update(shifts)
+            .set({
+              status: SHIFT_STATUSES.CANCELLED,
+              // NOT `declined`, and NOT an actor: nobody answered. Same
+              // discriminator migration 088 gives cover-ask expiry.
+              cancelled_by: null,
+              cancelled_at: new Date().toISOString(),
+              cancellation_paid: false,
+              reason: 'unconfirmed_shift_lapsed',
+            })
+            // Doing double duty, exactly as in `completeByIds`: it selects the
+            // work AND it is the compare-and-set that keeps a shift somebody
+            // accepted in the meantime out of scope. Widening it is a guard removal.
+            .where(
+              and(
+                eq(shifts.status, SHIFT_STATUSES.PENDING),
+                inArray(shifts.id, ids)
+              )
+            )
+            .returning({ id: shifts.id }))
+        );
+      }
+      return out;
+    } catch (error) {
       throw new DatabaseError(
         'Failed to lapse past pending recurring shifts',
         'DATABASE_ERROR',
-        { details: error.message }
+        { details: error instanceof Error ? error.message : String(error) }
       );
     }
-    return (data ?? []) as Array<Pick<Shift, 'id'>>;
   }
 
   async appendLapsedEvents(events: LapsedShiftEvent[]): Promise<void> {
     if (events.length === 0) {
       return;
     }
-    const { error } = await supabaseService.from('shift_events').insert(events);
-
-    if (error) {
+    try {
+      for (const slice of chunk(events)) {
+        await db.insert(shiftEvents).values(slice);
+      }
+    } catch (error) {
       throw new DatabaseError(
         'Failed to record unconfirmed_shift_lapsed events',
         'DATABASE_ERROR',
-        { details: error.message, count: events.length }
+        {
+          details: error instanceof Error ? error.message : String(error),
+          count: events.length,
+        }
       );
     }
   }
 
   async completeByIds(shiftIds: string[]): Promise<Array<Pick<Shift, 'id'>>> {
-    const { data, error } = await supabaseService
-      .from('shifts')
-      // `.eq('status', CONFIRMED)` is doing double duty: it selects the work
-      // AND it is the compare-and-set that keeps an immutable row out of
-      // scope. Widening it is not a filter change, it is a guard removal.
-      .update({ status: SHIFT_STATUSES.COMPLETED })
-      .eq('status', SHIFT_STATUSES.CONFIRMED)
-      .in('id', shiftIds)
-      .select('id');
-
-    if (error) {
+    try {
+      const out: Array<Pick<Shift, 'id'>> = [];
+      for (const ids of chunk(shiftIds)) {
+        out.push(
+          ...(await db
+            .update(shifts)
+            // The status guard is doing double duty: it selects the work AND
+            // it is the compare-and-set that keeps an immutable row out of
+            // scope. Widening it is not a filter change, it is a guard removal.
+            .set({ status: SHIFT_STATUSES.COMPLETED })
+            .where(
+              and(
+                eq(shifts.status, SHIFT_STATUSES.CONFIRMED),
+                inArray(shifts.id, ids)
+              )
+            )
+            .returning({ id: shifts.id }))
+        );
+      }
+      return out;
+    } catch (error) {
       throw new DatabaseError(
         'Failed to complete past confirmed shifts',
         'DATABASE_ERROR',
-        { details: error.message }
+        { details: error instanceof Error ? error.message : String(error) }
       );
     }
-    return (data ?? []) as Array<Pick<Shift, 'id'>>;
   }
 }
 

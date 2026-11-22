@@ -21,6 +21,8 @@ let runNoShowJob: typeof import('../../../src/jobs/noShowJob').runNoShowJob;
 let DISPUTED_CANCEL_SUPPRESSION_MS: number;
 
 beforeAll(async () => {
+  // Deps are injected; the D1 handle is never queried, it only has to resolve.
+  mock.module('../../../src/db/client', () => ({ db: {} }));
   const mod = await import('../../../src/jobs/noShowJob');
   runNoShowJob = mod.runNoShowJob;
   DISPUTED_CANCEL_SUPPRESSION_MS = mod.DISPUTED_CANCEL_SUPPRESSION_MS;

@@ -18,10 +18,11 @@ import type {
   UncoveredDigestHouseholdCandidate,
   UncoveredDigestVerifier,
 } from '../../../src/jobs/uncoveredDigestJob';
-import {
-  buildUncoveredDigestKey,
-  runUncoveredDigestJob,
-} from '../../../src/jobs/uncoveredDigestJob';
+
+mock.module('../../../src/db/client', () => ({ db: {} }));
+const { buildUncoveredDigestKey, runUncoveredDigestJob } = await import(
+  '../../../src/jobs/uncoveredDigestJob'
+);
 
 const HOUSEHOLD_ID = 'house-11111111-1111-1111-1111-111111111111';
 const PARENT_ID = 'parent-11111111-1111-1111-1111-111111111111';

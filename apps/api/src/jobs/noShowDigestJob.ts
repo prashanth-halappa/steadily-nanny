@@ -39,7 +39,9 @@
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { SHIFT_STATUSES } from '@steadily-nanny/shared-types/schemas/shift.schema';
-import { supabaseService } from '../config/supabase';
+import { and, eq, gte, inArray, isNotNull, lte } from 'drizzle-orm';
+import { db } from '../db/client';
+import { households, pushReminderLog, shifts } from '../db/schema';
 import { formatPushTime12h } from '../domains/child/services/uncoveredCareService';
 import { ReminderLogRepository } from '../domains/notification/repositories/reminderLogRepository';
 import type { PushPayload } from '../domains/notification/types';
@@ -120,50 +122,55 @@ class DefaultNoShowDigestCandidateSource
   ): Promise<NoShowDigestShiftCandidate[]> {
     const since = new Date(now.getTime() - CANDIDATE_LOOKBACK_MS).toISOString();
 
-    const { data, error } = await supabaseService
-      .from('shifts')
-      .select('id, household_id, carer_id, starts_at')
-      .eq('status', SHIFT_STATUSES.CONFIRMED)
-      .not('carer_id', 'is', null)
-      .gte('starts_at', since)
-      .lte('starts_at', now.toISOString());
-
-    if (error) {
+    let found: Array<
+      Pick<Shift, 'id' | 'household_id' | 'carer_id' | 'starts_at'>
+    >;
+    try {
+      found = (await db
+        .select({
+          id: shifts.id,
+          household_id: shifts.household_id,
+          carer_id: shifts.carer_id,
+          starts_at: shifts.starts_at,
+        })
+        .from(shifts)
+        .where(
+          and(
+            eq(shifts.status, SHIFT_STATUSES.CONFIRMED),
+            isNotNull(shifts.carer_id),
+            gte(shifts.starts_at, since),
+            lte(shifts.starts_at, now.toISOString())
+          )
+        )) as typeof found;
+    } catch (error) {
       throw new DatabaseError(
         'Failed to list no-show digest candidates',
         'DATABASE_ERROR',
-        { details: error.message }
+        { details: error instanceof Error ? error.message : String(error) }
       );
     }
-
-    const shifts = (data ?? []) as Array<
-      Pick<Shift, 'id' | 'household_id' | 'carer_id' | 'starts_at'>
-    >;
-    if (shifts.length === 0) {
+    if (found.length === 0) {
       return [];
     }
 
-    const householdIds = [...new Set(shifts.map(s => s.household_id))];
-    const { data: households, error: householdError } = await supabaseService
-      .from('households')
-      .select('id, timezone')
-      .in('id', householdIds);
-
-    if (householdError) {
+    const householdIds = [...new Set(found.map(s => s.household_id))];
+    let householdRows: Array<{ id: string; timezone: string }>;
+    try {
+      householdRows = await db
+        .select({ id: households.id, timezone: households.timezone })
+        .from(households)
+        .where(inArray(households.id, householdIds));
+    } catch (error) {
       throw new DatabaseError(
         'Failed to load household timezones for the no-show digest',
         'DATABASE_ERROR',
-        { details: householdError.message }
+        { details: error instanceof Error ? error.message : String(error) }
       );
     }
 
-    const timezones = new Map(
-      ((households ?? []) as Array<{ id: string; timezone: string }>).map(
-        row => [row.id, row.timezone]
-      )
-    );
+    const timezones = new Map(householdRows.map(row => [row.id, row.timezone]));
 
-    return shifts.map(shift => ({
+    return found.map(shift => ({
       ...shift,
       timezone: timezones.get(shift.household_id) ?? 'UTC',
     }));
@@ -179,21 +186,24 @@ class DefaultNoShowDigestConfirmedChecker
     }
 
     const keyToId = new Map(shiftIds.map(id => [buildNoShowKey(id), id]));
-    const { data, error } = await supabaseService
-      .from('push_reminder_log')
-      .select('reminder_key')
-      .in('reminder_key', [...keyToId.keys()])
-      .not('confirmed_at', 'is', null);
-
-    if (error) {
+    let rows: Array<{ reminder_key: string }>;
+    try {
+      rows = await db
+        .select({ reminder_key: pushReminderLog.reminder_key })
+        .from(pushReminderLog)
+        .where(
+          and(
+            inArray(pushReminderLog.reminder_key, [...keyToId.keys()]),
+            isNotNull(pushReminderLog.confirmed_at)
+          )
+        );
+    } catch (error) {
       throw new DatabaseError(
         'Failed to load already-alerted no-show claims',
         'DATABASE_ERROR',
-        { details: error.message }
+        { details: error instanceof Error ? error.message : String(error) }
       );
     }
-
-    const rows = (data ?? []) as Array<{ reminder_key: string }>;
     const ids = new Set<string>();
     for (const row of rows) {
       const id = keyToId.get(row.reminder_key);

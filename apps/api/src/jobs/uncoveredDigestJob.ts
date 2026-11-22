@@ -81,7 +81,9 @@ import {
   type UncoveredWindow,
   uncoveredKey,
 } from '@steadily-nanny/shared-types/uncoveredCare';
-import { supabaseService } from '../config/supabase';
+import { and, eq, gte, inArray, sql } from 'drizzle-orm';
+import { db } from '../db/client';
+import { shiftEvents, userProfiles } from '../db/schema';
 import { ChildCommitmentRepository } from '../domains/child/repositories/childCommitmentRepository';
 import { ChildRepository } from '../domains/child/repositories/childRepository';
 import { loadUncoveredInputsForDate } from '../domains/child/services/detectUncoveredCareForDate';
@@ -224,27 +226,37 @@ class DefaultUncoveredDigestCandidateSource
   ): Promise<UncoveredDigestCandidateRow[]> {
     const since = new Date(now.getTime() - CANDIDATE_LOOKBACK_MS).toISOString();
 
-    const { data, error } = await supabaseService
-      .from('shift_events')
-      .select('payload, local_date, created_at')
-      .eq('household_id', householdId)
-      .eq('event_type', 'uncovered_care')
-      .eq('payload->>push_gate', 'digest')
-      .gte('created_at', since);
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list uncovered-care digest candidates',
-        'DATABASE_ERROR',
-        { details: error.message, householdId }
-      );
-    }
-
-    const rows = (data ?? []) as Array<{
+    let rows: Array<{
       payload: Record<string, unknown>;
       local_date: string;
       created_at: string;
     }>;
+    try {
+      rows = await db
+        .select({
+          payload: shiftEvents.payload,
+          local_date: shiftEvents.local_date,
+          created_at: shiftEvents.created_at,
+        })
+        .from(shiftEvents)
+        .where(
+          and(
+            eq(shiftEvents.household_id, householdId),
+            eq(shiftEvents.event_type, 'uncovered_care'),
+            sql`json_extract(${shiftEvents.payload}, '$.push_gate') = 'digest'`,
+            gte(shiftEvents.created_at, since)
+          )
+        );
+    } catch (error) {
+      throw new DatabaseError(
+        'Failed to list uncovered-care digest candidates',
+        'DATABASE_ERROR',
+        {
+          details: error instanceof Error ? error.message : String(error),
+          householdId,
+        }
+      );
+    }
     return rows
       .map(toDigestRow)
       .filter((row): row is UncoveredDigestCandidateRow => row !== null);
@@ -260,23 +272,30 @@ class DefaultUncoveredDigestCandidateSource
       return new Map();
     }
 
-    const { data, error } = await supabaseService
-      .from('user_profiles')
-      .select('user_id, preferred_locale')
-      .in('user_id', userIds);
-
-    if (error) {
+    const rows: Array<{
+      user_id: string;
+      preferred_locale: string | null;
+    }> = [];
+    try {
+      // D1 caps bound parameters per statement at 100, so slice the id list.
+      for (let i = 0; i < userIds.length; i += 50) {
+        rows.push(
+          ...(await db
+            .select({
+              user_id: userProfiles.user_id,
+              preferred_locale: userProfiles.preferred_locale,
+            })
+            .from(userProfiles)
+            .where(inArray(userProfiles.user_id, userIds.slice(i, i + 50))))
+        );
+      }
+    } catch (error) {
       throw new DatabaseError(
         'Failed to load preferred locales for the uncovered-care digest',
         'DATABASE_ERROR',
-        { details: error.message }
+        { details: error instanceof Error ? error.message : String(error) }
       );
     }
-
-    const rows = (data ?? []) as Array<{
-      user_id: string;
-      preferred_locale: string | null;
-    }>;
     const locales = new Map<string, string>();
     for (const row of rows) {
       if (row.preferred_locale && isValidLocale(row.preferred_locale)) {
