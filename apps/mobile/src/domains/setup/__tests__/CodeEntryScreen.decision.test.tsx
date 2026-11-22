@@ -154,7 +154,7 @@ beforeEach(() => {
   useSetupProgressStore.getState().reset();
   useAuthStore.setState({
     session: {
-      user: { id: 'user-1', email: 'tunde@example.com', user_metadata: {} },
+      user: { id: 'user-1', email: 'tunde@example.com', name: '' },
     } as unknown as never,
     isInitialized: true,
     signOut: mockSignOut,

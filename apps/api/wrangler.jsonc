@@ -1,0 +1,58 @@
+// Cloudflare Workers config for the API (Express via nodejs_compat + cloudflare:node).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "steadily-nanny-api",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-11-01",
+  // nodejs_compat also populates process.env from vars/secrets (default for
+  // compat dates >= 2025-04-01), which is what src/config/env.ts validates.
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "steadily-nanny",
+      // Placeholder: replace with the id from `wrangler d1 create steadily-nanny`.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Non-secret config. NODE_ENV=production switches on the production-required
+  // checks in env.ts (JOB_API_KEY, RESEND_API_KEY must be set as secrets).
+  "vars": {
+    "NODE_ENV": "production",
+    "LOG_LEVEL": "info",
+    "EMAIL_FROM": "steadilynanny <hello@nanny.getsteadily.app>",
+    "BETTER_AUTH_URL": "https://api.nanny.getsteadily.app"
+  },
+
+  // Secrets (set with `wrangler secret put <NAME>`; use .dev.vars locally):
+  //   BETTER_AUTH_SECRET
+  //   APPLE_CLIENT_ID, APPLE_CLIENT_SECRET (or key material), APPLE_APP_BUNDLE_IDENTIFIER
+  //   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+  //   RESEND_API_KEY, RESEND_WEBHOOK_SECRET
+  //   JOB_API_KEY            (only for manual POST /api/jobs/*; cron needs no key)
+  //   SENTRY_DSN
+  //   OPS_ALERT_EMAILS, OPS_ALERT_USER_IDS   (optional, job-health alerting)
+  //   POSTHOG_API_KEY                         (optional)
+
+  // One entry per distinct schedule; MUST match CRON_JOBS in src/scheduled.ts.
+  // Replaces pg_cron migrations 026/032/048/054/057/066/073/088/089/090/105.
+  // 10 triggers: Workers Paid plan (free plan allows 5).
+  "triggers": {
+    "crons": [
+      "0 3 * * *", // schedule-horizon
+      "5 * * * *", // reminders
+      "25 * * * *", // cancellation-pay-reconcile
+      "10 4 * * *", // integrity-checks
+      "*/10 * * * *", // no-show-sweep
+      "35 * * * *", // uncovered-digest
+      "3-58/5 * * * *", // cover-ask-expiry
+      "40 3 * * *", // shift-completion
+      "50 * * * *", // no-show-digest
+      "15 6 * * *" // job-health
+    ]
+  }
+}

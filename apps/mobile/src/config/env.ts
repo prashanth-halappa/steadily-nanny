@@ -20,8 +20,6 @@ function warnIfMissing(name: string, value: string | undefined): void {
 export const env = {
   /** Base API URL, e.g. https://api.nanny.getsteadily.app/api */
   apiUrl: process.env.EXPO_PUBLIC_API_URL,
-  supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? '',
-  supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '',
   sentryDsn: process.env.EXPO_PUBLIC_SENTRY_DSN,
   posthogApiKey: process.env.EXPO_PUBLIC_POSTHOG_API_KEY,
   posthogHost:
@@ -33,8 +31,6 @@ export const env = {
 /** Call once at startup to surface missing-but-recommended config in dev. */
 export function validateEnv(): void {
   warnIfMissing('EXPO_PUBLIC_API_URL', env.apiUrl);
-  warnIfMissing('EXPO_PUBLIC_SUPABASE_URL', env.supabaseUrl);
-  warnIfMissing('EXPO_PUBLIC_SUPABASE_ANON_KEY', env.supabaseAnonKey);
   warnIfMissing('EXPO_PUBLIC_SENTRY_DSN', env.sentryDsn);
   warnIfMissing('EXPO_PUBLIC_POSTHOG_API_KEY', env.posthogApiKey);
 }

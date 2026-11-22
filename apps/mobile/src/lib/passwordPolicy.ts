@@ -1,9 +1,9 @@
 /**
- * The password rule the sign-up form enforces before the round trip.
+ * The password rule the sign-up and reset forms enforce before the round trip.
  *
- * 6 is Supabase's default — `supabase/config.toml` sets no
- * `minimum_password_length`, so the server rejects anything shorter with a 422.
- * If that config ever gains an override, change it here too.
+ * MUST equal the API's Better Auth `emailAndPassword.minPasswordLength`
+ * (Better Auth's default is 8; the server sets 6 to keep the rule existing
+ * Supabase-era accounts were created under). Change both together.
  */
 export const PASSWORD_MIN_LENGTH = 6;
 

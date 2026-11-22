@@ -1,5 +1,4 @@
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import type { Session, User } from '@supabase/supabase-js';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { type Href, router } from 'expo-router';
 import { Platform } from 'react-native';
@@ -13,9 +12,9 @@ import { queryClient } from '../api/queryClient';
 import { appIdentity } from '../config/appIdentity';
 import { env } from '../config/env';
 import i18n from '../i18n';
+import { type AuthSession, type AuthUser, authClient } from '../lib/authClient';
 import { getLocalizedAuthErrorMessage } from '../lib/errorLocalization';
 import { clearUserContext, setUserContext } from '../lib/sentryBreadcrumbs';
-import { supabase } from '../lib/supabase';
 import { createPersistedStore } from './createPersistedStore';
 import { resetUserScopedStores } from './resetStores';
 
@@ -40,438 +39,403 @@ async function clearAppState(): Promise<void> {
   resetUserScopedStores();
 }
 
-// Subscription + last-user id live outside the store to avoid a circular dep.
-let authSubscription: { unsubscribe: () => void } | null = null;
+/** Better Auth calls resolve `{ error }` instead of throwing; rethrow so one catch handles both. */
+function throwIfError(error: unknown): void {
+  if (error) throw error;
+}
+
+// Last-user ids live outside the store to avoid a circular dep.
 let previousSignedInUserId: string | null = null;
 let lastSignedInUserId: string | null = null;
 
 interface AuthState {
-  session: Session | null;
+  session: AuthSession | null;
   isLoading: boolean;
   error: string | null;
-  user: User | null;
+  user: AuthUser | null;
   isInitialized: boolean;
   isPlayServicesUnavailable: boolean;
 
   signIn: (email: string, password: string) => Promise<void>;
   /**
    * Resolves to what actually happened, because the two success shapes need
-   * different screens. Supabase returns `session: null` on a successful
-   * sign-up when the project requires email confirmation — no error, no auth
-   * event, nothing to navigate on. Callers MUST branch on this, or a
-   * confirmation-enabled project strands every new user on the form with the
-   * spinner switched off and no message.
-   *
-   * `confirm-email` also covers the already-registered case, where Supabase
-   * deliberately returns a session-less success rather than leaking that the
-   * address exists. Saying "check your inbox" is the right answer to both.
+   * different screens. A sign-up on a server that requires email verification
+   * succeeds WITHOUT a session — no error, nothing to navigate on. Callers
+   * MUST branch on this, or a verification-enabled server strands every new
+   * user on the form with the spinner switched off and no message.
    */
   signUp: (
     email: string,
     password: string
   ) => Promise<'signed-in' | 'confirm-email' | 'failed'>;
-  /** Sends a Supabase password-reset email. Resolves on success; sets `error` on failure. */
+  /** Sends a password-reset email. Resolves on success; sets `error` on failure. */
   resetPasswordForEmail: (email: string) => Promise<void>;
+  /** Sets a new password from the reset-link token. Resolves on success; sets `error` and throws on failure. */
+  resetPassword: (token: string, newPassword: string) => Promise<void>;
   signOut: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
-  setSession: (session: Session | null) => void;
+  setSession: (session: AuthSession | null) => void;
   setError: (error: string | null) => void;
   clearError: () => void;
   setLoading: (isLoading: boolean) => void;
-  initializeAuth: () => void;
-  cleanupAuth: () => void;
+  initializeAuth: () => Promise<void>;
 }
 
 export const useAuthStore = createPersistedStore<AuthState>(
-  set => ({
-    session: null,
-    isLoading: false,
-    error: null,
-    user: null,
-    isInitialized: false,
-    isPlayServicesUnavailable: false,
+  (set, get) => {
+    /** Drop the session locally — used whenever the server says there isn't one. */
+    const clearLocalSession = () => {
+      clearAuthToken();
+      clearUserContext();
+      previousSignedInUserId = null;
+      set({ session: null, user: null });
+    };
 
-    signIn: async (email, password) => {
-      set({ isLoading: true, error: null });
-      try {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (error) {
-          set({ error: authErrorMessage(error) });
-          throw error;
-        }
-        // Session handled by the listener.
-      } catch (error) {
-        set({ error: authErrorMessage(error) });
-      } finally {
-        set({ isLoading: false });
+    /**
+     * A sign-in just succeeded: fetch the session the cookie now carries and
+     * apply it. Replaces Supabase's SIGNED_IN event.
+     */
+    const completeSignIn = async (): Promise<boolean> => {
+      const { data, error } = await authClient.getSession();
+      throwIfError(error);
+      if (!data) return false;
+      updateAuthToken(await authClient.getCookie());
+      reset401Handler();
+      const userId = data.user.id;
+      // `previousSignedInUserId` is null on a cold start AND right after
+      // ANY sign-out — so "null or different" alone can't distinguish a
+      // genuine account SWITCH from the SAME user simply signing back in.
+      // Query cache is fine to drop either way, but user-scoped LOCAL state
+      // (setupProgress's in-flight wizard step, notification-primer
+      // counters, ...) must only be wiped on a real switch — wiping it on a
+      // same-user re-sign-in stranded a returning, already-onboarded parent
+      // back at the role fork forever. See GOLDEN-FIXES for the writeup.
+      //
+      // `lastSignedInUserId` is NOT cleared on sign-out, which is what makes
+      // sign-out -> sign-in-as-someone-else a detectable switch.
+      // ponytail: in-memory only, so the leak survives one shape — sign
+      // out, KILL the app, then register a new account: nothing remembers
+      // who was here before. Persist this id (or stamp setupProgress with
+      // its owner) if that shape ever shows up in the wild.
+      const isFreshSignIn =
+        previousSignedInUserId === null || userId !== previousSignedInUserId;
+      const isAccountSwitch =
+        lastSignedInUserId !== null && userId !== lastSignedInUserId;
+      if (isFreshSignIn) {
+        queryClient.clear();
+        if (isAccountSwitch) resetUserScopedStores();
+        router.replace('/' as Href);
       }
-    },
+      previousSignedInUserId = userId;
+      lastSignedInUserId = userId;
+      setUserContext({ id: userId });
+      set({ session: data, user: data.user, isInitialized: true });
+      return true;
+    };
 
-    signUp: async (email, password) => {
-      set({ isLoading: true, error: null });
-      try {
-        const { data, error } = await supabase.auth.signUp({ email, password });
-        if (error) {
+    return {
+      session: null,
+      isLoading: false,
+      error: null,
+      user: null,
+      isInitialized: false,
+      isPlayServicesUnavailable: false,
+
+      signIn: async (email, password) => {
+        set({ isLoading: true, error: null });
+        try {
+          const { error } = await authClient.signIn.email({ email, password });
+          throwIfError(error);
+          await completeSignIn();
+        } catch (error) {
+          set({ error: authErrorMessage(error) });
+        } finally {
+          set({ isLoading: false });
+        }
+      },
+
+      signUp: async (email, password) => {
+        set({ isLoading: true, error: null });
+        try {
+          // Better Auth requires `name`; empty on purpose — the profile step asks
+          // for it, and deriveSeedName must not prefill anything we invented.
+          const { error } = await authClient.signUp.email({
+            email,
+            password,
+            name: '',
+          });
+          throwIfError(error);
+          // No session after a successful sign-up = verification is required.
+          return (await completeSignIn()) ? 'signed-in' : 'confirm-email';
+        } catch (error) {
           set({ error: authErrorMessage(error) });
           return 'failed';
+        } finally {
+          set({ isLoading: false });
         }
-        // A session means the project auto-confirms: `onAuthStateChange`
-        // fires SIGNED_IN below and routes into the wizard, so there is
-        // nothing for the caller to do. No session means the confirmation
-        // mail is the next step, and only the caller can say so.
-        return data.session ? 'signed-in' : 'confirm-email';
-      } catch (error) {
-        set({ error: authErrorMessage(error) });
-        return 'failed';
-      } finally {
-        set({ isLoading: false });
-      }
-    },
+      },
 
-    resetPasswordForEmail: async email => {
-      set({ isLoading: true, error: null });
-      try {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `https://${appIdentity.associatedDomain}/auth/reset`,
-        });
-        if (error) {
+      resetPasswordForEmail: async email => {
+        set({ isLoading: true, error: null });
+        try {
+          const { error } = await authClient.requestPasswordReset({
+            email,
+            redirectTo: `https://${appIdentity.associatedDomain}/auth/reset`,
+          });
+          throwIfError(error);
+        } catch (error) {
           set({ error: authErrorMessage(error) });
           throw error;
+        } finally {
+          set({ isLoading: false });
         }
-      } catch (error) {
-        set({ error: authErrorMessage(error) });
-        throw error;
-      } finally {
-        set({ isLoading: false });
-      }
-    },
+      },
 
-    signOut: async () => {
-      set({ isLoading: true, error: null });
-      try {
-        const currentUser = await GoogleSignin.getCurrentUser();
-        if (currentUser) await GoogleSignin.signOut();
-
-        const { error } = await supabase.auth.signOut();
-        if (error) set({ error: authErrorMessage(error) });
-      } catch (error) {
-        set({ error: authErrorMessage(error) });
-      } finally {
-        // Unconditional: supabase-js only emits SIGNED_OUT for success or a
-        // 401/403/404 signOut error — a network blip/outage resolves
-        // signOut() with a different error and NO event, so the listener
-        // never fires. Clear local state (and Sentry) here too, or both
-        // keep attributing to the now-stale, supposedly-signed-out user.
-        clearAuthToken();
-        await clearAppState();
-        clearUserContext();
-        previousSignedInUserId = null;
-        set({ session: null, user: null, isLoading: false });
-      }
-    },
-
-    signInWithGoogle: async () => {
-      set({ isLoading: true, error: null, isPlayServicesUnavailable: false });
-      try {
-        await GoogleSignin.hasPlayServices();
-        await GoogleSignin.signIn();
-        const tokens = await GoogleSignin.getTokens();
-        const idToken = tokens.idToken;
-        if (!idToken) {
-          set({ error: i18n.t('errors.googleNoIdToken', { ns: 'auth' }) });
-          throw new Error('No ID token received from Google Sign-In');
-        }
-        const { error } = await supabase.auth.signInWithIdToken({
-          provider: 'google',
-          token: idToken,
-        });
-        if (error) {
+      resetPassword: async (token, newPassword) => {
+        set({ isLoading: true, error: null });
+        try {
+          const { error } = await authClient.resetPassword({
+            newPassword,
+            token,
+          });
+          throwIfError(error);
+        } catch (error) {
           set({ error: authErrorMessage(error) });
           throw error;
+        } finally {
+          set({ isLoading: false });
         }
-      } catch (error: unknown) {
-        const errorCode =
-          error && typeof error === 'object' && 'code' in error
-            ? (error as { code: string }).code
-            : null;
-        if (errorCode === 'SIGN_IN_CANCELLED') {
-          set({ error: null });
-        } else if (errorCode === 'IN_PROGRESS') {
-          set({ error: i18n.t('errors.googleInProgress', { ns: 'auth' }) });
-        } else if (errorCode === 'PLAY_SERVICES_NOT_AVAILABLE') {
-          set({
-            error: i18n.t('errors.googlePlayServicesUnavailable', {
-              ns: 'auth',
-            }),
-            isPlayServicesUnavailable: true,
-          });
-        } else if (error instanceof Error) {
-          set({ error: authErrorMessage(error) });
-        } else {
-          set({
-            error: i18n.t('errors.googleUnknown', { ns: 'auth' }),
-          });
-        }
-      } finally {
-        set({ isLoading: false });
-      }
-    },
+      },
 
-    signInWithApple: async () => {
-      set({ isLoading: true, error: null });
-      try {
-        if (Platform.OS === 'ios') {
-          const appleCredential = await AppleAuthentication.signInAsync({
-            requestedScopes: [
-              AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
-              AppleAuthentication.AppleAuthenticationScope.EMAIL,
-            ],
+      signOut: async () => {
+        set({ isLoading: true, error: null });
+        try {
+          const currentUser = await GoogleSignin.getCurrentUser();
+          if (currentUser) await GoogleSignin.signOut();
+
+          // The expo plugin wipes the stored cookie before the request goes
+          // out, so a network failure here still signs out locally.
+          const { error } = await authClient.signOut();
+          if (error) set({ error: authErrorMessage(error) });
+        } catch (error) {
+          set({ error: authErrorMessage(error) });
+        } finally {
+          // Unconditional: a failed sign-out call must not leave the app (and
+          // Sentry) attributing to the now-stale, supposedly-signed-out user.
+          await clearAppState();
+          clearLocalSession();
+          set({ isLoading: false });
+        }
+      },
+
+      signInWithGoogle: async () => {
+        set({ isLoading: true, error: null, isPlayServicesUnavailable: false });
+        try {
+          await GoogleSignin.hasPlayServices();
+          await GoogleSignin.signIn();
+          const tokens = await GoogleSignin.getTokens();
+          const idToken = tokens.idToken;
+          if (!idToken) {
+            set({ error: i18n.t('errors.googleNoIdToken', { ns: 'auth' }) });
+            throw new Error('No ID token received from Google Sign-In');
+          }
+          const { error } = await authClient.signIn.social({
+            provider: 'google',
+            idToken: { token: idToken },
           });
-          // GOLDEN (SIWA name-first): Apple returns fullName/email ONLY on the
-          // FIRST authorization of this Apple ID for the app. If they're null on
-          // a fresh-looking signup, the Apple ID is still authorized at the OS
-          // level — revoke via Settings → Sign in with Apple to re-test.
-          if (!appleCredential.identityToken) {
+          throwIfError(error);
+          await completeSignIn();
+        } catch (error: unknown) {
+          const errorCode =
+            error && typeof error === 'object' && 'code' in error
+              ? (error as { code: string }).code
+              : null;
+          if (errorCode === 'SIGN_IN_CANCELLED') {
+            set({ error: null });
+          } else if (errorCode === 'IN_PROGRESS') {
+            set({ error: i18n.t('errors.googleInProgress', { ns: 'auth' }) });
+          } else if (errorCode === 'PLAY_SERVICES_NOT_AVAILABLE') {
             set({
-              error: i18n.t('errors.appleNoIdentityToken', { ns: 'auth' }),
+              error: i18n.t('errors.googlePlayServicesUnavailable', {
+                ns: 'auth',
+              }),
+              isPlayServicesUnavailable: true,
             });
-            throw new Error('No identity token returned from Apple Sign-In');
-          }
-          const { error } = await supabase.auth.signInWithIdToken({
-            provider: 'apple',
-            token: appleCredential.identityToken,
-          });
-          if (error) {
+          } else if (error && typeof error === 'object') {
             set({ error: authErrorMessage(error) });
-            throw error;
+          } else {
+            set({
+              error: i18n.t('errors.googleUnknown', { ns: 'auth' }),
+            });
           }
+        } finally {
+          set({ isLoading: false });
+        }
+      },
 
-          // Capture the one-time name/email and persist to Supabase
-          // user_metadata so onboarding can pre-fill instead of forcing re-entry
-          // (App Store Guideline 4). updateUser fires USER_UPDATED.
-          const appleName = [
-            appleCredential.fullName?.givenName,
-            appleCredential.fullName?.familyName,
-          ]
-            .filter(Boolean)
-            .join(' ')
-            .trim()
-            .slice(0, 40);
-          const metadata: { full_name?: string; email?: string } = {};
-          if (appleName) metadata.full_name = appleName;
-          if (appleCredential.email) metadata.email = appleCredential.email;
-          if (Object.keys(metadata).length > 0) {
-            const { data: updated, error: updateError } =
-              await supabase.auth.updateUser({ data: metadata });
-            if (updateError) {
-              if (__DEV__)
+      signInWithApple: async () => {
+        set({ isLoading: true, error: null });
+        try {
+          if (Platform.OS === 'ios') {
+            const appleCredential = await AppleAuthentication.signInAsync({
+              requestedScopes: [
+                AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+                AppleAuthentication.AppleAuthenticationScope.EMAIL,
+              ],
+            });
+            // GOLDEN (SIWA name-first): Apple returns fullName/email ONLY on the
+            // FIRST authorization of this Apple ID for the app. If they're null on
+            // a fresh-looking signup, the Apple ID is still authorized at the OS
+            // level — revoke via Settings → Sign in with Apple to re-test.
+            if (!appleCredential.identityToken) {
+              set({
+                error: i18n.t('errors.appleNoIdentityToken', { ns: 'auth' }),
+              });
+              throw new Error('No identity token returned from Apple Sign-In');
+            }
+            const { error } = await authClient.signIn.social({
+              provider: 'apple',
+              idToken: { token: appleCredential.identityToken },
+            });
+            throwIfError(error);
+
+            // Persist the one-time name so onboarding can pre-fill instead of
+            // forcing re-entry (App Store Guideline 4). Best-effort.
+            const appleName = [
+              appleCredential.fullName?.givenName,
+              appleCredential.fullName?.familyName,
+            ]
+              .filter(Boolean)
+              .join(' ')
+              .trim()
+              .slice(0, 40);
+            if (appleName) {
+              const { error: updateError } = await authClient.updateUser({
+                name: appleName,
+              });
+              if (updateError && __DEV__)
                 console.warn(
-                  '[Auth] Failed to persist Apple profile metadata:',
+                  '[Auth] Failed to persist Apple name:',
                   updateError.message
                 );
-            } else if (updated.user) {
-              // The SIGNED_IN access token won't carry the new metadata; reflect
-              // the fresh user now so onboarding can pre-fill the name.
-              set({ user: updated.user });
             }
+            // After updateUser, so the stored user already carries the name.
+            await completeSignIn();
+          } else {
+            // Android: browser OAuth, handed back to the app via the scheme.
+            const { error } = await authClient.signIn.social({
+              provider: 'apple',
+              callbackURL: '/',
+            });
+            throwIfError(error);
+            await completeSignIn();
           }
-        } else {
-          const { error } = await supabase.auth.signInWithOAuth({
-            provider: 'apple',
-          });
-          if (error) {
-            set({ error: authErrorMessage(error) });
-            throw error;
-          }
-        }
-      } catch (error) {
-        const errorCode =
-          error && typeof error === 'object' && 'code' in error
-            ? (error as { code: string }).code
-            : null;
-        if (errorCode === 'ERR_CANCELED') {
-          set({ error: null });
-        } else if (error instanceof Error) {
-          set({ error: authErrorMessage(error) });
-        } else {
-          set({ error: i18n.t('errors.unknown', { ns: 'auth' }) });
-        }
-      } finally {
-        set({ isLoading: false });
-      }
-    },
-
-    setSession: session => set({ session }),
-    setError: error => set({ error }),
-    clearError: () => set({ error: null, isPlayServicesUnavailable: false }),
-    setLoading: isLoading => set({ isLoading }),
-
-    initializeAuth: () => {
-      configureGoogleSignIn();
-
-      // SEAM: register token refresh + sign-out with the API client (replaces the
-      // client's hard-wired Supabase import).
-      configureAuthHandlers({
-        refreshToken: async () => {
-          const { data, error } = await supabase.auth.refreshSession();
-          if (error) return null;
-          return data.session?.access_token ?? null;
-        },
-        onUnauthorized: async () => {
-          try {
-            await clearAppState();
-            await supabase.auth.signOut();
-          } catch (error) {
-            if (__DEV__) console.error('[Auth] Error during sign out:', error);
-          } finally {
-            // Same reasoning as signOut() above: signOut() can fail without
-            // ever emitting SIGNED_OUT, so clear local state unconditionally.
-            clearUserContext();
-            previousSignedInUserId = null;
-            set({ session: null, user: null });
-          }
-          router.replace('/welcome' as Href);
-        },
-      });
-
-      const {
-        data: { subscription },
-      } = supabase.auth.onAuthStateChange(async (event, session) => {
-        // Refresh an expired token before doing anything else.
-        if (session?.expires_at) {
-          const isExpired = session.expires_at * 1000 < Date.now();
-          if (isExpired) {
-            try {
-              const { data, error } = await supabase.auth.refreshSession();
-              if (error) {
-                await clearAppState();
-                clearUserContext();
-                set({ session: null, user: null, isInitialized: true });
-                return;
-              }
-              if (data.session) return; // fires another event with the new session
-            } catch {
-              await clearAppState();
-              clearUserContext();
-              set({ session: null, user: null, isInitialized: true });
-              return;
-            }
-          }
-        }
-
-        // Update the API client token BEFORE isInitialized so queries never fire
-        // tokenless.
-        if (session?.access_token) updateAuthToken(session.access_token);
-
-        if (event === 'INITIAL_SESSION') {
-          if (session) reset401Handler();
-
-          // GOLDEN (deleted-user): a persisted session can outlive its backend
-          // user (deleted server-side while the JWT is still valid). getUser()
-          // makes a live auth-server call that returns a definitive 401/403 for a
-          // deleted user, bypassing any API token cache. Transient/network errors
-          // carry no status and are ignored so an offline launch keeps the session.
-          if (session) {
-            const { error: userError } = await supabase.auth.getUser();
-            const sessionRevoked =
-              !!userError &&
-              (userError.status === 401 || userError.status === 403);
-            if (sessionRevoked) {
-              await clearAppState();
-              await supabase.auth.signOut();
-              clearAuthToken();
-              clearUserContext();
-              previousSignedInUserId = null;
-              set({ session: null, user: null, isInitialized: true });
-              router.replace('/welcome' as Href);
-              return;
-            }
-          }
-
-          const userId = session?.user?.id ?? null;
+        } catch (error) {
+          const errorCode =
+            error && typeof error === 'object' && 'code' in error
+              ? (error as { code: string }).code
+              : null;
           if (
-            userId &&
-            previousSignedInUserId !== null &&
-            userId !== previousSignedInUserId
+            errorCode === 'ERR_CANCELED' ||
+            errorCode === 'ERR_REQUEST_CANCELED'
           ) {
-            await clearAppState();
+            set({ error: null });
+          } else if (error && typeof error === 'object') {
+            set({ error: authErrorMessage(error) });
+          } else {
+            set({ error: i18n.t('errors.unknown', { ns: 'auth' }) });
           }
-          previousSignedInUserId = userId;
-          lastSignedInUserId = userId;
-          if (userId) setUserContext({ id: userId });
-          else clearUserContext();
-          set({ session, user: session?.user ?? null, isInitialized: true });
-        } else if (event === 'SIGNED_IN') {
-          reset401Handler();
-          const userId = session?.user?.id ?? null;
-          // `previousSignedInUserId` is null on a cold start AND right after
-          // ANY sign-out (see the SIGNED_OUT handler below) — so "null or
-          // different" alone can't distinguish a genuine account SWITCH from
-          // the SAME user simply signing back in. Query cache is fine to drop
-          // either way (queryClient.clear() below), but user-scoped LOCAL
-          // state (setupProgress's in-flight wizard step, notification-primer
-          // counters, ...) must only be wiped on a real switch — wiping it on
-          // a same-user re-sign-in stranded a returning, already-onboarded
-          // parent back at the role fork forever, because the (also nulled)
-          // cached household id meant InviteScreen's effect never fired. See
-          // PROJECT-STATUS / GOLDEN-FIXES for the full writeup.
-          //
-          // `lastSignedInUserId` is NOT cleared on SIGNED_OUT, which is what
-          // makes sign-out -> sign-in-as-someone-else a detectable switch.
-          // Before it existed, `previousSignedInUserId` was nulled at sign-out,
-          // so the new account inherited the previous one's setupProgress and
-          // resumed into the middle of somebody else's onboarding wizard.
-          // ponytail: in-memory only, so the leak survives one shape — sign
-          // out, KILL the app, then register a new account: nothing remembers
-          // who was here before. Persist this id (or stamp setupProgress with
-          // its owner) if that shape ever shows up in the wild.
-          const isFreshSignIn =
-            !!userId &&
-            (previousSignedInUserId === null ||
-              userId !== previousSignedInUserId);
-          const isAccountSwitch =
-            !!userId &&
-            lastSignedInUserId !== null &&
-            userId !== lastSignedInUserId;
-          if (isFreshSignIn) {
-            queryClient.clear();
-            if (isAccountSwitch) {
-              resetUserScopedStores();
-            }
-            router.replace('/' as Href);
-          }
-          previousSignedInUserId = userId;
-          lastSignedInUserId = userId;
-          if (userId) setUserContext({ id: userId });
-          set({ session, user: session?.user ?? null, isInitialized: true });
-        } else if (event === 'TOKEN_REFRESHED') {
-          // Keep the persisted session fresh for consumers reading access_token.
-          set({ session, user: session?.user ?? null });
-        } else if (event === 'USER_UPDATED') {
-          // Fired by updateUser (e.g. persisting the Apple name). Keep in sync.
-          set({ session, user: session?.user ?? null });
-        } else if (event === 'SIGNED_OUT') {
-          previousSignedInUserId = null;
-          clearAuthToken();
-          clearUserContext();
-          set({ session: null, user: null });
+        } finally {
+          set({ isLoading: false });
         }
-      });
+      },
 
-      authSubscription = subscription;
-    },
+      setSession: session => set({ session }),
+      setError: error => set({ error }),
+      clearError: () => set({ error: null, isPlayServicesUnavailable: false }),
+      setLoading: isLoading => set({ isLoading }),
 
-    cleanupAuth: () => {
-      if (authSubscription) {
-        authSubscription.unsubscribe();
-        authSubscription = null;
-      }
-    },
-  }),
+      initializeAuth: async () => {
+        configureGoogleSignIn();
+
+        // SEAM: register session re-check + sign-out with the API client.
+        // Better Auth has no refresh tokens: a 401 re-asks the server whether
+        // the session is still alive and retries with the (possibly updated)
+        // cookie, or gives up.
+        configureAuthHandlers({
+          refreshToken: async () => {
+            const { data } = await authClient.getSession();
+            if (!data) return null;
+            return (await authClient.getCookie()) || null;
+          },
+          onUnauthorized: async () => {
+            try {
+              await clearAppState();
+              await authClient.signOut();
+            } catch (error) {
+              if (__DEV__)
+                console.error('[Auth] Error during sign out:', error);
+            } finally {
+              clearLocalSession();
+            }
+            router.replace('/welcome' as Href);
+          },
+        });
+
+        // Session bootstrap. Set the cookie BEFORE isInitialized so queries
+        // never fire cookieless.
+        const cookie = await authClient.getCookie();
+        if (!cookie) {
+          // Nothing stored — also catches a pre-Better-Auth install whose
+          // persisted Supabase session is now meaningless.
+          clearLocalSession();
+          set({ isInitialized: true });
+          return;
+        }
+        updateAuthToken(cookie);
+
+        let restored: AuthSession | null = null;
+        try {
+          const { data, error } = await authClient.getSession();
+          // A 5xx is the server's problem, not proof the session is gone.
+          if (error && (error.status ?? 0) >= 500) throw error;
+          restored = data;
+        } catch {
+          // Offline / server down: keep the persisted session so an offline
+          // launch stays signed in. Without one there's nothing to show.
+          if (!get().session) clearLocalSession();
+          set({ isInitialized: true });
+          return;
+        }
+
+        // GOLDEN (deleted-user): a stored cookie can outlive its backend user
+        // (deleted server-side). getSession is a live server check, so a null
+        // session here is definitive — sign out locally.
+        if (!restored) {
+          const hadSession = !!get().session;
+          await clearAppState();
+          await authClient.signOut().catch(() => {});
+          clearLocalSession();
+          set({ isInitialized: true });
+          if (hadSession) router.replace('/welcome' as Href);
+          return;
+        }
+
+        reset401Handler();
+        const userId = restored.user.id;
+        if (
+          previousSignedInUserId !== null &&
+          userId !== previousSignedInUserId
+        )
+          await clearAppState();
+        previousSignedInUserId = userId;
+        lastSignedInUserId = userId;
+        setUserContext({ id: userId });
+        set({ session: restored, user: restored.user, isInitialized: true });
+      },
+    };
+  },
   {
     name: 'auth-storage',
     version: 1,

@@ -2,7 +2,7 @@ export * from './auth';
 export * from './cacheControl';
 export * from './errorHandler';
 export * from './jobAuth';
-export { logError, logger, morganMiddleware, SentryTransport } from './logger';
+export { logError, logger, morganMiddleware } from './logger';
 export * from './presets';
 export * from './rateLimit';
 export * from './requestId';

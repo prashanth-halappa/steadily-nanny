@@ -2,98 +2,56 @@ import { describe, expect, it } from 'bun:test';
 import { getLocalizedAuthErrorMessage } from '../errorLocalization';
 
 const t = (key: string) => `t:${key}`;
+const map = (error: unknown) => getLocalizedAuthErrorMessage(error, t);
 
-describe('getLocalizedAuthErrorMessage', () => {
-  it('maps invalid login credentials', () => {
-    expect(
-      getLocalizedAuthErrorMessage({ message: 'Invalid login credentials' }, t)
-    ).toBe('t:auth:errors.invalidCredentials');
+describe('getLocalizedAuthErrorMessage (Better Auth codes)', () => {
+  it('maps invalid credentials', () => {
+    expect(map({ code: 'INVALID_EMAIL_OR_PASSWORD', status: 401 })).toBe(
+      't:auth:errors.invalidCredentials'
+    );
   });
 
-  it('maps rate-limit messages', () => {
-    expect(
-      getLocalizedAuthErrorMessage(
-        {
-          message:
-            'For security purposes, you can only request this after 51 seconds.',
-        },
-        t
-      )
-    ).toBe('t:auth:errors.rateLimited');
+  // The most common sign-up failure. Mapped to real copy instead of "An
+  // unknown error occurred", which tells the user nothing.
+  it('maps a too-short password', () => {
+    expect(map({ code: 'PASSWORD_TOO_SHORT', status: 400 })).toBe(
+      't:auth:errors.passwordTooShort'
+    );
   });
 
-  it('maps over_request_rate_limit by supabase error code', () => {
-    expect(
-      getLocalizedAuthErrorMessage(
-        {
-          code: 'over_request_rate_limit',
-          message: 'Request rate limit reached',
-        },
-        t
-      )
-    ).toBe('t:auth:errors.rateLimited');
+  it('maps an existing account', () => {
+    expect(map({ code: 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL' })).toBe(
+      't:auth:errors.emailTaken'
+    );
   });
 
-  it('maps over_email_send_rate_limit by supabase error code', () => {
-    expect(
-      getLocalizedAuthErrorMessage(
-        {
-          code: 'over_email_send_rate_limit',
-          message: 'Email rate limit exceeded',
-        },
-        t
-      )
-    ).toBe('t:auth:errors.rateLimited');
+  it('maps an unverified email', () => {
+    expect(map({ code: 'EMAIL_NOT_VERIFIED', status: 403 })).toBe(
+      't:auth:errors.emailNotConfirmed'
+    );
   });
 
-  it('maps email_address_invalid by supabase error code', () => {
-    expect(
-      getLocalizedAuthErrorMessage(
-        { code: 'email_address_invalid', message: 'Email address is invalid' },
-        t
-      )
-    ).toBe('t:auth:errors.invalidEmailDomain');
+  it('maps a spent reset token', () => {
+    expect(map({ code: 'INVALID_TOKEN', status: 400 })).toBe(
+      't:auth:errors.resetLinkInvalid'
+    );
   });
 
-  it('maps email_address_not_authorized by supabase error code', () => {
-    expect(
-      getLocalizedAuthErrorMessage(
-        {
-          code: 'email_address_not_authorized',
-          message: 'Email address is not authorized',
-        },
-        t
-      )
-    ).toBe('t:auth:errors.invalidEmailDomain');
+  it('maps a 429 to rate limited', () => {
+    expect(map({ status: 429, message: 'Too many requests' })).toBe(
+      't:auth:errors.rateLimited'
+    );
   });
 
-  // Supabase rejects a short password with 422 "Password should be at least 6
-  // characters." — the most common signup failure there is. Mapped to real copy
-  // instead of "An unknown error occurred", which tells the user nothing.
-  it('maps a too-short password by message', () => {
-    expect(
-      getLocalizedAuthErrorMessage(
-        { message: 'Password should be at least 6 characters.' },
-        t
-      )
-    ).toBe('t:auth:errors.passwordTooShort');
+  it('maps a fetch failure to network', () => {
+    expect(map(new TypeError('Network request failed'))).toBe(
+      't:errors:network'
+    );
   });
 
-  it('maps a too-short password by supabase error code', () => {
-    expect(
-      getLocalizedAuthErrorMessage(
-        { code: 'weak_password', message: 'Password is too weak' },
-        t
-      )
-    ).toBe('t:auth:errors.passwordTooShort');
-  });
-
-  it('falls back to auth unknown rather than raw message', () => {
-    expect(
-      getLocalizedAuthErrorMessage(
-        { message: 'Some obscure supabase string' },
-        t
-      )
-    ).toBe('t:auth:errors.unknown');
+  it('falls back to auth unknown rather than the raw message', () => {
+    expect(map({ code: 'SOMETHING_NEW', message: 'Some obscure string' })).toBe(
+      't:auth:errors.unknown'
+    );
   });
 });

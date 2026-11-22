@@ -85,8 +85,6 @@ class MockEventEmitter {
 process.env.EXPO_PUBLIC_API_URL = 'https://test-api.example.com/api';
 process.env.EXPO_PUBLIC_SENTRY_DSN = 'https://test-sentry-dsn@sentry.io/test';
 process.env.EXPO_PUBLIC_POSTHOG_API_KEY = 'test-posthog-api-key';
-process.env.EXPO_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
-process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY = 'test-anon-key';
 
 // -----------------------------------------------------------------------------
 // react-native
@@ -922,6 +920,26 @@ mock.module('expo-apple-authentication', () => ({
     })
   ),
 }));
+
+// The real Better Auth client needs the ExpoSecureStore native module and makes
+// network calls; every test that reaches the auth store gets this inert,
+// signed-out stand-in. Tests that exercise auth override it with their own
+// mock.module('@/src/lib/authClient', ...).
+mock.module('@/src/lib/authClient', () => {
+  const ok = () => Promise.resolve({ data: null, error: null });
+  return {
+    authClient: {
+      getCookie: mock(() => Promise.resolve('')),
+      getSession: mock(ok),
+      signIn: { email: mock(ok), social: mock(ok) },
+      signUp: { email: mock(ok) },
+      signOut: mock(ok),
+      requestPasswordReset: mock(ok),
+      resetPassword: mock(ok),
+      updateUser: mock(ok),
+    },
+  };
+});
 
 // -----------------------------------------------------------------------------
 // Observability / toast

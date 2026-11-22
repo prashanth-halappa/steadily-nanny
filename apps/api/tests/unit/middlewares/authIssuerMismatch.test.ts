@@ -29,8 +29,8 @@ let validateSupabaseToken: (
   next: NextFunction
 ) => Promise<void>;
 let logger: {
-  error: (...args: unknown[]) => void;
-  info: (...args: unknown[]) => void;
+  error: (message: string, ...args: unknown[]) => unknown;
+  info: (message: string, ...args: unknown[]) => unknown;
 };
 
 beforeAll(async () => {

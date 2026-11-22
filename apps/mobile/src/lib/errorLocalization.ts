@@ -53,7 +53,7 @@ export const ERROR_CODE_TO_I18N_KEY: Record<string, string> = {
 interface ErrorLike {
   message?: string;
   name?: string;
-  /** Supabase AuthError's stable code, e.g. `weak_password`. */
+  /** Better Auth's stable error code, e.g. `PASSWORD_TOO_SHORT`. */
   code?: string;
   isAxiosError?: boolean;
   response?: {
@@ -160,53 +160,32 @@ export function getLocalizedErrorMessage(
 }
 
 /**
- * Map Supabase Auth / OAuth failures to localized auth copy — never surface
- * raw English backend strings in a bilingual app (Daylight UX #19).
+ * Better Auth error codes → localized auth copy — never surface raw English
+ * backend strings in a bilingual app (Daylight UX #19).
  */
+const AUTH_ERROR_CODE_TO_I18N_KEY: Record<string, string> = {
+  INVALID_EMAIL_OR_PASSWORD: 'auth:errors.invalidCredentials',
+  INVALID_PASSWORD: 'auth:errors.invalidCredentials',
+  // Sign-up's most common rejection. Falling through to `unknown` here is what
+  // made the form unusable: nothing on screen said the password was short.
+  PASSWORD_TOO_SHORT: 'auth:errors.passwordTooShort',
+  USER_ALREADY_EXISTS: 'auth:errors.emailTaken',
+  USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL: 'auth:errors.emailTaken',
+  EMAIL_NOT_VERIFIED: 'auth:errors.emailNotConfirmed',
+  // The reset link's token is spent or expired.
+  INVALID_TOKEN: 'auth:errors.resetLinkInvalid',
+};
+
+/** Map a Better Auth client error (`{ code, message, status }`) to localized auth copy. */
 export function getLocalizedAuthErrorMessage(
   error: unknown,
   t: ErrorTFunction
 ): string {
   const err = asErrorLike(error);
-  const code = err.code;
-  const message = (err.message ?? '').toLowerCase();
-
-  if (
-    code === 'over_request_rate_limit' ||
-    code === 'over_email_send_rate_limit'
-  ) {
+  const key = err.code ? AUTH_ERROR_CODE_TO_I18N_KEY[err.code] : undefined;
+  if (key) return t(key);
+  if ((error as { status?: number } | null)?.status === 429) {
     return t('auth:errors.rateLimited');
-  }
-  if (
-    code === 'email_address_invalid' ||
-    code === 'email_address_not_authorized'
-  ) {
-    return t('auth:errors.invalidEmailDomain');
-  }
-
-  if (message.includes('invalid login credentials')) {
-    return t('auth:errors.invalidCredentials');
-  }
-  if (
-    message.includes('only request this after') ||
-    message.includes('rate limit') ||
-    message.includes('too many requests')
-  ) {
-    return t('auth:errors.rateLimited');
-  }
-  // Sign-up's most common rejection (422). Falling through to `unknown` here is
-  // what made the form unusable: nothing on screen said the password was short.
-  if (
-    err.code === 'weak_password' ||
-    message.includes('password should be at least')
-  ) {
-    return t('auth:errors.passwordTooShort');
-  }
-  if (message.includes('user already registered')) {
-    return t('auth:errors.emailTaken');
-  }
-  if (message.includes('email not confirmed')) {
-    return t('auth:errors.emailNotConfirmed');
   }
   if (isTimeoutError(err)) {
     return t('errors:timeout');

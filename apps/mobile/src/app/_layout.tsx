@@ -95,7 +95,6 @@ function createDaylightToastConfig(colors: ReturnType<typeof useThemeColors>) {
 
 function RootLayout() {
   const initializeAuth = useAuthStore(s => s.initializeAuth);
-  const cleanupAuth = useAuthStore(s => s.cleanupAuth);
   const themeColors = useThemeColors();
   const toastConfig = useMemo(
     () => createDaylightToastConfig(themeColors),
@@ -104,10 +103,9 @@ function RootLayout() {
   const [splashDone, setSplashDone] = useState(false);
 
   useEffect(() => {
-    initializeAuth();
+    void initializeAuth();
     void SplashScreen.hideAsync();
-    return () => cleanupAuth();
-  }, [initializeAuth, cleanupAuth]);
+  }, [initializeAuth]);
 
   return (
     <RootErrorBoundary>

@@ -59,6 +59,19 @@ export class JobAlreadyRunningError extends BaseError {
   }
 }
 
+type TrackedOptions<T extends AnyResult> = {
+  /** Map job result to the JobRunService.complete() summary. */
+  mapForJobRun?: (result: T) => AnyResult;
+  /** Map job result to the response payload (defaults to the full result). */
+  mapForResponse?: (result: T) => AnyResult;
+};
+
+/** A tracked job handler that can also be run directly (no req/res), e.g. by the cron `scheduled` entry. */
+export type TrackedJobHandler = JobHandler & {
+  /** Runs the tracked job; throws on any failure (already logged/Sentry'd). */
+  run: (invoker?: { ip?: string }) => Promise<void>;
+};
+
 /**
  * Handler that tracks the run lifecycle via JobRunService.
  */
@@ -66,60 +79,67 @@ export function createTrackedJobHandler<T extends AnyResult>(
   jobName: string,
   jobFn: () => Promise<T>,
   successMessage: string,
-  options?: {
-    /** Map job result to the JobRunService.complete() summary. */
-    mapForJobRun?: (result: T) => AnyResult;
-    /** Map job result to the response payload (defaults to the full result). */
-    mapForResponse?: (result: T) => AnyResult;
-  }
-): JobHandler {
-  return async (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<void> => {
-    let runId: string | null = null;
-    try {
-      // ponytail: check-then-act, not a DB reservation — two simultaneous
-      // POSTs can both pass this read before either inserts a row. The cron
-      // cadence here is hourly+, so that window is irrelevant in practice;
-      // `JobRunService.startWithIdempotencyKey` (CAS-guarded reclaim) is the
-      // upgrade path if a job ever needs a real reservation.
-      if (await JobRunService.hasFreshRunningRun(jobName)) {
-        next(new JobAlreadyRunningError(jobName));
-        return;
-      }
+  options?: TrackedOptions<T>
+): TrackedJobHandler {
+  // Shared by the HTTP handler and the cron entry. Throws instead of calling next().
+  const execute = async (
+    ip?: string
+  ): Promise<{ runId: string; result: T }> => {
+    // ponytail: check-then-act, not a DB reservation — two simultaneous
+    // POSTs can both pass this read before either inserts a row. The cron
+    // cadence here is hourly+, so that window is irrelevant in practice;
+    // `JobRunService.startWithIdempotencyKey` (CAS-guarded reclaim) is the
+    // upgrade path if a job ever needs a real reservation.
+    if (await JobRunService.hasFreshRunningRun(jobName)) {
+      throw new JobAlreadyRunningError(jobName);
+    }
 
+    let runId: string | null = null;
+    let result: T;
+    let jobRunSummary: AnyResult;
+    try {
       runId = await JobRunService.start(jobName);
       logger.info('Job started', { job: jobName, runId });
       // S15 — the job routes sit before every other auth/audit layer in the
       // app; this is the only place an invocation of one is ever recorded
       // with WHO called it (by IP, the only identity these routes have).
-      logger.info('job.invoked', { job: jobName, ip: req.ip, runId });
+      logger.info('job.invoked', { job: jobName, ip, runId });
 
-      const result = await jobFn();
+      result = await jobFn();
 
-      const jobRunSummary = options?.mapForJobRun
+      jobRunSummary = options?.mapForJobRun
         ? options.mapForJobRun(result)
         : result;
       // Complete FIRST, always: JobRunService derives partial/failed from the
       // summary's errorCount, so the row records the truth even on the loud
       // path below. Bailing before it would leave the run stuck 'running'.
       await JobRunService.complete(runId, jobRunSummary);
-
-      const errorCount = Number(jobRunSummary.errorCount ?? 0);
-      if (errorCount > 0) {
-        // Error level is the whole point — SentryTransport forwards it, so
-        // this is what turns "12 rows failed" into something a human sees.
-        logger.error('Job completed with errors', {
-          job: jobName,
-          runId,
-          summary: jobRunSummary,
-        });
-        next(new JobCompletedWithErrorsError(jobName, errorCount, runId));
-        return;
+    } catch (error) {
+      logger.error('Job failed', { job: jobName, runId, error });
+      Sentry.captureException(error, { tags: { job: jobName } });
+      if (runId) {
+        await JobRunService.fail(runId, error as Error);
       }
+      throw error;
+    }
 
+    const errorCount = Number(jobRunSummary.errorCount ?? 0);
+    if (errorCount > 0) {
+      // Error level is the whole point — the logger forwards it to Sentry, so
+      // this is what turns "12 rows failed" into something a human sees.
+      logger.error('Job completed with errors', {
+        job: jobName,
+        runId,
+        summary: jobRunSummary,
+      });
+      throw new JobCompletedWithErrorsError(jobName, errorCount, runId);
+    }
+    return { runId, result };
+  };
+
+  const handler: JobHandler = async (req, res, next): Promise<void> => {
+    try {
+      const { runId, result } = await execute(req.ip);
       const responsePayload = options?.mapForResponse
         ? options.mapForResponse(result)
         : result;
@@ -129,14 +149,15 @@ export function createTrackedJobHandler<T extends AnyResult>(
         ...responsePayload,
       });
     } catch (error) {
-      logger.error('Job failed', { job: jobName, runId, error });
-      Sentry.captureException(error, { tags: { job: jobName } });
-      if (runId) {
-        await JobRunService.fail(runId, error as Error);
-      }
       next(error);
     }
   };
+
+  return Object.assign(handler, {
+    run: async (invoker?: { ip?: string }) => {
+      await execute(invoker?.ip);
+    },
+  });
 }
 
 /**

@@ -6,10 +6,10 @@
  * camelCase keys, `{{var}}` interpolation, `_one`/`_other` plural suffixes.
  *
  * Design notes:
- * - **Auto-discovery:** locale catalogs (`en.json`, …) are read from this
- *   directory at module load. Ships with `en` only; a new locale lights up with
- *   NO code change here — SETUP: add a `<locale>.json` catalog alongside
- *   `en.json` (and add its code to `SUPPORTED_LOCALES` in shared-types).
+ * - **Static catalogs:** locale catalogs (`en.json`, …) are imported statically
+ *   (Workers has no fs). Ships with `en` only — SETUP: add a `<locale>.json`
+ *   alongside `en.json`, import it into `CATALOGS` below, and add its code to
+ *   `SUPPORTED_LOCALES` in shared-types.
  * - **Fallback:** `en.json` is the source of truth and the i18next `fallbackLng`,
  *   so a missing key or an untranslated locale renders English, never a blank.
  * - **One namespace, nested keys:** everything loads under the `email` namespace,
@@ -22,8 +22,6 @@
  * @module domains/email/i18n
  */
 
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import {
   DEFAULT_LOCALE,
   isValidLocale,
@@ -31,6 +29,7 @@ import {
   type SupportedLocale,
 } from '@steadily-nanny/shared-types/locale';
 import { createInstance, type i18n, type TFunction } from 'i18next';
+import en from './en.json';
 
 /** Single namespace all email catalogs load under. */
 const EMAIL_NS = 'email' as const;
@@ -41,26 +40,17 @@ const EMAIL_NS = 'email' as const;
  */
 const RTL_LOCALES = new Set<string>();
 
-// API compiles as CommonJS; Bun provides `__dirname` at runtime in both modes.
-const catalogDir = __dirname;
-
 /**
- * Read every `<locale>.json` catalog present in this directory and build the
- * i18next `resources` map. Locales without a file fall back to English.
+ * Locale catalogs, statically imported (no fs on Workers). Locales without a
+ * catalog fall back to English.
+ * SETUP: a new locale needs its `<locale>.json` imported and added here.
  */
+const CATALOGS: Record<string, object> = { en };
+
 function loadResources(): Record<string, { [EMAIL_NS]: object }> {
   const resources: Record<string, { [EMAIL_NS]: object }> = {};
-  for (const file of readdirSync(catalogDir)) {
-    if (!file.endsWith('.json')) continue;
-    const locale = file.slice(0, -'.json'.length);
-    if (!isValidLocale(locale)) continue;
-    try {
-      const parsed = JSON.parse(readFileSync(join(catalogDir, file), 'utf8'));
-      resources[locale] = { [EMAIL_NS]: parsed };
-    } catch (err) {
-      // A malformed catalog must never take down email sending — log and skip.
-      console.error(`[email-i18n] failed to load catalog "${file}":`, err);
-    }
+  for (const [locale, catalog] of Object.entries(CATALOGS)) {
+    if (isValidLocale(locale)) resources[locale] = { [EMAIL_NS]: catalog };
   }
   return resources;
 }

@@ -24,9 +24,6 @@ const app = express();
 // the real client without trusting a fully client-spoofable X-Forwarded-For chain.
 app.set('trust proxy', 1);
 
-// Sentry Express error handler — before routes.
-Sentry.setupExpressErrorHandler(app);
-
 // Security headers first.
 app.use(helmet(helmetConfig));
 
@@ -53,7 +50,7 @@ app.use(
 );
 app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 
-// HTTP access log → winston.
+// HTTP access log → logger.
 app.use(morganMiddleware);
 
 // ── Routes that DON'T use Supabase token auth — mount BEFORE validateSupabaseToken.

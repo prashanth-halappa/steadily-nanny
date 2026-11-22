@@ -1,17 +1,9 @@
+// Bun-only local entry (`bun src/index.ts`). Production runs src/worker.ts on
+// Cloudflare Workers.
 import app from './app';
 import config from './config/config';
 import { logger } from './middlewares/logger';
 
-const server = app.listen(config.port, '0.0.0.0', () => {
+app.listen(config.port, '0.0.0.0', () => {
   logger.info(`Server running on port ${config.port}`);
 });
-
-const shutdown = () => {
-  logger.info('Shutting down...');
-  server.close(() => {
-    process.exit(0);
-  });
-};
-
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);

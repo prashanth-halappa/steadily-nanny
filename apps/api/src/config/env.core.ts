@@ -2,7 +2,7 @@
  * Core environment schema (framework-level).
  *
  * These are the variables the reusable API core needs regardless of product:
- * server config, Supabase, the LLM provider (Vertex AI via ADC), monitoring,
+ * server config, Supabase, monitoring,
  * jobs, and email.
  *
  * App-specific variables live in `app.env.ts` (the extension point). Both are
@@ -33,19 +33,6 @@ export const coreEnvSchema = z.object({
   SUPABASE_URL: z.string().url('SUPABASE_URL must be a valid URL'),
   SUPABASE_ANON_KEY: z.string().min(1, 'SUPABASE_ANON_KEY is required'),
   SUPABASE_SERVICE_KEY: z.string().min(1, 'SUPABASE_SERVICE_KEY is required'),
-
-  // ── LLM via Vertex AI (optional at boot; required only once a call is made) ──
-  // Auth is Application Default Credentials (ADC) — no API key in env.
-  // No domain currently calls into `llmProvider` (see its module doc), so this
-  // stays optional at boot — `llmProvider` throws a clear error naming this var
-  // if it's unset when a model factory is actually invoked. Empty string (an
-  // env block value left blank) is treated the same as unset — same trap as
-  // SENTRY_DSN below.
-  GOOGLE_VERTEX_PROJECT: z.preprocess(
-    val => (val === '' ? undefined : val),
-    z.string().min(1).optional()
-  ),
-  GOOGLE_VERTEX_LOCATION: z.string().min(1).default('us-central1'),
 
   // ── Monitoring (optional; production-recommended) ────────────────────────────
   // `.env.example` ships `SENTRY_DSN=` (empty) — bun loads that as "", which
@@ -89,8 +76,6 @@ export const coreTestEnv: CoreEnv = {
   SUPABASE_URL: 'http://localhost:54321',
   SUPABASE_ANON_KEY: 'test-anon-key',
   SUPABASE_SERVICE_KEY: 'test-service-key',
-  GOOGLE_VERTEX_PROJECT: 'test-vertex-project',
-  GOOGLE_VERTEX_LOCATION: 'us-central1',
   LOG_LEVEL: 'info',
   JOB_API_KEY: 'test-job-api-key',
   RESEND_API_KEY: 'test-resend-key',

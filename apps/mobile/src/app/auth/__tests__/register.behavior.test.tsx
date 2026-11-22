@@ -1,8 +1,7 @@
 /**
  * D3 — signup swallowed actionable errors.
  *
- * Live-simulator finding: Supabase returned 422 "Password should be at least 6
- * characters.", the screen rendered "An unknown error occurred", and the user
+ * Live-simulator finding: the server rejected a too-short password, the screen rendered "An unknown error occurred", and the user
  * was left retyping a password they could no longer see. This locks in the
  * three halves of the fix: validate before the round trip, show the real
  * reason when the round trip fails, and never drop what was typed.
@@ -13,23 +12,20 @@ import { renderWithProviders } from '@/src/test-utils';
 
 const signUpMock = mock(() =>
   Promise.resolve({
-    data: { user: null, session: null },
+    data: null,
     error: {
-      message: 'Password should be at least 6 characters.',
-      status: 422,
+      code: 'PASSWORD_TOO_SHORT',
+      message: 'Password too short',
+      status: 400,
     },
   })
 );
 
-mock.module('@/src/lib/supabase', () => ({
-  supabase: {
-    auth: {
-      signUp: signUpMock,
-      onAuthStateChange: mock(() => ({
-        data: { subscription: { unsubscribe: mock(() => {}) } },
-      })),
-      getSession: mock(() => Promise.resolve({ data: { session: null } })),
-    },
+mock.module('@/src/lib/authClient', () => ({
+  authClient: {
+    signUp: { email: signUpMock },
+    getSession: mock(() => Promise.resolve({ data: null, error: null })),
+    getCookie: mock(() => Promise.resolve('')),
   },
 }));
 
@@ -44,7 +40,7 @@ beforeEach(() => {
 });
 
 describe('Register (D3)', () => {
-  it('blocks a too-short password before it reaches Supabase', async () => {
+  it('blocks a too-short password before it reaches the server', async () => {
     const { getByTestId, queryByTestId } = renderWithProviders(<Register />);
 
     fireEvent.changeText(getByTestId('register-email'), 'a@b.com');

@@ -1,315 +1,338 @@
 /**
  * @module store/__tests__/auth
  *
- * F-B9-6: the auth store's `onAuthStateChange` listener must keep Sentry's
- * user context in sync with the session — set it (id only, never email) on
- * sign-in/session-restore, and clear it on every path that drops the
- * session (signed-out, deleted-user, refresh-failure).
+ * The auth store on Better Auth: session bootstrap (getSession replaces
+ * Supabase's INITIAL_SESSION + the live getUser() deleted-user check), the
+ * sign-in path (replaces SIGNED_IN), Sentry user-context wiring, unconditional
+ * sign-out cleanup, account-switch state clearing, and the sign-up outcome.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 
-type AuthChangeCallback = (
-  event: string,
-  session: {
-    user?: { id: string; email?: string } | null;
-    access_token?: string;
-    expires_at?: number;
-  } | null
-) => Promise<void> | void;
-
-const onAuthStateChangeMock = mock((callback: AuthChangeCallback) => {
-  capturedCallback = callback;
-  return { data: { subscription: { unsubscribe: mock(() => {}) } } };
+type Result = {
+  data: unknown;
+  error: { status?: number; code?: string } | null;
+};
+const ok = (data: unknown = null): Promise<Result> =>
+  Promise.resolve({ data, error: null });
+const sessionFor = (id: string) => ({
+  user: { id, email: `${id}@example.com`, name: '' },
+  session: { id: `s-${id}`, token: 't', expiresAt: new Date() },
 });
-let capturedCallback: AuthChangeCallback = () => {};
 
-type GetUserResult = {
-  data: { user: Record<string, unknown> | null };
-  error: { status?: number } | null;
-};
-type RefreshSessionResult = {
-  data: { session: unknown };
-  error: { message: string } | null;
-};
+const getCookieMock = mock(() =>
+  Promise.resolve('better-auth.session_token=c')
+);
+const getSessionMock = mock((): Promise<Result> => ok(null));
+const signOutMock = mock((): Promise<Result> => ok());
+const signInEmailMock = mock((): Promise<Result> => ok({}));
+const signUpEmailMock = mock((): Promise<Result> => ok({}));
+const signInSocialMock = mock((): Promise<Result> => ok({}));
+const updateUserMock = mock((): Promise<Result> => ok({}));
 
-const getUserMock = mock(
-  (): Promise<GetUserResult> =>
-    Promise.resolve({ data: { user: {} }, error: null })
-);
-type SignOutResult = { error: { message: string; status?: number } | null };
-const signOutMock = mock(
-  (): Promise<SignOutResult> => Promise.resolve({ error: null })
-);
-const refreshSessionMock = mock(
-  (): Promise<RefreshSessionResult> =>
-    Promise.resolve({ data: { session: null }, error: null })
-);
-
-mock.module('@/src/lib/supabase', () => ({
-  supabase: {
-    auth: {
-      onAuthStateChange: onAuthStateChangeMock,
-      getUser: getUserMock,
-      signOut: signOutMock,
-      refreshSession: refreshSessionMock,
-      signInWithPassword: mock(),
-      signUp: mock(),
-      resetPasswordForEmail: mock(),
-      signInWithIdToken: mock(),
-      signInWithOAuth: mock(),
-      updateUser: mock(),
-    },
+mock.module('@/src/lib/authClient', () => ({
+  authClient: {
+    getCookie: getCookieMock,
+    getSession: getSessionMock,
+    signOut: signOutMock,
+    signIn: { email: signInEmailMock, social: signInSocialMock },
+    signUp: { email: signUpEmailMock },
+    updateUser: updateUserMock,
+    requestPasswordReset: mock(() => ok()),
+    resetPassword: mock(() => ok()),
   },
 }));
 
 const setUserContextMock = mock(() => {});
 const clearUserContextMock = mock(() => {});
-
 mock.module('@/src/lib/sentryBreadcrumbs', () => ({
   setUserContext: setUserContextMock,
   clearUserContext: clearUserContextMock,
   addAppBreadcrumb: mock(() => {}),
 }));
 
-// Captures the `onUnauthorized` handler the store registers with the API
-// client, so it can be invoked directly like a real 401 would trigger it.
-let capturedOnUnauthorized: () => Promise<void> = async () => {};
-const configureAuthHandlersMock = mock(
-  (handlers: { onUnauthorized: () => Promise<void> }) => {
-    capturedOnUnauthorized = handlers.onUnauthorized;
-  }
-);
-
+type Handlers = {
+  refreshToken: () => Promise<string | null>;
+  onUnauthorized: () => Promise<void>;
+};
+let handlers: Handlers;
+const updateAuthTokenMock = mock((_t: string) => {});
+const clearAuthTokenMock = mock(() => {});
 mock.module('@/src/api/client', () => ({
-  clearAuthToken: mock(() => {}),
-  configureAuthHandlers: configureAuthHandlersMock,
+  clearAuthToken: clearAuthTokenMock,
+  configureAuthHandlers: (h: Handlers) => {
+    handlers = h;
+  },
   reset401Handler: mock(() => {}),
-  updateAuthToken: mock(() => {}),
+  updateAuthToken: updateAuthTokenMock,
 }));
-
-import { useSetupProgressStore } from '../setupProgress';
 
 const queryClientClearMock = mock(() => {});
 mock.module('@/src/api/queryClient', () => ({
   queryClient: { clear: queryClientClearMock },
 }));
 
-const routerReplaceMock = mock(() => {});
+const routerReplaceMock = mock((_href: string) => {});
 mock.module('expo-router', () => ({
   router: { replace: routerReplaceMock },
 }));
+
+import { useSetupProgressStore } from '../setupProgress';
 
 let useAuthStore: typeof import('../auth').useAuthStore;
 
 beforeAll(async () => {
   useAuthStore = (await import('../auth')).useAuthStore;
-  useAuthStore.getState().initializeAuth();
 });
 
 beforeEach(() => {
-  setUserContextMock.mockClear();
-  clearUserContextMock.mockClear();
-  queryClientClearMock.mockClear();
-  routerReplaceMock.mockClear();
-  getUserMock.mockClear();
-  getUserMock.mockImplementation(() =>
-    Promise.resolve({ data: { user: {} }, error: null })
+  for (const m of [
+    setUserContextMock,
+    clearUserContextMock,
+    queryClientClearMock,
+    routerReplaceMock,
+    updateAuthTokenMock,
+    clearAuthTokenMock,
+    signOutMock,
+    getSessionMock,
+  ])
+    m.mockClear();
+  getCookieMock.mockImplementation(() =>
+    Promise.resolve('better-auth.session_token=c')
   );
+  getSessionMock.mockImplementation(() => ok(null));
 });
 
-describe('auth store — Sentry user context wiring', () => {
-  it('sets Sentry user context with only the id on INITIAL_SESSION restore', async () => {
-    await capturedCallback('INITIAL_SESSION', {
-      user: { id: 'user-restore', email: 'restore@example.com' },
-      access_token: 'tok',
-    });
+describe('session bootstrap', () => {
+  it('restores a live session: sets the cookie, Sentry id, and the store', async () => {
+    getSessionMock.mockImplementation(() => ok(sessionFor('user-restore')));
+    await useAuthStore.getState().initializeAuth();
 
-    expect(setUserContextMock).toHaveBeenCalledTimes(1);
+    expect(updateAuthTokenMock).toHaveBeenCalledWith(
+      'better-auth.session_token=c'
+    );
     expect(setUserContextMock).toHaveBeenCalledWith({ id: 'user-restore' });
-    expect(clearUserContextMock).not.toHaveBeenCalled();
+    expect(useAuthStore.getState().user?.id).toBe('user-restore');
+    expect(useAuthStore.getState().isInitialized).toBe(true);
   });
 
-  it('sets Sentry user context on SIGNED_IN', async () => {
-    await capturedCallback('SIGNED_IN', {
-      user: { id: 'user-signin', email: 'signin@example.com' },
-      access_token: 'tok',
-    });
+  it('signs out locally when the stored cookie no longer has a server session (deleted user)', async () => {
+    useAuthStore.setState({ session: sessionFor('gone') } as never);
+    getSessionMock.mockImplementation(() => ok(null));
+    await useAuthStore.getState().initializeAuth();
 
-    expect(setUserContextMock).toHaveBeenCalledWith({ id: 'user-signin' });
-    expect(clearUserContextMock).not.toHaveBeenCalled();
+    expect(signOutMock).toHaveBeenCalled();
+    expect(clearUserContextMock).toHaveBeenCalled();
+    expect(useAuthStore.getState().session).toBeNull();
+    expect(routerReplaceMock).toHaveBeenCalledWith('/welcome');
   });
 
-  it('clears Sentry user context on SIGNED_OUT', async () => {
-    await capturedCallback('SIGNED_OUT', null);
-
-    expect(clearUserContextMock).toHaveBeenCalledTimes(1);
-    expect(setUserContextMock).not.toHaveBeenCalled();
-  });
-
-  it('clears Sentry user context when INITIAL_SESSION finds a deleted/revoked user', async () => {
-    getUserMock.mockImplementation(
-      (): Promise<GetUserResult> =>
-        Promise.resolve({ data: { user: null }, error: { status: 401 } })
+  it('keeps the persisted session on an offline launch', async () => {
+    useAuthStore.setState({ session: sessionFor('offline') } as never);
+    getSessionMock.mockImplementation(() =>
+      Promise.reject(new TypeError('Network request failed'))
     );
+    await useAuthStore.getState().initializeAuth();
 
-    await capturedCallback('INITIAL_SESSION', {
-      user: { id: 'user-revoked' },
-      access_token: 'tok',
-    });
-
-    expect(clearUserContextMock).toHaveBeenCalledTimes(1);
-    expect(setUserContextMock).not.toHaveBeenCalled();
+    expect(useAuthStore.getState().session?.user.id).toBe('offline');
+    expect(signOutMock).not.toHaveBeenCalled();
+    expect(useAuthStore.getState().isInitialized).toBe(true);
   });
 
-  it('clears Sentry user context when an expired session fails to refresh', async () => {
-    refreshSessionMock.mockImplementationOnce(
-      (): Promise<RefreshSessionResult> =>
-        Promise.resolve({
-          data: { session: null },
-          error: { message: 'nope' },
-        })
+  it('treats a 5xx as transient, not as a missing session', async () => {
+    useAuthStore.setState({ session: sessionFor('blip') } as never);
+    getSessionMock.mockImplementation(() =>
+      Promise.resolve({ data: null, error: { status: 503 } })
     );
+    await useAuthStore.getState().initializeAuth();
 
-    await capturedCallback('INITIAL_SESSION', {
-      user: { id: 'user-expired' },
-      access_token: 'tok',
-      expires_at: Math.floor((Date.now() - 60_000) / 1000),
-    });
-
-    expect(clearUserContextMock).toHaveBeenCalledTimes(1);
-    expect(setUserContextMock).not.toHaveBeenCalled();
+    expect(useAuthStore.getState().session?.user.id).toBe('blip');
   });
 
-  it('clears Sentry user context when refresh throws', async () => {
-    refreshSessionMock.mockImplementationOnce(() => {
-      throw new Error('network down');
-    });
+  it('clears a stale persisted session when no cookie is stored (pre-migration install)', async () => {
+    useAuthStore.setState({ session: sessionFor('supabase-era') } as never);
+    getCookieMock.mockImplementation(() => Promise.resolve(''));
+    await useAuthStore.getState().initializeAuth();
 
-    await capturedCallback('INITIAL_SESSION', {
-      user: { id: 'user-throws' },
-      access_token: 'tok',
-      expires_at: Math.floor((Date.now() - 60_000) / 1000),
-    });
-
-    expect(clearUserContextMock).toHaveBeenCalledTimes(1);
-    expect(setUserContextMock).not.toHaveBeenCalled();
+    expect(getSessionMock).not.toHaveBeenCalled();
+    expect(useAuthStore.getState().session).toBeNull();
+    expect(useAuthStore.getState().isInitialized).toBe(true);
   });
 });
 
-describe('auth store — signOut cleanup is unconditional', () => {
-  // supabase-js's GoTrueClient._signOut only emits SIGNED_OUT for success or
-  // a 401/403/404 signOut error; a network blip/outage resolves signOut()
-  // with a different error and NO event, so the onAuthStateChange listener
-  // never fires. The store must clear local state itself in that case, or
-  // the app (and Sentry) keep attributing to the now-stale user — e.g.
-  // delete-account -> signOut network blip -> welcome screen still tagged
-  // as the deleted user.
-  beforeEach(() => {
-    useAuthStore.setState({
-      session: { user: { id: 'user-blip' } } as unknown as never,
-      user: { id: 'user-blip' } as unknown as never,
-    } as never);
+describe('401 handlers', () => {
+  beforeAll(async () => {
+    await useAuthStore.getState().initializeAuth();
   });
 
-  it('signOut() clears local session and Sentry context even when supabase resolves a non-4xx error', async () => {
+  it('refreshToken returns the current cookie while the session lives', async () => {
+    getSessionMock.mockImplementation(() => ok(sessionFor('u')));
+    expect(await handlers.refreshToken()).toBe('better-auth.session_token=c');
+  });
+
+  it('refreshToken returns null once the session is gone', async () => {
+    expect(await handlers.refreshToken()).toBeNull();
+  });
+
+  it('onUnauthorized clears local state even when sign-out fails', async () => {
+    useAuthStore.setState({ session: sessionFor('u') } as never);
     signOutMock.mockImplementationOnce(() =>
-      Promise.resolve({ error: { message: 'network blip', status: 500 } })
+      Promise.reject(new Error('network blip'))
+    );
+    await handlers.onUnauthorized();
+
+    expect(clearUserContextMock).toHaveBeenCalled();
+    expect(useAuthStore.getState().session).toBeNull();
+    expect(routerReplaceMock).toHaveBeenCalledWith('/welcome');
+  });
+});
+
+describe('signOut cleanup is unconditional', () => {
+  it('clears local session and Sentry context even when the server call fails', async () => {
+    useAuthStore.setState({
+      session: sessionFor('user-blip'),
+      user: sessionFor('user-blip').user,
+    } as never);
+    signOutMock.mockImplementationOnce(() =>
+      Promise.resolve({ data: null, error: { status: 500 } })
     );
 
     await useAuthStore.getState().signOut();
 
     expect(clearUserContextMock).toHaveBeenCalled();
-    expect(useAuthStore.getState().session).toBeNull();
-    expect(useAuthStore.getState().user).toBeNull();
-  });
-
-  it('onUnauthorized clears local session and Sentry context even when supabase signOut fails', async () => {
-    signOutMock.mockImplementationOnce(() =>
-      Promise.resolve({ error: { message: 'network blip', status: 500 } })
-    );
-
-    await capturedOnUnauthorized();
-
-    expect(clearUserContextMock).toHaveBeenCalled();
+    expect(clearAuthTokenMock).toHaveBeenCalled();
     expect(useAuthStore.getState().session).toBeNull();
     expect(useAuthStore.getState().user).toBeNull();
   });
 });
 
-describe('auth store — account switch state clearing', () => {
+describe('account switch state clearing', () => {
+  const signInAs = async (id: string) => {
+    getSessionMock.mockImplementation(() => ok(sessionFor(id)));
+    await useAuthStore.getState().signIn(`${id}@example.com`, 'pw');
+  };
+
   beforeEach(async () => {
-    // Reset any previous state from other test blocks
-    useAuthStore.setState({ session: null, user: null } as never);
-    await capturedCallback('INITIAL_SESSION', null);
+    await useAuthStore.getState().signOut();
     queryClientClearMock.mockClear();
     routerReplaceMock.mockClear();
     useSetupProgressStore.getState().reset();
   });
 
-  it('does not clear user-scoped stores on cold start (first sign-in)', async () => {
-    useSetupProgressStore.getState().setRole('parent');
-    await capturedCallback('SIGNED_IN', {
-      user: { id: 'user-A' },
-      access_token: 'tok',
-    });
-    expect(useSetupProgressStore.getState().role).toBe('parent');
-    expect(queryClientClearMock).toHaveBeenCalled();
+  it('sets Sentry context on sign-in and routes home', async () => {
+    await signInAs('user-signin');
+    expect(setUserContextMock).toHaveBeenCalledWith({ id: 'user-signin' });
     expect(routerReplaceMock).toHaveBeenCalledWith('/');
+    expect(useAuthStore.getState().error).toBeNull();
   });
 
   it('clears user-scoped stores on direct account switch (no sign-out)', async () => {
-    await capturedCallback('SIGNED_IN', {
-      user: { id: 'user-A' },
-      access_token: 'tok',
-    });
+    await signInAs('user-A');
     queryClientClearMock.mockClear();
-    routerReplaceMock.mockClear();
     useSetupProgressStore.getState().setRole('parent');
 
-    await capturedCallback('SIGNED_IN', {
-      user: { id: 'user-B' },
-      access_token: 'tok',
-    });
+    await signInAs('user-B');
     expect(useSetupProgressStore.getState().role).toBeNull();
     expect(queryClientClearMock).toHaveBeenCalledTimes(1);
-    expect(routerReplaceMock).toHaveBeenCalledWith('/');
   });
 
   it('clears user-scoped stores on sign in -> sign out -> sign in as different user', async () => {
-    await capturedCallback('SIGNED_IN', {
-      user: { id: 'user-A' },
-      access_token: 'tok',
-    });
-    await capturedCallback('SIGNED_OUT', null);
-    queryClientClearMock.mockClear();
-    routerReplaceMock.mockClear();
+    await signInAs('user-A');
+    await useAuthStore.getState().signOut();
     useSetupProgressStore.getState().setRole('parent');
 
-    await capturedCallback('SIGNED_IN', {
-      user: { id: 'user-B' },
-      access_token: 'tok',
-    });
+    await signInAs('user-B');
     expect(useSetupProgressStore.getState().role).toBeNull();
-    expect(queryClientClearMock).toHaveBeenCalledTimes(1);
-    expect(routerReplaceMock).toHaveBeenCalledWith('/');
   });
 
-  it('does not clear user-scoped stores but does clear queryClient on sign in -> sign out -> sign in as same user', async () => {
-    await capturedCallback('SIGNED_IN', {
-      user: { id: 'user-A' },
-      access_token: 'tok',
-    });
-    await capturedCallback('SIGNED_OUT', null);
+  it('keeps user-scoped stores on sign in -> sign out -> sign in as the same user', async () => {
+    await signInAs('user-A');
+    await useAuthStore.getState().signOut();
     queryClientClearMock.mockClear();
     routerReplaceMock.mockClear();
     useSetupProgressStore.getState().setRole('parent');
 
-    await capturedCallback('SIGNED_IN', {
-      user: { id: 'user-A' },
-      access_token: 'tok',
-    });
+    await signInAs('user-A');
     expect(useSetupProgressStore.getState().role).toBe('parent');
     expect(queryClientClearMock).toHaveBeenCalledTimes(1);
     expect(routerReplaceMock).toHaveBeenCalledWith('/');
+  });
+});
+
+describe('signUp outcome', () => {
+  it('reports confirm-email when the server withholds a session', async () => {
+    getSessionMock.mockImplementation(() => ok(null));
+    const outcome = await useAuthStore
+      .getState()
+      .signUp('a@b.test', 'pw123456');
+    expect(outcome).toBe('confirm-email');
+    expect(useAuthStore.getState().error).toBeNull();
+    expect(useAuthStore.getState().isLoading).toBe(false);
+  });
+
+  it('reports signed-in when a session comes back, with an empty name', async () => {
+    getSessionMock.mockImplementation(() => ok(sessionFor('new')));
+    const outcome = await useAuthStore
+      .getState()
+      .signUp('a@b.test', 'pw123456');
+    expect(outcome).toBe('signed-in');
+    expect(signUpEmailMock).toHaveBeenLastCalledWith({
+      email: 'a@b.test',
+      password: 'pw123456',
+      name: '',
+    });
+  });
+
+  it('reports failed and sets a message when sign-up genuinely fails', async () => {
+    signUpEmailMock.mockImplementationOnce(() =>
+      Promise.resolve({
+        data: null,
+        error: { code: 'USER_ALREADY_EXISTS', status: 422 },
+      })
+    );
+    const outcome = await useAuthStore
+      .getState()
+      .signUp('a@b.test', 'pw123456');
+    expect(outcome).toBe('failed');
+    expect(useAuthStore.getState().error).not.toBeNull();
+    expect(useAuthStore.getState().isLoading).toBe(false);
+  });
+
+  it('never throws — the caller branches on the outcome', async () => {
+    signUpEmailMock.mockImplementationOnce(() =>
+      Promise.reject(new Error('offline'))
+    );
+    const outcome = await useAuthStore
+      .getState()
+      .signUp('a@b.test', 'pw123456');
+    expect(outcome).toBe('failed');
+  });
+});
+
+describe('Apple sign-in', () => {
+  it('sends the identity token and persists the one-time full name before reading the session', async () => {
+    const apple = await import('expo-apple-authentication');
+    (
+      apple.signInAsync as unknown as ReturnType<typeof mock>
+    ).mockImplementationOnce(() =>
+      Promise.resolve({
+        identityToken: 'apple-token',
+        fullName: { givenName: 'Ana', familyName: 'Ruiz' },
+        email: null,
+      })
+    );
+    const rn = await import('react-native');
+    const prevOS = rn.Platform.OS;
+    rn.Platform.OS = 'ios';
+    getSessionMock.mockImplementation(() => ok(sessionFor('apple-user')));
+
+    await useAuthStore.getState().signInWithApple();
+    rn.Platform.OS = prevOS;
+
+    expect(signInSocialMock).toHaveBeenLastCalledWith({
+      provider: 'apple',
+      idToken: { token: 'apple-token' },
+    });
+    expect(updateUserMock).toHaveBeenCalledWith({ name: 'Ana Ruiz' });
+    expect(useAuthStore.getState().error).toBeNull();
   });
 });

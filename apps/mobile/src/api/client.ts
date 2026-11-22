@@ -1,9 +1,13 @@
-// API client (axios) with token management and single-flight 401 refresh.
+// API client (axios) with session-cookie management and single-flight 401 re-check.
 //
 // SEAM: auth behavior is INJECTED, not hard-wired, so this module has no
-// dependency on Supabase:
+// dependency on the auth library:
 //  - `configureAuthHandlers({ refreshToken, onUnauthorized })` — the auth store
-//    registers how to refresh the token and how to sign out. Called at app start.
+//    registers how to re-check the session and how to sign out. Called at app start.
+//
+// The "auth token" here is the Better Auth session cookie string (`name=value;
+// ...`), sent as the `Cookie` header. There are no refresh tokens: `refreshToken`
+// re-asks the server whether the session is alive and returns the current cookie.
 
 import type { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import axios from 'axios';
@@ -44,11 +48,12 @@ export const apiClient = axios.create({
 });
 
 // ---------------------------------------------------------------------------
-// Auth token (module-level so interceptors read it synchronously)
+// Session cookie (module-level so interceptors read it synchronously)
 // ---------------------------------------------------------------------------
 let currentAuthToken: string | null = null;
 export const updateAuthToken = (token: string) => {
-  currentAuthToken = token;
+  // '' (no stored cookie) must read as signed out, not as a token.
+  currentAuthToken = token || null;
 };
 export const clearAuthToken = () => {
   currentAuthToken = null;
@@ -64,7 +69,7 @@ type OnUnauthorizedFn = () => Promise<void>;
 let refreshTokenFn: RefreshTokenFn | null = null;
 let onUnauthorizedFn: OnUnauthorizedFn | null = null;
 
-/** Wire in how to refresh the access token and how to sign out (auth store). */
+/** Wire in how to re-check the session and how to sign out (auth store). */
 export const configureAuthHandlers = (handlers: {
   refreshToken: RefreshTokenFn;
   onUnauthorized: OnUnauthorizedFn;
@@ -112,12 +117,12 @@ async function handleUnauthorized(devMessage: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Request interceptor — attach bearer; reject authed routes with no token.
+// Request interceptor — attach the session cookie; reject authed routes without one.
 // ---------------------------------------------------------------------------
 apiClient.interceptors.request.use(
   config => {
     if (currentAuthToken) {
-      config.headers.Authorization = `Bearer ${currentAuthToken}`;
+      config.headers.Cookie = currentAuthToken;
     } else if (
       config.url?.startsWith('/v1/') ||
       config.url?.includes('/api/v1/')
@@ -156,24 +161,22 @@ apiClient.interceptors.response.use(
       | undefined;
 
     if (error.response.status === 401 && !isHandling401) {
-      const requestAuthHeader =
-        (error.config?.headers?.Authorization as string | undefined) ??
-        (error.config?.headers as { authorization?: string } | undefined)
-          ?.authorization;
-      // Only act on a 401 for the CURRENT session's token. Ignore stale 401s from
+      const requestCookie =
+        (error.config?.headers?.Cookie as string | undefined) ??
+        (error.config?.headers as { cookie?: string } | undefined)?.cookie;
+      // Only act on a 401 for the CURRENT session's cookie. Ignore stale 401s from
       // in-flight requests that resolve after sign-out / account delete.
       const isCurrentSession401 =
-        !!currentAuthToken &&
-        requestAuthHeader === `Bearer ${currentAuthToken}`;
+        !!currentAuthToken && requestCookie === currentAuthToken;
 
       if (!isCurrentSession401) {
         // ignore stale 401
       } else if (retriableConfig && !retriableConfig.__isRetryAfter401) {
-        // First 401: single-flight refresh + retry the original request once.
+        // First 401: single-flight session re-check + retry the original request once.
         const newToken = await refreshAccessToken();
         if (newToken) {
           retriableConfig.__isRetryAfter401 = true;
-          retriableConfig.headers.Authorization = `Bearer ${newToken}`;
+          retriableConfig.headers.Cookie = newToken;
           return apiClient(retriableConfig);
         }
         await handleUnauthorized('[API] 401 + refresh failed - signing out');

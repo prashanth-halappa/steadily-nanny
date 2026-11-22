@@ -76,6 +76,21 @@ describe('api client interceptors', () => {
     ).rejects.toBeInstanceOf(FakeAxiosError);
   });
 
+  it('sends the session cookie as the Cookie header', async () => {
+    client.updateAuthToken('better-auth.session_token=abc');
+    const config = {
+      url: '/v1/users/me',
+      headers: {} as Record<string, string>,
+    };
+    await requestFulfilled?.(config);
+    expect(config.headers.Cookie).toBe('better-auth.session_token=abc');
+  });
+
+  it('treats an empty cookie as signed out', () => {
+    client.updateAuthToken('');
+    expect(client.hasAuthToken()).toBe(false);
+  });
+
   it('annotates retry-after on a 429 RATE_LIMITED', async () => {
     const err = {
       response: {
@@ -115,7 +130,7 @@ describe('api client interceptors', () => {
     const refreshToken = mock(async () => 'newtok');
     const onUnauthorized = mock(async () => {});
     client.configureAuthHandlers({ refreshToken, onUnauthorized });
-    const config = { headers: { Authorization: 'Bearer tok' } };
+    const config = { headers: { Cookie: 'tok' } };
     const err = { response: { status: 401 }, config };
 
     const result = (await responseRejected?.(err)) as {
@@ -132,7 +147,7 @@ describe('api client interceptors', () => {
     const refreshToken = mock(async () => null);
     const onUnauthorized = mock(async () => {});
     client.configureAuthHandlers({ refreshToken, onUnauthorized });
-    const config = { headers: { Authorization: 'Bearer tok' } };
+    const config = { headers: { Cookie: 'tok' } };
     const err = { response: { status: 401 }, config };
 
     await expect(responseRejected?.(err)).rejects.toBe(err);
@@ -148,7 +163,7 @@ describe('api client interceptors', () => {
     });
     const err = {
       response: { status: 401 },
-      config: { headers: { Authorization: 'Bearer stale' } },
+      config: { headers: { Cookie: 'stale' } },
     };
     await expect(responseRejected?.(err)).rejects.toBe(err);
     expect(onUnauthorized).not.toHaveBeenCalled();

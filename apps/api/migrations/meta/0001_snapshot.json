@@ -1,0 +1,6106 @@
+{
+  "id": "8d1e40bc-5a46-4cba-8c71-ce6f47bd4cde",
+  "prevId": "53f892d4-1aea-4a61-bae8-86dad3f39215",
+  "version": "6",
+  "dialect": "sqlite",
+  "tables": {
+    "account": {
+      "name": "account",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "provider_id": {
+          "name": "provider_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "access_token": {
+          "name": "access_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "refresh_token": {
+          "name": "refresh_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "id_token": {
+          "name": "id_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "access_token_expires_at": {
+          "name": "access_token_expires_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "refresh_token_expires_at": {
+          "name": "refresh_token_expires_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "password": {
+          "name": "password",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(cast((julianday('now') - 2440587.5) * 86400000 as integer))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(cast((julianday('now') - 2440587.5) * 86400000 as integer))"
+        }
+      },
+      "indexes": {
+        "account_userId_idx": {
+          "name": "account_userId_idx",
+          "columns": ["user_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "account_user_id_user_id_fk": {
+          "name": "account_user_id_user_id_fk",
+          "tableFrom": "account",
+          "columnsFrom": ["user_id"],
+          "tableTo": "user",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "session": {
+      "name": "session",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(cast((julianday('now') - 2440587.5) * 86400000 as integer))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(cast((julianday('now') - 2440587.5) * 86400000 as integer))"
+        },
+        "ip_address": {
+          "name": "ip_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "user_agent": {
+          "name": "user_agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "session_token_unique": {
+          "name": "session_token_unique",
+          "columns": ["token"],
+          "isUnique": true
+        },
+        "session_userId_idx": {
+          "name": "session_userId_idx",
+          "columns": ["user_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "session_user_id_user_id_fk": {
+          "name": "session_user_id_user_id_fk",
+          "tableFrom": "session",
+          "columnsFrom": ["user_id"],
+          "tableTo": "user",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "user": {
+      "name": "user",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "email_verified": {
+          "name": "email_verified",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "image": {
+          "name": "image",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(cast((julianday('now') - 2440587.5) * 86400000 as integer))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(cast((julianday('now') - 2440587.5) * 86400000 as integer))"
+        }
+      },
+      "indexes": {
+        "user_email_unique": {
+          "name": "user_email_unique",
+          "columns": ["email"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "verification": {
+      "name": "verification",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "identifier": {
+          "name": "identifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "value": {
+          "name": "value",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(cast((julianday('now') - 2440587.5) * 86400000 as integer))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(cast((julianday('now') - 2440587.5) * 86400000 as integer))"
+        }
+      },
+      "indexes": {
+        "verification_identifier_idx": {
+          "name": "verification_identifier_idx",
+          "columns": ["identifier"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "calendar_accounts": {
+      "name": "calendar_accounts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "account_identifier": {
+          "name": "account_identifier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sync_enabled": {
+          "name": "sync_enabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "sync_direction": {
+          "name": "sync_direction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'read'"
+        },
+        "default_calendar_id": {
+          "name": "default_calendar_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "credentials_ref": {
+          "name": "credentials_ref",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sync_token": {
+          "name": "sync_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_sync_at": {
+          "name": "last_sync_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'active'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "calendar_accounts_user_provider_idx": {
+          "name": "calendar_accounts_user_provider_idx",
+          "columns": ["user_id", "provider", "account_identifier"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "calendar_accounts_user_id_user_profiles_user_id_fk": {
+          "name": "calendar_accounts_user_id_user_profiles_user_id_fk",
+          "tableFrom": "calendar_accounts",
+          "columnsFrom": ["user_id"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "calendar_accounts_provider_check": {
+          "name": "calendar_accounts_provider_check",
+          "value": "(provider IN ('google', 'apple', 'caldav'))"
+        },
+        "calendar_accounts_status_check": {
+          "name": "calendar_accounts_status_check",
+          "value": "(status IN ('active', 'reauth_required', 'disabled'))"
+        },
+        "calendar_accounts_sync_direction_check": {
+          "name": "calendar_accounts_sync_direction_check",
+          "value": "(sync_direction IN ('read', 'write', 'both'))"
+        }
+      }
+    },
+    "calendar_event_links": {
+      "name": "calendar_event_links",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "calendar_account_id": {
+          "name": "calendar_account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "entity_type": {
+          "name": "entity_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "entity_id": {
+          "name": "entity_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "external_event_id": {
+          "name": "external_event_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "external_calendar_id": {
+          "name": "external_calendar_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "etag": {
+          "name": "etag",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_pushed_sequence": {
+          "name": "last_pushed_sequence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "last_synced_at": {
+          "name": "last_synced_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "calendar_event_links_account_entity_idx": {
+          "name": "calendar_event_links_account_entity_idx",
+          "columns": ["calendar_account_id", "entity_type", "entity_id"],
+          "isUnique": true
+        },
+        "calendar_event_links_entity_idx": {
+          "name": "calendar_event_links_entity_idx",
+          "columns": ["entity_type", "entity_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "calendar_event_links_calendar_account_id_calendar_accounts_id_fk": {
+          "name": "calendar_event_links_calendar_account_id_calendar_accounts_id_fk",
+          "tableFrom": "calendar_event_links",
+          "columnsFrom": ["calendar_account_id"],
+          "tableTo": "calendar_accounts",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "calendar_event_links_entity_type_check": {
+          "name": "calendar_event_links_entity_type_check",
+          "value": "(entity_type IN ('shift', 'time_off', 'commitment'))"
+        }
+      }
+    },
+    "carer_availability": {
+      "name": "carer_availability",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "weekday": {
+          "name": "weekday",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "is_available": {
+          "name": "is_available",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "earliest_start": {
+          "name": "earliest_start",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "latest_finish": {
+          "name": "latest_finish",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "evening_mode": {
+          "name": "evening_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'never'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "carer_availability_user_weekday_idx": {
+          "name": "carer_availability_user_weekday_idx",
+          "columns": ["user_id", "weekday"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "carer_availability_user_id_user_profiles_user_id_fk": {
+          "name": "carer_availability_user_id_user_profiles_user_id_fk",
+          "tableFrom": "carer_availability",
+          "columnsFrom": ["user_id"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "carer_availability_evening_mode_check": {
+          "name": "carer_availability_evening_mode_check",
+          "value": "(evening_mode IN ('never', 'sometimes', 'always'))"
+        },
+        "carer_availability_time_order": {
+          "name": "carer_availability_time_order",
+          "value": "((earliest_start IS NULL) OR (latest_finish IS NULL) OR (latest_finish > earliest_start))"
+        },
+        "carer_availability_weekday_check": {
+          "name": "carer_availability_weekday_check",
+          "value": "((weekday >= 0) AND (weekday <= 6))"
+        }
+      }
+    },
+    "carer_time_off": {
+      "name": "carer_time_off",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "starts_at": {
+          "name": "starts_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ends_at": {
+          "name": "ends_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "all_day": {
+          "name": "all_day",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "message": {
+          "name": "message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'confirmed'"
+        },
+        "ical_uid": {
+          "name": "ical_uid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'personal'"
+        }
+      },
+      "indexes": {
+        "carer_time_off_user_range_idx": {
+          "name": "carer_time_off_user_range_idx",
+          "columns": ["user_id", "starts_at", "ends_at"],
+          "where": "status <> 'cancelled'",
+          "isUnique": false
+        },
+        "carer_time_off_ical_uid_key": {
+          "name": "carer_time_off_ical_uid_key",
+          "columns": ["ical_uid"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "carer_time_off_user_id_user_profiles_user_id_fk": {
+          "name": "carer_time_off_user_id_user_profiles_user_id_fk",
+          "tableFrom": "carer_time_off",
+          "columnsFrom": ["user_id"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "carer_time_off_kind_check": {
+          "name": "carer_time_off_kind_check",
+          "value": "(kind IN ('personal', 'sick'))"
+        },
+        "carer_time_off_range": {
+          "name": "carer_time_off_range",
+          "value": "(julianday(ends_at) > julianday(starts_at))"
+        },
+        "carer_time_off_status_check": {
+          "name": "carer_time_off_status_check",
+          "value": "(status IN ('requested', 'confirmed', 'cancelled'))"
+        }
+      }
+    },
+    "external_busy_blocks": {
+      "name": "external_busy_blocks",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "calendar_account_id": {
+          "name": "calendar_account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "starts_at": {
+          "name": "starts_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ends_at": {
+          "name": "ends_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "all_day": {
+          "name": "all_day",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "opacity": {
+          "name": "opacity",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'busy'"
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source": {
+          "name": "source",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'calendar'"
+        },
+        "external_event_id": {
+          "name": "external_event_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "external_busy_blocks_user_range_idx": {
+          "name": "external_busy_blocks_user_range_idx",
+          "columns": ["user_id", "starts_at", "ends_at"],
+          "where": "opacity <> 'free'",
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "external_busy_blocks_user_id_user_profiles_user_id_fk": {
+          "name": "external_busy_blocks_user_id_user_profiles_user_id_fk",
+          "tableFrom": "external_busy_blocks",
+          "columnsFrom": ["user_id"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "external_busy_blocks_calendar_account_id_calendar_accounts_id_fk": {
+          "name": "external_busy_blocks_calendar_account_id_calendar_accounts_id_fk",
+          "tableFrom": "external_busy_blocks",
+          "columnsFrom": ["calendar_account_id"],
+          "tableTo": "calendar_accounts",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "external_busy_blocks_opacity_check": {
+          "name": "external_busy_blocks_opacity_check",
+          "value": "(opacity IN ('busy', 'free', 'tentative'))"
+        },
+        "external_busy_blocks_range": {
+          "name": "external_busy_blocks_range",
+          "value": "(julianday(ends_at) > julianday(starts_at))"
+        }
+      }
+    },
+    "child_commitments": {
+      "name": "child_commitments",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "child_id": {
+          "name": "child_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'other'"
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "rrule": {
+          "name": "rrule",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "start_time": {
+          "name": "start_time",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "end_time": {
+          "name": "end_time",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "starts_on": {
+          "name": "starts_on",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ends_on": {
+          "name": "ends_on",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "exdates": {
+          "name": "exdates",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "child_commitments_child_idx": {
+          "name": "child_commitments_child_idx",
+          "columns": ["child_id"],
+          "isUnique": false
+        },
+        "child_commitments_household_idx": {
+          "name": "child_commitments_household_idx",
+          "columns": ["household_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "child_commitments_child_id_children_id_fk": {
+          "name": "child_commitments_child_id_children_id_fk",
+          "tableFrom": "child_commitments",
+          "columnsFrom": ["child_id"],
+          "tableTo": "children",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "child_commitments_household_id_households_id_fk": {
+          "name": "child_commitments_household_id_households_id_fk",
+          "tableFrom": "child_commitments",
+          "columnsFrom": ["household_id"],
+          "tableTo": "households",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "child_commitments_kind_check": {
+          "name": "child_commitments_kind_check",
+          "value": "(kind IN ('preschool', 'school', 'activity', 'nap', 'other'))"
+        },
+        "child_commitments_time_order": {
+          "name": "child_commitments_time_order",
+          "value": "(end_time > start_time)"
+        }
+      }
+    },
+    "children": {
+      "name": "children",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "birth_date": {
+          "name": "birth_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "colour": {
+          "name": "colour",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "avatar_initial": {
+          "name": "avatar_initial",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "routine_notes": {
+          "name": "routine_notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "children_household_idx": {
+          "name": "children_household_idx",
+          "columns": ["household_id"],
+          "where": "archived_at IS NULL",
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "children_household_id_households_id_fk": {
+          "name": "children_household_id_households_id_fk",
+          "tableFrom": "children",
+          "columnsFrom": ["household_id"],
+          "tableTo": "households",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "household_closures": {
+      "name": "household_closures",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "starts_at": {
+          "name": "starts_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ends_at": {
+          "name": "ends_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "message": {
+          "name": "message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "household_closures_household_range_idx": {
+          "name": "household_closures_household_range_idx",
+          "columns": ["household_id", "starts_at", "ends_at"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "household_closures_household_id_households_id_fk": {
+          "name": "household_closures_household_id_households_id_fk",
+          "tableFrom": "household_closures",
+          "columnsFrom": ["household_id"],
+          "tableTo": "households",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "household_closures_created_by_user_profiles_user_id_fk": {
+          "name": "household_closures_created_by_user_profiles_user_id_fk",
+          "tableFrom": "household_closures",
+          "columnsFrom": ["created_by"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "household_closures_range": {
+          "name": "household_closures_range",
+          "value": "(julianday(ends_at) > julianday(starts_at))"
+        }
+      }
+    },
+    "household_custom_holidays": {
+      "name": "household_custom_holidays",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "dates": {
+          "name": "dates",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "household_custom_holidays_household_id_name_key": {
+          "name": "household_custom_holidays_household_id_name_key",
+          "columns": ["household_id", "name"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "household_custom_holidays_household_id_households_id_fk": {
+          "name": "household_custom_holidays_household_id_households_id_fk",
+          "tableFrom": "household_custom_holidays",
+          "columnsFrom": ["household_id"],
+          "tableTo": "households",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "household_custom_holidays_dates_check": {
+          "name": "household_custom_holidays_dates_check",
+          "value": "((json_array_length(dates) >= 1) AND (json_array_length(dates) <= 12))"
+        },
+        "household_custom_holidays_name_check": {
+          "name": "household_custom_holidays_name_check",
+          "value": "((length(trim(name)) >= 1) AND (length(trim(name)) <= 60))"
+        }
+      }
+    },
+    "household_holidays": {
+      "name": "household_holidays",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "holiday_key": {
+          "name": "holiday_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "observed": {
+          "name": "observed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "household_holidays_household_id_holiday_key_key": {
+          "name": "household_holidays_household_id_holiday_key_key",
+          "columns": ["household_id", "holiday_key"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "household_holidays_household_id_households_id_fk": {
+          "name": "household_holidays_household_id_households_id_fk",
+          "tableFrom": "household_holidays",
+          "columnsFrom": ["household_id"],
+          "tableTo": "households",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "household_invites": {
+      "name": "household_invites",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "invited_by": {
+          "name": "invited_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+30 days'))"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'pending'"
+        },
+        "accepted_by": {
+          "name": "accepted_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "accepted_at": {
+          "name": "accepted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "link_expires_at": {
+          "name": "link_expires_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "opened_at": {
+          "name": "opened_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "pay_offer": {
+          "name": "pay_offer",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "pay_offer_promotion": {
+          "name": "pay_offer_promotion",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "household_invites_code_pending_idx": {
+          "name": "household_invites_code_pending_idx",
+          "columns": ["code"],
+          "where": "status = 'pending'",
+          "isUnique": false
+        },
+        "household_invites_household_idx": {
+          "name": "household_invites_household_idx",
+          "columns": ["household_id", "\"created_at\" desc"],
+          "isUnique": false
+        },
+        "household_invites_code_key": {
+          "name": "household_invites_code_key",
+          "columns": ["code"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "household_invites_household_id_households_id_fk": {
+          "name": "household_invites_household_id_households_id_fk",
+          "tableFrom": "household_invites",
+          "columnsFrom": ["household_id"],
+          "tableTo": "households",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "household_invites_invited_by_user_profiles_user_id_fk": {
+          "name": "household_invites_invited_by_user_profiles_user_id_fk",
+          "tableFrom": "household_invites",
+          "columnsFrom": ["invited_by"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "household_invites_accepted_by_user_profiles_user_id_fk": {
+          "name": "household_invites_accepted_by_user_profiles_user_id_fk",
+          "tableFrom": "household_invites",
+          "columnsFrom": ["accepted_by"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "household_invites_label_length": {
+          "name": "household_invites_label_length",
+          "value": "((label IS NULL) OR (length(label) <= 80))"
+        },
+        "household_invites_pay_offer_promotion_check": {
+          "name": "household_invites_pay_offer_promotion_check",
+          "value": "(pay_offer_promotion IN ('promoted', 'skipped_open_round', 'skipped_stale', 'skipped_no_inviter', 'failed'))"
+        },
+        "household_invites_role_check": {
+          "name": "household_invites_role_check",
+          "value": "(role IN ('parent', 'nanny', 'helper'))"
+        },
+        "household_invites_status_check": {
+          "name": "household_invites_status_check",
+          "value": "(status IN ('pending', 'accepted', 'revoked', 'expired'))"
+        }
+      }
+    },
+    "household_members": {
+      "name": "household_members",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "can_edit": {
+          "name": "can_edit",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'active'"
+        },
+        "display_name_override": {
+          "name": "display_name_override",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "colour": {
+          "name": "colour",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "joined_at": {
+          "name": "joined_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "ended_reason": {
+          "name": "ended_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ended_at": {
+          "name": "ended_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ended_by": {
+          "name": "ended_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "household_members_household_status_idx": {
+          "name": "household_members_household_status_idx",
+          "columns": ["household_id", "status"],
+          "where": "status = 'active'",
+          "isUnique": false
+        },
+        "household_members_user_household_idx": {
+          "name": "household_members_user_household_idx",
+          "columns": ["user_id", "household_id"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "household_members_household_id_households_id_fk": {
+          "name": "household_members_household_id_households_id_fk",
+          "tableFrom": "household_members",
+          "columnsFrom": ["household_id"],
+          "tableTo": "households",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "household_members_user_id_user_profiles_user_id_fk": {
+          "name": "household_members_user_id_user_profiles_user_id_fk",
+          "tableFrom": "household_members",
+          "columnsFrom": ["user_id"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "household_members_ended_by_user_profiles_user_id_fk": {
+          "name": "household_members_ended_by_user_profiles_user_id_fk",
+          "tableFrom": "household_members",
+          "columnsFrom": ["ended_by"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "household_members_ended_reason_check": {
+          "name": "household_members_ended_reason_check",
+          "value": "((ended_reason IS NULL) OR (ended_reason IN ('household_closed', 'removed_by_parent', 'left')))"
+        },
+        "household_members_role_check": {
+          "name": "household_members_role_check",
+          "value": "(role IN ('owner', 'parent', 'nanny', 'helper'))"
+        },
+        "household_members_status_check": {
+          "name": "household_members_status_check",
+          "value": "(status IN ('active', 'removed', 'candidate'))"
+        }
+      }
+    },
+    "households": {
+      "name": "households",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'Europe/London'"
+        },
+        "address_line": {
+          "name": "address_line",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "latitude": {
+          "name": "latitude",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "longitude": {
+          "name": "longitude",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "approval_mode": {
+          "name": "approval_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'either'"
+        },
+        "approval_scope": {
+          "name": "approval_scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'short_notice_and_cancellations'"
+        },
+        "short_notice_hours": {
+          "name": "short_notice_hours",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 24
+        },
+        "cancellation_paid_within_hours": {
+          "name": "cancellation_paid_within_hours",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 24
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'USD'"
+        },
+        "jurisdiction": {
+          "name": "jurisdiction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "week_starts_on": {
+          "name": "week_starts_on",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'live'"
+        },
+        "emergency_contact_name": {
+          "name": "emergency_contact_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "emergency_contact_phone": {
+          "name": "emergency_contact_phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "emergency_contact_relationship": {
+          "name": "emergency_contact_relationship",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "country": {
+          "name": "country",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'US'"
+        }
+      },
+      "indexes": {
+        "households_state_idx": {
+          "name": "households_state_idx",
+          "columns": ["state"],
+          "where": "state = 'draft'",
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "households_created_by_user_profiles_user_id_fk": {
+          "name": "households_created_by_user_profiles_user_id_fk",
+          "tableFrom": "households",
+          "columnsFrom": ["created_by"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "households_approval_mode_check": {
+          "name": "households_approval_mode_check",
+          "value": "(approval_mode IN ('either', 'owner_only'))"
+        },
+        "households_approval_scope_check": {
+          "name": "households_approval_scope_check",
+          "value": "(approval_scope IN ('all', 'short_notice_and_cancellations'))"
+        },
+        "households_cancellation_paid_within_hours_check": {
+          "name": "households_cancellation_paid_within_hours_check",
+          "value": "((cancellation_paid_within_hours >= 0) AND (cancellation_paid_within_hours <= 336))"
+        },
+        "households_country_check": {
+          "name": "households_country_check",
+          "value": "(country GLOB '[A-Z][A-Z]')"
+        },
+        "households_currency_check": {
+          "name": "households_currency_check",
+          "value": "(currency GLOB '[A-Z][A-Z][A-Z]')"
+        },
+        "households_jurisdiction_check": {
+          "name": "households_jurisdiction_check",
+          "value": "((jurisdiction IS NULL) OR (jurisdiction GLOB '[A-Z][A-Z]'))"
+        },
+        "households_live_has_name": {
+          "name": "households_live_has_name",
+          "value": "((state = 'draft') OR ((name IS NOT NULL) AND (length(name) > 0)))"
+        },
+        "households_short_notice_hours_check": {
+          "name": "households_short_notice_hours_check",
+          "value": "((short_notice_hours >= 0) AND (short_notice_hours <= 336))"
+        },
+        "households_state_valid": {
+          "name": "households_state_valid",
+          "value": "(state IN ('draft', 'live'))"
+        },
+        "households_week_starts_on_check": {
+          "name": "households_week_starts_on_check",
+          "value": "((week_starts_on >= 0) AND (week_starts_on <= 6))"
+        }
+      }
+    },
+    "expenses": {
+      "name": "expenses",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "carer_id": {
+          "name": "carer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "local_date": {
+          "name": "local_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_minor": {
+          "name": "amount_minor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "miles": {
+          "name": "miles",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'GBP'"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'pending'"
+        },
+        "reviewed_by": {
+          "name": "reviewed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reviewed_at": {
+          "name": "reviewed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "review_note": {
+          "name": "review_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "carer_display_name": {
+          "name": "carer_display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "household_member_id": {
+          "name": "household_member_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "expenses_carer_status_idx": {
+          "name": "expenses_carer_status_idx",
+          "columns": ["carer_id", "status"],
+          "isUnique": false
+        },
+        "expenses_household_date_idx": {
+          "name": "expenses_household_date_idx",
+          "columns": ["household_id", "local_date"],
+          "isUnique": false
+        },
+        "expenses_one_pending_claim_idx": {
+          "name": "expenses_one_pending_claim_idx",
+          "columns": [
+            "household_id",
+            "carer_id",
+            "local_date",
+            "kind",
+            "description",
+            "currency",
+            "quote(amount_minor)",
+            "quote(miles)"
+          ],
+          "where": "status = 'pending'",
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "expenses_household_id_households_id_fk": {
+          "name": "expenses_household_id_households_id_fk",
+          "tableFrom": "expenses",
+          "columnsFrom": ["household_id"],
+          "tableTo": "households",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "expenses_carer_id_user_profiles_user_id_fk": {
+          "name": "expenses_carer_id_user_profiles_user_id_fk",
+          "tableFrom": "expenses",
+          "columnsFrom": ["carer_id"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "expenses_reviewed_by_user_profiles_user_id_fk": {
+          "name": "expenses_reviewed_by_user_profiles_user_id_fk",
+          "tableFrom": "expenses",
+          "columnsFrom": ["reviewed_by"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "expenses_amount_minor_check": {
+          "name": "expenses_amount_minor_check",
+          "value": "(amount_minor >= 0)"
+        },
+        "expenses_amount_minor_upper": {
+          "name": "expenses_amount_minor_upper",
+          "value": "(amount_minor <= 99999999)"
+        },
+        "expenses_currency_check": {
+          "name": "expenses_currency_check",
+          "value": "(currency GLOB '[A-Z][A-Z][A-Z]')"
+        },
+        "expenses_expense_has_amount": {
+          "name": "expenses_expense_has_amount",
+          "value": "((kind <> 'expense') OR (amount_minor IS NOT NULL))"
+        },
+        "expenses_kind_check": {
+          "name": "expenses_kind_check",
+          "value": "(kind IN ('expense', 'mileage'))"
+        },
+        "expenses_mileage_amount_after_approval": {
+          "name": "expenses_mileage_amount_after_approval",
+          "value": "((kind <> 'mileage') OR (status = 'approved') OR (amount_minor IS NULL))"
+        },
+        "expenses_mileage_has_miles": {
+          "name": "expenses_mileage_has_miles",
+          "value": "((kind <> 'mileage') OR (miles IS NOT NULL))"
+        },
+        "expenses_miles_check": {
+          "name": "expenses_miles_check",
+          "value": "(miles > 0)"
+        },
+        "expenses_status_check": {
+          "name": "expenses_status_check",
+          "value": "(status IN ('pending', 'approved', 'rejected'))"
+        }
+      }
+    },
+    "pay_arrangement_acks": {
+      "name": "pay_arrangement_acks",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "arrangement_id": {
+          "name": "arrangement_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "carer_id": {
+          "name": "carer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "pay_arrangement_acks_arrangement_id_carer_id_kind_key": {
+          "name": "pay_arrangement_acks_arrangement_id_carer_id_kind_key",
+          "columns": ["arrangement_id", "carer_id", "kind"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "pay_arrangement_acks_arrangement_id_pay_arrangements_id_fk": {
+          "name": "pay_arrangement_acks_arrangement_id_pay_arrangements_id_fk",
+          "tableFrom": "pay_arrangement_acks",
+          "columnsFrom": ["arrangement_id"],
+          "tableTo": "pay_arrangements",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "pay_arrangement_acks_kind_check": {
+          "name": "pay_arrangement_acks_kind_check",
+          "value": "(kind IN ('seen', 'disagreed'))"
+        },
+        "pay_arrangement_acks_note_length": {
+          "name": "pay_arrangement_acks_note_length",
+          "value": "(length(note) <= 280)"
+        }
+      }
+    },
+    "pay_arrangements": {
+      "name": "pay_arrangements",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "carer_id": {
+          "name": "carer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "rate_minor": {
+          "name": "rate_minor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "bill_rate_minor": {
+          "name": "bill_rate_minor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'GBP'"
+        },
+        "overtime_threshold_minutes": {
+          "name": "overtime_threshold_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "overtime_multiplier": {
+          "name": "overtime_multiplier",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1.5
+        },
+        "guaranteed_minutes_per_week": {
+          "name": "guaranteed_minutes_per_week",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "pto_entitlement_minutes_per_year": {
+          "name": "pto_entitlement_minutes_per_year",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "mileage_rate_per_mile_minor": {
+          "name": "mileage_rate_per_mile_minor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cancellation_paid_within_hours": {
+          "name": "cancellation_paid_within_hours",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "valid_from": {
+          "name": "valid_from",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "carer_display_name": {
+          "name": "carer_display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "household_member_id": {
+          "name": "household_member_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "valid_to": {
+          "name": "valid_to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "terms": {
+          "name": "terms",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'{}'"
+        },
+        "overtime_daily_threshold_minutes": {
+          "name": "overtime_daily_threshold_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "doubletime_daily_threshold_minutes": {
+          "name": "doubletime_daily_threshold_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "doubletime_multiplier": {
+          "name": "doubletime_multiplier",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "seventh_day_multiplier": {
+          "name": "seventh_day_multiplier",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "seventh_day_doubletime_after_minutes": {
+          "name": "seventh_day_doubletime_after_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "worked_holiday_multiplier": {
+          "name": "worked_holiday_multiplier",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "pay_frequency": {
+          "name": "pay_frequency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "pay_day_of_week": {
+          "name": "pay_day_of_week",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "pay_day_of_month": {
+          "name": "pay_day_of_month",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "holiday_hours_minutes": {
+          "name": "holiday_hours_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "pay_arrangements_household_carer_valid_from_idx": {
+          "name": "pay_arrangements_household_carer_valid_from_idx",
+          "columns": ["household_id", "carer_id", "\"valid_from\" desc"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "pay_arrangements_household_id_households_id_fk": {
+          "name": "pay_arrangements_household_id_households_id_fk",
+          "tableFrom": "pay_arrangements",
+          "columnsFrom": ["household_id"],
+          "tableTo": "households",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "pay_arrangements_carer_id_user_profiles_user_id_fk": {
+          "name": "pay_arrangements_carer_id_user_profiles_user_id_fk",
+          "tableFrom": "pay_arrangements",
+          "columnsFrom": ["carer_id"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "pay_arrangements_created_by_user_profiles_user_id_fk": {
+          "name": "pay_arrangements_created_by_user_profiles_user_id_fk",
+          "tableFrom": "pay_arrangements",
+          "columnsFrom": ["created_by"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "pay_arrangements_bill_rate_minor_check": {
+          "name": "pay_arrangements_bill_rate_minor_check",
+          "value": "(bill_rate_minor >= 0)"
+        },
+        "pay_arrangements_bill_rate_minor_upper": {
+          "name": "pay_arrangements_bill_rate_minor_upper",
+          "value": "(bill_rate_minor <= 99999999)"
+        },
+        "pay_arrangements_cancellation_paid_within_hours_check": {
+          "name": "pay_arrangements_cancellation_paid_within_hours_check",
+          "value": "(cancellation_paid_within_hours > 0)"
+        },
+        "pay_arrangements_currency_check": {
+          "name": "pay_arrangements_currency_check",
+          "value": "(currency GLOB '[A-Z][A-Z][A-Z]')"
+        },
+        "pay_arrangements_daily_tiers_ordered": {
+          "name": "pay_arrangements_daily_tiers_ordered",
+          "value": "((doubletime_daily_threshold_minutes IS NULL) OR (overtime_daily_threshold_minutes IS NULL) OR (doubletime_daily_threshold_minutes > overtime_daily_threshold_minutes))"
+        },
+        "pay_arrangements_doubletime_daily_needs_multiplier": {
+          "name": "pay_arrangements_doubletime_daily_needs_multiplier",
+          "value": "((doubletime_daily_threshold_minutes IS NULL) OR (doubletime_multiplier IS NOT NULL))"
+        },
+        "pay_arrangements_doubletime_daily_threshold_positive": {
+          "name": "pay_arrangements_doubletime_daily_threshold_positive",
+          "value": "(doubletime_daily_threshold_minutes > 0)"
+        },
+        "pay_arrangements_doubletime_multiplier_min": {
+          "name": "pay_arrangements_doubletime_multiplier_min",
+          "value": "(doubletime_multiplier >= 1)"
+        },
+        "pay_arrangements_guaranteed_minutes_per_week_check": {
+          "name": "pay_arrangements_guaranteed_minutes_per_week_check",
+          "value": "(guaranteed_minutes_per_week >= 0)"
+        },
+        "pay_arrangements_holiday_hours_minutes_positive": {
+          "name": "pay_arrangements_holiday_hours_minutes_positive",
+          "value": "(holiday_hours_minutes > 0)"
+        },
+        "pay_arrangements_mileage_rate_per_mile_minor_check": {
+          "name": "pay_arrangements_mileage_rate_per_mile_minor_check",
+          "value": "(mileage_rate_per_mile_minor >= 0)"
+        },
+        "pay_arrangements_mileage_rate_per_mile_minor_upper": {
+          "name": "pay_arrangements_mileage_rate_per_mile_minor_upper",
+          "value": "(mileage_rate_per_mile_minor <= 99999999)"
+        },
+        "pay_arrangements_overtime_daily_threshold_positive": {
+          "name": "pay_arrangements_overtime_daily_threshold_positive",
+          "value": "(overtime_daily_threshold_minutes > 0)"
+        },
+        "pay_arrangements_overtime_multiplier_check": {
+          "name": "pay_arrangements_overtime_multiplier_check",
+          "value": "(overtime_multiplier >= 1)"
+        },
+        "pay_arrangements_overtime_threshold_minutes_check": {
+          "name": "pay_arrangements_overtime_threshold_minutes_check",
+          "value": "(overtime_threshold_minutes > 0)"
+        },
+        "pay_arrangements_pay_day_of_month_range": {
+          "name": "pay_arrangements_pay_day_of_month_range",
+          "value": "((pay_day_of_month IS NULL) OR ((pay_day_of_month >= 1) AND (pay_day_of_month <= 31)))"
+        },
+        "pay_arrangements_pay_day_of_week_range": {
+          "name": "pay_arrangements_pay_day_of_week_range",
+          "value": "((pay_day_of_week IS NULL) OR ((pay_day_of_week >= 0) AND (pay_day_of_week <= 6)))"
+        },
+        "pay_arrangements_pay_frequency_valid": {
+          "name": "pay_arrangements_pay_frequency_valid",
+          "value": "((pay_frequency IS NULL) OR (pay_frequency IN ('weekly', 'biweekly', 'semimonthly', 'monthly')))"
+        },
+        "pay_arrangements_pto_entitlement_minutes_per_year_check": {
+          "name": "pay_arrangements_pto_entitlement_minutes_per_year_check",
+          "value": "(pto_entitlement_minutes_per_year >= 0)"
+        },
+        "pay_arrangements_rate_minor_check": {
+          "name": "pay_arrangements_rate_minor_check",
+          "value": "(rate_minor >= 0)"
+        },
+        "pay_arrangements_rate_minor_upper": {
+          "name": "pay_arrangements_rate_minor_upper",
+          "value": "(rate_minor <= 99999999)"
+        },
+        "pay_arrangements_seventh_day_doubletime_after_positive": {
+          "name": "pay_arrangements_seventh_day_doubletime_after_positive",
+          "value": "(seventh_day_doubletime_after_minutes > 0)"
+        },
+        "pay_arrangements_seventh_day_multiplier_min": {
+          "name": "pay_arrangements_seventh_day_multiplier_min",
+          "value": "(seventh_day_multiplier >= 1)"
+        },
+        "pay_arrangements_seventh_day_second_tier_needs_multiplier": {
+          "name": "pay_arrangements_seventh_day_second_tier_needs_multiplier",
+          "value": "((seventh_day_doubletime_after_minutes IS NULL) OR ((seventh_day_multiplier IS NOT NULL) AND (doubletime_multiplier IS NOT NULL)))"
+        },
+        "pay_arrangements_valid_to_after_valid_from": {
+          "name": "pay_arrangements_valid_to_after_valid_from",
+          "value": "((valid_to IS NULL) OR (valid_to >= valid_from))"
+        },
+        "pay_arrangements_worked_holiday_multiplier_min": {
+          "name": "pay_arrangements_worked_holiday_multiplier_min",
+          "value": "(worked_holiday_multiplier >= 1)"
+        }
+      }
+    },
+    "payments": {
+      "name": "payments",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "timesheet_id": {
+          "name": "timesheet_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "carer_id": {
+          "name": "carer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "amount_minor": {
+          "name": "amount_minor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "paid_at": {
+          "name": "paid_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "method_note": {
+          "name": "method_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "recorded_by": {
+          "name": "recorded_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'payment'"
+        },
+        "corrects_payment_id": {
+          "name": "corrects_payment_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "correction_reason": {
+          "name": "correction_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "payments_corrects_idx": {
+          "name": "payments_corrects_idx",
+          "columns": ["corrects_payment_id"],
+          "where": "corrects_payment_id IS NOT NULL",
+          "isUnique": false
+        },
+        "payments_household_paid_at_idx": {
+          "name": "payments_household_paid_at_idx",
+          "columns": ["household_id", "paid_at"],
+          "isUnique": false
+        },
+        "payments_idempotency_key_uidx": {
+          "name": "payments_idempotency_key_uidx",
+          "columns": ["idempotency_key"],
+          "where": "idempotency_key IS NOT NULL",
+          "isUnique": true
+        },
+        "payments_timesheet_idx": {
+          "name": "payments_timesheet_idx",
+          "columns": ["timesheet_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "payments_timesheet_id_timesheets_id_fk": {
+          "name": "payments_timesheet_id_timesheets_id_fk",
+          "tableFrom": "payments",
+          "columnsFrom": ["timesheet_id"],
+          "tableTo": "timesheets",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "payments_household_id_households_id_fk": {
+          "name": "payments_household_id_households_id_fk",
+          "tableFrom": "payments",
+          "columnsFrom": ["household_id"],
+          "tableTo": "households",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "payments_carer_id_user_profiles_user_id_fk": {
+          "name": "payments_carer_id_user_profiles_user_id_fk",
+          "tableFrom": "payments",
+          "columnsFrom": ["carer_id"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "payments_recorded_by_user_profiles_user_id_fk": {
+          "name": "payments_recorded_by_user_profiles_user_id_fk",
+          "tableFrom": "payments",
+          "columnsFrom": ["recorded_by"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "payments_corrects_payment_id_payments_id_fk": {
+          "name": "payments_corrects_payment_id_payments_id_fk",
+          "tableFrom": "payments",
+          "columnsFrom": ["corrects_payment_id"],
+          "tableTo": "payments",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "payments_amount_minor_signed_chk": {
+          "name": "payments_amount_minor_signed_chk",
+          "value": "((amount_minor <> 0) AND (amount_minor >= -99999999) AND (amount_minor <= 99999999))"
+        },
+        "payments_currency_check": {
+          "name": "payments_currency_check",
+          "value": "(currency GLOB '[A-Z][A-Z][A-Z]')"
+        },
+        "payments_kind_chk": {
+          "name": "payments_kind_chk",
+          "value": "(kind IN ('payment', 'correction'))"
+        },
+        "payments_kind_shape_chk": {
+          "name": "payments_kind_shape_chk",
+          "value": "(((kind = 'payment') AND (corrects_payment_id IS NULL) AND (correction_reason IS NULL) AND (amount_minor >= 1)) OR ((kind = 'correction') AND (corrects_payment_id IS NOT NULL) AND (correction_reason IS NOT NULL) AND (amount_minor <= -1)))"
+        }
+      }
+    },
+    "pto_ledger": {
+      "name": "pto_ledger",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "carer_id": {
+          "name": "carer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "minutes": {
+          "name": "minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "effective_date": {
+          "name": "effective_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "time_off_id": {
+          "name": "time_off_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "carer_display_name": {
+          "name": "carer_display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "household_member_id": {
+          "name": "household_member_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "leave_kind": {
+          "name": "leave_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "pto_ledger_household_carer_idx": {
+          "name": "pto_ledger_household_carer_idx",
+          "columns": ["household_id", "carer_id"],
+          "isUnique": false
+        },
+        "pto_ledger_one_accrual_per_year_idx": {
+          "name": "pto_ledger_one_accrual_per_year_idx",
+          "columns": ["household_id", "carer_id", "effective_date"],
+          "where": "kind = 'accrual'",
+          "isUnique": true
+        },
+        "pto_ledger_one_usage_per_time_off_day_idx": {
+          "name": "pto_ledger_one_usage_per_time_off_day_idx",
+          "columns": ["household_id", "time_off_id", "effective_date"],
+          "where": "kind = 'usage'",
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "pto_ledger_household_id_households_id_fk": {
+          "name": "pto_ledger_household_id_households_id_fk",
+          "tableFrom": "pto_ledger",
+          "columnsFrom": ["household_id"],
+          "tableTo": "households",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "pto_ledger_carer_id_user_profiles_user_id_fk": {
+          "name": "pto_ledger_carer_id_user_profiles_user_id_fk",
+          "tableFrom": "pto_ledger",
+          "columnsFrom": ["carer_id"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "pto_ledger_time_off_id_carer_time_off_id_fk": {
+          "name": "pto_ledger_time_off_id_carer_time_off_id_fk",
+          "tableFrom": "pto_ledger",
+          "columnsFrom": ["time_off_id"],
+          "tableTo": "carer_time_off",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "pto_ledger_created_by_user_profiles_user_id_fk": {
+          "name": "pto_ledger_created_by_user_profiles_user_id_fk",
+          "tableFrom": "pto_ledger",
+          "columnsFrom": ["created_by"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "pto_ledger_kind_check": {
+          "name": "pto_ledger_kind_check",
+          "value": "(kind IN ('accrual', 'usage', 'adjustment'))"
+        },
+        "pto_ledger_leave_kind_check": {
+          "name": "pto_ledger_leave_kind_check",
+          "value": "((leave_kind IS NULL) OR (leave_kind IN ('personal', 'sick')))"
+        },
+        "pto_ledger_minutes_check": {
+          "name": "pto_ledger_minutes_check",
+          "value": "(minutes <> 0)"
+        }
+      }
+    },
+    "reimbursement_settlements": {
+      "name": "reimbursement_settlements",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "carer_id": {
+          "name": "carer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "week_start": {
+          "name": "week_start",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount_minor": {
+          "name": "amount_minor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "settled_at": {
+          "name": "settled_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "recorded_by": {
+          "name": "recorded_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "reimbursement_settlements_week_idx": {
+          "name": "reimbursement_settlements_week_idx",
+          "columns": ["household_id", "carer_id", "week_start"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "reimbursement_settlements_household_id_households_id_fk": {
+          "name": "reimbursement_settlements_household_id_households_id_fk",
+          "tableFrom": "reimbursement_settlements",
+          "columnsFrom": ["household_id"],
+          "tableTo": "households",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "reimbursement_settlements_carer_id_user_profiles_user_id_fk": {
+          "name": "reimbursement_settlements_carer_id_user_profiles_user_id_fk",
+          "tableFrom": "reimbursement_settlements",
+          "columnsFrom": ["carer_id"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "reimbursement_settlements_recorded_by_user_profiles_user_id_fk": {
+          "name": "reimbursement_settlements_recorded_by_user_profiles_user_id_fk",
+          "tableFrom": "reimbursement_settlements",
+          "columnsFrom": ["recorded_by"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "reimbursement_settlements_amount_minor_check": {
+          "name": "reimbursement_settlements_amount_minor_check",
+          "value": "((amount_minor >= 1) AND (amount_minor <= 99999999))"
+        },
+        "reimbursement_settlements_currency_check": {
+          "name": "reimbursement_settlements_currency_check",
+          "value": "(currency GLOB '[A-Z][A-Z][A-Z]')"
+        }
+      }
+    },
+    "terms_proposals": {
+      "name": "terms_proposals",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "carer_id": {
+          "name": "carer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "proposed_by": {
+          "name": "proposed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "direction": {
+          "name": "direction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'proposed'"
+        },
+        "terms": {
+          "name": "terms",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "supersedes_id": {
+          "name": "supersedes_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "from_invite_id": {
+          "name": "from_invite_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "carer_display_name": {
+          "name": "carer_display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "viewed_at": {
+          "name": "viewed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "responded_at": {
+          "name": "responded_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "accepted_by": {
+          "name": "accepted_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "accepted_arrangement_id": {
+          "name": "accepted_arrangement_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "responsibility_confirmed": {
+          "name": "responsibility_confirmed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "terms_proposals_from_invite_idx": {
+          "name": "terms_proposals_from_invite_idx",
+          "columns": ["from_invite_id"],
+          "where": "from_invite_id IS NOT NULL",
+          "isUnique": false
+        },
+        "terms_proposals_household_carer_idx": {
+          "name": "terms_proposals_household_carer_idx",
+          "columns": ["household_id", "carer_id", "\"created_at\" desc"],
+          "isUnique": false
+        },
+        "terms_proposals_open_unique_idx": {
+          "name": "terms_proposals_open_unique_idx",
+          "columns": ["household_id", "carer_id"],
+          "where": "status = 'proposed'",
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "terms_proposals_household_id_households_id_fk": {
+          "name": "terms_proposals_household_id_households_id_fk",
+          "tableFrom": "terms_proposals",
+          "columnsFrom": ["household_id"],
+          "tableTo": "households",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "terms_proposals_supersedes_id_terms_proposals_id_fk": {
+          "name": "terms_proposals_supersedes_id_terms_proposals_id_fk",
+          "tableFrom": "terms_proposals",
+          "columnsFrom": ["supersedes_id"],
+          "tableTo": "terms_proposals",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "terms_proposals_from_invite_id_household_invites_id_fk": {
+          "name": "terms_proposals_from_invite_id_household_invites_id_fk",
+          "tableFrom": "terms_proposals",
+          "columnsFrom": ["from_invite_id"],
+          "tableTo": "household_invites",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "terms_proposals_accepted_arrangement_id_pay_arrangements_id_fk": {
+          "name": "terms_proposals_accepted_arrangement_id_pay_arrangements_id_fk",
+          "tableFrom": "terms_proposals",
+          "columnsFrom": ["accepted_arrangement_id"],
+          "tableTo": "pay_arrangements",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "terms_proposals_accepted_needs_confirmation": {
+          "name": "terms_proposals_accepted_needs_confirmation",
+          "value": "((status <> 'accepted') OR responsibility_confirmed)"
+        },
+        "terms_proposals_direction_check": {
+          "name": "terms_proposals_direction_check",
+          "value": "(direction IN ('carer', 'parent'))"
+        },
+        "terms_proposals_responded_at_present": {
+          "name": "terms_proposals_responded_at_present",
+          "value": "((status = 'proposed') OR (responded_at IS NOT NULL))"
+        },
+        "terms_proposals_status_check": {
+          "name": "terms_proposals_status_check",
+          "value": "(status IN ('proposed', 'countered', 'accepted', 'withdrawn', 'declined'))"
+        }
+      }
+    },
+    "app_config": {
+      "name": "app_config",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "min_supported_version": {
+          "name": "min_supported_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "latest_version": {
+          "name": "latest_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ios_store_url": {
+          "name": "ios_store_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "android_store_url": {
+          "name": "android_store_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'ok'"
+        },
+        "maintenance_message": {
+          "name": "maintenance_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "announcements": {
+          "name": "announcements",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
+        "beta_all_pro": {
+          "name": "beta_all_pro",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "app_config_id_check": {
+          "name": "app_config_id_check",
+          "value": "(id = 1)"
+        },
+        "app_config_status_check": {
+          "name": "app_config_status_check",
+          "value": "(status IN ('ok', 'maintenance', 'killed'))"
+        }
+      }
+    },
+    "job_runs": {
+      "name": "job_runs",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "job_name": {
+          "name": "job_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "duration_ms": {
+          "name": "duration_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'running'"
+        },
+        "total_processed": {
+          "name": "total_processed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "success_count": {
+          "name": "success_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "error_count": {
+          "name": "error_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "skipped_count": {
+          "name": "skipped_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "peak_memory_mb": {
+          "name": "peak_memory_mb",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "db_query_count": {
+          "name": "db_query_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "summary": {
+          "name": "summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "error_message": {
+          "name": "error_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "error_details": {
+          "name": "error_details",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_job_runs_name_started": {
+          "name": "idx_job_runs_name_started",
+          "columns": ["job_name", "\"started_at\" desc"],
+          "isUnique": false
+        },
+        "job_runs_idempotency_key_key": {
+          "name": "job_runs_idempotency_key_key",
+          "columns": ["idempotency_key"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "job_runs_status_check": {
+          "name": "job_runs_status_check",
+          "value": "(status IN ('running', 'success', 'failed', 'partial'))"
+        }
+      }
+    },
+    "schedule_pattern_day_children": {
+      "name": "schedule_pattern_day_children",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "pattern_day_id": {
+          "name": "pattern_day_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "child_id": {
+          "name": "child_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "start_time": {
+          "name": "start_time",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "end_time": {
+          "name": "end_time",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "schedule_pattern_day_children_child_idx": {
+          "name": "schedule_pattern_day_children_child_idx",
+          "columns": ["child_id"],
+          "isUnique": false
+        },
+        "schedule_pattern_day_children_day_idx": {
+          "name": "schedule_pattern_day_children_day_idx",
+          "columns": ["pattern_day_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "schedule_pattern_day_children_pattern_day_id_schedule_pattern_days_id_fk": {
+          "name": "schedule_pattern_day_children_pattern_day_id_schedule_pattern_days_id_fk",
+          "tableFrom": "schedule_pattern_day_children",
+          "columnsFrom": ["pattern_day_id"],
+          "tableTo": "schedule_pattern_days",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "schedule_pattern_day_children_child_id_children_id_fk": {
+          "name": "schedule_pattern_day_children_child_id_children_id_fk",
+          "tableFrom": "schedule_pattern_day_children",
+          "columnsFrom": ["child_id"],
+          "tableTo": "children",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "schedule_pattern_day_children_time_order": {
+          "name": "schedule_pattern_day_children_time_order",
+          "value": "((start_time IS NULL) OR (end_time IS NULL) OR (end_time > start_time))"
+        },
+        "schedule_pattern_day_children_time_pairing": {
+          "name": "schedule_pattern_day_children_time_pairing",
+          "value": "((start_time IS NULL) = (end_time IS NULL))"
+        }
+      }
+    },
+    "schedule_pattern_days": {
+      "name": "schedule_pattern_days",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "pattern_id": {
+          "name": "pattern_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "weekday": {
+          "name": "weekday",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "start_time": {
+          "name": "start_time",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "end_time": {
+          "name": "end_time",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "schedule_pattern_days_pattern_weekday_start_idx": {
+          "name": "schedule_pattern_days_pattern_weekday_start_idx",
+          "columns": ["pattern_id", "weekday", "start_time"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "schedule_pattern_days_pattern_id_schedule_patterns_id_fk": {
+          "name": "schedule_pattern_days_pattern_id_schedule_patterns_id_fk",
+          "tableFrom": "schedule_pattern_days",
+          "columnsFrom": ["pattern_id"],
+          "tableTo": "schedule_patterns",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "schedule_pattern_days_time_order": {
+          "name": "schedule_pattern_days_time_order",
+          "value": "(end_time > start_time)"
+        },
+        "schedule_pattern_days_weekday_check": {
+          "name": "schedule_pattern_days_weekday_check",
+          "value": "((weekday >= 0) AND (weekday <= 6))"
+        }
+      }
+    },
+    "schedule_patterns": {
+      "name": "schedule_patterns",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "carer_id": {
+          "name": "carer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'draft'"
+        },
+        "rrule": {
+          "name": "rrule",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "dtstart": {
+          "name": "dtstart",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "until": {
+          "name": "until",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "exdates": {
+          "name": "exdates",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
+        "pause_ranges": {
+          "name": "pause_ranges",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "responded_at": {
+          "name": "responded_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ical_uid": {
+          "name": "ical_uid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "decline_message": {
+          "name": "decline_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "schedule_patterns_carer_idx": {
+          "name": "schedule_patterns_carer_idx",
+          "columns": ["carer_id", "status"],
+          "where": "carer_id IS NOT NULL",
+          "isUnique": false
+        },
+        "schedule_patterns_household_status_idx": {
+          "name": "schedule_patterns_household_status_idx",
+          "columns": ["household_id", "status"],
+          "isUnique": false
+        },
+        "schedule_patterns_one_accepted_idx": {
+          "name": "schedule_patterns_one_accepted_idx",
+          "columns": ["household_id", "carer_id"],
+          "where": "(status = 'accepted') AND (carer_id IS NOT NULL)",
+          "isUnique": true
+        },
+        "schedule_patterns_ical_uid_key": {
+          "name": "schedule_patterns_ical_uid_key",
+          "columns": ["ical_uid"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "schedule_patterns_household_id_households_id_fk": {
+          "name": "schedule_patterns_household_id_households_id_fk",
+          "tableFrom": "schedule_patterns",
+          "columnsFrom": ["household_id"],
+          "tableTo": "households",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "schedule_patterns_carer_id_user_profiles_user_id_fk": {
+          "name": "schedule_patterns_carer_id_user_profiles_user_id_fk",
+          "tableFrom": "schedule_patterns",
+          "columnsFrom": ["carer_id"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "schedule_patterns_created_by_user_profiles_user_id_fk": {
+          "name": "schedule_patterns_created_by_user_profiles_user_id_fk",
+          "tableFrom": "schedule_patterns",
+          "columnsFrom": ["created_by"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "schedule_patterns_date_order": {
+          "name": "schedule_patterns_date_order",
+          "value": "((until IS NULL) OR (until >= dtstart))"
+        },
+        "schedule_patterns_status_check": {
+          "name": "schedule_patterns_status_check",
+          "value": "(status IN ('draft', 'pending', 'accepted', 'declined', 'withdrawn', 'ended'))"
+        }
+      }
+    },
+    "co_parent_approvals": {
+      "name": "co_parent_approvals",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "requested_by": {
+          "name": "requested_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "action": {
+          "name": "action",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payload": {
+          "name": "payload",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'{}'"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'pending'"
+        },
+        "timeout_at": {
+          "name": "timeout_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "responded_by": {
+          "name": "responded_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "responded_at": {
+          "name": "responded_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "co_parent_approvals_household_pending_idx": {
+          "name": "co_parent_approvals_household_pending_idx",
+          "columns": ["household_id", "\"created_at\" desc"],
+          "where": "status = 'pending'",
+          "isUnique": false
+        },
+        "co_parent_approvals_timeout_idx": {
+          "name": "co_parent_approvals_timeout_idx",
+          "columns": ["timeout_at"],
+          "where": "status = 'pending'",
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "co_parent_approvals_household_id_households_id_fk": {
+          "name": "co_parent_approvals_household_id_households_id_fk",
+          "tableFrom": "co_parent_approvals",
+          "columnsFrom": ["household_id"],
+          "tableTo": "households",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "co_parent_approvals_requested_by_user_profiles_user_id_fk": {
+          "name": "co_parent_approvals_requested_by_user_profiles_user_id_fk",
+          "tableFrom": "co_parent_approvals",
+          "columnsFrom": ["requested_by"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "co_parent_approvals_responded_by_user_profiles_user_id_fk": {
+          "name": "co_parent_approvals_responded_by_user_profiles_user_id_fk",
+          "tableFrom": "co_parent_approvals",
+          "columnsFrom": ["responded_by"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "co_parent_approvals_action_check": {
+          "name": "co_parent_approvals_action_check",
+          "value": "(action IN ('short_notice_change', 'cancel', 'extra_shift', 'other'))"
+        },
+        "co_parent_approvals_status_check": {
+          "name": "co_parent_approvals_status_check",
+          "value": "(status IN ('pending', 'approved', 'declined', 'timed_out', 'withdrawn'))"
+        }
+      }
+    },
+    "handoff_notes": {
+      "name": "handoff_notes",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "local_date": {
+          "name": "local_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "author_id": {
+          "name": "author_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "phase": {
+          "name": "phase",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "chips": {
+          "name": "chips",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "moment_saved_at": {
+          "name": "moment_saved_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "handoff_notes_household_date_idx": {
+          "name": "handoff_notes_household_date_idx",
+          "columns": ["household_id", "local_date", "phase"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "handoff_notes_household_id_households_id_fk": {
+          "name": "handoff_notes_household_id_households_id_fk",
+          "tableFrom": "handoff_notes",
+          "columnsFrom": ["household_id"],
+          "tableTo": "households",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "handoff_notes_author_id_user_profiles_user_id_fk": {
+          "name": "handoff_notes_author_id_user_profiles_user_id_fk",
+          "tableFrom": "handoff_notes",
+          "columnsFrom": ["author_id"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "handoff_notes_phase_check": {
+          "name": "handoff_notes_phase_check",
+          "value": "(phase IN ('morning', 'evening'))"
+        }
+      }
+    },
+    "shift_change_requests": {
+      "name": "shift_change_requests",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "shift_id": {
+          "name": "shift_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "requested_by": {
+          "name": "requested_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "proposed_starts_at": {
+          "name": "proposed_starts_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "proposed_ends_at": {
+          "name": "proposed_ends_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "message": {
+          "name": "message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'pending'"
+        },
+        "responded_by": {
+          "name": "responded_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "responded_at": {
+          "name": "responded_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "response_message": {
+          "name": "response_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "shift_change_requests_pending_idx": {
+          "name": "shift_change_requests_pending_idx",
+          "columns": ["shift_id"],
+          "where": "status = 'pending'",
+          "isUnique": false
+        },
+        "shift_change_requests_shift_idx": {
+          "name": "shift_change_requests_shift_idx",
+          "columns": ["shift_id", "\"created_at\" desc"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "shift_change_requests_shift_id_shifts_id_fk": {
+          "name": "shift_change_requests_shift_id_shifts_id_fk",
+          "tableFrom": "shift_change_requests",
+          "columnsFrom": ["shift_id"],
+          "tableTo": "shifts",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "shift_change_requests_requested_by_user_profiles_user_id_fk": {
+          "name": "shift_change_requests_requested_by_user_profiles_user_id_fk",
+          "tableFrom": "shift_change_requests",
+          "columnsFrom": ["requested_by"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "shift_change_requests_responded_by_user_profiles_user_id_fk": {
+          "name": "shift_change_requests_responded_by_user_profiles_user_id_fk",
+          "tableFrom": "shift_change_requests",
+          "columnsFrom": ["responded_by"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "shift_change_requests_kind_check": {
+          "name": "shift_change_requests_kind_check",
+          "value": "(kind IN ('time_change', 'cancel', 'counter_offer', 'split', 'handover'))"
+        },
+        "shift_change_requests_status_check": {
+          "name": "shift_change_requests_status_check",
+          "value": "(status IN ('pending', 'accepted', 'declined', 'withdrawn', 'superseded', 'expired'))"
+        },
+        "shift_change_requests_time_order": {
+          "name": "shift_change_requests_time_order",
+          "value": "((proposed_starts_at IS NULL) OR (proposed_ends_at IS NULL) OR (julianday(proposed_ends_at) > julianday(proposed_starts_at)))"
+        }
+      }
+    },
+    "shift_children": {
+      "name": "shift_children",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "shift_id": {
+          "name": "shift_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "child_id": {
+          "name": "child_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "starts_at": {
+          "name": "starts_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ends_at": {
+          "name": "ends_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "shift_children_child_idx": {
+          "name": "shift_children_child_idx",
+          "columns": ["child_id"],
+          "isUnique": false
+        },
+        "shift_children_shift_idx": {
+          "name": "shift_children_shift_idx",
+          "columns": ["shift_id"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "shift_children_shift_id_shifts_id_fk": {
+          "name": "shift_children_shift_id_shifts_id_fk",
+          "tableFrom": "shift_children",
+          "columnsFrom": ["shift_id"],
+          "tableTo": "shifts",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "shift_children_child_id_children_id_fk": {
+          "name": "shift_children_child_id_children_id_fk",
+          "tableFrom": "shift_children",
+          "columnsFrom": ["child_id"],
+          "tableTo": "children",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "shift_children_time_order": {
+          "name": "shift_children_time_order",
+          "value": "((starts_at IS NULL) OR (ends_at IS NULL) OR (julianday(ends_at) > julianday(starts_at)))"
+        },
+        "shift_children_time_pairing": {
+          "name": "shift_children_time_pairing",
+          "value": "((starts_at IS NULL) = (ends_at IS NULL))"
+        }
+      }
+    },
+    "shift_events": {
+      "name": "shift_events",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "shift_id": {
+          "name": "shift_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "local_date": {
+          "name": "local_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payload": {
+          "name": "payload",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'{}'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "shift_events_household_date_idx": {
+          "name": "shift_events_household_date_idx",
+          "columns": ["household_id", "local_date", "created_at"],
+          "isUnique": false
+        },
+        "shift_events_keyed_unique_idx": {
+          "name": "shift_events_keyed_unique_idx",
+          "columns": [
+            "household_id",
+            "local_date",
+            "event_type",
+            "(payload ->> '$.key')"
+          ],
+          "where": "(payload ->> '$.key') IS NOT NULL",
+          "isUnique": true
+        },
+        "shift_events_shift_idx": {
+          "name": "shift_events_shift_idx",
+          "columns": ["shift_id", "created_at"],
+          "where": "shift_id IS NOT NULL",
+          "isUnique": false
+        },
+        "shift_events_uncovered_digest_idx": {
+          "name": "shift_events_uncovered_digest_idx",
+          "columns": ["created_at"],
+          "where": "event_type = 'uncovered_care'",
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "shift_events_household_id_households_id_fk": {
+          "name": "shift_events_household_id_households_id_fk",
+          "tableFrom": "shift_events",
+          "columnsFrom": ["household_id"],
+          "tableTo": "households",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "shift_events_shift_id_shifts_id_fk": {
+          "name": "shift_events_shift_id_shifts_id_fk",
+          "tableFrom": "shift_events",
+          "columnsFrom": ["shift_id"],
+          "tableTo": "shifts",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "shift_events_actor_id_user_profiles_user_id_fk": {
+          "name": "shift_events_actor_id_user_profiles_user_id_fk",
+          "tableFrom": "shift_events",
+          "columnsFrom": ["actor_id"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "shifts": {
+      "name": "shifts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "carer_id": {
+          "name": "carer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "starts_at": {
+          "name": "starts_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "ends_at": {
+          "name": "ends_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "local_date": {
+          "name": "local_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'recurring'"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'draft'"
+        },
+        "source_pattern_id": {
+          "name": "source_pattern_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "origin": {
+          "name": "origin",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'system_generated'"
+        },
+        "is_short_notice": {
+          "name": "is_short_notice",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cancelled_at": {
+          "name": "cancelled_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cancelled_by": {
+          "name": "cancelled_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "cancellation_paid": {
+          "name": "cancellation_paid",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "cancellation_message": {
+          "name": "cancellation_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ical_uid": {
+          "name": "ical_uid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "cover_ask_expires_at": {
+          "name": "cover_ask_expires_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "shifts_carer_starts_idx": {
+          "name": "shifts_carer_starts_idx",
+          "columns": ["carer_id", "starts_at"],
+          "where": "carer_id IS NOT NULL",
+          "isUnique": false
+        },
+        "shifts_cover_ask_expiry_idx": {
+          "name": "shifts_cover_ask_expiry_idx",
+          "columns": ["cover_ask_expires_at"],
+          "where": "(status = 'pending') AND (cover_ask_expires_at IS NOT NULL)",
+          "isUnique": false
+        },
+        "shifts_cover_window_unique": {
+          "name": "shifts_cover_window_unique",
+          "columns": [
+            "household_id",
+            "quote(\"carer_id\")",
+            "starts_at",
+            "ends_at"
+          ],
+          "where": "(kind = 'cover') AND (status <> 'cancelled')",
+          "isUnique": true
+        },
+        "shifts_extra_window_unique": {
+          "name": "shifts_extra_window_unique",
+          "columns": [
+            "household_id",
+            "quote(\"carer_id\")",
+            "starts_at",
+            "ends_at"
+          ],
+          "where": "(kind = 'extra') AND (status <> 'cancelled')",
+          "isUnique": true
+        },
+        "shifts_household_local_date_idx": {
+          "name": "shifts_household_local_date_idx",
+          "columns": ["household_id", "local_date"],
+          "isUnique": false
+        },
+        "shifts_household_starts_idx": {
+          "name": "shifts_household_starts_idx",
+          "columns": ["household_id", "starts_at"],
+          "isUnique": false
+        },
+        "shifts_parent_cover_window_unique": {
+          "name": "shifts_parent_cover_window_unique",
+          "columns": [
+            "household_id",
+            "quote(\"carer_id\")",
+            "starts_at",
+            "ends_at"
+          ],
+          "where": "(kind = 'parent_cover') AND (status <> 'cancelled')",
+          "isUnique": true
+        },
+        "shifts_pattern_idx": {
+          "name": "shifts_pattern_idx",
+          "columns": ["source_pattern_id"],
+          "where": "source_pattern_id IS NOT NULL",
+          "isUnique": false
+        },
+        "shifts_recurring_window_unique": {
+          "name": "shifts_recurring_window_unique",
+          "columns": [
+            "household_id",
+            "quote(\"carer_id\")",
+            "starts_at",
+            "ends_at"
+          ],
+          "where": "(kind = 'recurring') AND (status <> 'cancelled')",
+          "isUnique": true
+        },
+        "shifts_ical_uid_key": {
+          "name": "shifts_ical_uid_key",
+          "columns": ["ical_uid"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "shifts_household_id_households_id_fk": {
+          "name": "shifts_household_id_households_id_fk",
+          "tableFrom": "shifts",
+          "columnsFrom": ["household_id"],
+          "tableTo": "households",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "shifts_carer_id_user_profiles_user_id_fk": {
+          "name": "shifts_carer_id_user_profiles_user_id_fk",
+          "tableFrom": "shifts",
+          "columnsFrom": ["carer_id"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "shifts_source_pattern_id_schedule_patterns_id_fk": {
+          "name": "shifts_source_pattern_id_schedule_patterns_id_fk",
+          "tableFrom": "shifts",
+          "columnsFrom": ["source_pattern_id"],
+          "tableTo": "schedule_patterns",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "shifts_cancelled_by_user_profiles_user_id_fk": {
+          "name": "shifts_cancelled_by_user_profiles_user_id_fk",
+          "tableFrom": "shifts",
+          "columnsFrom": ["cancelled_by"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "shifts_created_by_user_profiles_user_id_fk": {
+          "name": "shifts_created_by_user_profiles_user_id_fk",
+          "tableFrom": "shifts",
+          "columnsFrom": ["created_by"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "shifts_kind_check": {
+          "name": "shifts_kind_check",
+          "value": "(kind IN ('recurring', 'extra', 'cover', 'parent_cover'))"
+        },
+        "shifts_origin_check": {
+          "name": "shifts_origin_check",
+          "value": "(origin IN ('system_generated', 'parent_proposed', 'nanny_countered', 'parent_cover'))"
+        },
+        "shifts_status_check": {
+          "name": "shifts_status_check",
+          "value": "(status IN ('draft', 'pending', 'confirmed', 'declined', 'cancelled', 'completed'))"
+        },
+        "shifts_time_order": {
+          "name": "shifts_time_order",
+          "value": "(julianday(ends_at) > julianday(starts_at))"
+        }
+      }
+    },
+    "time_entries": {
+      "name": "time_entries",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "carer_id": {
+          "name": "carer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "shift_id": {
+          "name": "shift_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "clock_in_at": {
+          "name": "clock_in_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "clock_out_at": {
+          "name": "clock_out_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "break_minutes": {
+          "name": "break_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "scheduled_minutes": {
+          "name": "scheduled_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'worked'"
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "clock_in_location_ok": {
+          "name": "clock_in_location_ok",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "clock_out_location_ok": {
+          "name": "clock_out_location_ok",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'running'"
+        },
+        "local_date": {
+          "name": "local_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "carer_display_name": {
+          "name": "carer_display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_member_id": {
+          "name": "household_member_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "observed_clock_in_at": {
+          "name": "observed_clock_in_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "observed_clock_out_at": {
+          "name": "observed_clock_out_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "time_entries_carer_date_idx": {
+          "name": "time_entries_carer_date_idx",
+          "columns": ["carer_id", "local_date"],
+          "isUnique": false
+        },
+        "time_entries_household_date_idx": {
+          "name": "time_entries_household_date_idx",
+          "columns": ["household_id", "local_date"],
+          "isUnique": false
+        },
+        "time_entries_one_cancellation_paid_per_span": {
+          "name": "time_entries_one_cancellation_paid_per_span",
+          "columns": ["shift_id", "quote(\"clock_in_at\")"],
+          "where": "(kind = 'cancellation_paid') AND (shift_id IS NOT NULL)",
+          "isUnique": true
+        },
+        "time_entries_one_running_per_carer": {
+          "name": "time_entries_one_running_per_carer",
+          "columns": ["carer_id"],
+          "where": "status = 'running'",
+          "isUnique": true
+        },
+        "time_entries_shift_idx": {
+          "name": "time_entries_shift_idx",
+          "columns": ["shift_id"],
+          "where": "shift_id IS NOT NULL",
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "time_entries_household_id_households_id_fk": {
+          "name": "time_entries_household_id_households_id_fk",
+          "tableFrom": "time_entries",
+          "columnsFrom": ["household_id"],
+          "tableTo": "households",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "time_entries_carer_id_user_profiles_user_id_fk": {
+          "name": "time_entries_carer_id_user_profiles_user_id_fk",
+          "tableFrom": "time_entries",
+          "columnsFrom": ["carer_id"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "time_entries_shift_id_shifts_id_fk": {
+          "name": "time_entries_shift_id_shifts_id_fk",
+          "tableFrom": "time_entries",
+          "columnsFrom": ["shift_id"],
+          "tableTo": "shifts",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "time_entries_break_minutes_check": {
+          "name": "time_entries_break_minutes_check",
+          "value": "(break_minutes >= 0)"
+        },
+        "time_entries_clock_order": {
+          "name": "time_entries_clock_order",
+          "value": "((clock_out_at IS NULL) OR (clock_in_at IS NULL) OR (julianday(clock_out_at) > julianday(clock_in_at)))"
+        },
+        "time_entries_kind_check": {
+          "name": "time_entries_kind_check",
+          "value": "(kind IN ('worked', 'cancellation_paid', 'manual_adjustment'))"
+        },
+        "time_entries_status_check": {
+          "name": "time_entries_status_check",
+          "value": "(status IN ('running', 'submitted', 'approved', 'queried', 'voided'))"
+        }
+      }
+    },
+    "timesheets": {
+      "name": "timesheets",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "household_id": {
+          "name": "household_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "carer_id": {
+          "name": "carer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "week_start": {
+          "name": "week_start",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "total_minutes": {
+          "name": "total_minutes",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'open'"
+        },
+        "approved_by": {
+          "name": "approved_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "approved_at": {
+          "name": "approved_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "query_note": {
+          "name": "query_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "carer_display_name": {
+          "name": "carer_display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "gross_minor": {
+          "name": "gross_minor",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "earnings": {
+          "name": "earnings",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "earnings_computed_at": {
+          "name": "earnings_computed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reopen_reason": {
+          "name": "reopen_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "household_member_id": {
+          "name": "household_member_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "parent_viewed_at": {
+          "name": "parent_viewed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "hours_changed_after_payment_at": {
+          "name": "hours_changed_after_payment_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "previous_approval": {
+          "name": "previous_approval",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "timesheets_carer_id_idx": {
+          "name": "timesheets_carer_id_idx",
+          "columns": ["carer_id"],
+          "isUnique": false
+        },
+        "timesheets_household_carer_week_idx": {
+          "name": "timesheets_household_carer_week_idx",
+          "columns": ["household_id", "carer_id", "week_start"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "timesheets_household_id_households_id_fk": {
+          "name": "timesheets_household_id_households_id_fk",
+          "tableFrom": "timesheets",
+          "columnsFrom": ["household_id"],
+          "tableTo": "households",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        },
+        "timesheets_carer_id_user_profiles_user_id_fk": {
+          "name": "timesheets_carer_id_user_profiles_user_id_fk",
+          "tableFrom": "timesheets",
+          "columnsFrom": ["carer_id"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        },
+        "timesheets_approved_by_user_profiles_user_id_fk": {
+          "name": "timesheets_approved_by_user_profiles_user_id_fk",
+          "tableFrom": "timesheets",
+          "columnsFrom": ["approved_by"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "set null"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "timesheets_approved_has_snapshot": {
+          "name": "timesheets_approved_has_snapshot",
+          "value": "((status <> 'approved') OR ((gross_minor IS NOT NULL) AND (currency IS NOT NULL) AND (earnings IS NOT NULL) AND (earnings_computed_at IS NOT NULL)))"
+        },
+        "timesheets_currency_check": {
+          "name": "timesheets_currency_check",
+          "value": "(currency GLOB '[A-Z][A-Z][A-Z]')"
+        },
+        "timesheets_gross_minor_check": {
+          "name": "timesheets_gross_minor_check",
+          "value": "(gross_minor >= 0)"
+        },
+        "timesheets_gross_minor_upper": {
+          "name": "timesheets_gross_minor_upper",
+          "value": "(gross_minor <= 99999999)"
+        },
+        "timesheets_status_check": {
+          "name": "timesheets_status_check",
+          "value": "(status IN ('open', 'submitted', 'approved', 'queried'))"
+        }
+      }
+    },
+    "email_log": {
+      "name": "email_log",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "email_type": {
+          "name": "email_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "recipient": {
+          "name": "recipient",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'sent'"
+        },
+        "dedupe_key": {
+          "name": "dedupe_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "metadata": {
+          "name": "metadata",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "email_log_dedupe_key_uidx": {
+          "name": "email_log_dedupe_key_uidx",
+          "columns": ["dedupe_key"],
+          "where": "dedupe_key IS NOT NULL",
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "email_log_user_id_user_id_fk": {
+          "name": "email_log_user_id_user_id_fk",
+          "tableFrom": "email_log",
+          "columnsFrom": ["user_id"],
+          "tableTo": "user",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "notification_prefs": {
+      "name": "notification_prefs",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "disabled_types": {
+          "name": "disabled_types",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
+        "quiet_hours_enabled": {
+          "name": "quiet_hours_enabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "quiet_hours_start": {
+          "name": "quiet_hours_start",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "quiet_hours_end": {
+          "name": "quiet_hours_end",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'UTC'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "notification_prefs_user_id_user_profiles_user_id_fk": {
+          "name": "notification_prefs_user_id_user_profiles_user_id_fk",
+          "tableFrom": "notification_prefs",
+          "columnsFrom": ["user_id"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "notification_prefs_quiet_hours_pair_chk": {
+          "name": "notification_prefs_quiet_hours_pair_chk",
+          "value": "((quiet_hours_enabled = false) OR ((quiet_hours_start IS NOT NULL) AND (quiet_hours_end IS NOT NULL)))"
+        }
+      }
+    },
+    "push_reminder_log": {
+      "name": "push_reminder_log",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "reminder_key": {
+          "name": "reminder_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "confirmed_at": {
+          "name": "confirmed_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_push_reminder_log_sent_at": {
+          "name": "idx_push_reminder_log_sent_at",
+          "columns": ["sent_at"],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "push_reminder_log_user_id_user_profiles_user_id_fk": {
+          "name": "push_reminder_log_user_id_user_profiles_user_id_fk",
+          "tableFrom": "push_reminder_log",
+          "columnsFrom": ["user_id"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {
+        "push_reminder_log_pkey": {
+          "columns": ["user_id", "reminder_key"],
+          "name": "push_reminder_log_pkey"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "user_beta_overrides": {
+      "name": "user_beta_overrides",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "beta_all_pro": {
+          "name": "beta_all_pro",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "user_beta_overrides_email_uidx": {
+          "name": "user_beta_overrides_email_uidx",
+          "columns": ["lower(email)"],
+          "where": "email IS NOT NULL",
+          "isUnique": true
+        },
+        "user_beta_overrides_user_id_uidx": {
+          "name": "user_beta_overrides_user_id_uidx",
+          "columns": ["user_id"],
+          "where": "user_id IS NOT NULL",
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "user_beta_overrides_user_id_user_id_fk": {
+          "name": "user_beta_overrides_user_id_user_id_fk",
+          "tableFrom": "user_beta_overrides",
+          "columnsFrom": ["user_id"],
+          "tableTo": "user",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "user_beta_overrides_user_or_email": {
+          "name": "user_beta_overrides_user_or_email",
+          "value": "((user_id IS NOT NULL) OR (email IS NOT NULL))"
+        }
+      }
+    },
+    "user_device_info": {
+      "name": "user_device_info",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "device_id": {
+          "name": "device_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "expo_push_token": {
+          "name": "expo_push_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "platform": {
+          "name": "platform",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "notification_permission": {
+          "name": "notification_permission",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'denied'"
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "app_version": {
+          "name": "app_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        }
+      },
+      "indexes": {
+        "idx_user_device_info_user_id": {
+          "name": "idx_user_device_info_user_id",
+          "columns": ["user_id"],
+          "isUnique": false
+        },
+        "user_device_info_user_device_uq": {
+          "name": "user_device_info_user_device_uq",
+          "columns": ["user_id", "device_id"],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "user_device_info_user_id_user_profiles_user_id_fk": {
+          "name": "user_device_info_user_id_user_profiles_user_id_fk",
+          "tableFrom": "user_device_info",
+          "columnsFrom": ["user_id"],
+          "tableTo": "user_profiles",
+          "columnsTo": ["user_id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "user_device_info_notification_permission_check": {
+          "name": "user_device_info_notification_permission_check",
+          "value": "(notification_permission IN ('granted', 'provisional', 'denied'))"
+        }
+      }
+    },
+    "user_profiles": {
+      "name": "user_profiles",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "city": {
+          "name": "city",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "country": {
+          "name": "country",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "preferred_locale": {
+          "name": "preferred_locale",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "additional_data": {
+          "name": "additional_data",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        },
+        "timezone": {
+          "name": "timezone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "week_starts_on": {
+          "name": "week_starts_on",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "user_profiles_user_id_user_id_fk": {
+          "name": "user_profiles_user_id_user_id_fk",
+          "tableFrom": "user_profiles",
+          "columnsFrom": ["user_id"],
+          "tableTo": "user",
+          "columnsTo": ["id"],
+          "onUpdate": "no action",
+          "onDelete": "cascade"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "user_profiles_week_starts_on_check": {
+          "name": "user_profiles_week_starts_on_check",
+          "value": "((week_starts_on >= 0) AND (week_starts_on <= 6))"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  },
+  "internal": {
+    "indexes": {
+      "household_invites_household_idx": {
+        "columns": {
+          "\"created_at\" desc": {
+            "isExpression": true
+          }
+        }
+      },
+      "expenses_one_pending_claim_idx": {
+        "columns": {
+          "quote(amount_minor)": {
+            "isExpression": true
+          },
+          "quote(miles)": {
+            "isExpression": true
+          }
+        }
+      },
+      "pay_arrangements_household_carer_valid_from_idx": {
+        "columns": {
+          "\"valid_from\" desc": {
+            "isExpression": true
+          }
+        }
+      },
+      "terms_proposals_household_carer_idx": {
+        "columns": {
+          "\"created_at\" desc": {
+            "isExpression": true
+          }
+        }
+      },
+      "idx_job_runs_name_started": {
+        "columns": {
+          "\"started_at\" desc": {
+            "isExpression": true
+          }
+        }
+      },
+      "co_parent_approvals_household_pending_idx": {
+        "columns": {
+          "\"created_at\" desc": {
+            "isExpression": true
+          }
+        }
+      },
+      "shift_change_requests_shift_idx": {
+        "columns": {
+          "\"created_at\" desc": {
+            "isExpression": true
+          }
+        }
+      },
+      "shift_events_keyed_unique_idx": {
+        "columns": {
+          "(payload ->> '$.key')": {
+            "isExpression": true
+          }
+        }
+      },
+      "shifts_cover_window_unique": {
+        "columns": {
+          "quote(\"carer_id\")": {
+            "isExpression": true
+          }
+        }
+      },
+      "shifts_extra_window_unique": {
+        "columns": {
+          "quote(\"carer_id\")": {
+            "isExpression": true
+          }
+        }
+      },
+      "shifts_parent_cover_window_unique": {
+        "columns": {
+          "quote(\"carer_id\")": {
+            "isExpression": true
+          }
+        }
+      },
+      "shifts_recurring_window_unique": {
+        "columns": {
+          "quote(\"carer_id\")": {
+            "isExpression": true
+          }
+        }
+      },
+      "time_entries_one_cancellation_paid_per_span": {
+        "columns": {
+          "quote(\"clock_in_at\")": {
+            "isExpression": true
+          }
+        }
+      },
+      "user_beta_overrides_email_uidx": {
+        "columns": {
+          "lower(email)": {
+            "isExpression": true
+          }
+        }
+      }
+    }
+  }
+}

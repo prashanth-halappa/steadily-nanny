@@ -10,9 +10,11 @@
  */
 import type { Request } from 'express';
 import rateLimit from 'express-rate-limit';
+import { LazyMemoryStore } from './lazyMemoryStore';
 
 export const userRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
+  store: new LazyMemoryStore(),
   max: 1000, // per window per user
 
   keyGenerator: (req: Request): string => req.user?.id || req.ip || 'unknown',
@@ -65,6 +67,7 @@ export const PUBLIC_INVITE_MAX_REQUESTS = 60;
  */
 export const publicInviteRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
+  store: new LazyMemoryStore(),
   max: PUBLIC_INVITE_MAX_REQUESTS,
 
   message: {
@@ -100,6 +103,7 @@ export const JOB_MAX_REQUESTS = 60;
  */
 export const jobRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
+  store: new LazyMemoryStore(),
   max: JOB_MAX_REQUESTS,
 
   message: {

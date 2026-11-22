@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { isPasswordTooShort, PASSWORD_MIN_LENGTH } from '../passwordPolicy';
 
 describe('passwordPolicy', () => {
-  it('matches Supabase’s default minimum (supabase/config.toml sets none)', () => {
+  it('matches the API’s Better Auth minPasswordLength', () => {
     expect(PASSWORD_MIN_LENGTH).toBe(6);
   });
 

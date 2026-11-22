@@ -28,6 +28,14 @@ import {
 } from './fixtures';
 
 const NOW = () => new Date();
+// Dates relative to today: hard-coded ones expire as the calendar moves on.
+const monthsFromNow = (n: number): string => {
+  const d = new Date();
+  d.setUTCMonth(d.getUTCMonth() + n);
+  return d.toISOString().slice(0, 10);
+};
+const FAR_FUTURE = monthsFromNow(14);
+const NEAR_FUTURE = monthsFromNow(3);
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FIXTURE_VIEWED_AT = new Date(Date.now() - 3 * DAY_MS).toISOString();
 
@@ -222,7 +230,7 @@ describe('TermsProposalCommandService.propose — D-16 horizon, never clamped', 
         CARER_ID,
         HOUSEHOLD_ID,
         CARER_ID,
-        { terms: terms({ valid_from: '2027-09-01' }) },
+        { terms: terms({ valid_from: FAR_FUTURE }) },
         NOW
       )
     ).rejects.toThrow('Those proposed terms are not valid');
@@ -236,11 +244,11 @@ describe('TermsProposalCommandService.propose — D-16 horizon, never clamped', 
       CARER_ID,
       HOUSEHOLD_ID,
       CARER_ID,
-      { terms: terms({ valid_from: '2026-08-17' }) },
+      { terms: terms({ valid_from: NEAR_FUTURE }) },
       NOW
     );
     expect(proposalRepo.create.mock.calls[0][0].terms.valid_from).toBe(
-      '2026-08-17'
+      NEAR_FUTURE
     );
   });
 

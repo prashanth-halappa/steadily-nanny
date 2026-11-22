@@ -1,17 +1,50 @@
 import type { User } from '@supabase/supabase-js';
-import NodeCache from 'node-cache';
 
 /**
- * Shared in-memory cache.
- * - stdTTL: 5 minutes default
- * - checkperiod: 60s cleanup
- * - useClones: false for performance (returns direct references)
+ * Shared in-memory cache (per isolate on Workers — best-effort, never the
+ * source of truth). Same get/set/del/keys surface node-cache had, minus its
+ * background sweep timer (timers can't run at module scope on Workers):
+ * expiry is checked lazily on read/keys.
+ * - default TTL: 5 minutes
  */
-export const cache = new NodeCache({
-  stdTTL: 300,
-  checkperiod: 60,
-  useClones: false,
-});
+class TtlCache {
+  private store = new Map<string, { value: unknown; expires: number }>();
+
+  get<T>(key: string): T | undefined {
+    const hit = this.store.get(key);
+    if (!hit) return undefined;
+    if (hit.expires <= Date.now()) {
+      this.store.delete(key);
+      return undefined;
+    }
+    return hit.value as T;
+  }
+
+  /** @param ttlSeconds defaults to 300; 0 = never expires (node-cache parity) */
+  set<T>(key: string, value: T, ttlSeconds = 300): boolean {
+    this.store.set(key, {
+      value,
+      expires: ttlSeconds > 0 ? Date.now() + ttlSeconds * 1000 : Infinity,
+    });
+    return true;
+  }
+
+  del(keys: string | string[]): number {
+    let n = 0;
+    for (const k of Array.isArray(keys) ? keys : [keys]) {
+      if (this.store.delete(k)) n++;
+    }
+    return n;
+  }
+
+  keys(): string[] {
+    const now = Date.now();
+    for (const [k, v] of this.store) if (v.expires <= now) this.store.delete(k);
+    return [...this.store.keys()];
+  }
+}
+
+export const cache = new TtlCache();
 
 /** Cache TTL constants (seconds). */
 export const TTL = {

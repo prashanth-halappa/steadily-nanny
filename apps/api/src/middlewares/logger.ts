@@ -1,7 +1,4 @@
-import type { Request } from 'express';
-import morgan from 'morgan';
-import winston from 'winston';
-import Transport from 'winston-transport';
+import type { Request, RequestHandler } from 'express';
 import { env } from '../config/env';
 import Sentry from '../config/sentry';
 import { BaseError, isExpectedClientError } from '../errors';
@@ -38,80 +35,96 @@ const metaDenotesExpectedClientError = (
   return false;
 };
 
-/** Winston transport that mirrors error logs to Sentry. */
-export class SentryTransport extends Transport {
-  log(info: winston.LogEntry, callback: () => void) {
-    const { level, message, ...meta } = info;
+type Level = 'error' | 'warn' | 'info' | 'http' | 'debug';
 
-    // Suppress expected operational 4xx logs so genuine 5xx bugs stay visible.
-    if (metaDenotesExpectedClientError(meta)) {
-      callback();
-      return;
-    }
+// npm-style ordering (lower = more severe), as winston had it.
+const LEVELS: Record<Level, number> = {
+  error: 0,
+  warn: 1,
+  info: 2,
+  http: 3,
+  debug: 4,
+};
 
-    Sentry.captureMessage(message, {
-      level: this.getSentryLevel(level),
-      extra: meta,
-    });
+const SENTRY_LEVEL: Record<Level, Sentry.SeverityLevel> = {
+  error: 'error',
+  warn: 'warning',
+  info: 'info',
+  http: 'info',
+  debug: 'debug',
+};
 
-    callback();
-  }
+type LogFn = (message: string, ...meta: unknown[]) => Logger;
 
-  private getSentryLevel(level: string): Sentry.SeverityLevel {
-    const levels: { [key: string]: Sentry.SeverityLevel } = {
-      error: 'error',
-      warn: 'warning',
-      info: 'info',
-      debug: 'debug',
-    };
-    return levels[level] || 'info';
-  }
+/** Console-based logger (Workers-safe); same call signature winston had. */
+export interface Logger {
+  level: string;
+  error: LogFn;
+  warn: LogFn;
+  info: LogFn;
+  http: LogFn;
+  debug: LogFn;
 }
 
-export const logger = winston.createLogger({
-  level: env.LOG_LEVEL,
-  format: winston.format.combine(
-    winston.format.colorize(),
-    winston.format.json()
-  ),
-  transports: [
-    new winston.transports.Console({
-      format: winston.format.combine(
-        winston.format.colorize(),
-        winston.format.simple()
-      ),
-    }),
-    new SentryTransport({ level: 'error' }),
-  ],
-});
+const makeLogger = (level: string): Logger => {
+  const threshold = LEVELS[level as Level] ?? LEVELS.info;
+  const emit =
+    (lvl: Level): LogFn =>
+    (message, ...rest) => {
+      if (LEVELS[lvl] > threshold) return logger;
+      const sink = lvl === 'debug' || lvl === 'http' ? 'log' : lvl;
+      console[sink](`${lvl}: ${message}`, ...rest);
+      // Error logs mirror to Sentry; expected operational 4xx stay out.
+      const first = rest[0];
+      const meta: Record<string, unknown> =
+        first !== null && typeof first === 'object'
+          ? (first as Record<string, unknown>)
+          : { detail: first };
+      if (lvl === 'error' && !metaDenotesExpectedClientError(meta)) {
+        Sentry.captureMessage(message, {
+          level: SENTRY_LEVEL[lvl],
+          extra: meta,
+        });
+      }
+      return logger;
+    };
+  const logger: Logger = {
+    level,
+    error: emit('error'),
+    warn: emit('warn'),
+    info: emit('info'),
+    http: emit('http'),
+    debug: emit('debug'),
+  };
+  return logger;
+};
 
-// Access lines log at winston's `http` level — below `info` in the default npm
-// level order (error=0, warn=1, info=2, http=3, ...). At LOG_LEVEL=info (the
-// production default) they're suppressed entirely, so payroll/business errors
-// (logged at `warn`/`error`) aren't buried in per-request noise. Set
-// LOG_LEVEL=debug to see them — `bun run dev` does this so logs/dev.log keeps
-// full request/response cycles as documented in CLAUDE.md.
+export const logger = makeLogger(env.LOG_LEVEL);
+
+// Access lines log at `http` level — below `info` in the default order. At
+// LOG_LEVEL=info (the production default) they're suppressed entirely, so
+// payroll/business errors (logged at `warn`/`error`) aren't buried in
+// per-request noise. Set LOG_LEVEL=debug to see them — `bun run dev` does this
+// so logs/dev.log keeps full request/response cycles as documented in CLAUDE.md.
 export const logHttpAccess = (message: string): void => {
   logger.http(message.trim());
 };
 
-/**
- * Morgan's `:url` token, overridden so an invite code never reaches the access
- * log. Exported so the redaction is testable without standing up morgan — the
- * registration below is the only wiring.
- */
+/** The access-log `:url`, with an invite code never reaching the log. */
 export const redactedUrlToken = (req: Request): string =>
   redactLoggedUrl(req.originalUrl || req.url || '');
 
-/** Morgan HTTP access log → winston. */
-morgan.token<Request>('url', redactedUrlToken);
-
-export const morganMiddleware = morgan(
-  ':method :url :status :res[content-length] - :response-time ms',
-  {
-    stream: { write: logHttpAccess },
-  }
-);
+/** HTTP access log middleware (replaces morgan). */
+export const morganMiddleware: RequestHandler = (req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const len = res.getHeader('content-length') ?? '-';
+    logHttpAccess(
+      `${req.method} ${redactedUrlToken(req)} ${res.statusCode} ${len} - ${Date.now() - start} ms`
+    );
+  });
+  next();
+};
 
 /** Enrich and emit a structured error log. */
 export const logError = (error: Error, req: Request): void => {

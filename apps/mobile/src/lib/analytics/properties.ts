@@ -6,8 +6,6 @@
  * app rather than here.
  */
 
-import type { User } from '@supabase/supabase-js';
-
 /**
  * User properties attached at identify time.
  */
@@ -21,13 +19,11 @@ export interface UserProperties {
  * Build user properties for identification.
  */
 export function buildUserProperties(
-  user: User,
+  user: { id: string },
   provider?: string
 ): UserProperties {
-  return {
-    user_id: user.id,
-    auth_provider: provider || user.app_metadata?.provider || 'email',
-  };
+  // The Better Auth user carries no provider; pass it in when you know it.
+  return { user_id: user.id, auth_provider: provider };
 }
 
 /**

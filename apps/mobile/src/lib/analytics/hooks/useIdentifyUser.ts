@@ -14,13 +14,15 @@
  * ```
  */
 
-import type { User } from '@supabase/supabase-js';
 import { usePostHog } from 'posthog-react-native';
 import { useEffect } from 'react';
 import { buildUserProperties } from '../properties';
 import { identifyUser } from '../tracking';
 
-export function useIdentifyUser(user: User | null, provider?: string): void {
+export function useIdentifyUser(
+  user: { id: string } | null,
+  provider?: string
+): void {
   const posthog = usePostHog();
 
   useEffect(() => {

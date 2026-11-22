@@ -16,38 +16,29 @@
  * @module domains/notification/i18n
  */
 
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import {
   DEFAULT_LOCALE,
   isValidLocale,
   SUPPORTED_LOCALES,
 } from '@steadily-nanny/shared-types/locale';
 import { createInstance, type i18n, type TFunction } from 'i18next';
+import en from './en.json';
+import es from './es.json';
 
 /** Single namespace every push catalog loads under. */
 const PUSH_NS = 'push' as const;
 
-// API compiles as CommonJS; Bun provides `__dirname` at runtime in both modes.
-const catalogDir = __dirname;
+/**
+ * Locale catalogs, statically imported (no fs on Workers). Locales without a
+ * catalog fall back to English.
+ * SETUP: a new locale needs its `<locale>.json` imported and added here.
+ */
+const CATALOGS: Record<string, object> = { en, es };
 
-/** Read every `<locale>.json` catalog present in this directory. */
 function loadResources(): Record<string, { [PUSH_NS]: object }> {
   const resources: Record<string, { [PUSH_NS]: object }> = {};
-  for (const file of readdirSync(catalogDir)) {
-    if (!file.endsWith('.json')) continue;
-    const locale = file.slice(0, -'.json'.length);
-    if (!isValidLocale(locale)) continue;
-    try {
-      const parsed = JSON.parse(readFileSync(join(catalogDir, file), 'utf8'));
-      resources[locale] = { [PUSH_NS]: parsed };
-    } catch (err) {
-      // A malformed catalog must never take down push sending — log and skip.
-      console.error(
-        `[notification-i18n] failed to load catalog "${file}":`,
-        err
-      );
-    }
+  for (const [locale, catalog] of Object.entries(CATALOGS)) {
+    if (isValidLocale(locale)) resources[locale] = { [PUSH_NS]: catalog };
   }
   return resources;
 }

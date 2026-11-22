@@ -15,7 +15,6 @@
  *
  * @module config/env
  */
-import dotenv from 'dotenv';
 import type { z } from 'zod';
 import { appEnvSchema, appTestEnv, productionRequiredAppKeys } from './app.env';
 import {
@@ -24,8 +23,8 @@ import {
   productionRequiredCoreKeys,
 } from './env.core';
 
-// Load environment variables first.
-dotenv.config();
+// No dotenv: Bun loads .env itself; on Workers vars/secrets arrive in process.env
+// via nodejs_compat (`wrangler dev` reads .dev.vars).
 
 // Zod 4 deprecates `.merge()`; `.extend()` with the other schema's shape is the
 // supported way to combine two object schemas.

@@ -107,7 +107,7 @@ beforeEach(() => {
   useSetupProgressStore.setState({ role: 'parent', path: 'create' } as never);
   useAuthStore.setState({
     session: {
-      user: { id: 'user-1', email: 'ana@example.com', user_metadata: {} },
+      user: { id: 'user-1', email: 'ana@example.com', name: '' },
     } as unknown as never,
     isInitialized: true,
     // `useCanWriteHousehold` reads the viewer from `store.user`, not from
@@ -126,7 +126,7 @@ describe('HouseholdScreen — a screen of its own for the two names', () => {
   });
 
   // Was: "pre-fills the parent name from auth metadata" — but the fixture's
-  // `user_metadata` is empty, so what it actually asserted was the EMAIL
+  // auth name was empty, so what it actually asserted was the EMAIL
   // LOCAL-PART fallback. A parent signing up as parent@… landed on "Name your
   // family" with the word "parent" already typed into a field labelled "Your
   // name", kept it, and that became the name their nanny read on every shift,
@@ -148,7 +148,7 @@ describe('HouseholdScreen — a screen of its own for the two names', () => {
         user: {
           id: 'user-1',
           email: 'ana@example.com',
-          user_metadata: { full_name: 'Ana Ruiz' },
+          name: 'Ana Ruiz',
         },
       } as unknown as never,
       isInitialized: true,

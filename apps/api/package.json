@@ -1,12 +1,12 @@
 {
   "name": "@steadily-nanny/api",
   "version": "1.0.0",
-  "description": "Express 5 + Supabase + Bun API core (template)",
+  "description": "Express 5 on Cloudflare Workers + D1 + Better Auth API",
   "private": true,
   "main": "src/index.ts",
   "scripts": {
-    "start": "bun --preload ./src/instrument.ts src/index.ts",
-    "dev": "mkdir -p logs && LOG_LEVEL=debug bun --preload ./src/instrument.ts --watch src/index.ts 2>&1 | tee -a logs/dev.log",
+    "start": "wrangler dev",
+    "dev": "mkdir -p logs && LOG_LEVEL=debug wrangler dev --test-scheduled 2>&1 | tee -a logs/dev.log",
     "build": "tsc --noEmit",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
@@ -17,16 +17,14 @@
     "test:coverage": "bun test --coverage",
     "db:migrate": "bash scripts/db-migrate.sh",
     "qa:smoke": "bun scripts/qa-smoke.ts",
-    "clean": "rm -rf dist node_modules"
+    "clean": "rm -rf dist node_modules",
+    "deploy": "wrangler deploy"
   },
   "dependencies": {
-    "@ai-sdk/google-vertex": "4.0.152",
     "@better-auth/expo": "1.7.27",
-    "@sentry/bun": "10.58.0",
     "@sentry/cloudflare": "11.16.0",
     "@steadily-nanny/shared-types": "*",
     "@supabase/supabase-js": "^2.80.0",
-    "ai": "6.0.208",
     "better-auth": "1.7.27",
     "compression": "1.8.1",
     "dotenv": "^17.4.2",
@@ -36,11 +34,8 @@
     "express-rate-limit": "8.5.2",
     "helmet": "^8.1.0",
     "i18next": "26.3.1",
-    "morgan": "^1.10.1",
     "node-cache": "5.1.2",
     "resend": "6.14.0",
-    "winston": "^3.19.0",
-    "winston-transport": "^4.9.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
@@ -48,14 +43,10 @@
     "@cloudflare/workers-types": "5.20261121.1",
     "@types/compression": "1.8.1",
     "@types/express": "^5.0.6",
-    "@types/morgan": "^1.9.10",
     "@types/node": "^24.10.0",
     "bun-types": "1.3.14",
     "drizzle-kit": "0.31.11",
     "typescript": "7.0.2",
     "wrangler": "4.166.0"
-  },
-  "trustedDependencies": [
-    "@sentry/bun"
-  ]
+  }
 }
