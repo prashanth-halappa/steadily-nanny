@@ -16,8 +16,8 @@
     {
       "binding": "DB",
       "database_name": "steadily-nanny",
-      // Placeholder: replace with the id from `wrangler d1 create steadily-nanny`.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      // Created 2026-11-22, region WEUR.
+      "database_id": "41ce7914-3d82-4b5a-855c-af5f743f9f20",
       "migrations_dir": "migrations"
     }
   ],

@@ -48,7 +48,12 @@ export const auth = betterAuth({
   advanced: { database: { generateId: 'uuid' } },
   // The app scheme (expo plugin adds `exp://` itself in development) and the
   // site that hosts the reset link, so `redirectTo` passes the origin check.
-  trustedOrigins: ['steadilynanny://', APP_IDENTITY.webUrl],
+  // appleid.apple.com: Apple's web flow (Android) POSTs the callback from there.
+  trustedOrigins: [
+    'steadilynanny://',
+    APP_IDENTITY.webUrl,
+    'https://appleid.apple.com',
+  ],
   emailAndPassword: {
     enabled: true,
     minPasswordLength: 6,
