@@ -1,13 +1,13 @@
 /**
  * Recurrence expander — expands a schedule pattern's RRULE + EXDATE +
  * pause_ranges over a horizon into concrete shift occurrences. Pure, with NO
- * Supabase dependency, so it is directly unit-testable (see
+ * database dependency, so it is directly unit-testable (see
  * `tests/unit/domains/schedule/services/recurrenceExpander.test.ts` for the
  * full DST case table this file is held to).
  *
  * DST CORRECTNESS — the load-bearing rule
  * `schedule_pattern_days.start_time` / `end_time` are NOMINAL LOCAL
- * WALL-CLOCK times (supabase/migrations/014_schedule_patterns.sql). Expansion
+ * WALL-CLOCK times (migration 014_schedule_patterns). Expansion
  * is: the RRULE produces a local calendar date -> combine that date with the
  * wall-clock time -> convert to UTC IN THE PATTERN'S IANA TIMEZONE, FOR THAT
  * SPECIFIC DATE. We never store, or compute from, a pre-resolved UTC offset —

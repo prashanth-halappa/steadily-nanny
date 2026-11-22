@@ -1,90 +1,96 @@
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+/** CarerTimeOffRepository on a real D1 (testDb). */
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+} from 'bun:test';
+import { createTestDb, type TestDb } from '../../../../helpers/testDb';
 
-let CarerTimeOffRepository: any;
-let mockSupabaseService: any;
+let t: TestDb;
+let repo: any;
 
-function createMockQueryChain(
-  finalResponse: { data: unknown; error: unknown } = { data: null, error: null }
-): any {
-  const chain: any = {
-    select: mock(() => chain),
-    eq: mock(() => chain),
-    neq: mock(() => chain),
-    order: mock(() => Promise.resolve(finalResponse)),
-    update: mock(() => chain),
-    single: mock(() => Promise.resolve(finalResponse)),
-    maybeSingle: mock(() => Promise.resolve(finalResponse)),
-  };
-  return chain;
+async function timeOff(id: string, userId: string, startsAt: string) {
+  const ends = new Date(new Date(startsAt).getTime() + 86_400_000);
+  return repo.create({
+    id,
+    user_id: userId,
+    starts_at: startsAt,
+    ends_at: ends.toISOString(),
+  });
 }
 
 beforeAll(async () => {
-  mock.module('../../../../../src/config/supabase', () => {
-    const obj = { from: mock(() => createMockQueryChain()) };
-    return { supabase: obj, supabaseService: obj };
-  });
-
-  const mod = await import(
+  t = await createTestDb();
+  mock.module('../../../../../src/db/client', () => ({ db: t.db }));
+  const { CarerTimeOffRepository } = await import(
     '../../../../../src/domains/availability/repositories/carerTimeOffRepository'
   );
-  CarerTimeOffRepository = mod.CarerTimeOffRepository;
-  mockSupabaseService = (await import('../../../../../src/config/supabase'))
-    .supabaseService;
+  repo = new CarerTimeOffRepository();
+  for (const u of ['u1', 'u2', 'u3']) {
+    await t.d1
+      .prepare('INSERT INTO user (id, name, email) VALUES (?, ?, ?)')
+      .bind(u, u, `${u}@x.test`)
+      .run();
+    await t.d1
+      .prepare('INSERT INTO user_profiles (user_id) VALUES (?)')
+      .bind(u)
+      .run();
+  }
 });
 
-beforeEach(() => {
-  mockSupabaseService.from.mockClear?.();
+afterAll(() => t.dispose());
+
+beforeEach(async () => {
+  await t.d1.prepare('DELETE FROM carer_time_off').run();
 });
 
 describe('CarerTimeOffRepository.listByUserId', () => {
-  it('returns the rows for a user', async () => {
-    const rows = [
-      { id: 't1', user_id: 'u1', starts_at: '2026-01-01T00:00:00Z' },
-    ];
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: rows, error: null })
-    );
-    const repo = new CarerTimeOffRepository();
-    expect(await repo.listByUserId('u1')).toEqual(rows);
+  it("returns only that user's rows, earliest first", async () => {
+    await timeOff('t2', 'u1', '2026-02-01T00:00:00.000Z');
+    await timeOff('t1', 'u1', '2026-01-01T00:00:00.000Z');
+    await timeOff('tx', 'u2', '2026-01-15T00:00:00.000Z');
+
+    const rows = await repo.listByUserId('u1');
+    expect(rows.map((r: { id: string }) => r.id)).toEqual(['t1', 't2']);
+    expect(rows[0]).toMatchObject({
+      user_id: 'u1',
+      all_day: true,
+      status: 'confirmed',
+      kind: 'personal',
+    });
   });
 
   it('returns [] when there are no rows', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
-    );
-    const repo = new CarerTimeOffRepository();
     expect(await repo.listByUserId('u1')).toEqual([]);
   });
+});
 
-  it('throws DatabaseError on a query failure', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: { message: 'boom' } })
-    );
-    const repo = new CarerTimeOffRepository();
-    await expect(repo.listByUserId('u1')).rejects.toThrow();
+describe('CarerTimeOffRepository.listByUserIds', () => {
+  it('returns rows for any of the ids, earliest first, cancelled included', async () => {
+    await timeOff('a', 'u1', '2026-03-01T00:00:00.000Z');
+    await timeOff('b', 'u2', '2026-01-01T00:00:00.000Z');
+    await timeOff('c', 'u3', '2026-02-01T00:00:00.000Z');
+    await repo.cancelById('a');
+
+    const rows = await repo.listByUserIds(['u1', 'u2']);
+    expect(rows.map((r: { id: string }) => r.id)).toEqual(['b', 'a']);
+  });
+
+  it('returns [] for an empty id list', async () => {
+    expect(await repo.listByUserIds([])).toEqual([]);
   });
 });
 
 describe('CarerTimeOffRepository.cancelById', () => {
-  it('soft-cancels — updates status to cancelled and returns the row (never a hard delete)', async () => {
-    const cancelled = { id: 't1', user_id: 'u1', status: 'cancelled' };
-    const chain = createMockQueryChain({ data: cancelled, error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-
-    const repo = new CarerTimeOffRepository();
+  it('soft-cancels — sets status cancelled and returns the row (never a hard delete)', async () => {
+    await timeOff('t1', 'u1', '2026-01-01T00:00:00.000Z');
     const result = await repo.cancelById('t1');
-
-    expect(chain.update).toHaveBeenCalledWith({ status: 'cancelled' });
-    expect(chain.eq).toHaveBeenCalledWith('id', 't1');
-    expect(result).toEqual(cancelled);
-  });
-
-  it('throws DatabaseError when the update fails', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: { message: 'boom' } })
-    );
-    const repo = new CarerTimeOffRepository();
-    await expect(repo.cancelById('t1')).rejects.toThrow();
+    expect(result).toMatchObject({ id: 't1', status: 'cancelled' });
+    expect(await repo.findById('t1')).toMatchObject({ status: 'cancelled' });
   });
 
   // -------------------------------------------------------------------------
@@ -94,21 +100,13 @@ describe('CarerTimeOffRepository.cancelById', () => {
   // reconciliation off the back of it, and a second cancel that "succeeded"
   // against an already-cancelled row re-fires that reconciliation.
   // -------------------------------------------------------------------------
-  it('guards the update with status <> cancelled, so an already-cancelled row matches no rows', async () => {
-    const chain = createMockQueryChain({ data: null, error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-
-    const repo = new CarerTimeOffRepository();
-    await repo.cancelById('t1');
-
-    expect(chain.neq).toHaveBeenCalledWith('status', 'cancelled');
+  it('returns null on a repeat cancel — the guarded update matched nothing', async () => {
+    await timeOff('t1', 'u1', '2026-01-01T00:00:00.000Z');
+    expect(await repo.cancelById('t1')).not.toBeNull();
+    expect(await repo.cancelById('t1')).toBeNull();
   });
 
-  it('returns null (not a row) when the conditional update matched nothing', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
-    );
-    const repo = new CarerTimeOffRepository();
-    expect(await repo.cancelById('t1')).toBeNull();
+  it('returns null for an unknown id', async () => {
+    expect(await repo.cancelById('nope')).toBeNull();
   });
 });

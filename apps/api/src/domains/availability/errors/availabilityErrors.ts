@@ -12,8 +12,8 @@ import type { ErrorMetadata } from '../../../errors/BaseError';
  * both cases so a caller with zero connection to the target can never learn
  * whether a given uuid is a real user — mirrors
  * `HouseholdNotFoundError`/`WidgetNotFoundError` and the DB's
- * `private.shares_household_with` philosophy (see
- * supabase/migrations/011_availability.sql). Also gates the cross-household
+ * `private.shares_household_with` philosophy (old Postgres migration
+ * 011_availability.sql). Also gates the cross-household
  * busy-blocks read — "Keep families apart" is a privacy promise, not a nicety.
  */
 export class AvailabilityNotFoundError extends NotFoundError {

@@ -560,7 +560,7 @@ export class ShiftChangeRequestCommandService {
       // still slip between the read and the insert — a double-tapped button.
       // Migration 059's unique index catches that, and the answer the caller wants is
       // the shift that did get made, not a 409 for a booking that exists.
-      // ponytail: if the winner is CANCELLED between the 23505 and this
+      // ponytail: if the winner is CANCELLED between the collision and this
       // re-read, the loser gets a 409 for a booking that could now legitimately
       // be made. Degrades safely (never a duplicate) and a retry succeeds;
       // upgrade path is a single retry loop if support tickets ever show it.

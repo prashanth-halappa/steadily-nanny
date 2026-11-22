@@ -1,37 +1,36 @@
 /**
  * Carer time-off repository — data access for the `carer_time_off` table.
- * Uses the service-role Supabase client, so ownership/authorization is
- * enforced in the SERVICE layer, never here.
+ * Ownership/authorization is enforced in the SERVICE layer, never here.
  *
  * @module domains/availability/repositories/carerTimeOffRepository
  */
-import { supabaseService } from '../../../config/supabase';
-import { DatabaseError } from '../../../errors';
+import { and, asc, eq, inArray, ne } from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { carerTimeOff } from '../../../db/schema';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
 import { CARER_TIME_OFF_STATUSES } from '../schemas';
 import type { CarerTimeOff } from '../types';
 
-export class CarerTimeOffRepository extends BaseRepository<CarerTimeOff> {
+export class CarerTimeOffRepository extends BaseRepository<
+  CarerTimeOff,
+  typeof carerTimeOff
+> {
   constructor() {
-    super('carer_time_off');
+    super(carerTimeOff);
   }
 
   /** All of a user's time-off rows (including cancelled ones), earliest first. */
   async listByUserId(userId: string): Promise<CarerTimeOff[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('user_id', userId)
-      .order('starts_at', { ascending: true });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list carer time off',
-        'DATABASE_ERROR',
-        { details: error.message, userId }
-      );
+    try {
+      const rows = await db
+        .select()
+        .from(this.table)
+        .where(eq(this.table.user_id, userId))
+        .orderBy(asc(this.table.starts_at));
+      return rows as CarerTimeOff[];
+    } catch (err) {
+      throw this.dbError('Failed to list', err, { userId });
     }
-    return (data ?? []) as CarerTimeOff[];
   }
 
   /**
@@ -40,27 +39,23 @@ export class CarerTimeOffRepository extends BaseRepository<CarerTimeOff> {
    */
   async listByUserIds(userIds: string[]): Promise<CarerTimeOff[]> {
     if (userIds.length === 0) return [];
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .in('user_id', userIds)
-      .order('starts_at', { ascending: true });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list household carer time off',
-        'DATABASE_ERROR',
-        { details: error.message, userIds }
-      );
+    try {
+      const rows = await db
+        .select()
+        .from(this.table)
+        .where(inArray(this.table.user_id, userIds))
+        .orderBy(asc(this.table.starts_at));
+      return rows as CarerTimeOff[];
+    } catch (err) {
+      throw this.dbError('Failed to list', err, { userIds });
     }
-    return (data ?? []) as CarerTimeOff[];
   }
 
   /**
    * Soft-cancel: sets `status = 'cancelled'`. Never a hard delete — the
    * partial index `carer_time_off_user_range_idx ... where status <>
    * 'cancelled'` implies cancelled rows persist (see
-   * supabase/migrations/011_availability.sql). Ownership is verified by the
+   * the old Postgres migration 011_availability.sql). Ownership is verified by the
    * caller (service layer) before this runs.
    *
    * CONDITIONAL ON THE ROW NOT ALREADY BEING CANCELLED, and returns `null`
@@ -76,21 +71,20 @@ export class CarerTimeOffRepository extends BaseRepository<CarerTimeOff> {
    * `shiftRepository.confirmPending`.
    */
   async cancelById(id: string): Promise<CarerTimeOff | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .update({ status: CARER_TIME_OFF_STATUSES.CANCELLED })
-      .eq('id', id)
-      .neq('status', CARER_TIME_OFF_STATUSES.CANCELLED)
-      .select()
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to cancel carer time off',
-        'DATABASE_ERROR',
-        { details: error.message, id }
-      );
+    try {
+      const rows = await db
+        .update(this.table)
+        .set({ status: CARER_TIME_OFF_STATUSES.CANCELLED })
+        .where(
+          and(
+            eq(this.table.id, id),
+            ne(this.table.status, CARER_TIME_OFF_STATUSES.CANCELLED)
+          )
+        )
+        .returning();
+      return (rows[0] as CarerTimeOff | undefined) ?? null;
+    } catch (err) {
+      throw this.dbError('Failed to cancel', err, { id });
     }
-    return data as CarerTimeOff | null;
   }
 }

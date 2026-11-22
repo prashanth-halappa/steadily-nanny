@@ -1,382 +1,290 @@
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+/**
+ * ShiftEventRepository on a real D1 — including migration 025's keyed
+ * unique index (`shift_events_keyed_unique_idx`), whose behaviour replaces
+ * the old Postgres-text contract test (shiftEventsKeyedUnique).
+ */
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+} from 'bun:test';
+import type {
+  NewShiftEventInput,
+  ShiftEventRepository as Repo,
+} from '../../../../../src/domains/shift/repositories/shiftEventRepository';
+import { createTestDb, type TestDb } from '../../../../helpers/testDb';
+import { seedHousehold } from '../../schedule/repositories/seed';
+import { HH, resetShiftTables, seedBase, seedShift } from './changeRequestSeed';
 
-let ShiftEventRepository: any;
-let mockSupabaseService: any;
-
-function createMockQueryChain(
-  finalResponse: { data: unknown; error: unknown } = { data: null, error: null }
-): any {
-  const chain: any = {
-    select: mock(() => chain),
-    eq: mock(() => chain),
-    order: mock(() => chain),
-    // Chainable, not terminal: the 23505 fallback does
-    // `.insert(event).select().single()` per row (F-B6-5 reopened).
-    insert: mock(() => chain),
-    single: mock(() => Promise.resolve(finalResponse)),
-    // Chainable, not terminal: production code does `.upsert(...).select()`
-    // to get back the rows Postgres actually inserted (F-B6-5).
-    upsert: mock(() => chain),
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-    then: (resolve: (value: unknown) => unknown) =>
-      Promise.resolve(finalResponse).then(resolve),
-  };
-  return chain;
-}
+let t: TestDb;
+let repo: Repo;
+let shiftId: string;
+const HH2 = 'hh-2';
+const DAY = '2026-08-03';
 
 beforeAll(async () => {
-  mock.module('../../../../../src/config/supabase', () => {
-    const obj = { from: mock(() => createMockQueryChain()) };
-    return { supabase: obj, supabaseService: obj };
-  });
-
-  const mod = await import(
+  t = await createTestDb();
+  mock.module('../../../../../src/db/client', () => ({ db: t.db }));
+  const { ShiftEventRepository } = await import(
     '../../../../../src/domains/shift/repositories/shiftEventRepository'
   );
-  ShiftEventRepository = mod.ShiftEventRepository;
-  mockSupabaseService = (await import('../../../../../src/config/supabase'))
-    .supabaseService;
+  repo = new ShiftEventRepository();
+  await seedBase(t);
+  await seedHousehold(t, HH2);
 });
 
-beforeEach(() => {
-  mockSupabaseService.from.mockClear?.();
-});
+afterAll(() => t.dispose());
 
-describe('ShiftEventRepository.listForShift', () => {
-  it('lists the day thread for one shift, oldest first', async () => {
-    const rows = [{ id: 'e1', shift_id: 's1', event_type: 'gap_raised' }];
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: rows, error: null })
-    );
-    const repo = new ShiftEventRepository();
-    const result = await repo.listForShift('h1', 's1');
-    expect(result).toEqual(rows);
-    expect(mockSupabaseService.from).toHaveBeenCalledWith('shift_events');
-  });
-
-  it('returns [] when there are no events', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
-    );
-    const repo = new ShiftEventRepository();
-    expect(await repo.listForShift('h1', 's1')).toEqual([]);
+beforeEach(async () => {
+  await resetShiftTables(t);
+  shiftId = await seedShift(t, {
+    starts_at: '2026-08-03T08:00:00.000Z',
+    ends_at: '2026-08-03T16:00:00.000Z',
   });
 });
 
-describe('ShiftEventRepository.listForHouseholdDate', () => {
-  it('lists day-thread events for a household date including nullable shift_id, oldest first', async () => {
-    const rows = [
-      { id: 'e1', shift_id: null, event_type: 'gap_raised' },
-      { id: 'e2', shift_id: 's1', event_type: 'shift_updated' },
-    ];
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: rows, error: null })
-    );
-    const repo = new ShiftEventRepository();
-    const result = await repo.listForHouseholdDate('h1', '2026-08-03');
-    expect(result).toEqual(rows);
-    expect(mockSupabaseService.from).toHaveBeenCalledWith('shift_events');
-  });
+const ev = (over: Partial<NewShiftEventInput> = {}): NewShiftEventInput => ({
+  household_id: HH,
+  shift_id: null,
+  local_date: DAY,
+  actor_id: null,
+  event_type: 'uncovered_care',
+  payload: {},
+  ...over,
 });
 
-describe('ShiftEventRepository.listEventKeysForDate', () => {
-  it('extracts payload.key from matching rows into a Set', async () => {
-    const rows = [
-      {
-        payload: {
-          key: 'c1|2026-08-03T09:00:00.000Z|2026-08-03T12:00:00.000Z',
-        },
-      },
-      {
-        payload: {
-          key: 'c2|2026-08-03T09:00:00.000Z|2026-08-03T12:00:00.000Z',
-        },
-      },
-    ];
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: rows, error: null })
-    );
-    const repo = new ShiftEventRepository();
-    const result = await repo.listEventKeysForDate(
-      'h1',
-      '2026-08-03',
-      'uncovered_care'
-    );
-    expect(result).toEqual(
-      new Set([
-        'c1|2026-08-03T09:00:00.000Z|2026-08-03T12:00:00.000Z',
-        'c2|2026-08-03T09:00:00.000Z|2026-08-03T12:00:00.000Z',
-      ])
-    );
-    expect(mockSupabaseService.from).toHaveBeenCalledWith('shift_events');
-  });
+async function insertRaw(
+  e: Partial<NewShiftEventInput> & { created_at?: string; id?: string }
+): Promise<string> {
+  const row = { ...ev(e), id: e.id ?? crypto.randomUUID() };
+  await t.d1
+    .prepare(
+      `INSERT INTO shift_events (id, household_id, shift_id, local_date, actor_id, event_type, payload, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .bind(
+      row.id,
+      row.household_id,
+      row.shift_id,
+      row.local_date,
+      row.actor_id,
+      row.event_type,
+      JSON.stringify(row.payload),
+      e.created_at ?? new Date().toISOString()
+    )
+    .run();
+  return row.id;
+}
 
-  it('ignores rows with a missing or non-string key', async () => {
-    const rows = [{ payload: {} }, { payload: { key: 42 } }, { payload: null }];
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: rows, error: null })
-    );
-    const repo = new ShiftEventRepository();
-    const result = await repo.listEventKeysForDate(
-      'h1',
-      '2026-08-03',
-      'uncovered_care'
-    );
-    expect(result).toEqual(new Set());
-  });
+const count = async () =>
+  (await t.d1
+    .prepare('SELECT count(*) AS n FROM shift_events')
+    .first('n')) as number;
 
-  it('returns an empty Set when there are no rows', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
-    );
-    const repo = new ShiftEventRepository();
-    const result = await repo.listEventKeysForDate(
-      'h1',
-      '2026-08-03',
-      'uncovered_care'
-    );
-    expect(result).toEqual(new Set());
-  });
-
-  it('throws DatabaseError on failure', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: { message: 'boom' } })
-    );
-    const repo = new ShiftEventRepository();
-    await expect(
-      repo.listEventKeysForDate('h1', '2026-08-03', 'uncovered_care')
-    ).rejects.toThrow();
-  });
-});
-
-describe('ShiftEventRepository.insertMany', () => {
-  it('upserts the given rows with ignoreDuplicates and no onConflict', async () => {
-    const chain = createMockQueryChain({ data: [], error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-    const repo = new ShiftEventRepository();
-    const events = [
-      {
-        household_id: 'h1',
-        shift_id: null,
-        local_date: '2026-08-03',
-        actor_id: null,
-        event_type: 'uncovered_care',
-        payload: { key: 'k1' },
-      },
-    ];
-    await repo.insertMany(events);
-    expect(mockSupabaseService.from).toHaveBeenCalledWith('shift_events');
-    expect(chain.upsert).toHaveBeenCalledWith(events, {
-      ignoreDuplicates: true,
+describe('listForShift / listForHouseholdDate', () => {
+  it('listForShift: that shift in that household only, oldest first', async () => {
+    const late = await insertRaw({
+      shift_id: shiftId,
+      event_type: 'shift_updated',
+      created_at: '2026-08-03T10:00:00.000Z',
     });
-    expect(chain.select).toHaveBeenCalled();
-    expect(chain.insert).not.toHaveBeenCalled();
-    const upsertOptions = chain.upsert.mock.calls[0][1];
-    // `onConflict` is deliberately absent from this call, but that does NOT
-    // make `ignoreDuplicates` cover migration 025's dedupe index. That index —
-    // `shift_events_keyed_unique_idx on (household_id, local_date,
-    // event_type, (payload->>'key')) where (payload->>'key') is not null` —
-    // is a PARTIAL EXPRESSION index, and PostgREST's `onConflict` option only
-    // accepts a column-name list, so there is no way to name it here at all.
-    // CORRECTION (this comment previously claimed the opposite, citing an
-    // unreproducible 2026-08-02 manual check against the live project):
-    // verified against local PostgREST 14.15, a concurrent duplicate-keyed
-    // insert 23505-THROWS the whole batch — it is NOT silently skipped.
-    // `ignoreDuplicates` only covers a plain-column/PK conflict inline; the
-    // expression-index case is handled by `insertMany`'s row-by-row fallback
-    // below, not by this upsert call.
-    expect(upsertOptions).not.toHaveProperty('onConflict');
+    const early = await insertRaw({
+      shift_id: shiftId,
+      event_type: 'shift_created',
+      created_at: '2026-08-03T09:00:00.000Z',
+    });
+    await insertRaw({ shift_id: null, event_type: 'gap_raised' });
+    const rows = await repo.listForShift(HH, shiftId);
+    expect(rows.map(r => r.id)).toEqual([early, late]);
+    expect(await repo.listForShift(HH2, shiftId)).toEqual([]);
   });
 
-  it('is a no-op for an empty array (does not touch the database)', async () => {
-    const repo = new ShiftEventRepository();
-    expect(await repo.insertMany([])).toEqual([]);
-    expect(mockSupabaseService.from).not.toHaveBeenCalled();
-  });
-
-  // F-B6-5: a caller (coverageGapService.raiseGapsOnce) needs to know which
-  // rows IT genuinely created, not just that the statement succeeded —
-  // `ON CONFLICT DO NOTHING RETURNING` only returns rows Postgres actually
-  // inserted, which is what `.select()` on the upsert surfaces here.
-  it('returns the rows Postgres actually inserted, absent whatever ignoreDuplicates suppressed', async () => {
-    const createdRow = {
-      id: 'e1',
-      household_id: 'h1',
+  it('listForHouseholdDate: includes null-shift rows, excludes other dates/households, oldest first', async () => {
+    const b = await insertRaw({
+      shift_id: shiftId,
+      event_type: 'shift_updated',
+      created_at: '2026-08-03T11:00:00.000Z',
+    });
+    const a = await insertRaw({
       shift_id: null,
-      local_date: '2026-08-03',
-      actor_id: null,
-      event_type: 'uncovered_care',
-      payload: { key: 'k1' },
-      created_at: '2026-08-03T00:00:00.000Z',
-    };
-    // Two rows submitted; only one survives the conflict — RETURNING is
-    // silent about the duplicate, it just isn't in `data`.
-    const chain = createMockQueryChain({ data: [createdRow], error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-    const repo = new ShiftEventRepository();
-
-    const result = await repo.insertMany([
-      {
-        household_id: 'h1',
-        shift_id: null,
-        local_date: '2026-08-03',
-        actor_id: null,
-        event_type: 'uncovered_care',
-        payload: { key: 'k1' },
-      },
-      {
-        household_id: 'h1',
-        shift_id: null,
-        local_date: '2026-08-03',
-        actor_id: null,
-        event_type: 'uncovered_care',
-        payload: { key: 'k2 — already raised by a concurrent run' },
-      },
-    ]);
-
-    expect(result).toEqual([createdRow]);
+      event_type: 'gap_raised',
+      payload: { note: 'x' },
+      created_at: '2026-08-03T10:00:00.000Z',
+    });
+    await insertRaw({ local_date: '2026-08-04' });
+    await insertRaw({ household_id: HH2 });
+    const rows = await repo.listForHouseholdDate(HH, DAY);
+    expect(rows.map(r => r.id)).toEqual([a, b]);
+    expect(rows[0]?.payload).toEqual({ note: 'x' });
   });
+});
 
-  it('returns an empty array when every row was duplicate-suppressed', async () => {
-    const chain = createMockQueryChain({ data: [], error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-    const repo = new ShiftEventRepository();
-
-    const result = await repo.insertMany([
-      {
-        household_id: 'h1',
-        shift_id: null,
-        local_date: '2026-08-03',
-        actor_id: null,
-        event_type: 'uncovered_care',
-        payload: { key: 'k1' },
-      },
-    ]);
-
-    expect(result).toEqual([]);
-  });
-
-  it('throws DatabaseError on failure', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: { message: 'boom' } })
+describe('listEventKeysForDate', () => {
+  it('collects string payload.key values for household/date/type only', async () => {
+    await insertRaw({ payload: { key: 'k1' } });
+    await insertRaw({ payload: { key: 'k2' } });
+    await insertRaw({ payload: {} });
+    await insertRaw({ payload: { key: 42 } });
+    await insertRaw({ payload: { key: 'other-type' }, event_type: 'x' });
+    await insertRaw({
+      payload: { key: 'other-day' },
+      local_date: '2026-08-04',
+    });
+    await insertRaw({ payload: { key: 'other-hh' }, household_id: HH2 });
+    expect(await repo.listEventKeysForDate(HH, DAY, 'uncovered_care')).toEqual(
+      new Set(['k1', 'k2'])
     );
-    const repo = new ShiftEventRepository();
+  });
+
+  it('returns an empty Set when nothing matches', async () => {
+    expect(await repo.listEventKeysForDate(HH, DAY, 'uncovered_care')).toEqual(
+      new Set()
+    );
+  });
+});
+
+describe('keyed unique index (migration 025)', () => {
+  it('refuses a second row with the same household/date/type/key', async () => {
+    await insertRaw({ payload: { key: 'k1' } });
+    await expect(insertRaw({ payload: { key: 'k1' } })).rejects.toThrow(
+      /shift_events_keyed_unique_idx/
+    );
+  });
+
+  it('allows the same key on another date, type or household, and unkeyed rows freely', async () => {
+    await insertRaw({ payload: { key: 'k1' } });
+    await insertRaw({ payload: { key: 'k1' }, local_date: '2026-08-04' });
+    await insertRaw({ payload: { key: 'k1' }, event_type: 'pattern_conflict' });
+    await insertRaw({ payload: { key: 'k1' }, household_id: HH2 });
+    await insertRaw({ payload: {} });
+    await insertRaw({ payload: {} });
+    expect(await count()).toBe(6);
+  });
+});
+
+describe('insertMany', () => {
+  it('is a no-op for an empty array', async () => {
+    expect(await repo.insertMany([])).toEqual([]);
+    expect(await count()).toBe(0);
+  });
+
+  it('batch path: inserts all rows and returns them with ids and parsed payloads', async () => {
+    const rows = await repo.insertMany([
+      ev({ payload: { key: 'k1' } }),
+      ev({ shift_id: shiftId, event_type: 'shift_updated', payload: { a: 1 } }),
+    ]);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ payload: { key: 'k1' }, shift_id: null });
+    expect(rows[0]?.id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(rows[1]).toMatchObject({ shift_id: shiftId, payload: { a: 1 } });
+    expect(await count()).toBe(2);
+  });
+
+  it('keyed-duplicate fallback: skips only the duplicate, returns only the rows it created', async () => {
+    await insertRaw({ payload: { key: 'k2' } }); // a concurrent writer won k2
+    const rows = await repo.insertMany([
+      ev({ payload: { key: 'k1' } }),
+      ev({ payload: { key: 'k2' } }),
+      ev({ payload: { key: 'k3' } }),
+    ]);
+    expect(rows.map(r => r.payload.key)).toEqual(['k1', 'k3']);
+    expect(await count()).toBe(3);
+    expect(await repo.listEventKeysForDate(HH, DAY, 'uncovered_care')).toEqual(
+      new Set(['k1', 'k2', 'k3'])
+    );
+  });
+
+  it('returns [] when every row loses to a concurrent writer', async () => {
+    await insertRaw({ payload: { key: 'k1' } });
+    expect(await repo.insertMany([ev({ payload: { key: 'k1' } })])).toEqual([]);
+    expect(await count()).toBe(1);
+  });
+
+  it('a non-keyed constraint error (FK) throws DatabaseError and writes nothing', async () => {
     await expect(
       repo.insertMany([
-        {
-          household_id: 'h1',
-          shift_id: null,
-          local_date: '2026-08-03',
-          actor_id: null,
-          event_type: 'uncovered_care',
-          payload: { key: 'k1' },
-        },
+        ev({ payload: { key: 'k1' } }),
+        ev({ household_id: 'no-such-household' }),
       ])
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ name: 'DatabaseError' });
+    expect(await count()).toBe(0);
   });
 
-  // F-B6-5 REOPENED: migration 025's dedupe index is a partial EXPRESSION
-  // index, which `ignoreDuplicates` (no `onConflict`) cannot target — a
-  // concurrent duplicate-keyed row 23505s the WHOLE batch instead of being
-  // silently skipped, taking legitimately-new rows down with it. Same
-  // wholesale-abort-then-retry-per-row shape as
-  // `ScheduleShiftRepository.createMany` (GOLDEN-FIXES #28).
-  describe('insertMany — 023505 fallback (migration 025 expression index)', () => {
-    function rowInput(key: string): {
-      household_id: string;
-      shift_id: null;
-      local_date: string;
-      actor_id: null;
-      event_type: string;
-      payload: { key: string };
-    } {
-      return {
-        household_id: 'h1',
-        shift_id: null,
-        local_date: '2026-08-03',
-        actor_id: null,
-        event_type: 'uncovered_care',
-        payload: { key },
-      };
-    }
+  it('a non-keyed error in the row-by-row fallback still throws', async () => {
+    await insertRaw({ payload: { key: 'k1' } });
+    await expect(
+      repo.insertMany([
+        ev({ payload: { key: 'k1' } }), // duplicate → fallback
+        ev({ actor_id: 'no-such-user' }), // FK in the fallback
+      ])
+    ).rejects.toMatchObject({ name: 'DatabaseError' });
+  });
 
-    const duplicateError = {
-      code: '23505',
-      message:
-        'duplicate key value violates unique constraint "shift_events_keyed_unique_idx"',
-    };
+  it('chunks >12 rows into one all-or-nothing batch', async () => {
+    const many = Array.from({ length: 30 }, (_, i) =>
+      ev({ payload: { key: `k${i}` } })
+    );
+    const rows = await repo.insertMany(many);
+    expect(rows).toHaveLength(30);
+    expect(new Set(rows.map(r => r.payload.key)).size).toBe(30);
+    expect(await count()).toBe(30);
+  });
 
-    it('retries row by row when the batch upsert 23505s, returning only the rows THIS call created', async () => {
-      const winner = { id: 'e1', ...rowInput('k1') };
-      // Call order: 1) the batch upsert (23505), 2) row 1's insert
-      // (succeeds — nobody else has 'k1'), 3) row 2's insert (23505 — a
-      // concurrent writer already raised 'k2').
-      const chains = [
-        createMockQueryChain({ data: null, error: duplicateError }),
-        createMockQueryChain({ data: winner, error: null }),
-        createMockQueryChain({ data: null, error: duplicateError }),
-      ];
-      let call = 0;
-      mockSupabaseService.from.mockImplementation(() => chains[call++]);
+  it('a duplicate in a later chunk rolls back the earlier chunks, then the fallback inserts each once', async () => {
+    await insertRaw({ payload: { key: 'k25' } });
+    const many = Array.from({ length: 30 }, (_, i) =>
+      ev({ payload: { key: `k${i}` } })
+    );
+    const rows = await repo.insertMany(many);
+    expect(rows).toHaveLength(29);
+    expect(rows.some(r => r.payload.key === 'k25')).toBe(false);
+    expect(await count()).toBe(30);
+  });
+});
 
-      const repo = new ShiftEventRepository();
-      const result = await repo.insertMany([rowInput('k1'), rowInput('k2')]);
+describe('deleteSweptEventsOlderThan', () => {
+  const CUTOFF = '2026-08-10T00:00:00.000Z';
 
-      expect(result).toEqual([winner]);
-      expect(mockSupabaseService.from).toHaveBeenCalledTimes(3);
-      expect(chains[1]?.insert).toHaveBeenCalledWith(rowInput('k1'));
-      expect(chains[2]?.insert).toHaveBeenCalledWith(rowInput('k2'));
+  it('deletes only allowlisted types older than the cutoff and returns the count', async () => {
+    const old = '2026-08-01T00:00:00.000Z';
+    await insertRaw({ event_type: 'uncovered_care', created_at: old });
+    await insertRaw({ event_type: 'pattern_conflict', created_at: old });
+    const keepNew = await insertRaw({
+      event_type: 'uncovered_care',
+      created_at: '2026-08-11T00:00:00.000Z',
+    });
+    const keepType = await insertRaw({
+      event_type: 'change_request_created',
+      shift_id: shiftId,
+      created_at: old,
+    });
+    const keepCancel = await insertRaw({
+      event_type: 'shift_cancelled',
+      shift_id: shiftId,
+      created_at: old,
     });
 
-    it('returns an empty array when every row in the fallback loses to a concurrent writer', async () => {
-      const chains = [
-        createMockQueryChain({ data: null, error: duplicateError }),
-        createMockQueryChain({ data: null, error: duplicateError }),
-      ];
-      let call = 0;
-      mockSupabaseService.from.mockImplementation(() => chains[call++]);
+    const n = await repo.deleteSweptEventsOlderThan(
+      '2026-08-10T01:00:00+01:00', // = CUTOFF
+      ['uncovered_care', 'pattern_conflict']
+    );
 
-      const repo = new ShiftEventRepository();
-      const result = await repo.insertMany([rowInput('k1')]);
+    expect(n).toBe(2);
+    const { results } = await t.d1
+      .prepare('SELECT id FROM shift_events ORDER BY id')
+      .all<{ id: string }>();
+    expect(results.map((r: { id: string }) => r.id).sort()).toEqual(
+      [keepNew, keepType, keepCancel].sort()
+    );
+  });
 
-      expect(result).toEqual([]);
-    });
-
-    it('throws DatabaseError when a per-row fallback insert fails for a reason other than a duplicate', async () => {
-      const chains = [
-        createMockQueryChain({ data: null, error: duplicateError }),
-        createMockQueryChain({
-          data: null,
-          error: { code: '55000', message: 'object not in prerequisite state' },
-        }),
-      ];
-      let call = 0;
-      mockSupabaseService.from.mockImplementation(() => chains[call++]);
-
-      const repo = new ShiftEventRepository();
-      await expect(repo.insertMany([rowInput('k1')])).rejects.toThrow();
-    });
-
-    // Matched on the CONSTRAINT NAME, not bare '23505' — a 23505 on some
-    // OTHER unique index (hypothetical future one) is a real bug, not a lost
-    // race, and must not be silently swallowed as "already exists".
-    it('throws DatabaseError on a per-row 23505 that does not name the keyed unique index', async () => {
-      const chains = [
-        createMockQueryChain({ data: null, error: duplicateError }),
-        createMockQueryChain({
-          data: null,
-          error: {
-            code: '23505',
-            message:
-              'duplicate key value violates unique constraint "some_other_idx"',
-          },
-        }),
-      ];
-      let call = 0;
-      mockSupabaseService.from.mockImplementation(() => chains[call++]);
-
-      const repo = new ShiftEventRepository();
-      await expect(repo.insertMany([rowInput('k1')])).rejects.toThrow();
-    });
+  it('an empty allowlist deletes nothing', async () => {
+    await insertRaw({ created_at: '2026-08-01T00:00:00.000Z' });
+    expect(await repo.deleteSweptEventsOlderThan(CUTOFF, [])).toBe(0);
+    expect(await count()).toBe(1);
   });
 });

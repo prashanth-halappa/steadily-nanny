@@ -1,93 +1,87 @@
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+/** SchedulePatternRepository on a real D1 (tests/helpers/testDb.ts). */
+import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
+import { createTestDb, type TestDb } from '../../../../helpers/testDb';
+import { seedHousehold, seedPattern, seedUser } from './seed';
 
-let SchedulePatternRepository: any;
-let mockSupabaseService: any;
-
-function createMockQueryChain(
-  finalResponse: { data: unknown; error: unknown } = { data: null, error: null }
-): any {
-  const chain: any = {
-    select: mock(() => chain),
-    eq: mock(() => chain),
-    is: mock(() => chain),
-    order: mock(() => chain),
-    insert: mock(() => chain),
-    update: mock(() => chain),
-    delete: mock(() => chain),
-    maybeSingle: mock(() => Promise.resolve(finalResponse)),
-    single: mock(() => Promise.resolve(finalResponse)),
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-    then: (resolve: (value: unknown) => unknown) =>
-      Promise.resolve(finalResponse).then(resolve),
-  };
-  return chain;
-}
+let t: TestDb;
+let repo: InstanceType<
+  typeof import('../../../../../src/domains/schedule/repositories/schedulePatternRepository').SchedulePatternRepository
+>;
 
 beforeAll(async () => {
-  mock.module('../../../../../src/config/supabase', () => {
-    const obj = { from: mock(() => createMockQueryChain()) };
-    return { supabase: obj, supabaseService: obj };
-  });
-
+  t = await createTestDb();
+  mock.module('../../../../../src/db/client', () => ({ db: t.db }));
   const mod = await import(
     '../../../../../src/domains/schedule/repositories/schedulePatternRepository'
   );
-  SchedulePatternRepository = mod.SchedulePatternRepository;
-  mockSupabaseService = (await import('../../../../../src/config/supabase'))
-    .supabaseService;
+  repo = new mod.SchedulePatternRepository();
+
+  await seedUser(t, 'carer-1');
+  await seedUser(t, 'carer-2');
+  await seedHousehold(t, 'h1');
+  await seedHousehold(t, 'h2');
+  await seedPattern(t, 'p-old', 'h1', {
+    createdAt: '2026-01-01T00:00:00.000Z',
+  });
+  await seedPattern(t, 'p-new', 'h1', {
+    createdAt: '2026-03-01T00:00:00.000Z',
+  });
+  await seedPattern(t, 'p-c1', 'h1', {
+    carerId: 'carer-1',
+    status: 'accepted',
+    createdAt: '2026-02-01T00:00:00.000Z',
+  });
+  await seedPattern(t, 'p-c2-pending', 'h1', {
+    carerId: 'carer-2',
+    status: 'pending',
+  });
+  await seedPattern(t, 'p-unassigned', 'h1', { status: 'accepted' });
+  await seedPattern(t, 'p-h2', 'h2', {
+    carerId: 'carer-1',
+    status: 'accepted',
+  });
 });
 
-beforeEach(() => {
-  mockSupabaseService.from.mockClear?.();
-});
+afterAll(() => t.dispose());
 
 describe('SchedulePatternRepository.listForHousehold', () => {
   it('lists patterns for a household, newest first', async () => {
-    const rows = [{ id: 'p1', household_id: 'h1' }];
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: rows, error: null })
-    );
-    const repo = new SchedulePatternRepository();
-    const result = await repo.listForHousehold('h1');
-    expect(result).toEqual(rows);
-    expect(mockSupabaseService.from).toHaveBeenCalledWith('schedule_patterns');
+    const rows = await repo.listForHousehold('h1');
+    expect(rows.every(r => r.household_id === 'h1')).toBe(true);
+    const ids = rows.map(r => r.id);
+    expect(ids.indexOf('p-new')).toBeLessThan(ids.indexOf('p-c1'));
+    expect(ids.indexOf('p-c1')).toBeLessThan(ids.indexOf('p-old'));
+    // JSON / integer columns come back as JS values, same row shape as before D1.
+    expect(rows[0]?.exdates).toEqual([]);
   });
 
-  it('returns [] when the query returns no rows', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
-    );
-    const repo = new SchedulePatternRepository();
-    expect(await repo.listForHousehold('h1')).toEqual([]);
+  it('returns [] for a household with no patterns', async () => {
+    expect(await repo.listForHousehold('nope')).toEqual([]);
   });
 });
 
 describe('SchedulePatternRepository.listAcceptedByHouseholdAndCarer', () => {
-  it('matches an assigned carer with eq', async () => {
-    const chain = createMockQueryChain({ data: [{ id: 'p0' }], error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-    const repo = new SchedulePatternRepository();
-
-    expect(await repo.listAcceptedByHouseholdAndCarer('h1', 'carer-1')).toEqual(
-      [{ id: 'p0' }]
+  it('matches an assigned carer’s accepted patterns in that household only', async () => {
+    const rows = await repo.listAcceptedByHouseholdAndCarer('h1', 'carer-1');
+    expect(rows.map(r => r.id)).toEqual(['p-c1']);
+    expect(await repo.listAcceptedByHouseholdAndCarer('h1', 'carer-2')).toEqual(
+      []
     );
-    expect(chain.eq).toHaveBeenCalledWith('carer_id', 'carer-1');
-    expect(chain.eq).toHaveBeenCalledWith('status', 'accepted');
-    expect(chain.is).not.toHaveBeenCalled();
   });
 
   // A null-carer pattern is a real shape (014: a parent sketching a usual
-  // week during onboarding). `eq('carer_id', null)` would match nothing, so
-  // the null branch has to use `is`, exactly like
-  // `shiftRepository.findExtraShiftInWindow`.
-  it('matches an unassigned pattern with is(null), never eq(null)', async () => {
-    const chain = createMockQueryChain({ data: [], error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-    const repo = new SchedulePatternRepository();
+  // week during onboarding). `carer_id = NULL` would match nothing.
+  it('matches an unassigned pattern with IS NULL', async () => {
+    const rows = await repo.listAcceptedByHouseholdAndCarer('h1', null);
+    expect(rows.map(r => r.id)).toEqual(['p-unassigned']);
+  });
+});
 
-    await repo.listAcceptedByHouseholdAndCarer('h1', null);
-
-    expect(chain.is).toHaveBeenCalledWith('carer_id', null);
-    expect(chain.eq).not.toHaveBeenCalledWith('carer_id', null);
+describe('SchedulePatternRepository.listAccepted', () => {
+  it('lists accepted patterns across every household', async () => {
+    const rows = await repo.listAccepted();
+    expect(rows.map(r => r.id).sort()).toEqual(
+      ['p-c1', 'p-h2', 'p-unassigned'].sort()
+    );
   });
 });

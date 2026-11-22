@@ -9,7 +9,7 @@
  * EXISTING-SHIFT POLICY (see the wave-2 spec table this implements):
  *   has a time_entries row            -> NEVER touched, full stop (past and
  *                                         paid-for reality is immutable —
- *                                         see supabase/migrations/017_time_tracking.sql)
+ *                                         see migration 017_time_tracking)
  *   draft/pending, untouched         -> overwrite times, children, note
  *   confirmed, untouched             -> overwrite; back to pending if times moved
  *   manually touched (non-system     -> PRESERVE untouched; emit a

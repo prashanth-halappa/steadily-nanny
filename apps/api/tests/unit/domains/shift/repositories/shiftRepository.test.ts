@@ -1,97 +1,121 @@
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+/** ShiftRepository on a real Miniflare D1 (tests/helpers/testDb.ts). */
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+} from 'bun:test';
+import { shiftChildren } from '../../../../../src/db/schema';
+import {
+  ExtraShiftAlreadyExistsError,
+  ShiftImmutableError,
+  ShiftNotFoundError,
+} from '../../../../../src/domains/shift/errors/shiftErrors';
+import { DatabaseError, ValidationError } from '../../../../../src/errors';
+import { createTestDb, type TestDb } from '../../../../helpers/testDb';
+import {
+  clearShifts,
+  insertShift,
+  readShift,
+  seedChild,
+  seedUser,
+  seedWorld,
+} from './seed';
 
-interface FakeRow {
-  [key: string]: unknown;
-}
+let t: TestDb;
+let ShiftRepository: typeof import('../../../../../src/domains/shift/repositories/shiftRepository').ShiftRepository;
 
-let ShiftRepository: any;
-let mockSupabaseService: any;
-let ShiftImmutableError: any;
-let ShiftNotFoundError: any;
-let ExtraShiftAlreadyExistsError: any;
-let DatabaseError: any;
-
-function createMockQueryChain(
-  finalResponse: { data: unknown; error: unknown } = { data: null, error: null }
-): any {
-  const chain: any = {
-    select: mock(() => chain),
-    eq: mock(() => chain),
-    lt: mock(() => chain),
-    gt: mock(() => chain),
-    gte: mock(() => chain),
-    not: mock(() => chain),
-    in: mock(() => chain),
-    order: mock(() => chain),
-    update: mock(() => chain),
-    maybeSingle: mock(() => Promise.resolve(finalResponse)),
-    single: mock(() => Promise.resolve(finalResponse)),
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-    then: (resolve: (value: unknown) => unknown) =>
-      Promise.resolve(finalResponse).then(resolve),
-  };
-  return chain;
-}
+const noEntries = { hasTimeEntries: async () => false };
+const clockedIn = { hasTimeEntries: async () => true };
+const repo = () => new ShiftRepository(noEntries);
 
 beforeAll(async () => {
-  mock.module('../../../../../src/config/supabase', () => {
-    const obj = { from: mock(() => createMockQueryChain()) };
-    return { supabase: obj, supabaseService: obj };
-  });
-
-  const mod = await import(
+  t = await createTestDb();
+  mock.module('../../../../../src/db/client', () => ({ db: t.db }));
+  ({ ShiftRepository } = await import(
     '../../../../../src/domains/shift/repositories/shiftRepository'
-  );
-  ShiftRepository = mod.ShiftRepository;
-  const errors = await import(
-    '../../../../../src/domains/shift/errors/shiftErrors'
-  );
-  ShiftImmutableError = errors.ShiftImmutableError;
-  ShiftNotFoundError = errors.ShiftNotFoundError;
-  ExtraShiftAlreadyExistsError = errors.ExtraShiftAlreadyExistsError;
-  DatabaseError = (await import('../../../../../src/errors')).DatabaseError;
-  mockSupabaseService = (await import('../../../../../src/config/supabase'))
-    .supabaseService;
+  ));
+  await seedWorld(t);
+  await seedUser(t, 'carer-2');
+  await seedChild(t, 'child-1', 'h1');
+  await seedChild(t, 'child-2', 'h1');
 });
 
-beforeEach(() => {
-  mockSupabaseService.from.mockClear?.();
-});
+afterAll(() => t.dispose());
+
+beforeEach(() => clearShifts(t));
+
+async function attach(shiftId: string, childId: string) {
+  await t.db
+    .insert(shiftChildren)
+    .values({ shift_id: shiftId, child_id: childId });
+}
 
 describe('ShiftRepository.findByHouseholdAndRange', () => {
   it('lists shifts overlapping the range, each carrying its shift_children', async () => {
-    const rows = [
-      {
-        id: 's1',
-        household_id: 'h1',
-        starts_at: '2026-08-03T08:00:00.000Z',
-        ends_at: '2026-08-03T17:00:00.000Z',
-        shift_children: [{ id: 'c1', child_id: 'child-1' }],
-      },
-    ];
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: rows, error: null })
-    );
-    const repo = new ShiftRepository();
-    const result = await repo.findByHouseholdAndRange(
+    const s = await insertShift(t);
+    await attach(s.id, 'child-1');
+    const result = await repo().findByHouseholdAndRange(
       'h1',
       '2026-08-01T00:00:00.000Z',
       '2026-08-08T00:00:00.000Z'
     );
-    expect(result).toEqual(rows);
-    expect(mockSupabaseService.from).toHaveBeenCalledWith('shifts');
+    expect(result.map(r => r.id)).toEqual([s.id]);
+    expect(result[0]?.shift_children.map(c => c.child_id)).toEqual(['child-1']);
   });
 
-  it('returns [] when nothing overlaps', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
-    );
-    const repo = new ShiftRepository();
+  it('is strict on both ends — a shift only touching the boundary is excluded', async () => {
+    const s = await insertShift(t);
+    const r = repo();
+    // Ends exactly at `from`.
     expect(
-      await repo.findByHouseholdAndRange(
+      await r.findByHouseholdAndRange(
         'h1',
-        '2026-08-01T00:00:00.000Z',
-        '2026-08-08T00:00:00.000Z'
+        '2026-08-03T17:00:00.000Z',
+        '2026-08-04T00:00:00.000Z'
+      )
+    ).toEqual([]);
+    // Starts exactly at `to`, given as a ms-less `...Z` bound: canonicalised
+    // before the TEXT compare, so it is not mis-ordered against the stored `.000Z`.
+    expect(
+      await r.findByHouseholdAndRange(
+        'h1',
+        '2026-08-03T00:00:00Z',
+        '2026-08-03T09:00:00Z'
+      )
+    ).toEqual([]);
+    // One ms past the boundary on either side overlaps.
+    const hit = await r.findByHouseholdAndRange(
+      'h1',
+      '2026-08-03T00:00:00Z',
+      '2026-08-03T09:00:01Z'
+    );
+    expect(hit.map(x => x.id)).toEqual([s.id]);
+  });
+
+  it('scopes to the household, orders by starts_at, and returns [] for no overlap', async () => {
+    const later = await insertShift(t, {
+      starts_at: '2026-08-04T09:00:00.000Z',
+      ends_at: '2026-08-04T17:00:00.000Z',
+      local_date: '2026-08-04',
+    });
+    const earlier = await insertShift(t);
+    await insertShift(t, { household_id: 'h2' });
+    const result = await repo().findByHouseholdAndRange(
+      'h1',
+      '2026-08-01T00:00:00.000Z',
+      '2026-08-08T00:00:00.000Z'
+    );
+    expect(result.map(r => r.id)).toEqual([earlier.id, later.id]);
+    expect(result.every(r => r.shift_children.length === 0)).toBe(true);
+    expect(
+      await repo().findByHouseholdAndRange(
+        'h1',
+        '2026-09-01T00:00:00.000Z',
+        '2026-09-08T00:00:00.000Z'
       )
     ).toEqual([]);
   });
@@ -99,625 +123,520 @@ describe('ShiftRepository.findByHouseholdAndRange', () => {
 
 describe('ShiftRepository.findByHouseholdAndLocalDate', () => {
   it('lists the household local calendar date shifts with their children', async () => {
-    const rows = [
-      {
-        id: 's1',
-        household_id: 'h1',
-        local_date: '2026-08-03',
-        shift_children: [{ id: 'c1', child_id: 'child-1' }],
-      },
-    ];
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: rows, error: null })
-    );
-    const repo = new ShiftRepository();
-    expect(await repo.findByHouseholdAndLocalDate('h1', '2026-08-03')).toEqual(
-      rows
-    );
-    expect(mockSupabaseService.from).toHaveBeenCalledWith('shifts');
+    const s = await insertShift(t);
+    await attach(s.id, 'child-1');
+    await attach(s.id, 'child-2');
+    await insertShift(t, {
+      starts_at: '2026-08-04T09:00:00.000Z',
+      ends_at: '2026-08-04T17:00:00.000Z',
+      local_date: '2026-08-04',
+    });
+    const result = await repo().findByHouseholdAndLocalDate('h1', '2026-08-03');
+    expect(result.map(r => r.id)).toEqual([s.id]);
+    expect(result[0]?.shift_children.map(c => c.child_id).sort()).toEqual([
+      'child-1',
+      'child-2',
+    ]);
   });
 
   it('returns [] when the household has no shift that day', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
-    );
-    const repo = new ShiftRepository();
-    expect(await repo.findByHouseholdAndLocalDate('h1', '2026-08-03')).toEqual(
-      []
-    );
+    await insertShift(t, { household_id: 'h2' });
+    expect(
+      await repo().findByHouseholdAndLocalDate('h1', '2026-08-03')
+    ).toEqual([]);
+  });
+});
+
+describe('ShiftRepository.findByIdWithChildren / findByIds', () => {
+  it('returns one shift with its children', async () => {
+    const s = await insertShift(t);
+    await attach(s.id, 'child-2');
+    const row = await repo().findByIdWithChildren(s.id);
+    expect(row?.id).toBe(s.id);
+    expect(row?.shift_children.map(c => c.child_id)).toEqual(['child-2']);
+  });
+
+  it('returns null when the shift does not exist', async () => {
+    expect(await repo().findByIdWithChildren('missing')).toBeNull();
+  });
+
+  it('findByIds batches by primary key; empty input returns []', async () => {
+    const a = await insertShift(t);
+    const b = await insertShift(t, { household_id: 'h2' });
+    const rows = await repo().findByIds([a.id, b.id, 'missing']);
+    expect(rows.map(r => r.id).sort()).toEqual([a.id, b.id].sort());
+    expect(await repo().findByIds([])).toEqual([]);
   });
 });
 
 describe('ShiftRepository.update — immutability guard', () => {
-  function makeTimeEntryRepo(hasTimeEntries = false): any {
-    return { hasTimeEntries: mock(async () => hasTimeEntries) };
+  it('updates a confirmed shift with no time entries', async () => {
+    const s = await insertShift(t);
+    const u = await repo().update(s.id, { note: 'hi' });
+    expect(u.note).toBe('hi');
+    expect((await readShift(t, s.id)).note).toBe('hi');
+  });
+
+  for (const status of ['completed', 'cancelled'] as const) {
+    it(`refuses to mutate a ${status.toUpperCase()} shift and leaves it untouched`, async () => {
+      const s = await insertShift(t, { status });
+      await expect(
+        repo().update(s.id, { starts_at: '2026-08-03T10:00:00.000Z' })
+      ).rejects.toBeInstanceOf(ShiftImmutableError);
+      expect((await readShift(t, s.id)).starts_at).toBe(s.starts_at);
+    });
   }
 
-  it('updates a confirmed shift with no time entries', async () => {
-    const row = { id: 's1', status: 'confirmed' };
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: row, error: null })
-    );
-    const repo = new ShiftRepository(makeTimeEntryRepo(false));
-    expect(await repo.update('s1', { note: 'hi' })).toEqual(row);
-  });
-
-  it('refuses to mutate a COMPLETED shift', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({
-        data: { id: 's1', status: 'completed' },
-        error: null,
-      })
-    );
-    const repo = new ShiftRepository(makeTimeEntryRepo(false));
-    await expect(
-      repo.update('s1', { starts_at: '2026-08-03T09:00:00.000Z' })
-    ).rejects.toBeInstanceOf(ShiftImmutableError);
-  });
-
-  it('refuses to mutate a CANCELLED shift', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({
-        data: { id: 's1', status: 'cancelled' },
-        error: null,
-      })
-    );
-    const repo = new ShiftRepository(makeTimeEntryRepo(false));
-    await expect(repo.update('s1', { note: 'x' })).rejects.toBeInstanceOf(
-      ShiftImmutableError
-    );
-  });
-
   it('refuses to mutate an open shift that someone has clocked into', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({
-        data: { id: 's1', status: 'confirmed' },
-        error: null,
-      })
-    );
-    const repo = new ShiftRepository(makeTimeEntryRepo(true));
-    await expect(repo.update('s1', { note: 'x' })).rejects.toBeInstanceOf(
-      ShiftImmutableError
-    );
-  });
-
-  it('allows mutation when the only time entry is voided — hasTimeEntries must exclude voided rows', async () => {
-    const { TimeEntryRepository } = await import(
-      '../../../../../src/domains/timesheet/repositories/timeEntryRepository'
-    );
-    let call = 0;
-    mockSupabaseService.from.mockImplementation(() => {
-      call += 1;
-      if (call === 1) {
-        return createMockQueryChain({
-          data: { id: 's1', status: 'confirmed' },
-          error: null,
-        });
-      }
-      if (call === 2) {
-        const chain: any = {
-          select: mock(() => chain),
-          eq: mock(() => chain),
-          neq: mock(() => chain),
-          // `hasTimeEntries` head-counts with `.neq('status','voided')`, so a
-          // shift whose only entry is voided counts ZERO. `count: 1` here
-          // would model a database that ignores its own filter.
-          // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-          then: (resolve: (value: unknown) => unknown) =>
-            Promise.resolve({ data: null, error: null, count: 0 }).then(
-              resolve
-            ),
-        };
-        return chain;
-      }
-      return createMockQueryChain({
-        data: { id: 's1', status: 'confirmed', note: 'moved' },
-        error: null,
-      });
+    const s = await insertShift(t);
+    await expect(
+      new ShiftRepository(clockedIn).update(s.id, { note: 'x' })
+    ).rejects.toMatchObject({
+      name: 'ShiftImmutableError',
+      statusCode: 409,
     });
-    const repo = new ShiftRepository(new TimeEntryRepository());
-    await expect(repo.update('s1', { note: 'moved' })).resolves.toEqual({
-      id: 's1',
-      status: 'confirmed',
-      note: 'moved',
-    });
+    expect((await readShift(t, s.id)).note).toBeNull();
   });
 
   it('throws ShiftNotFoundError when the shift is gone', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
-    );
-    const repo = new ShiftRepository(makeTimeEntryRepo(false));
-    await expect(repo.update('missing', { note: 'x' })).rejects.toBeInstanceOf(
-      ShiftNotFoundError
-    );
+    await expect(
+      repo().update('missing', { note: 'x' })
+    ).rejects.toBeInstanceOf(ShiftNotFoundError);
+  });
+
+  it('recomputes local_date when starts_at crosses local midnight', async () => {
+    const s = await insertShift(t);
+    // 23:30Z on 3 Aug is 00:30 BST on 4 Aug.
+    const u = await repo().update(s.id, {
+      starts_at: '2026-08-03T23:30:00+00:00',
+      ends_at: '2026-08-04T03:00:00Z',
+    });
+    expect(u.starts_at).toBe('2026-08-03T23:30:00.000Z');
+    expect(u.ends_at).toBe('2026-08-04T03:00:00.000Z');
+    expect(u.local_date).toBe('2026-08-04');
+  });
+
+  it('recomputes local_date when only the timezone changes', async () => {
+    const s = await insertShift(t, {
+      starts_at: '2026-08-03T02:00:00.000Z',
+      ends_at: '2026-08-03T06:00:00.000Z',
+    });
+    const u = await repo().update(s.id, { timezone: 'America/New_York' });
+    expect(u.timezone).toBe('America/New_York');
+    expect(u.local_date).toBe('2026-08-02');
+  });
+
+  it('leaves local_date alone on a patch touching neither starts_at nor timezone', async () => {
+    const s = await insertShift(t, { local_date: '2026-08-03' });
+    const u = await repo().update(s.id, {
+      ends_at: '2026-08-03T18:00:00.000Z',
+    });
+    expect(u.local_date).toBe('2026-08-03');
+    expect(u.ends_at).toBe('2026-08-03T18:00:00.000Z');
   });
 });
 
-describe('ShiftRepository.findByIdWithChildren', () => {
-  it('returns one shift with its children', async () => {
-    const row = {
-      id: 's1',
-      household_id: 'h1',
-      shift_children: [{ id: 'c1', child_id: 'child-1' }],
-    };
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: row, error: null })
-    );
-    const repo = new ShiftRepository();
-    expect(await repo.findByIdWithChildren('s1')).toEqual(row);
-  });
+describe('ShiftRepository CAS from pending (confirm / decline / withdraw)', () => {
+  const cases = [
+    {
+      name: 'confirmPending',
+      run: (r: InstanceType<typeof ShiftRepository>, id: string) =>
+        r.confirmPending(id),
+      expected: 'confirmed',
+    },
+    {
+      name: 'declinePending',
+      run: (r: InstanceType<typeof ShiftRepository>, id: string) =>
+        r.declinePending(id),
+      expected: 'declined',
+    },
+    {
+      name: 'withdrawCoverAsk',
+      run: (r: InstanceType<typeof ShiftRepository>, id: string) =>
+        r.withdrawCoverAsk(id, 'parent-1', '2026-08-01T10:00:00+00:00'),
+      expected: 'cancelled',
+    },
+  ] as const;
 
-  it('returns null when the shift does not exist', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
-    );
-    const repo = new ShiftRepository();
-    expect(await repo.findByIdWithChildren('missing')).toBeNull();
-  });
-});
+  for (const c of cases) {
+    describe(c.name, () => {
+      it(`moves pending → ${c.expected}`, async () => {
+        const s = await insertShift(t, { status: 'pending' });
+        const row = await c.run(repo(), s.id);
+        expect(row.status).toBe(c.expected);
+        expect((await readShift(t, s.id)).status).toBe(c.expected);
+      });
 
-describe('ShiftRepository.confirmPending — CAS pending → confirmed', () => {
-  function makeTimeEntryRepo(hasTimeEntries = false): any {
-    return { hasTimeEntries: mock(async () => hasTimeEntries) };
-  }
+      it('throws SHIFT_NOT_PENDING when the shift is no longer pending', async () => {
+        const s = await insertShift(t, { status: 'confirmed' });
+        const err = await c.run(repo(), s.id).catch(e => e);
+        expect(err).toBeInstanceOf(ValidationError);
+        expect(err.metadata?.reason).toBe('SHIFT_NOT_PENDING');
+        expect((await readShift(t, s.id)).status).toBe('confirmed');
+      });
 
-  it('confirms when status is still pending', async () => {
-    const pending = { id: 's1', status: 'pending' };
-    const confirmed = { id: 's1', status: 'confirmed' };
-    let call = 0;
-    mockSupabaseService.from.mockImplementation(() => {
-      call += 1;
-      // assertMutable findById, then CAS update+.maybeSingle
-      if (call === 1) {
-        return createMockQueryChain({ data: pending, error: null });
-      }
-      return createMockQueryChain({ data: confirmed, error: null });
-    });
+      it('CAS loss: a concurrent write after the preflight wins, and nothing is overwritten', async () => {
+        const s = await insertShift(t, { status: 'pending' });
+        // The status flips between assertMutable's read and the CAS update.
+        const racer = {
+          hasTimeEntries: async () => {
+            await t.d1
+              .prepare("UPDATE shifts SET status = 'declined' WHERE id = ?")
+              .bind(s.id)
+              .run();
+            return false;
+          },
+        };
+        const err = await c.run(new ShiftRepository(racer), s.id).catch(e => e);
+        expect(err).toBeInstanceOf(ValidationError);
+        expect(err.metadata?.reason).toBe('SHIFT_NOT_PENDING');
+        expect((await readShift(t, s.id)).status).toBe('declined');
+      });
 
-    const repo = new ShiftRepository(makeTimeEntryRepo(false));
-    expect(await repo.confirmPending('s1')).toEqual(confirmed);
-  });
+      it('refuses when someone has clocked into the shift', async () => {
+        const s = await insertShift(t, { status: 'pending' });
+        await expect(
+          c.run(new ShiftRepository(clockedIn), s.id)
+        ).rejects.toBeInstanceOf(ShiftImmutableError);
+        expect((await readShift(t, s.id)).status).toBe('pending');
+      });
 
-  it('throws SHIFT_NOT_PENDING ValidationError when the CAS update matches 0 rows', async () => {
-    const { ValidationError } = await import('../../../../../src/errors');
-    const pending = { id: 's1', status: 'pending' };
-    let call = 0;
-    mockSupabaseService.from.mockImplementation(() => {
-      call += 1;
-      if (call === 1) {
-        return createMockQueryChain({ data: pending, error: null });
-      }
-      // Lost race: concurrent cancel/accept already moved status off pending.
-      return createMockQueryChain({ data: null, error: null });
-    });
-
-    const repo = new ShiftRepository(makeTimeEntryRepo(false));
-    try {
-      await repo.confirmPending('s1');
-      expect.unreachable('confirmPending should have thrown');
-    } catch (error) {
-      expect(error).toBeInstanceOf(ValidationError);
-      // ValidationError's machine code is always VALIDATION_ERROR; the CAS
-      // reason lives in metadata.reason (see ValidationError constructor).
-      expect(
-        (error as InstanceType<typeof ValidationError>).metadata?.reason
-      ).toBe('SHIFT_NOT_PENDING');
-    }
-  });
-});
-
-describe('ShiftRepository.declinePending — CAS pending → declined', () => {
-  function makeTimeEntryRepo(hasTimeEntries = false): any {
-    return { hasTimeEntries: mock(async () => hasTimeEntries) };
-  }
-
-  it('declines when status is still pending, filtering the update on pending', async () => {
-    const pending = { id: 's1', status: 'pending' };
-    const declined = { id: 's1', status: 'declined' };
-    let call = 0;
-    let casChain: any;
-    mockSupabaseService.from.mockImplementation(() => {
-      call += 1;
-      // assertMutable findById, then CAS update+.maybeSingle
-      if (call === 1) {
-        return createMockQueryChain({ data: pending, error: null });
-      }
-      casChain = createMockQueryChain({ data: declined, error: null });
-      return casChain;
-    });
-
-    const repo = new ShiftRepository(makeTimeEntryRepo(false));
-
-    expect(await repo.declinePending('s1')).toEqual(declined);
-    // The compare-and-swap IS the serialisation: without `status = 'pending'`
-    // a concurrent accept/cancel would be silently overwritten with declined.
-    expect(casChain.update).toHaveBeenCalledWith({ status: 'declined' });
-    expect(casChain.eq).toHaveBeenCalledWith('id', 's1');
-    expect(casChain.eq).toHaveBeenCalledWith('status', 'pending');
-  });
-
-  it('throws SHIFT_NOT_PENDING ValidationError when the CAS update matches 0 rows', async () => {
-    const { ValidationError } = await import('../../../../../src/errors');
-    const pending = { id: 's1', status: 'pending' };
-    let call = 0;
-    mockSupabaseService.from.mockImplementation(() => {
-      call += 1;
-      if (call === 1) {
-        return createMockQueryChain({ data: pending, error: null });
-      }
-      // Lost race: a concurrent accept/cancel moved status off pending.
-      return createMockQueryChain({ data: null, error: null });
-    });
-
-    const repo = new ShiftRepository(makeTimeEntryRepo(false));
-    try {
-      await repo.declinePending('s1');
-      expect.unreachable('declinePending should have thrown');
-    } catch (error) {
-      expect(error).toBeInstanceOf(ValidationError);
-      expect(
-        (error as InstanceType<typeof ValidationError>).metadata?.reason
-      ).toBe('SHIFT_NOT_PENDING');
-    }
-  });
-
-  it('refuses when someone has clocked into the shift', async () => {
-    const pending = { id: 's1', status: 'pending' };
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: pending, error: null })
-    );
-
-    const repo = new ShiftRepository(makeTimeEntryRepo(true));
-
-    await expect(repo.declinePending('s1')).rejects.toBeInstanceOf(
-      ShiftImmutableError
-    );
-  });
-
-  it('surfaces a database failure as DatabaseError', async () => {
-    const pending = { id: 's1', status: 'pending' };
-    let call = 0;
-    mockSupabaseService.from.mockImplementation(() => {
-      call += 1;
-      if (call === 1) {
-        return createMockQueryChain({ data: pending, error: null });
-      }
-      return createMockQueryChain({
-        data: null,
-        error: { message: 'connection reset' },
+      it('refuses a completed/cancelled shift as immutable, and a missing one as not found', async () => {
+        const done = await insertShift(t, { status: 'completed' });
+        await expect(c.run(repo(), done.id)).rejects.toBeInstanceOf(
+          ShiftImmutableError
+        );
+        const gone = await insertShift(t, {
+          status: 'cancelled',
+          starts_at: '2026-08-05T09:00:00.000Z',
+          ends_at: '2026-08-05T17:00:00.000Z',
+        });
+        await expect(c.run(repo(), gone.id)).rejects.toBeInstanceOf(
+          ShiftImmutableError
+        );
+        await expect(c.run(repo(), 'missing')).rejects.toBeInstanceOf(
+          ShiftNotFoundError
+        );
       });
     });
+  }
 
-    const repo = new ShiftRepository(makeTimeEntryRepo(false));
-
-    await expect(repo.declinePending('s1')).rejects.toBeInstanceOf(
-      DatabaseError
+  it('withdrawCoverAsk stamps the withdrawing parent, a canonical cancelled_at, and no pay', async () => {
+    const s = await insertShift(t, { status: 'pending' });
+    const row = await repo().withdrawCoverAsk(
+      s.id,
+      'parent-1',
+      '2026-08-01T11:00:00+01:00'
     );
+    expect(row).toMatchObject({
+      status: 'cancelled',
+      cancelled_by: 'parent-1',
+      cancelled_at: '2026-08-01T10:00:00.000Z',
+      cancellation_paid: false,
+    });
   });
 });
 
 describe('ShiftRepository.listLiveForClashScan', () => {
-  // Feeds S4b's nightly cross-household sweep — every carer-assigned live
-  // shift in the window, narrowed to exactly the columns
-  // `findCrossHouseholdClashes` needs (no household name, no note: the
-  // sweep-line never sees anything `v_busy_blocks` wouldn't show it either).
-  it('asks for carer-assigned pending/confirmed shifts overlapping the window', async () => {
-    const chain = createMockQueryChain({ data: [], error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
+  it('returns only carer-assigned pending/confirmed shifts overlapping the window, across households, ordered by carer', async () => {
+    const a = await insertShift(t, { carer_id: 'carer-2', status: 'pending' });
+    const b = await insertShift(t, { household_id: 'h2' });
+    await insertShift(t, {
+      carer_id: null,
+      starts_at: '2026-08-05T09:00:00.000Z',
+      ends_at: '2026-08-05T17:00:00.000Z',
+    });
+    await insertShift(t, {
+      status: 'cancelled',
+      starts_at: '2026-08-06T09:00:00.000Z',
+      ends_at: '2026-08-06T17:00:00.000Z',
+    });
+    await insertShift(t, {
+      status: 'completed',
+      starts_at: '2026-08-07T09:00:00.000Z',
+      ends_at: '2026-08-07T17:00:00.000Z',
+    });
+    // Outside the window.
+    await insertShift(t, {
+      starts_at: '2026-12-01T09:00:00.000Z',
+      ends_at: '2026-12-01T17:00:00.000Z',
+    });
 
-    await new ShiftRepository().listLiveForClashScan(
-      '2026-08-10T00:00:00.000Z',
-      '2026-11-02T00:00:00.000Z'
+    const rows = await repo().listLiveForClashScan(
+      '2026-08-01T00:00:00Z',
+      '2026-11-02T00:00:00Z'
     );
-
-    expect(mockSupabaseService.from).toHaveBeenCalledWith('shifts');
-    expect(chain.not).toHaveBeenCalledWith('carer_id', 'is', null);
-    expect(chain.in).toHaveBeenCalledWith('status', ['pending', 'confirmed']);
-    expect(chain.lt).toHaveBeenCalledWith(
-      'starts_at',
-      '2026-11-02T00:00:00.000Z'
+    expect(rows.map(r => r.id)).toEqual([b.id, a.id]); // carer-1 < carer-2
+    expect(Object.keys(rows[0] ?? {}).sort()).toEqual(
+      [
+        'carer_id',
+        'ends_at',
+        'household_id',
+        'ical_uid',
+        'id',
+        'local_date',
+        'starts_at',
+      ].sort()
     );
-    expect(chain.gt).toHaveBeenCalledWith(
-      'ends_at',
-      '2026-08-10T00:00:00.000Z'
-    );
-    expect(chain.order).toHaveBeenCalledWith('carer_id', { ascending: true });
   });
 
   it('returns [] when nothing is live in the window', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
-    );
     expect(
-      await new ShiftRepository().listLiveForClashScan(
+      await repo().listLiveForClashScan(
         '2026-08-10T00:00:00.000Z',
         '2026-11-02T00:00:00.000Z'
       )
     ).toEqual([]);
   });
-
-  it('throws DatabaseError on a query failure', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: { message: 'boom' } })
-    );
-    await expect(
-      new ShiftRepository().listLiveForClashScan(
-        '2026-08-10T00:00:00.000Z',
-        '2026-11-02T00:00:00.000Z'
-      )
-    ).rejects.toBeInstanceOf(DatabaseError);
-  });
 });
 
 describe('ShiftRepository.listCancellationPaidSince', () => {
-  // Feeds the reconcile job, which re-drives a PAYABLE write. A shift with no
-  // carer can never be paid (`recordCancellationPaidEntry` returns null early),
-  // so fetching one would make the sweep "repair" it on every run forever.
-  it('asks only for cancelled, paid, assigned shifts in the window', async () => {
-    const chain = createMockQueryChain({ data: [], error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-
-    await new ShiftRepository().listCancellationPaidSince(
-      '2026-07-06T00:00:00.000Z'
-    );
-
-    expect(chain.eq).toHaveBeenCalledWith('cancellation_paid', true);
-    expect(chain.eq).toHaveBeenCalledWith('status', 'cancelled');
-    expect(chain.not).toHaveBeenCalledWith('carer_id', 'is', null);
-    expect(chain.gte).toHaveBeenCalledWith(
-      'starts_at',
-      '2026-07-06T00:00:00.000Z'
-    );
+  // Feeds the reconcile job, which re-drives a PAYABLE write: a live or
+  // unassigned shift must never reach it.
+  it('returns only cancelled, paid, assigned shifts starting on/after `since`', async () => {
+    const hit = await insertShift(t, {
+      status: 'cancelled',
+      cancellation_paid: true,
+    });
+    await insertShift(t, {
+      status: 'cancelled',
+      cancellation_paid: true,
+      carer_id: null,
+      starts_at: '2026-08-04T09:00:00.000Z',
+      ends_at: '2026-08-04T17:00:00.000Z',
+    });
+    await insertShift(t, {
+      status: 'cancelled',
+      cancellation_paid: false,
+      starts_at: '2026-08-05T09:00:00.000Z',
+      ends_at: '2026-08-05T17:00:00.000Z',
+    });
+    await insertShift(t, {
+      status: 'confirmed',
+      cancellation_paid: true,
+      starts_at: '2026-08-06T09:00:00.000Z',
+      ends_at: '2026-08-06T17:00:00.000Z',
+    });
+    await insertShift(t, {
+      status: 'cancelled',
+      cancellation_paid: true,
+      starts_at: '2026-07-01T09:00:00.000Z',
+      ends_at: '2026-07-01T17:00:00.000Z',
+    });
+    const rows = await repo().listCancellationPaidSince('2026-08-03T09:00:00Z');
+    expect(rows.map(r => r.id)).toEqual([hit.id]);
   });
 });
-
-/**
- * This one gets a STATEFUL chain rather than the recording-only
- * `createMockQueryChain` above. `findExtraShiftInWindow` is the whole
- * correctness of `insertExtraShift`'s retry guard: every predicate it drops
- * either swallows a legitimate new shift or lets the duplicate through, and a
- * chain that only records calls would pass with any of them missing.
- */
-function createFakeShiftQuery(rows: FakeRow[], error: unknown = null): any {
-  const eqFilters: [string, unknown][] = [];
-  const neqFilters: [string, unknown][] = [];
-  const isFilters: [string, unknown][] = [];
-  let cap = Number.POSITIVE_INFINITY;
-
-  // SQL three-valued logic, because that is the whole point of the `is` branch:
-  // `.eq(col, null)` renders as `col=eq.null` and matches NOTHING, and a
-  // `.neq`/`.eq` against a NULL column is UNKNOWN, not true. A fake that used
-  // plain `===` here would happily accept `.eq('carer_id', null)`.
-  const matches = (row: FakeRow): boolean =>
-    eqFilters.every(
-      ([key, value]) =>
-        value !== null && row[key] !== null && row[key] === value
-    ) &&
-    neqFilters.every(
-      ([key, value]) =>
-        value !== null && row[key] !== null && row[key] !== value
-    ) &&
-    isFilters.every(([key, value]) => (row[key] ?? null) === value);
-
-  const chain: any = {
-    select: mock(() => chain),
-    eq: mock((key: string, value: unknown) => {
-      eqFilters.push([key, value]);
-      return chain;
-    }),
-    neq: mock((key: string, value: unknown) => {
-      neqFilters.push([key, value]);
-      return chain;
-    }),
-    is: mock((key: string, value: unknown) => {
-      isFilters.push([key, value]);
-      return chain;
-    }),
-    limit: mock((n: number) => {
-      cap = n;
-      return chain;
-    }),
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-    then: (resolve: (value: unknown) => unknown) =>
-      Promise.resolve(
-        error
-          ? { data: null, error }
-          : { data: rows.filter(matches).slice(0, cap), error: null }
-      ).then(resolve),
-  };
-  return chain;
-}
 
 describe('ShiftRepository.findExtraShiftInWindow', () => {
   const window = {
     starts_at: '2026-08-04T08:00:00.000Z',
     ends_at: '2026-08-04T12:00:00.000Z',
+    local_date: '2026-08-04',
   };
-
-  function extraShift(overrides: FakeRow = {}): FakeRow {
-    return {
-      id: 's-extra',
-      household_id: 'h1',
-      carer_id: 'carer-1',
-      kind: 'extra',
-      status: 'pending',
-      ...window,
-      shift_children: [],
-      ...overrides,
-    };
-  }
-
-  function find(
-    rows: FakeRow[],
-    carerId: string | null = 'carer-1'
-  ): Promise<unknown> {
-    mockSupabaseService.from.mockImplementation(() =>
-      createFakeShiftQuery(rows)
-    );
-    return new ShiftRepository().findExtraShiftInWindow(
+  const extra = (o: Parameters<typeof insertShift>[1] = {}) =>
+    insertShift(t, { kind: 'extra', status: 'pending', ...window, ...o });
+  const find = (carerId: string | null = 'carer-1') =>
+    repo().findExtraShiftInWindow(
       'h1',
       carerId,
       window.starts_at,
       window.ends_at
     );
-  }
 
   it('finds the live extra shift already covering this carer and window', async () => {
-    const row = extraShift();
-    expect(await find([row])).toEqual(row);
-    expect(mockSupabaseService.from).toHaveBeenCalledWith('shifts');
+    const s = await extra();
+    expect((await find())?.id).toBe(s.id);
   });
 
-  // Without `.neq('status', 'cancelled')` the guard reports a called-off shift
-  // as the duplicate and the parent's replacement proposal silently vanishes.
+  it('matches regardless of the offset the window bounds are written in', async () => {
+    const s = await extra();
+    const row = await repo().findExtraShiftInWindow(
+      'h1',
+      'carer-1',
+      '2026-08-04T09:00:00+01:00',
+      '2026-08-04T12:00:00Z'
+    );
+    expect(row?.id).toBe(s.id);
+  });
+
   it('ignores a cancelled shift in the same window', async () => {
-    expect(await find([extraShift({ status: 'cancelled' })])).toBeNull();
+    await extra({ status: 'cancelled' });
+    expect(await find()).toBeNull();
   });
 
-  // Without `.eq('kind', 'extra')` a recurring shift in the same window would
-  // be returned as the duplicate, so the extra shift never gets created.
   it('ignores a non-extra shift in the same window', async () => {
-    expect(await find([extraShift({ kind: 'recurring' })])).toBeNull();
+    await extra({ kind: 'recurring' });
+    expect(await find()).toBeNull();
   });
 
-  // `.eq('carer_id', null)` is not `.is('carer_id', null)` in PostgREST — the
-  // former never matches, so every retry of an UNASSIGNED extra shift would
-  // miss the guard and create another one.
   it('matches an unassigned extra shift only via the null-carer branch', async () => {
-    const unassigned = extraShift({ id: 's-open', carer_id: null });
-    expect(await find([extraShift(), unassigned], null)).toEqual(unassigned);
+    await extra();
+    const open = await extra({ carer_id: null });
+    expect((await find(null))?.id).toBe(open.id);
   });
 
   it('does not match another household or a different window', async () => {
-    expect(await find([extraShift({ household_id: 'h2' })])).toBeNull();
+    await extra({ household_id: 'h2' });
+    await extra({ ends_at: '2026-08-04T13:00:00.000Z' });
+    expect(await find()).toBeNull();
+  });
+});
+
+describe('ShiftRepository.findParentCoverInWindow', () => {
+  it('finds the live parent_cover in exactly this window, ignoring cancelled ones', async () => {
+    await insertShift(t, {
+      kind: 'parent_cover',
+      origin: 'parent_cover',
+      carer_id: null,
+      status: 'cancelled',
+    });
     expect(
-      await find([extraShift({ ends_at: '2026-08-04T13:00:00.000Z' })])
+      await repo().findParentCoverInWindow(
+        'h1',
+        '2026-08-03T09:00:00Z',
+        '2026-08-03T17:00:00Z'
+      )
     ).toBeNull();
+    const live = await insertShift(t, {
+      kind: 'parent_cover',
+      origin: 'parent_cover',
+      carer_id: null,
+    });
+    expect(
+      (
+        await repo().findParentCoverInWindow(
+          'h1',
+          '2026-08-03T09:00:00Z',
+          '2026-08-03T17:00:00Z'
+        )
+      )?.id
+    ).toBe(live.id);
+  });
+});
+
+describe('ShiftRepository.insertChildren', () => {
+  it('attaches whole-shift child rows; empty input is a no-op', async () => {
+    const s = await insertShift(t);
+    await repo().insertChildren(s.id, []);
+    await repo().insertChildren(s.id, ['child-1', 'child-2']);
+    const row = await repo().findByIdWithChildren(s.id);
+    expect(row?.shift_children.map(c => c.child_id).sort()).toEqual([
+      'child-1',
+      'child-2',
+    ]);
+    expect(
+      row?.shift_children.every(c => c.starts_at === null && c.ends_at === null)
+    ).toBe(true);
   });
 
-  it('throws DatabaseError when the lookup fails', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createFakeShiftQuery([], { message: 'boom' })
+  it('is all-or-nothing: an unknown child fails the batch as a DatabaseError', async () => {
+    const s = await insertShift(t);
+    await expect(
+      repo().insertChildren(s.id, ['child-1', 'no-such-child'])
+    ).rejects.toBeInstanceOf(DatabaseError);
+    expect((await repo().findByIdWithChildren(s.id))?.shift_children).toEqual(
+      []
     );
-    expect(
-      new ShiftRepository().findExtraShiftInWindow(
-        'h1',
-        'carer-1',
-        window.starts_at,
-        window.ends_at
-      )
-    ).rejects.toThrow(DatabaseError);
   });
 });
 
 /**
- * `createShift` insert chain: `.insert(...).select().single()`. Captures the
- * inserted row so the happy path can assert what actually went to the table.
- */
-function createInsertChain(response: { data: unknown; error: unknown }): any {
-  const chain: any = {
-    inserted: null as unknown,
-    insert: mock((row: unknown) => {
-      chain.inserted = row;
-      return chain;
-    }),
-    select: mock(() => chain),
-    single: mock(() => Promise.resolve(response)),
-  };
-  return chain;
-}
-
-/**
- * Migration 059 put a partial unique index behind `insertExtraShift`'s
- * check-then-act guard. The race it closes only produces a usable outcome if
- * the 23505 arrives at the service as a TYPED error it can adopt the winner
- * on — a raw DatabaseError is indistinguishable from a real failure and would
- * 500 the parent who double-tapped.
+ * Migration 059's partial unique index sits behind `insertExtraShift`'s
+ * check-then-act guard; the race it closes is only usable if the conflict
+ * arrives as a TYPED error the service can adopt the winner on.
  */
 describe('ShiftRepository.createShift', () => {
   const input = {
     household_id: 'h1',
-    carer_id: 'carer-1',
+    carer_id: 'carer-1' as string | null,
     starts_at: '2026-08-04T08:00:00.000Z',
     ends_at: '2026-08-04T12:00:00.000Z',
     timezone: 'Europe/London',
     kind: 'extra' as const,
     status: 'pending' as const,
     origin: 'parent_proposed' as const,
-    created_by: 'user-1',
+    created_by: 'parent-1',
   };
 
-  function createWith(response: { data: unknown; error: unknown }): {
-    chain: any;
-    result: Promise<unknown>;
-  } {
-    const chain = createInsertChain(response);
-    mockSupabaseService.from.mockImplementation(() => chain);
-    return { chain, result: new ShiftRepository().createShift(input) };
-  }
-
-  it('returns the created row and defaults the untouched columns', async () => {
-    const row = { id: 's-new', ...input };
-    const { chain, result } = createWith({ data: row, error: null });
-    expect(await result).toEqual(row);
-    expect(mockSupabaseService.from).toHaveBeenCalledWith('shifts');
-    expect(chain.inserted).toMatchObject({
+  it('stores the row with local_date and defaults the untouched columns', async () => {
+    const row = await repo().createShift(input);
+    expect(row).toMatchObject({
       household_id: 'h1',
       carer_id: 'carer-1',
       kind: 'extra',
+      local_date: '2026-08-04',
       source_pattern_id: null,
       is_short_notice: false,
       cancellation_paid: false,
       sequence: 0,
       note: null,
       reason: null,
+      cover_ask_expires_at: null,
+    });
+    expect(row.ical_uid).toBeTruthy();
+    expect(await readShift(t, row.id)).toMatchObject({
+      local_date: '2026-08-04',
     });
   });
 
-  it('translates 059’s unique violation into ExtraShiftAlreadyExistsError', async () => {
-    const { result } = createWith({
-      data: null,
-      error: {
-        code: '23505',
-        message:
-          'duplicate key value violates unique constraint "shifts_extra_window_unique"',
-        details:
-          'Key (household_id, carer_id, starts_at, ends_at)=(...) already exists.',
-      },
+  it('normalises `+00:00` / offset input to toISOString form', async () => {
+    const row = await repo().createShift({
+      ...input,
+      starts_at: '2026-08-04T08:00:00+00:00',
+      ends_at: '2026-08-04T13:00:00+01:00',
+      cover_ask_expires_at: '2026-08-03T20:00:00+00:00',
     });
-    await expect(result).rejects.toBeInstanceOf(ExtraShiftAlreadyExistsError);
-    await expect(result).rejects.toMatchObject({
-      name: 'ExtraShiftAlreadyExistsError',
+    expect(row.starts_at).toBe('2026-08-04T08:00:00.000Z');
+    expect(row.ends_at).toBe('2026-08-04T12:00:00.000Z');
+    expect(row.cover_ask_expires_at).toBe('2026-08-03T20:00:00.000Z');
+  });
+
+  it('derives local_date in the household timezone, not UTC', async () => {
+    const row = await repo().createShift({
+      ...input,
+      starts_at: '2026-08-04T23:30:00Z',
+      ends_at: '2026-08-05T02:00:00Z',
+    });
+    expect(row.local_date).toBe('2026-08-05');
+  });
+
+  it('an exact duplicate carer-assigned extra → ExtraShiftAlreadyExistsError (overlap trigger fires first on D1)', async () => {
+    await repo().createShift(input);
+    const err = await repo()
+      .createShift({ ...input, starts_at: '2026-08-04T09:00:00+01:00' })
+      .catch(e => e);
+    expect(err).toBeInstanceOf(ExtraShiftAlreadyExistsError);
+    expect(err).toMatchObject({
       statusCode: 409,
       metadata: { reason: 'EXTRA_SHIFT_ALREADY_EXISTS' },
     });
   });
 
-  // The shifts table carries other unique keys (materialisation dedupe). A
-  // code-only check would mistranslate those into "already exists" and the
-  // service would then hunt for a winner that does not exist.
-  it('leaves a 23505 from a DIFFERENT constraint as a DatabaseError', async () => {
-    const { result } = createWith({
-      data: null,
-      error: {
-        code: '23505',
-        message:
-          'duplicate key value violates unique constraint "shifts_pattern_slot_unique"',
-        details: '',
-      },
-    });
-    await expect(result).rejects.toBeInstanceOf(DatabaseError);
-    await expect(result).rejects.not.toBeInstanceOf(
-      ExtraShiftAlreadyExistsError
-    );
+  it('an exact duplicate UNASSIGNED extra → ExtraShiftAlreadyExistsError (via 059’s unique index)', async () => {
+    await repo().createShift({ ...input, carer_id: null });
+    await expect(
+      repo().createShift({ ...input, carer_id: null })
+    ).rejects.toBeInstanceOf(ExtraShiftAlreadyExistsError);
   });
 
-  it('leaves any other DB error as a DatabaseError', async () => {
-    const { result } = createWith({
-      data: null,
-      error: { code: '23503', message: 'fk violation', details: '' },
+  it('a duplicate of a CANCELLED extra is a new shift, not a conflict', async () => {
+    await insertShift(t, {
+      kind: 'extra',
+      status: 'cancelled',
+      starts_at: input.starts_at,
+      ends_at: input.ends_at,
     });
-    await expect(result).rejects.toBeInstanceOf(DatabaseError);
+    const row = await repo().createShift(input);
+    expect(row.status).toBe('pending');
+  });
+
+  it('leaves any other DB error (FK) as a DatabaseError', async () => {
+    await expect(
+      repo().createShift({ ...input, household_id: 'no-such-household' })
+    ).rejects.toBeInstanceOf(DatabaseError);
+    await expect(
+      repo().createShift({ ...input, ends_at: input.starts_at })
+    ).rejects.toBeInstanceOf(DatabaseError);
   });
 });

@@ -1,7 +1,8 @@
 /**
- * Busy-block repository — read-only access to the `v_busy_blocks` view (see
- * supabase/migrations/016_calendar_seams.sql). NOT a `BaseRepository`: this
- * is a view with no CRUD, and it is the SINGLE code path in this codebase
+ * Busy-block repository — read-only access to the old Postgres
+ * `v_busy_blocks` view, rebuilt here as a UNION ALL query (D1 has no view; its
+ * definition is at the bottom of db/schema/availability.ts). NOT a
+ * `BaseRepository`: there is no CRUD, and it is the SINGLE code path in this codebase
  * that reads a carer's cross-household busy time.
  *
  * "Keep families apart" is a structural privacy promise, not a nicety — the
@@ -9,7 +10,7 @@
  * `listForCarer` additionally selects and maps only `starts_at`, `ends_at`,
  * `kind`. That mapping is defense in depth ON TOP of the `.select()` column
  * restriction: even if a future change to the view or the query widened what
- * came back over the wire from Supabase, the explicit object literal below
+ * came back from the database, the explicit object literal below
  * still strips anything else before it leaves this function. See
  * `AnonymisedBusyBlockSchema` in
  * `packages/shared-types/src/schemas/availability.schema.ts` for the wire
@@ -22,9 +23,21 @@
  *
  * @module domains/availability/repositories/busyBlockRepository
  */
-import { supabaseService } from '../../../config/supabase';
+import { and, eq, gt, inArray, lt, ne, sql } from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { carerTimeOff, externalBusyBlocks, shifts } from '../../../db/schema';
 import { DatabaseError } from '../../../errors';
 import type { AnonymisedBusyBlock } from '../types';
+
+/**
+ * Instants are ISO TEXT compared lexically, so a caller's `...00Z` must be
+ * normalised to the stored `...00.000Z` shape or touching blocks misorder.
+ * Unparseable input is passed through unchanged (it simply matches nothing).
+ */
+export function toInstant(value: string): string {
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? value : d.toISOString();
+}
 
 /**
  * Server-internal busy block for clash evaluation. `source_uid` is the
@@ -36,9 +49,96 @@ export interface BusyBlockWithSource extends AnonymisedBusyBlock {
   source_uid: string;
 }
 
-export class BusyBlockRepository {
-  private readonly view = 'v_busy_blocks';
+interface BusyRow {
+  starts_at: string;
+  ends_at: string;
+  kind: string;
+  source_uid: string | null;
+}
 
+/**
+ * The `v_busy_blocks` union for ONE user, overlapping `(from, to)`. The
+ * view was security_invoker (RLS-scoped); every branch filters by user here.
+ */
+async function queryBusyBlocks(
+  userId: string,
+  from: string,
+  to: string
+): Promise<BusyRow[]> {
+  const f = toInstant(from);
+  const t = toInstant(to);
+  try {
+    return await db
+      .select({
+        starts_at: shifts.starts_at,
+        ends_at: shifts.ends_at,
+        kind: sql<string>`'other_commitment'`.as('kind'),
+        source_uid: sql<string | null>`${shifts.ical_uid}`.as('source_uid'),
+      })
+      .from(shifts)
+      .where(
+        and(
+          eq(shifts.carer_id, userId),
+          inArray(shifts.status, ['pending', 'confirmed']),
+          lt(shifts.starts_at, t),
+          gt(shifts.ends_at, f)
+        )
+      )
+      .unionAll(
+        db
+          .select({
+            starts_at: carerTimeOff.starts_at,
+            ends_at: carerTimeOff.ends_at,
+            kind: sql<string>`'time_off'`.as('kind'),
+            source_uid: sql<string | null>`${carerTimeOff.ical_uid}`.as(
+              'source_uid'
+            ),
+          })
+          .from(carerTimeOff)
+          .where(
+            and(
+              eq(carerTimeOff.user_id, userId),
+              ne(carerTimeOff.status, 'cancelled'),
+              lt(carerTimeOff.starts_at, t),
+              gt(carerTimeOff.ends_at, f)
+            )
+          )
+      )
+      .unionAll(
+        db
+          .select({
+            starts_at: externalBusyBlocks.starts_at,
+            ends_at: externalBusyBlocks.ends_at,
+            kind: sql<string>`'personal'`.as('kind'),
+            source_uid: sql<
+              string | null
+            >`${externalBusyBlocks.external_event_id}`.as('source_uid'),
+          })
+          .from(externalBusyBlocks)
+          .where(
+            and(
+              eq(externalBusyBlocks.user_id, userId),
+              ne(externalBusyBlocks.opacity, 'free'),
+              lt(externalBusyBlocks.starts_at, t),
+              gt(externalBusyBlocks.ends_at, f)
+            )
+          )
+      );
+  } catch (err) {
+    const error = new DatabaseError(
+      'Failed to list busy blocks',
+      'DATABASE_ERROR',
+      {
+        details: err instanceof Error ? err.message : String(err),
+        carerId: userId,
+      }
+    );
+    error.cause = err;
+    throw error;
+  }
+}
+
+export class BusyBlockRepository {
   /**
    * Busy blocks for `carerId` overlapping `[from, to]` — public wire shape
    * (`starts_at`, `ends_at`, `kind` only).
@@ -47,36 +147,16 @@ export class BusyBlockRepository {
    * STARTS before `to` AND ENDS after `from` — the standard interval-overlap
    * test — so a block that only partially overlaps the requested window
    * (e.g. starts the day before `from` and runs into it) is still returned,
-   * not just blocks fully contained inside `[from, to]`. `.lt`/`.gt` (both
-   * strict) are used rather than `.lte`/`.gte` so a block that ends exactly
-   * at `from` or starts exactly at `to` (touching, not overlapping) is
-   * excluded.
+   * not just blocks fully contained inside `[from, to]`. Both comparisons are
+   * strict so a block that ends exactly at `from` or starts exactly at `to`
+   * (touching, not overlapping) is excluded.
    */
   async listForCarer(
     carerId: string,
     from: string,
     to: string
   ): Promise<AnonymisedBusyBlock[]> {
-    const { data, error } = await supabaseService
-      .from(this.view)
-      .select('starts_at, ends_at, kind')
-      .eq('user_id', carerId)
-      .lt('starts_at', to)
-      .gt('ends_at', from);
-
-    if (error) {
-      throw new DatabaseError('Failed to list busy blocks', 'DATABASE_ERROR', {
-        details: error.message,
-        carerId,
-      });
-    }
-
-    const rows = (data ?? []) as {
-      starts_at: string;
-      ends_at: string;
-      kind: string;
-    }[];
-
+    const rows = await queryBusyBlocks(carerId, from, to);
     // Explicit field-by-field mapping — defense in depth #2 (see module doc).
     // Never spread a raw row here; only ever these three named fields.
     return rows.map(row => ({
@@ -96,28 +176,7 @@ export class BusyBlockRepository {
     from: string,
     to: string
   ): Promise<BusyBlockWithSource[]> {
-    const { data, error } = await supabaseService
-      .from(this.view)
-      .select('starts_at, ends_at, kind, source_uid')
-      .eq('user_id', carerId)
-      .lt('starts_at', to)
-      .gt('ends_at', from);
-
-    if (error) {
-      throw new DatabaseError('Failed to list busy blocks', 'DATABASE_ERROR', {
-        details: error.message,
-        carerId,
-      });
-    }
-
-    // View typing in generated Database may lag `source_uid`; cast via unknown.
-    const rows = (data ?? []) as unknown as {
-      starts_at: string;
-      ends_at: string;
-      kind: string;
-      source_uid: string | null;
-    }[];
-
+    const rows = await queryBusyBlocks(carerId, from, to);
     return rows.map(row => ({
       starts_at: row.starts_at,
       ends_at: row.ends_at,

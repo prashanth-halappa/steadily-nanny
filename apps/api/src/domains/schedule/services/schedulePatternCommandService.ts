@@ -5,7 +5,7 @@
  *
  * `respond`'s accept branch is where a pattern turns into real shift rows —
  * see `scheduleMaterialisationService`, injected here rather than
- * constructed inline so tests can inject a fake and never touch Supabase.
+ * constructed inline so tests can inject a fake and never touch the database.
  *
  * @module domains/schedule/services/schedulePatternCommandService
  */

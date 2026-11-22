@@ -7,7 +7,7 @@
  *
  * @module tests/unit/domains/schedule/services/scheduleMaterialisationService
  */
-import { beforeAll, describe, expect, it, mock } from 'bun:test';
+import { describe, expect, it, mock } from 'bun:test';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import type { NewShiftData } from '../../../../../src/domains/schedule/repositories/scheduleShiftRepository';
 import type { ExpandedOccurrence } from '../../../../../src/domains/schedule/services/recurrenceExpander';
@@ -656,48 +656,10 @@ describe('ScheduleMaterialisationService — occurrences no longer produced by t
 });
 
 describe('ScheduleMaterialisationService — voided entries do not freeze shifts (069)', () => {
-  let TimeEntryRepository: typeof import('../../../../../src/domains/timesheet/repositories/timeEntryRepository').TimeEntryRepository;
-  // `any` matches the house style for a mocked supabase client (see
-  // scheduleShiftRepository.test.ts:16) — the mocked shape and the real
-  // SupabaseClient type do not line up, and tests get a relaxed no-any rule.
-  // biome-ignore lint/suspicious/noExplicitAny: mocked supabase client
-  let mockSupabaseService: any;
-
-  function createSupabaseQueryChain(
-    finalResponse: { data: unknown; error: unknown } = {
-      data: null,
-      error: null,
-    }
-  ): any {
-    const chain: any = {
-      select: mock(() => chain),
-      eq: mock(() => chain),
-      neq: mock(() => chain),
-      in: mock(() => chain),
-      // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-      then: (resolve: (value: unknown) => unknown) =>
-        Promise.resolve(finalResponse).then(resolve),
-    };
-    return chain;
-  }
-
-  beforeAll(async () => {
-    mock.module('../../../../../src/config/supabase', () => {
-      const obj = {
-        from: mock(() => createSupabaseQueryChain({ data: [], error: null })),
-      };
-      return { supabase: obj, supabaseService: obj };
-    });
-
-    TimeEntryRepository = (
-      await import(
-        '../../../../../src/domains/timesheet/repositories/timeEntryRepository'
-      )
-    ).TimeEntryRepository;
-    mockSupabaseService = (await import('../../../../../src/config/supabase'))
-      .supabaseService;
-  });
-
+  // The voided filter itself (`status <> 'voided'`) is TimeEntryRepository's
+  // own contract, tested with that repository. Here: a shift whose only entry
+  // is voided comes back from `shiftIdsWithTimeEntries` as absent, and the
+  // service must then treat it as untouched and update it.
   it('updates a shift when shiftIdsWithTimeEntries excludes its voided-only entry', async () => {
     const existing = baseShift({
       id: 'shift-voided-only',
@@ -713,23 +675,21 @@ describe('ScheduleMaterialisationService — voided entries do not freeze shifts
         })
       ),
     });
-    // The real query is `.select('shift_id').in(...).neq('status','voided')`,
-    // so a shift whose only entry is voided comes back with NO rows at all.
-    // Returning the row here would model a database that ignores its own
-    // filter — and production code written to satisfy that would have to
-    // guess voidedness from the row shape.
-    mockSupabaseService.from.mockImplementation(() =>
-      createSupabaseQueryChain({ data: [], error: null })
-    );
+    const timeEntries = {
+      shiftIdsWithTimeEntries: mock(async () => new Set<string>()),
+    };
     const svc = new ScheduleMaterialisationService(
       repo,
-      new TimeEntryRepository(),
+      timeEntries,
       makeEventRepo()
     );
 
     const occ = occurrence({ startsAt: '2026-06-04T09:00:00.000Z' });
     await svc.materialise(pattern, [occ], NOW);
 
+    expect(timeEntries.shiftIdsWithTimeEntries).toHaveBeenCalledWith([
+      'shift-voided-only',
+    ]);
     expect(repo.update).toHaveBeenCalledWith(
       'shift-voided-only',
       expect.objectContaining({ starts_at: '2026-06-04T09:00:00.000Z' })

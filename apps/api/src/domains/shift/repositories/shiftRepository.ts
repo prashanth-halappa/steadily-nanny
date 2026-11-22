@@ -3,8 +3,8 @@
  * `shift_children`. Extends BaseRepository for standard CRUD (only `update`
  * and `findById` are used — this domain reads freely but writes only via the
  * parent-edit PATCH, see `shiftCommandService`) and adds the two read
- * queries the calendar feed needs. Uses the service-role Supabase client, so
- * ownership/authorization is enforced in the SERVICE layer, never here.
+ * queries the calendar feed needs. Talks to D1 through Drizzle with no RLS,
+ * so ownership/authorization is enforced in the SERVICE layer, never here.
  *
  * NOTE: the `schedule` domain's `scheduleShiftRepository.ts` is the ONE
  * place that CREATES/DELETES `shifts` rows (materialisation) — this
@@ -28,9 +28,25 @@ import type {
   Shift,
   ShiftChild,
 } from '@steadily-nanny/shared-types/schemas/shift.schema';
-import { supabaseService } from '../../../config/supabase';
+import {
+  and,
+  asc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  ne,
+  type SQL,
+  sql,
+} from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { shiftLocalDate } from '../../../db/localDate';
+import { shiftChildren, shiftEvents, shifts } from '../../../db/schema';
 import { DatabaseError, ValidationError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
+import { chunk } from '../../schedule/repositories/chunk';
 // S4b's clash-scan row shape lives with the sweep-line that consumes it, not
 // here — this repository only produces rows shaped for it.
 import type { ClashScanShift } from '../../schedule/utils/crossHouseholdClashes';
@@ -45,9 +61,15 @@ import {
   ShiftNotFoundError,
   ShiftOverlapsError,
 } from '../errors/shiftErrors';
-import { isCarerWindowOverlap } from '../utils/carerWindowOverlap';
+import {
+  EXTRA_WINDOW_UNIQUE_INDEX,
+  insertIf,
+  isCarerWindowOverlap,
+  isoInstant,
+  isUniqueViolationOn,
+} from '../utils/carerWindowOverlap';
 
-/** A shift joined with its `shift_children` rows — the shape the Supabase nested select (`*, shift_children(*)`) returns. */
+/** A shift joined with its `shift_children` rows — the shape the old Supabase nested select (`*, shift_children(*)`) returned. */
 export interface ShiftWithChildren extends Shift {
   shift_children: ShiftChild[];
 }
@@ -57,41 +79,23 @@ export interface ShiftTimeEntryExistenceRepository {
   hasTimeEntries(shiftId: string): Promise<boolean>;
 }
 
-const UNIQUE_VIOLATION = '23505';
-/** Migration 059's partial unique index — the name the 23505 is matched on. */
-const EXTRA_WINDOW_UNIQUE_INDEX = 'shifts_extra_window_unique';
-
-/**
- * Whether a Postgres error is 059's extra-shift window collision. Matched on
- * the CONSTRAINT NAME, not the bare code: the table has other unique keys, and
- * mistranslating one of those would tell the caller a duplicate exists when it
- * does not. Both the insert (`createShift`) and the update (`applyParentEdit`,
- * via the RPC) can raise it — 059's index constrains both.
- */
-function isExtraWindowCollision(error: {
-  code?: string;
-  message: string;
-  details?: string | null;
-}): boolean {
-  return (
-    error.code === UNIQUE_VIOLATION &&
-    `${error.message} ${error.details ?? ''}`.includes(
-      EXTRA_WINDOW_UNIQUE_INDEX
-    )
-  );
-}
-
 /** Finished business: a shift in one of these statuses is never mutated again. */
 const IMMUTABLE_STATUSES: ReadonlySet<Shift['status']> = new Set([
   'completed',
   'cancelled',
 ]);
 
-export class ShiftRepository extends BaseRepository<Shift> {
+/** Read-then-guarded-batch attempts before a parent edit gives up on a race. */
+const PARENT_EDIT_ATTEMPTS = 3;
+
+const details = (err: unknown) =>
+  err instanceof Error ? err.message : String(err);
+
+export class ShiftRepository extends BaseRepository<Shift, typeof shifts> {
   constructor(
     private readonly timeEntryRepo: ShiftTimeEntryExistenceRepository = new TimeEntryRepository()
   ) {
-    super('shifts');
+    super(shifts);
   }
 
   /**
@@ -99,10 +103,25 @@ export class ShiftRepository extends BaseRepository<Shift> {
    * Throws `ShiftImmutableError` (409) rather than silently no-op'ing, so an
    * accepted change request against a completed/cancelled/clocked-into shift
    * surfaces to the caller instead of quietly rewriting settled history.
+   *
+   * `local_date` is re-derived whenever `starts_at` or `timezone` is in the
+   * patch (Postgres's `sync_shifts_local_date` trigger, MIGRATION-NOTES §4).
    */
   override async update(id: string, data: Partial<Shift>): Promise<Shift> {
     await this.assertMutable(id);
-    return super.update(id, data);
+    if (data.starts_at === undefined && data.timezone === undefined) {
+      return super.update(id, data);
+    }
+    const current = await this.findById(id);
+    if (!current) throw new ShiftNotFoundError(id);
+    const startsAt = isoInstant(data.starts_at ?? current.starts_at);
+    const patch: Partial<Shift> = {
+      ...data,
+      ...(data.starts_at !== undefined && { starts_at: startsAt }),
+      ...(data.ends_at !== undefined && { ends_at: isoInstant(data.ends_at) }),
+      local_date: shiftLocalDate(startsAt, data.timezone ?? current.timezone),
+    };
+    return super.update(id, patch);
   }
 
   /** Throws unless the shift exists and is still open to mutation. */
@@ -120,76 +139,65 @@ export class ShiftRepository extends BaseRepository<Shift> {
   }
 
   /**
-   * CAS pending → confirmed for carer accept. `assertMutable` is a soft
-   * preflight (no row lock); this update requires `status = 'pending'` so a
-   * concurrent cancel/demote/accept cannot silently confirm a non-pending
-   * row. Change-request accept serialises via `accept_shift_change_request`
-   * FOR UPDATE instead — see migration 029.
+   * CAS on `status = 'pending'` — the shared body of accept / decline /
+   * withdraw. `assertMutable` is a soft preflight; the WHERE clause is the
+   * guard, so a concurrent cancel/demote/accept cannot be overwritten.
+   */
+  private async casFromPending(
+    shiftId: string,
+    patch: Partial<Shift>,
+    failMessage: string,
+    notPendingMessage: string
+  ): Promise<Shift> {
+    await this.assertMutable(shiftId);
+    let rows: Shift[];
+    try {
+      rows = (await db
+        .update(shifts)
+        .set(patch)
+        .where(and(eq(shifts.id, shiftId), eq(shifts.status, 'pending')))
+        .returning()) as Shift[];
+    } catch (err) {
+      throw new DatabaseError(failMessage, 'DATABASE_ERROR', {
+        details: details(err),
+        shiftId,
+      });
+    }
+    const [row] = rows;
+    if (!row) {
+      // Lost the pending race (concurrent accept/cancel/edit) after preflight.
+      throw new ValidationError(notPendingMessage, 'SHIFT_NOT_PENDING', 400, {
+        shiftId,
+      });
+    }
+    return row;
+  }
+
+  /**
+   * CAS pending → confirmed for carer accept. Change-request accept
+   * serialises through `ShiftChangeRequestRepository.acceptAndApply` instead.
    */
   async confirmPending(shiftId: string): Promise<Shift> {
-    await this.assertMutable(shiftId);
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .update({ status: 'confirmed' })
-      .eq('id', shiftId)
-      .eq('status', 'pending')
-      .select()
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to confirm pending shift',
-        'DATABASE_ERROR',
-        { details: error.message, shiftId }
-      );
-    }
-    if (!data) {
-      // Lost the pending race (concurrent accept/cancel/edit) after preflight.
-      throw new ValidationError(
-        'Only a pending shift can be accepted',
-        'SHIFT_NOT_PENDING',
-        400,
-        { shiftId }
-      );
-    }
-    return data as Shift;
+    return this.casFromPending(
+      shiftId,
+      { status: 'confirmed' },
+      'Failed to confirm pending shift',
+      'Only a pending shift can be accepted'
+    );
   }
 
   /**
    * CAS pending → declined for carer decline — the symmetric write to
-   * `confirmPending`, and serialised the same way: soft `assertMutable`
-   * preflight (no row lock) plus `status = 'pending'` in the WHERE clause, so
-   * a concurrent accept/cancel/parent-edit cannot be silently overwritten
-   * with `declined`. `declined` is terminal, which makes losing that race
+   * `confirmPending`. `declined` is terminal, which makes losing that race
    * unrecoverable, so the CAS is doing more work here than on the accept leg.
    */
   async declinePending(shiftId: string): Promise<Shift> {
-    await this.assertMutable(shiftId);
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .update({ status: 'declined' })
-      .eq('id', shiftId)
-      .eq('status', 'pending')
-      .select()
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to decline pending shift',
-        'DATABASE_ERROR',
-        { details: error.message, shiftId }
-      );
-    }
-    if (!data) {
-      // Lost the pending race (concurrent accept/cancel/edit) after preflight.
-      throw new ValidationError(
-        'Only a pending shift can be declined',
-        'SHIFT_NOT_PENDING',
-        400,
-        { shiftId }
-      );
-    }
-    return data as Shift;
+    return this.casFromPending(
+      shiftId,
+      { status: 'declined' },
+      'Failed to decline pending shift',
+      'Only a pending shift can be declined'
+    );
   }
 
   /**
@@ -204,66 +212,81 @@ export class ShiftRepository extends BaseRepository<Shift> {
     cancelledBy: string,
     cancelledAt: string
   ): Promise<Shift> {
-    await this.assertMutable(shiftId);
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .update({
+    return this.casFromPending(
+      shiftId,
+      {
         status: 'cancelled',
-        cancelled_at: cancelledAt,
+        cancelled_at: isoInstant(cancelledAt),
         cancelled_by: cancelledBy,
         cancellation_paid: false,
-      })
-      .eq('id', shiftId)
-      .eq('status', 'pending')
-      .select()
-      .maybeSingle();
+      },
+      'Failed to withdraw cover ask',
+      'Only a pending shift can be withdrawn'
+    );
+  }
 
-    if (error) {
-      throw new DatabaseError(
-        'Failed to withdraw cover ask',
-        'DATABASE_ERROR',
-        { details: error.message, shiftId }
-      );
+  /** `SELECT * FROM shifts WHERE … ORDER BY starts_at`, each row carrying its `shift_children`. */
+  private async selectWithChildren(
+    where: SQL | undefined,
+    message: string,
+    metadata: Record<string, unknown>
+  ): Promise<ShiftWithChildren[]> {
+    try {
+      const rows = (await db
+        .select()
+        .from(shifts)
+        .where(where)
+        .orderBy(asc(shifts.starts_at))) as Shift[];
+      return await this.attachChildren(rows);
+    } catch (err) {
+      throw new DatabaseError(message, 'DATABASE_ERROR', {
+        details: details(err),
+        ...metadata,
+      });
     }
-    if (!data) {
-      throw new ValidationError(
-        'Only a pending shift can be withdrawn',
-        'SHIFT_NOT_PENDING',
-        400,
-        { shiftId }
-      );
+  }
+
+  /** The nested `shift_children(*)` embed as a second query (chunked under D1's bound-parameter cap). */
+  private async attachChildren(rows: Shift[]): Promise<ShiftWithChildren[]> {
+    if (rows.length === 0) return [];
+    const pages = await Promise.all(
+      chunk(rows.map(r => r.id)).map(ids =>
+        db
+          .select()
+          .from(shiftChildren)
+          .where(inArray(shiftChildren.shift_id, ids))
+      )
+    );
+    const byShift = new Map<string, ShiftChild[]>();
+    for (const child of pages.flat() as ShiftChild[]) {
+      const list = byShift.get(child.shift_id) ?? [];
+      list.push(child);
+      byShift.set(child.shift_id, list);
     }
-    return data as Shift;
+    return rows.map(r => ({ ...r, shift_children: byShift.get(r.id) ?? [] }));
   }
 
   /**
    * Shifts overlapping `[from, to)`, each carrying its `shift_children` —
    * the primary calendar feed, sized to avoid an N+1 per-shift children
    * fetch. Overlap semantics match `busyBlockRepository.listForCarer`: a
-   * shift STARTS before `to` AND ENDS after `from` (`.lt`/`.gt`, both
-   * strict, so a shift that only touches the boundary is excluded).
+   * shift STARTS before `to` AND ENDS after `from` (both strict, so a shift
+   * that only touches the boundary is excluded).
    */
   async findByHouseholdAndRange(
     householdId: string,
     from: string,
     to: string
   ): Promise<ShiftWithChildren[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*, shift_children(*)')
-      .eq('household_id', householdId)
-      .lt('starts_at', to)
-      .gt('ends_at', from)
-      .order('starts_at', { ascending: true });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list shifts for household range',
-        'DATABASE_ERROR',
-        { details: error.message, householdId, from, to }
-      );
-    }
-    return (data ?? []) as ShiftWithChildren[];
+    return this.selectWithChildren(
+      and(
+        eq(shifts.household_id, householdId),
+        lt(shifts.starts_at, isoInstant(to)),
+        gt(shifts.ends_at, isoInstant(from))
+      ),
+      'Failed to list shifts for household range',
+      { householdId, from, to }
+    );
   }
 
   /**
@@ -271,65 +294,64 @@ export class ShiftRepository extends BaseRepository<Shift> {
    * EVERY household, narrowed to exactly the columns
    * `findCrossHouseholdClashes` needs. This is the one query that is
    * deliberately NOT household-scoped: the whole point of the sweep is
-   * comparing one carer's shifts across different families, so household
-   * filtering would defeat it. `carer_id is not null` mirrors
-   * `v_busy_blocks`'s own `shifts` union arm (016_calendar_seams.sql); the
-   * `status in (pending, confirmed)` set is the same "live" set that view
-   * uses too. Ordered by `carer_id` so the sweep-line can group without a
-   * second pass.
+   * comparing one carer's shifts across different families. `carer_id is not
+   * null` and the `status in (pending, confirmed)` live set mirror the old
+   * `v_busy_blocks` shifts arm. Ordered by `carer_id` so the sweep-line can
+   * group without a second pass.
    */
   async listLiveForClashScan(
     from: string,
     to: string
   ): Promise<ClashScanShift[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select(
-        'id, household_id, carer_id, starts_at, ends_at, local_date, ical_uid'
-      )
-      .not('carer_id', 'is', null)
-      .in('status', ['pending', 'confirmed'])
-      .lt('starts_at', to)
-      .gt('ends_at', from)
-      .order('carer_id', { ascending: true });
-
-    if (error) {
+    try {
+      return (await db
+        .select({
+          id: shifts.id,
+          household_id: shifts.household_id,
+          carer_id: shifts.carer_id,
+          starts_at: shifts.starts_at,
+          ends_at: shifts.ends_at,
+          local_date: shifts.local_date,
+          ical_uid: shifts.ical_uid,
+        })
+        .from(shifts)
+        .where(
+          and(
+            isNotNull(shifts.carer_id),
+            inArray(shifts.status, ['pending', 'confirmed']),
+            lt(shifts.starts_at, isoInstant(to)),
+            gt(shifts.ends_at, isoInstant(from))
+          )
+        )
+        .orderBy(asc(shifts.carer_id))) as ClashScanShift[];
+    } catch (err) {
       throw new DatabaseError(
         'Failed to list live shifts for cross-household clash scan',
         'DATABASE_ERROR',
-        { details: error.message, from, to }
+        { details: details(err), from, to }
       );
     }
-    return (data ?? []) as ClashScanShift[];
   }
 
   /**
    * Every shift whose household-LOCAL calendar date is `localDate`, each
-   * carrying its `shift_children`. Deliberately keyed on the stored
-   * `local_date` column (kept in sync by migration 015's
-   * `sync_shift_local_date` trigger) rather than a UTC range, because
-   * coverage-gap detection reasons in the household's own wall clock — see
-   * `coverageGapService`.
+   * carrying its `shift_children`. Keyed on the stored `local_date` column
+   * (set on every write via `shiftLocalDate`) rather than a UTC range,
+   * because coverage-gap detection reasons in the household's own wall clock
+   * — see `coverageGapService`.
    */
   async findByHouseholdAndLocalDate(
     householdId: string,
     localDate: string
   ): Promise<ShiftWithChildren[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*, shift_children(*)')
-      .eq('household_id', householdId)
-      .eq('local_date', localDate)
-      .order('starts_at', { ascending: true });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list shifts for household local date',
-        'DATABASE_ERROR',
-        { details: error.message, householdId, localDate }
-      );
-    }
-    return (data ?? []) as ShiftWithChildren[];
+    return this.selectWithChildren(
+      and(
+        eq(shifts.household_id, householdId),
+        eq(shifts.local_date, localDate)
+      ),
+      'Failed to list shifts for household local date',
+      { householdId, localDate }
+    );
   }
 
   /** Batch fetch by primary key — empty input returns without a round trip. */
@@ -337,86 +359,81 @@ export class ShiftRepository extends BaseRepository<Shift> {
     if (ids.length === 0) {
       return [];
     }
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .in('id', ids);
-
-    if (error) {
+    try {
+      const pages = await Promise.all(
+        chunk(ids).map(page =>
+          db.select().from(shifts).where(inArray(shifts.id, page))
+        )
+      );
+      return pages.flat() as Shift[];
+    } catch (err) {
       throw new DatabaseError('Failed to list shifts by id', 'DATABASE_ERROR', {
-        details: error.message,
+        details: details(err),
         count: ids.length,
       });
     }
-    return (data ?? []) as Shift[];
   }
 
   /**
    * Cancelled shifts flagged `cancellation_paid` and starting on/after
    * `since` — the reconcile job's candidate set (`cancellationPayReconcileJob`).
-   * The `status` filter is belt-and-braces on a money path: only the cancel
-   * RPC sets the flag today, so it already implies `cancelled`, but this
-   * query feeds a write that creates a PAYABLE, and a live shift must never
-   * reach it.
+   * The `status` filter is belt-and-braces on a money path: this query feeds
+   * a write that creates a PAYABLE, and a live shift must never reach it.
    *
-   * Unassigned shifts are excluded for the same reason: an unassigned shift
-   * can still carry the flag (cancellation pricing falls back to the household
-   * window when there is no carer to look an arrangement up for), but
-   * `recordCancellationPaidEntry` returns `[]` early for a null carer — nobody
-   * is owed anything. Fetching them would make the sweep report a repair it
-   * never performed, on every run, forever.
+   * Unassigned shifts are excluded: `recordCancellationPaidEntry` returns
+   * `[]` early for a null carer — nobody is owed anything. Fetching them
+   * would make the sweep report a repair it never performed, on every run.
    */
   async listCancellationPaidSince(since: string): Promise<Shift[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('cancellation_paid', true)
-      .eq('status', 'cancelled')
-      .not('carer_id', 'is', null)
-      .gte('starts_at', since)
-      .order('starts_at', { ascending: true });
-
-    if (error) {
+    try {
+      return (await db
+        .select()
+        .from(shifts)
+        .where(
+          and(
+            eq(shifts.cancellation_paid, true),
+            eq(shifts.status, 'cancelled'),
+            isNotNull(shifts.carer_id),
+            sql`${shifts.starts_at} >= ${isoInstant(since)}`
+          )
+        )
+        .orderBy(asc(shifts.starts_at))) as Shift[];
+    } catch (err) {
       throw new DatabaseError(
         'Failed to list cancellation-paid shifts',
         'DATABASE_ERROR',
-        { details: error.message, since }
+        { details: details(err), since }
       );
     }
-    return (data ?? []) as Shift[];
   }
 
   /** One shift with its `shift_children`, or null. */
   async findByIdWithChildren(
     shiftId: string
   ): Promise<ShiftWithChildren | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*, shift_children(*)')
-      .eq('id', shiftId)
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to find shift with children',
-        'DATABASE_ERROR',
-        { details: error.message, shiftId }
-      );
-    }
-    return data as ShiftWithChildren | null;
+    const [row] = await this.selectWithChildren(
+      eq(shifts.id, shiftId),
+      'Failed to find shift with children',
+      { shiftId }
+    );
+    return row ?? null;
   }
 
   /**
    * Create one shift row (extra-shift proposals, change-request outcomes).
    *
-   * Inserts directly rather than via `BaseRepository.create` so migration
-   * 059's `shifts_extra_window_unique` violation (23505) can be translated
-   * into `ExtraShiftAlreadyExistsError` — `create` folds the Postgres code
-   * into an opaque DatabaseError, and the whole point of the index is that
-   * `insertExtraShift` can adopt the winner instead of 500ing the parent who
-   * double-tapped. Matched on the CONSTRAINT NAME, not the bare code: the
-   * table has other unique keys, and mistranslating one of those would send
-   * the service hunting for a duplicate that does not exist.
+   * Inserts directly rather than via `BaseRepository.create` so the guards
+   * translate into domain errors:
+   * - 104's carer overlap → `ShiftOverlapsError`;
+   * - 059's `shifts_extra_window_unique` → `ExtraShiftAlreadyExistsError`,
+   *   so `insertExtraShift` can adopt the winner instead of 500ing the parent
+   *   who double-tapped.
+   *
+   * D1 ORDERING TRAP: the overlap trigger runs BEFORE the unique index, so an
+   * exact duplicate of a carer-assigned extra shift reports `overlap`, not
+   * `unique` (Postgres checked 059 first). On an overlap for an extra shift we
+   * therefore look for the identical live extra window and, if it exists,
+   * answer with the adopt signal Postgres would have given.
    */
   async createShift(data: {
     household_id: string;
@@ -438,31 +455,54 @@ export class ShiftRepository extends BaseRepository<Shift> {
      */
     cover_ask_expires_at?: string | null;
   }): Promise<Shift> {
-    const { data: created, error } = await supabaseService
-      .from(this.table)
-      .insert({
-        household_id: data.household_id,
-        carer_id: data.carer_id,
-        starts_at: data.starts_at,
-        ends_at: data.ends_at,
-        timezone: data.timezone,
-        kind: data.kind,
-        status: data.status,
-        source_pattern_id: null,
-        origin: data.origin,
-        is_short_notice: data.is_short_notice ?? false,
-        note: data.note ?? null,
-        reason: data.reason ?? null,
-        created_by: data.created_by ?? null,
-        cancellation_paid: false,
-        cover_ask_expires_at: data.cover_ask_expires_at ?? null,
-        sequence: 0,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      if (isCarerWindowOverlap(error)) {
+    const startsAt = isoInstant(data.starts_at);
+    const endsAt = isoInstant(data.ends_at);
+    const extraExists = new ExtraShiftAlreadyExistsError({
+      householdId: data.household_id,
+      startsAt: data.starts_at,
+      endsAt: data.ends_at,
+      carerId: data.carer_id,
+    });
+    try {
+      const [created] = await db
+        .insert(shifts)
+        .values({
+          household_id: data.household_id,
+          carer_id: data.carer_id,
+          starts_at: startsAt,
+          ends_at: endsAt,
+          timezone: data.timezone,
+          local_date: shiftLocalDate(startsAt, data.timezone),
+          kind: data.kind,
+          status: data.status,
+          source_pattern_id: null,
+          origin: data.origin,
+          is_short_notice: data.is_short_notice ?? false,
+          note: data.note ?? null,
+          reason: data.reason ?? null,
+          created_by: data.created_by ?? null,
+          cancellation_paid: false,
+          cover_ask_expires_at:
+            data.cover_ask_expires_at == null
+              ? null
+              : isoInstant(data.cover_ask_expires_at),
+          sequence: 0,
+        })
+        .returning();
+      return created as Shift;
+    } catch (err) {
+      if (isCarerWindowOverlap(err)) {
+        if (
+          data.kind === 'extra' &&
+          (await this.findExtraShiftInWindow(
+            data.household_id,
+            data.carer_id,
+            startsAt,
+            endsAt
+          ))
+        ) {
+          throw extraExists;
+        }
         throw new ShiftOverlapsError({
           householdId: data.household_id,
           carerId: data.carer_id,
@@ -470,21 +510,14 @@ export class ShiftRepository extends BaseRepository<Shift> {
           endsAt: data.ends_at,
         });
       }
-      if (isExtraWindowCollision(error)) {
-        throw new ExtraShiftAlreadyExistsError({
-          householdId: data.household_id,
-          startsAt: data.starts_at,
-          endsAt: data.ends_at,
-          carerId: data.carer_id,
-        });
+      if (isUniqueViolationOn(err, EXTRA_WINDOW_UNIQUE_INDEX)) {
+        throw extraExists;
       }
       throw new DatabaseError('Failed to create shifts', 'DATABASE_ERROR', {
         operation: 'create',
-        details: error.message,
-        code: error.code,
+        details: details(err),
       });
     }
-    return created as Shift;
   }
 
   /**
@@ -494,10 +527,9 @@ export class ShiftRepository extends BaseRepository<Shift> {
    * is a new shift, not a duplicate of it.
    *
    * Check-then-act, so two SIMULTANEOUS creates can both miss it. That is
-   * fine: this is the cheap fast path, not the guard. The guard is migration
-   * 059's `shifts_extra_window_unique`, which refuses the loser's insert, and
-   * `insertExtraShift` catches the resulting `ExtraShiftAlreadyExistsError`
-   * and re-reads through here to adopt the winner.
+   * fine: this is the cheap fast path, not the guard. The guard is 059's
+   * `shifts_extra_window_unique` (or the overlap trigger, see `createShift`),
+   * which refuses the loser's insert.
    */
   async findExtraShiftInWindow(
     householdId: string,
@@ -505,27 +537,19 @@ export class ShiftRepository extends BaseRepository<Shift> {
     startsAt: string,
     endsAt: string
   ): Promise<ShiftWithChildren | null> {
-    const base = supabaseService
-      .from(this.table)
-      .select('*, shift_children(*)')
-      .eq('household_id', householdId)
-      .eq('kind', 'extra')
-      .eq('starts_at', startsAt)
-      .eq('ends_at', endsAt)
-      .neq('status', 'cancelled');
-    const { data, error } = await (carerId
-      ? base.eq('carer_id', carerId)
-      : base.is('carer_id', null)
-    ).limit(1);
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to look for an existing extra shift',
-        'DATABASE_ERROR',
-        { details: error.message, householdId, startsAt, endsAt }
-      );
-    }
-    return (data?.[0] as ShiftWithChildren | undefined) ?? null;
+    const [row] = await this.selectWithChildren(
+      and(
+        eq(shifts.household_id, householdId),
+        eq(shifts.kind, 'extra'),
+        eq(shifts.starts_at, isoInstant(startsAt)),
+        eq(shifts.ends_at, isoInstant(endsAt)),
+        ne(shifts.status, 'cancelled'),
+        carerId ? eq(shifts.carer_id, carerId) : isNull(shifts.carer_id)
+      ),
+      'Failed to look for an existing extra shift',
+      { householdId, startsAt, endsAt }
+    );
+    return row ?? null;
   }
 
   /**
@@ -537,54 +561,72 @@ export class ShiftRepository extends BaseRepository<Shift> {
     startsAt: string,
     endsAt: string
   ): Promise<Shift | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select()
-      .eq('household_id', householdId)
-      .eq('kind', 'parent_cover')
-      .eq('starts_at', startsAt)
-      .eq('ends_at', endsAt)
-      .neq('status', 'cancelled')
-      .limit(1);
-
-    if (error) {
+    try {
+      const [row] = await db
+        .select()
+        .from(shifts)
+        .where(
+          and(
+            eq(shifts.household_id, householdId),
+            eq(shifts.kind, 'parent_cover'),
+            eq(shifts.starts_at, isoInstant(startsAt)),
+            eq(shifts.ends_at, isoInstant(endsAt)),
+            ne(shifts.status, 'cancelled')
+          )
+        )
+        .limit(1);
+      return (row as Shift | undefined) ?? null;
+    } catch (err) {
       throw new DatabaseError(
         'Failed to look for an existing parent-cover shift',
         'DATABASE_ERROR',
-        { details: error.message, householdId, startsAt, endsAt }
+        { details: details(err), householdId, startsAt, endsAt }
       );
     }
-    return (data?.[0] as Shift | undefined) ?? null;
   }
 
-  /** Attach whole-shift child coverage rows (null start/end). */
+  /** Attach whole-shift child coverage rows (null start/end). One statement per chunk, all-or-nothing. */
   async insertChildren(shiftId: string, childIds: string[]): Promise<void> {
     if (childIds.length === 0) {
       return;
     }
-    const rows = childIds.map(child_id => ({
-      shift_id: shiftId,
-      child_id,
-      starts_at: null,
-      ends_at: null,
-    }));
-    const { error } = await supabaseService.from('shift_children').insert(rows);
-
-    if (error) {
+    const [first, ...rest] = chunk(childIds, 18).map(ids =>
+      db.insert(shiftChildren).values(
+        ids.map(child_id => ({
+          shift_id: shiftId,
+          child_id,
+          starts_at: null,
+          ends_at: null,
+        }))
+      )
+    );
+    try {
+      if (first) await db.batch([first, ...rest]);
+    } catch (err) {
       throw new DatabaseError(
         'Failed to insert shift children',
         'DATABASE_ERROR',
-        { details: error.message, shiftId }
+        { details: details(err), shiftId }
       );
     }
   }
 
   /**
-   * Sends the caller's EDIT INTENT only. The new `sequence` and the
-   * `shift_updated` event's before/after snapshots are all derived inside the
-   * RPC from the locked row (migration 031) — anything computed here would be
-   * from an unlocked pre-read, and therefore stale under the very race the
-   * lock exists to close.
+   * Port of `apply_parent_shift_edit` (MIGRATION-NOTES §5.6). The caller
+   * sends EDIT INTENT only; `sequence`, the demotion and the `shift_updated`
+   * before/after snapshot are all derived here from the row as read.
+   *
+   * FOR UPDATE replacement: read, then one batch of
+   *   1. the event insert, gated on `sequence = <read>` (the pre-state), then
+   *   2. the shift UPDATE with the same `sequence = <read>` CAS.
+   * A batch runs as one transaction, so if (1)'s gate held, (2)'s holds too,
+   * and an overlap/unique error in (2) rolls (1) back. Event-first ordering
+   * means the event's gate can't be satisfied by a concurrent writer's
+   * sequence bump. 0 rows → someone edited in between: re-read and retry.
+   *
+   * Demotion (071 value diff): `confirmed` → `pending` iff a SET start or end
+   * differs by value from the stored one; an identical resend or a note-only
+   * edit keeps the status.
    */
   async applyParentEdit(args: {
     shiftId: string;
@@ -597,39 +639,122 @@ export class ShiftRepository extends BaseRepository<Shift> {
     setNote: boolean;
     origin: string;
   }): Promise<Shift> {
-    const { data, error } = await supabaseService.rpc(
-      'apply_parent_shift_edit',
+    for (let attempt = 0; attempt < PARENT_EDIT_ATTEMPTS; attempt++) {
+      const before = await this.findById(args.shiftId);
+      if (!before) {
+        throw new DatabaseError(
+          'Failed to apply parent shift edit',
+          'DATABASE_ERROR',
+          {
+            details: `shift not found: ${args.shiftId}`,
+            shiftId: args.shiftId,
+          }
+        );
+      }
+      const startsAt =
+        args.setStartsAt && args.startsAt !== null
+          ? isoInstant(args.startsAt)
+          : before.starts_at;
+      const endsAt =
+        args.setEndsAt && args.endsAt !== null
+          ? isoInstant(args.endsAt)
+          : before.ends_at;
+      const timeChanged =
+        Date.parse(startsAt) !== Date.parse(before.starts_at) ||
+        Date.parse(endsAt) !== Date.parse(before.ends_at);
+      const after = {
+        starts_at: startsAt,
+        ends_at: endsAt,
+        note: args.setNote ? args.note : before.note,
+        sequence: before.sequence + 1,
+        origin: args.origin as Shift['origin'],
+        status:
+          before.status === 'confirmed' && timeChanged
+            ? ('pending' as const)
+            : before.status,
+      };
+      const localDate = shiftLocalDate(startsAt, before.timezone);
+      const preState = sql`EXISTS (SELECT 1 FROM shifts WHERE id = ${args.shiftId} AND sequence = ${before.sequence})`;
+      const snapshot = (s: typeof after) => ({
+        starts_at: s.starts_at,
+        ends_at: s.ends_at,
+        note: s.note,
+        sequence: s.sequence,
+        origin: s.origin,
+        status: s.status,
+      });
+
+      let updated: Shift[];
+      try {
+        [, updated] = (await db.batch([
+          insertIf(
+            shiftEvents,
+            {
+              id: crypto.randomUUID(),
+              household_id: before.household_id,
+              shift_id: before.id,
+              local_date: localDate,
+              actor_id: args.actorId,
+              event_type: 'shift_updated',
+              payload: JSON.stringify({
+                before: snapshot(before),
+                after: snapshot(after),
+                actor_id: args.actorId,
+              }),
+            },
+            preState
+          ),
+          db
+            .update(shifts)
+            .set({ ...after, local_date: localDate })
+            .where(
+              and(
+                eq(shifts.id, args.shiftId),
+                eq(shifts.sequence, before.sequence)
+              )
+            )
+            .returning(),
+        ])) as [unknown, Shift[]];
+      } catch (err) {
+        if (isCarerWindowOverlap(err)) {
+          // 104 constrains UPDATEs too: a parent moving a shift on top of
+          // another of this carer's live windows in the same household. On
+          // D1 the trigger also pre-empts 059 for an exact extra duplicate.
+          if (
+            before.kind === 'extra' &&
+            (await this.findExtraShiftInWindow(
+              before.household_id,
+              before.carer_id,
+              startsAt,
+              endsAt
+            ))
+          ) {
+            throw new ExtraShiftAlreadyExistsError({ shiftId: args.shiftId });
+          }
+          throw new ShiftOverlapsError({ shiftId: args.shiftId });
+        }
+        // 059's index constrains UPDATEs too: re-timing an extra shift onto
+        // another live one's exact window is the parent's conflict to
+        // resolve, not a 500.
+        if (isUniqueViolationOn(err, EXTRA_WINDOW_UNIQUE_INDEX)) {
+          throw new ExtraShiftAlreadyExistsError({ shiftId: args.shiftId });
+        }
+        throw new DatabaseError(
+          'Failed to apply parent shift edit',
+          'DATABASE_ERROR',
+          { details: details(err), shiftId: args.shiftId }
+        );
+      }
+      const [row] = updated;
+      if (row) return row;
+    }
+    throw new DatabaseError(
+      'Failed to apply parent shift edit',
+      'DATABASE_ERROR',
       {
-        p_shift_id: args.shiftId,
-        p_actor_id: args.actorId,
-        p_starts_at: args.startsAt,
-        p_ends_at: args.endsAt,
-        p_note: args.note,
-        p_set_starts_at: args.setStartsAt,
-        p_set_ends_at: args.setEndsAt,
-        p_set_note: args.setNote,
-        p_origin: args.origin,
+        details: 'shift kept changing underneath the edit',
+        shiftId: args.shiftId,
       }
     );
-
-    if (error || !data) {
-      // 059's index constrains UPDATEs too: re-timing an extra shift onto
-      // another live one's exact window is refused here. That refusal is
-      // correct, but it is the parent's conflict to resolve, not a 500.
-      if (error && isCarerWindowOverlap(error)) {
-        // 104's constraint constrains UPDATEs too: a parent moving a shift on
-        // top of another of this carer's live windows in the same household.
-        throw new ShiftOverlapsError({ shiftId: args.shiftId });
-      }
-      if (error && isExtraWindowCollision(error)) {
-        throw new ExtraShiftAlreadyExistsError({ shiftId: args.shiftId });
-      }
-      throw new DatabaseError(
-        'Failed to apply parent shift edit',
-        'DATABASE_ERROR',
-        { details: error?.message, shiftId: args.shiftId }
-      );
-    }
-    return data as Shift;
   }
 }

@@ -1,42 +1,42 @@
 /**
  * Carer availability repository — data access for the `carer_availability`
- * table. Uses the service-role Supabase client, so ownership/authorization
- * (the shares-household check) is enforced in the SERVICE layer, never here.
+ * table. No row-level security on D1, so ownership/authorization (the
+ * shares-household check) is enforced in the SERVICE layer, never here.
  *
  * @module domains/availability/repositories/carerAvailabilityRepository
  */
-import { supabaseService } from '../../../config/supabase';
-import { DatabaseError } from '../../../errors';
+import { asc, eq } from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { carerAvailability } from '../../../db/schema';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
 import type { CarerAvailability, CreateCarerAvailabilityInput } from '../types';
 
-export class CarerAvailabilityRepository extends BaseRepository<CarerAvailability> {
+export class CarerAvailabilityRepository extends BaseRepository<
+  CarerAvailability,
+  typeof carerAvailability
+> {
   constructor() {
-    super('carer_availability');
+    super(carerAvailability);
   }
 
   /** All weekday rows a user has set, ordered Sunday (0) -> Saturday (6). */
   async findByUserId(userId: string): Promise<CarerAvailability[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('user_id', userId)
-      .order('weekday', { ascending: true });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list carer availability',
-        'DATABASE_ERROR',
-        { details: error.message, userId }
-      );
+    try {
+      const rows = await db
+        .select()
+        .from(this.table)
+        .where(eq(this.table.user_id, userId))
+        .orderBy(asc(this.table.weekday));
+      return rows as CarerAvailability[];
+    } catch (err) {
+      throw this.dbError('Failed to list', err, { userId });
     }
-    return (data ?? []) as CarerAvailability[];
   }
 
   /**
    * Upsert one weekday row on the unique `(user_id, weekday)` key
    * (`carer_availability_user_weekday_idx`). The PUT body always represents
-   * exactly one weekday, so a single upsert call — rather than a
+   * exactly one weekday, so a single upsert statement — rather than a
    * select-then-insert/update round trip — is both simpler and avoids a
    * check-then-act race between two concurrent PUTs for the same weekday.
    */
@@ -45,22 +45,19 @@ export class CarerAvailabilityRepository extends BaseRepository<CarerAvailabilit
     weekday: number,
     data: Omit<CreateCarerAvailabilityInput, 'weekday'>
   ): Promise<CarerAvailability> {
-    const { data: upserted, error } = await supabaseService
-      .from(this.table)
-      .upsert(
-        { ...data, user_id: userId, weekday },
-        { onConflict: 'user_id,weekday' }
-      )
-      .select()
-      .single();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to upsert carer availability',
-        'DATABASE_ERROR',
-        { details: error.message, userId, weekday }
-      );
+    try {
+      const rows = await db
+        .insert(this.table)
+        .values({ ...data, user_id: userId, weekday })
+        .onConflictDoUpdate({
+          target: [this.table.user_id, this.table.weekday],
+          // user_id keeps `set` non-empty when `data` carries no fields.
+          set: { ...data, user_id: userId },
+        })
+        .returning();
+      return rows[0] as CarerAvailability;
+    } catch (err) {
+      throw this.dbError('Failed to upsert', err, { userId, weekday });
     }
-    return upserted as CarerAvailability;
   }
 }

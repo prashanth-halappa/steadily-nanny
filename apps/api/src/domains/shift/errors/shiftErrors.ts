@@ -61,7 +61,8 @@ export class ShiftImmutableError extends ConflictError {
 /**
  * 409 — an EXTRA shift for this exact `(household, carer, starts_at, ends_at)`
  * already exists and is not cancelled. Raised wherever migration 059's
- * `shifts_extra_window_unique` index rejects a write (23505):
+ * `shifts_extra_window_unique` index rejects a write (or, on D1, the overlap
+ * trigger pre-empts it for an exact carer-assigned duplicate):
  * `ShiftRepository.createShift`, when a concurrent create won the race that
  * `insertExtraShift`'s check-then-act pre-check cannot see; and
  * `ShiftRepository.applyParentEdit`, when a parent re-times an extra shift
@@ -88,7 +89,7 @@ export class ExtraShiftAlreadyExistsError extends ConflictError {
 /**
  * 409 — this carer already has a LIVE shift overlapping this window in THIS
  * household. Raised wherever migration 104's `shifts_carer_window_excl`
- * exclusion constraint rejects a write (23P01).
+ * guard (a trigger on D1, `overlap:shifts_carer_window_excl`) rejects a write.
  *
  * OVERLAP, not equality: 059/062 already refuse an exact duplicate window and
  * their `ExtraShiftAlreadyExistsError`/`RecurringShiftAlreadyExistsError` are

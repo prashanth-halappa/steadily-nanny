@@ -3,13 +3,16 @@
  * Days are a NESTED resource clients replace wholesale (never PATCHed
  * piecemeal): `replaceForPattern` deletes the pattern's existing days —
  * cascading away their children via the DB's `on delete cascade` — and
- * inserts the new set in one call.
+ * inserts the new set in one batch (all-or-nothing on D1).
  *
  * @module domains/schedule/repositories/schedulePatternDayRepository
  */
 import type { SchedulePatternDay } from '@steadily-nanny/shared-types/schemas/schedule.schema';
-import { supabaseService } from '../../../config/supabase';
+import { asc, eq } from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { schedulePatternDays } from '../../../db/schema';
 import { DatabaseError } from '../../../errors';
+import { chunk } from './chunk';
 
 export interface NewSchedulePatternDayData {
   weekday: number;
@@ -17,25 +20,27 @@ export interface NewSchedulePatternDayData {
   end_time: string;
 }
 
+const details = (err: unknown) =>
+  err instanceof Error ? err.message : String(err);
+
 export class SchedulePatternDayRepository {
-  private readonly table = 'schedule_pattern_days';
-
   async listForPattern(patternId: string): Promise<SchedulePatternDay[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('pattern_id', patternId)
-      .order('weekday', { ascending: true })
-      .order('start_time', { ascending: true });
-
-    if (error) {
+    try {
+      return (await db
+        .select()
+        .from(schedulePatternDays)
+        .where(eq(schedulePatternDays.pattern_id, patternId))
+        .orderBy(
+          asc(schedulePatternDays.weekday),
+          asc(schedulePatternDays.start_time)
+        )) as SchedulePatternDay[];
+    } catch (err) {
       throw new DatabaseError(
         'Failed to list schedule pattern days',
         'DATABASE_ERROR',
-        { details: error.message, patternId }
+        { details: details(err), patternId }
       );
     }
-    return (data ?? []) as SchedulePatternDay[];
   }
 
   /** Delete the pattern's current days, then insert the replacement set. Returns the newly-inserted rows. */
@@ -43,35 +48,31 @@ export class SchedulePatternDayRepository {
     patternId: string,
     days: NewSchedulePatternDayData[]
   ): Promise<SchedulePatternDay[]> {
-    const { error: deleteError } = await supabaseService
-      .from(this.table)
-      .delete()
-      .eq('pattern_id', patternId);
-
-    if (deleteError) {
+    const clear = db
+      .delete(schedulePatternDays)
+      .where(eq(schedulePatternDays.pattern_id, patternId));
+    try {
+      if (days.length === 0) {
+        await clear;
+        return [];
+      }
+      // 5 params per row -> chunks of 18 stay under D1's 100-param cap.
+      const [, ...inserted] = await db.batch([
+        clear,
+        ...chunk(days, 18).map(page =>
+          db
+            .insert(schedulePatternDays)
+            .values(page.map(day => ({ pattern_id: patternId, ...day })))
+            .returning()
+        ),
+      ]);
+      return inserted.flat() as SchedulePatternDay[];
+    } catch (err) {
       throw new DatabaseError(
-        'Failed to clear existing schedule pattern days',
+        'Failed to replace schedule pattern days',
         'DATABASE_ERROR',
-        { details: deleteError.message, patternId }
+        { details: details(err), patternId }
       );
     }
-
-    if (days.length === 0) {
-      return [];
-    }
-
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .insert(days.map(day => ({ pattern_id: patternId, ...day })))
-      .select();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to insert schedule pattern days',
-        'DATABASE_ERROR',
-        { details: error.message, patternId }
-      );
-    }
-    return (data ?? []) as SchedulePatternDay[];
   }
 }

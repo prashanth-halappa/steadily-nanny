@@ -24,7 +24,7 @@ describe('ReplaceSchedulePatternDaysSchema', () => {
   });
 
   it('accepts two OVERLAPPING Monday rows', () => {
-    // Per GOLDEN-FIXES #27 / supabase/migrations/015_shifts.sql, overlap is legal here.
+    // Per GOLDEN-FIXES #27 (and migration 015), overlap is legal here.
     // Clashes warn and never block. The mobile UI refuses overlap separately; the wire schema does not.
     expect(
       ReplaceSchedulePatternDaysSchema.safeParse({

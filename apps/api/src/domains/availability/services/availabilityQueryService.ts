@@ -1,13 +1,12 @@
 /**
  * Availability query service (CQRS-lite: reads only).
  *
- * Availability belongs to the person, not to a household (see
- * supabase/migrations/011_availability.sql), so "can the caller see this
- * user's availability / busy time?" is answered by a shares-an-active-
- * household check, not an owner_id comparison. Repositories use
- * `supabaseService` (service-role key), which BYPASSES Postgres RLS — so the
- * DB's `private.shares_household_with` helper is NOT automatically enforced
- * here. This service replicates that check at the service layer by comparing
+ * Availability belongs to the person, not to a household (old Postgres
+ * migration 011_availability.sql), so "can the caller see this user's
+ * availability / busy time?" is answered by a shares-an-active-household
+ * check, not an owner_id comparison. D1 has no row-level security (the old
+ * `private.shares_household_with` RLS helper is gone), so this service
+ * enforces that check at the service layer by comparing
  * the caller's and the target's active household id sets for a non-empty
  * intersection, using the household domain's `HouseholdMemberRepository`
  * (read-only cross-domain import — see domains/household/repositories/

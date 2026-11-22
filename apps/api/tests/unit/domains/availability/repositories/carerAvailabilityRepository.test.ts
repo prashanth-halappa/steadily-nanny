@@ -1,103 +1,107 @@
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+/** CarerAvailabilityRepository on a real D1 (testDb). */
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+} from 'bun:test';
+import { createTestDb, type TestDb } from '../../../../helpers/testDb';
 
-let CarerAvailabilityRepository: any;
-let mockSupabaseService: any;
-
-function createMockQueryChain(
-  finalResponse: { data: unknown; error: unknown } = { data: null, error: null }
-): any {
-  const chain: any = {
-    select: mock(() => chain),
-    eq: mock(() => chain),
-    order: mock(() => Promise.resolve(finalResponse)),
-    upsert: mock(() => chain),
-    single: mock(() => Promise.resolve(finalResponse)),
-    maybeSingle: mock(() => Promise.resolve(finalResponse)),
-  };
-  return chain;
-}
+let t: TestDb;
+let repo: any;
 
 beforeAll(async () => {
-  mock.module('../../../../../src/config/supabase', () => {
-    const obj = { from: mock(() => createMockQueryChain()) };
-    return { supabase: obj, supabaseService: obj };
-  });
-
-  const mod = await import(
+  t = await createTestDb();
+  mock.module('../../../../../src/db/client', () => ({ db: t.db }));
+  const { CarerAvailabilityRepository } = await import(
     '../../../../../src/domains/availability/repositories/carerAvailabilityRepository'
   );
-  CarerAvailabilityRepository = mod.CarerAvailabilityRepository;
-  mockSupabaseService = (await import('../../../../../src/config/supabase'))
-    .supabaseService;
+  repo = new CarerAvailabilityRepository();
+  for (const u of ['u1', 'u2']) {
+    await t.d1
+      .prepare('INSERT INTO user (id, name, email) VALUES (?, ?, ?)')
+      .bind(u, u, `${u}@x.test`)
+      .run();
+    await t.d1
+      .prepare('INSERT INTO user_profiles (user_id) VALUES (?)')
+      .bind(u)
+      .run();
+  }
 });
 
-beforeEach(() => {
-  mockSupabaseService.from.mockClear?.();
+afterAll(() => t.dispose());
+
+beforeEach(async () => {
+  await t.d1.prepare('DELETE FROM carer_availability').run();
 });
 
 describe('CarerAvailabilityRepository.findByUserId', () => {
-  it('returns the rows for a user, ordered by weekday', async () => {
-    const rows = [
-      { id: 'a1', user_id: 'u1', weekday: 1 },
-      { id: 'a2', user_id: 'u1', weekday: 3 },
-    ];
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: rows, error: null })
-    );
-    const repo = new CarerAvailabilityRepository();
+  it("returns only that user's rows, ordered by weekday", async () => {
+    await repo.upsertForWeekday('u1', 3, { is_available: true });
+    await repo.upsertForWeekday('u1', 1, { is_available: false });
+    await repo.upsertForWeekday('u2', 2, { is_available: true });
+
     const result = await repo.findByUserId('u1');
-    expect(result).toEqual(rows);
+    expect(
+      result.map((r: { user_id: string; weekday: number }) => [
+        r.user_id,
+        r.weekday,
+      ])
+    ).toEqual([
+      ['u1', 1],
+      ['u1', 3],
+    ]);
   });
 
   it('returns [] when there are no rows', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
-    );
-    const repo = new CarerAvailabilityRepository();
     expect(await repo.findByUserId('u1')).toEqual([]);
-  });
-
-  it('throws DatabaseError on a query failure', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: { message: 'boom' } })
-    );
-    const repo = new CarerAvailabilityRepository();
-    await expect(repo.findByUserId('u1')).rejects.toThrow();
   });
 });
 
 describe('CarerAvailabilityRepository.upsertForWeekday', () => {
-  it('upserts on (user_id, weekday) and returns the row', async () => {
-    const upserted = {
-      id: 'a1',
+  it('inserts a new (user_id, weekday) row and returns it with booleans as booleans', async () => {
+    const row = await repo.upsertForWeekday('u1', 2, {
+      is_available: true,
+      earliest_start: '08:00:00',
+      latest_finish: '18:00:00',
+    });
+    expect(row).toMatchObject({
       user_id: 'u1',
       weekday: 2,
       is_available: true,
-    };
-    const chain = createMockQueryChain({ data: upserted, error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-
-    const repo = new CarerAvailabilityRepository();
-    const result = await repo.upsertForWeekday('u1', 2, { is_available: true });
-
-    expect(chain.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        user_id: 'u1',
-        weekday: 2,
-        is_available: true,
-      }),
-      expect.objectContaining({ onConflict: 'user_id,weekday' })
-    );
-    expect(result).toEqual(upserted);
+      earliest_start: '08:00:00',
+      latest_finish: '18:00:00',
+      evening_mode: 'never',
+    });
   });
 
-  it('throws DatabaseError when the upsert fails', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: { message: 'boom' } })
-    );
-    const repo = new CarerAvailabilityRepository();
+  it('updates the existing row on conflict instead of adding a second one', async () => {
+    const first = await repo.upsertForWeekday('u1', 2, { is_available: true });
+    const second = await repo.upsertForWeekday('u1', 2, {
+      is_available: false,
+      evening_mode: 'sometimes',
+    });
+    expect(second.id).toBe(first.id);
+    expect(second).toMatchObject({
+      is_available: false,
+      evening_mode: 'sometimes',
+    });
+    expect(await repo.findByUserId('u1')).toHaveLength(1);
+  });
+
+  it('throws DatabaseError when a CHECK fails', async () => {
     await expect(
-      repo.upsertForWeekday('u1', 2, { is_available: true })
-    ).rejects.toThrow();
+      repo.upsertForWeekday('u1', 2, {
+        is_available: true,
+        earliest_start: '18:00:00',
+        latest_finish: '08:00:00',
+      })
+    ).rejects.toMatchObject({
+      name: 'DatabaseError',
+      metadata: { kind: 'check', constraint: 'carer_availability_time_order' },
+    });
   });
 });

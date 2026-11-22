@@ -8,8 +8,11 @@
  * @module domains/schedule/repositories/schedulePatternDayChildRepository
  */
 import type { SchedulePatternDayChild } from '@steadily-nanny/shared-types/schemas/schedule.schema';
-import { supabaseService } from '../../../config/supabase';
+import { inArray } from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { schedulePatternDayChildren } from '../../../db/schema';
 import { DatabaseError } from '../../../errors';
+import { chunk } from './chunk';
 
 export interface NewSchedulePatternDayChildData {
   child_id: string;
@@ -18,8 +21,6 @@ export interface NewSchedulePatternDayChildData {
 }
 
 export class SchedulePatternDayChildRepository {
-  private readonly table = 'schedule_pattern_day_children';
-
   async insertForDay(
     patternDayId: string,
     children: NewSchedulePatternDayChildData[]
@@ -27,22 +28,23 @@ export class SchedulePatternDayChildRepository {
     if (children.length === 0) {
       return [];
     }
-
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .insert(
-        children.map(child => ({ pattern_day_id: patternDayId, ...child }))
-      )
-      .select();
-
-    if (error) {
+    try {
+      return (await db
+        .insert(schedulePatternDayChildren)
+        .values(
+          children.map(child => ({ pattern_day_id: patternDayId, ...child }))
+        )
+        .returning()) as SchedulePatternDayChild[];
+    } catch (err) {
       throw new DatabaseError(
         'Failed to insert schedule pattern day children',
         'DATABASE_ERROR',
-        { details: error.message, patternDayId }
+        {
+          details: err instanceof Error ? err.message : String(err),
+          patternDayId,
+        }
       );
     }
-    return (data ?? []) as SchedulePatternDayChild[];
   }
 
   /** Children across a set of pattern-day ids, for assembling a full pattern detail read. */
@@ -52,19 +54,22 @@ export class SchedulePatternDayChildRepository {
     if (patternDayIds.length === 0) {
       return [];
     }
-
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .in('pattern_day_id', patternDayIds);
-
-    if (error) {
+    try {
+      const pages = await Promise.all(
+        chunk(patternDayIds).map(ids =>
+          db
+            .select()
+            .from(schedulePatternDayChildren)
+            .where(inArray(schedulePatternDayChildren.pattern_day_id, ids))
+        )
+      );
+      return pages.flat() as SchedulePatternDayChild[];
+    } catch (err) {
       throw new DatabaseError(
         'Failed to list schedule pattern day children',
         'DATABASE_ERROR',
-        { details: error.message }
+        { details: err instanceof Error ? err.message : String(err) }
       );
     }
-    return (data ?? []) as SchedulePatternDayChild[];
   }
 }

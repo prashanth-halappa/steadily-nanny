@@ -1,173 +1,232 @@
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+/** BusyBlockRepository — the v_busy_blocks union, on a real D1 (testDb). */
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+} from 'bun:test';
+import { createTestDb, type TestDb } from '../../../../helpers/testDb';
 
-let BusyBlockRepository: any;
-let mockSupabaseService: any;
+let t: TestDb;
+let repo: any;
+const CARER = 'carer-1';
+const OTHER = 'carer-2';
+const HH = 'household-A';
+const FROM = '2026-08-01T00:00:00.000Z';
+const TO = '2026-08-08T00:00:00.000Z';
 
-function createMockQueryChain(
-  finalResponse: { data: unknown; error: unknown } = { data: null, error: null }
-): any {
-  const chain: any = {
-    select: mock(() => chain),
-    eq: mock(() => chain),
-    lt: mock(() => chain),
-    gt: mock(() => Promise.resolve(finalResponse)),
-  };
-  return chain;
+async function run(sql: string, ...args: unknown[]) {
+  await t.d1
+    .prepare(sql)
+    .bind(...args)
+    .run();
 }
 
-beforeAll(async () => {
-  mock.module('../../../../../src/config/supabase', () => {
-    const obj = { from: mock(() => createMockQueryChain()) };
-    return { supabase: obj, supabaseService: obj };
-  });
+async function shift(
+  id: string,
+  carer: string,
+  starts: string,
+  ends: string,
+  status = 'confirmed'
+) {
+  await run(
+    `INSERT INTO shifts (id, household_id, carer_id, starts_at, ends_at, timezone, local_date, status, ical_uid, note)
+     VALUES (?, ?, ?, ?, ?, 'Europe/London', ?, ?, ?, 'Dentist run for the Reyes kids')`,
+    id,
+    HH,
+    carer,
+    starts,
+    ends,
+    starts.slice(0, 10),
+    status,
+    `${id}@steadily`
+  );
+}
 
-  const mod = await import(
+const byStart = (a: { starts_at: string }, b: { starts_at: string }) =>
+  a.starts_at.localeCompare(b.starts_at);
+
+beforeAll(async () => {
+  t = await createTestDb();
+  mock.module('../../../../../src/db/client', () => ({ db: t.db }));
+  const { BusyBlockRepository } = await import(
     '../../../../../src/domains/availability/repositories/busyBlockRepository'
   );
-  BusyBlockRepository = mod.BusyBlockRepository;
-  mockSupabaseService = (await import('../../../../../src/config/supabase'))
-    .supabaseService;
+  repo = new BusyBlockRepository();
+  for (const u of [CARER, OTHER]) {
+    await run(
+      'INSERT INTO user (id, name, email) VALUES (?, ?, ?)',
+      u,
+      u,
+      `${u}@x.test`
+    );
+    await run('INSERT INTO user_profiles (user_id) VALUES (?)', u);
+  }
+  await run("INSERT INTO households (id, name) VALUES (?, 'A')", HH);
 });
 
-beforeEach(() => {
-  mockSupabaseService.from.mockClear?.();
+afterAll(() => t.dispose());
+
+beforeEach(async () => {
+  for (const table of ['shifts', 'carer_time_off', 'external_busy_blocks'])
+    await run(`DELETE FROM ${table}`);
 });
 
 describe('BusyBlockRepository.listForCarer', () => {
-  it('queries the v_busy_blocks view, scoped to the carer and the [from, to] window', async () => {
-    const chain = createMockQueryChain({
-      data: [
-        {
-          starts_at: '2026-08-03T09:00:00Z',
-          ends_at: '2026-08-03T13:00:00Z',
-          kind: 'other_commitment',
-        },
-      ],
-      error: null,
-    });
-    mockSupabaseService.from.mockImplementation(() => chain);
-
-    const repo = new BusyBlockRepository();
-    const result = await repo.listForCarer(
-      'carer-1',
-      '2026-08-01T00:00:00Z',
-      '2026-08-07T23:59:59Z'
+  it('unions live shifts, non-cancelled time off and non-free busy blocks — for this carer only', async () => {
+    await shift(
+      's-confirmed',
+      CARER,
+      '2026-08-03T09:00:00.000Z',
+      '2026-08-03T13:00:00.000Z'
+    );
+    await shift(
+      's-pending',
+      CARER,
+      '2026-08-04T09:00:00.000Z',
+      '2026-08-04T13:00:00.000Z',
+      'pending'
+    );
+    await shift(
+      's-cancelled',
+      CARER,
+      '2026-08-05T09:00:00.000Z',
+      '2026-08-05T13:00:00.000Z',
+      'cancelled'
+    );
+    await shift(
+      's-other',
+      OTHER,
+      '2026-08-03T09:00:00.000Z',
+      '2026-08-03T13:00:00.000Z'
+    );
+    await run(
+      `INSERT INTO carer_time_off (id, user_id, starts_at, ends_at, status, ical_uid) VALUES
+       ('t1', ?, '2026-08-06T00:00:00.000Z', '2026-08-07T00:00:00.000Z', 'confirmed', 'to-1'),
+       ('t2', ?, '2026-08-06T00:00:00.000Z', '2026-08-07T00:00:00.000Z', 'cancelled', 'to-2')`,
+      CARER,
+      CARER
+    );
+    await run(
+      `INSERT INTO external_busy_blocks (id, user_id, starts_at, ends_at, opacity, external_event_id) VALUES
+       ('b1', ?, '2026-08-02T10:00:00.000Z', '2026-08-02T11:00:00.000Z', 'busy', 'ext-1'),
+       ('b2', ?, '2026-08-02T12:00:00.000Z', '2026-08-02T13:00:00.000Z', 'free', 'ext-2')`,
+      CARER,
+      CARER
     );
 
-    expect(mockSupabaseService.from).toHaveBeenCalledWith('v_busy_blocks');
-    expect(chain.select).toHaveBeenCalledWith('starts_at, ends_at, kind');
-    expect(chain.eq).toHaveBeenCalledWith('user_id', 'carer-1');
-    expect(chain.lt).toHaveBeenCalledWith('starts_at', '2026-08-07T23:59:59Z');
-    expect(chain.gt).toHaveBeenCalledWith('ends_at', '2026-08-01T00:00:00Z');
-    expect(result).toEqual([
+    const result = await repo.listForCarer(CARER, FROM, TO);
+    expect([...result].sort(byStart)).toEqual([
       {
-        starts_at: '2026-08-03T09:00:00Z',
-        ends_at: '2026-08-03T13:00:00Z',
+        starts_at: '2026-08-02T10:00:00.000Z',
+        ends_at: '2026-08-02T11:00:00.000Z',
+        kind: 'personal',
+      },
+      {
+        starts_at: '2026-08-03T09:00:00.000Z',
+        ends_at: '2026-08-03T13:00:00.000Z',
         kind: 'other_commitment',
+      },
+      {
+        starts_at: '2026-08-04T09:00:00.000Z',
+        ends_at: '2026-08-04T13:00:00.000Z',
+        kind: 'other_commitment',
+      },
+      {
+        starts_at: '2026-08-06T00:00:00.000Z',
+        ends_at: '2026-08-07T00:00:00.000Z',
+        kind: 'time_off',
       },
     ]);
   });
 
-  it('returns [] when there are no blocks in the window', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
+  it('includes partial overlaps and excludes touching blocks (strict), even with ms-less bounds', async () => {
+    await shift(
+      's-partial',
+      CARER,
+      '2026-07-31T22:00:00.000Z',
+      '2026-08-01T02:00:00.000Z'
     );
-    const repo = new BusyBlockRepository();
-    expect(await repo.listForCarer('carer-1', 'a', 'b')).toEqual([]);
+    // A different table: two shifts of one carer may not overlap each other.
+    await run(
+      `INSERT INTO external_busy_blocks (id, user_id, starts_at, ends_at) VALUES
+       ('b-touch-start', ?, '2026-07-31T20:00:00.000Z', '2026-08-01T00:00:00.000Z')`,
+      CARER
+    );
+    await shift(
+      's-touch-end',
+      CARER,
+      '2026-08-08T00:00:00.000Z',
+      '2026-08-08T04:00:00.000Z'
+    );
+
+    const result = await repo.listForCarer(
+      CARER,
+      '2026-08-01T00:00:00Z',
+      '2026-08-08T00:00:00Z'
+    );
+    expect(result.map((b: { starts_at: string }) => b.starts_at)).toEqual([
+      '2026-07-31T22:00:00.000Z',
+    ]);
   });
 
-  it('throws DatabaseError on a query failure', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: { message: 'boom' } })
-    );
-    const repo = new BusyBlockRepository();
-    await expect(repo.listForCarer('carer-1', 'a', 'b')).rejects.toThrow();
+  it('returns [] when there are no blocks in the window', async () => {
+    expect(await repo.listForCarer(CARER, FROM, TO)).toEqual([]);
   });
 
   // --- THE privacy-shape test -----------------------------------------------
   // "Keep families apart" is a product privacy promise, not a nicety: this is
   // the ONLY code path that reads a carer's cross-household busy time, so its
-  // output shape is the entire enforcement mechanism. Even though the query
-  // builder already restricts the select to 3 columns (defense in depth #1,
-  // asserted above), this test additionally proves the repository's mapping
-  // step (defense in depth #2) strips any extra field a raw DB row could
-  // still carry — e.g. if a future refactor widened the `.select()` string,
-  // or a mocked/misconfigured client returned more than it was asked for.
-  it('returns ONLY {starts_at, ends_at, kind} — never a household/user/child field — even if the raw row carries more', async () => {
-    // Simulate a row that "leaked" extra columns from household A's data: a
-    // household_id and a user_id riding along with the row, as would happen
-    // if the view or a mock ever widened beyond the 3-column contract.
-    const dirtyRowFromHouseholdA = {
-      starts_at: '2026-08-03T09:00:00Z',
-      ends_at: '2026-08-03T13:00:00Z',
-      kind: 'other_commitment',
-      source_uid: 'opaque-uid@steadily',
-      household_id: 'household-A-secret',
-      user_id: 'carer-1',
-      child_id: 'child-A-secret',
-      note: 'Dentist run for the Reyes kids',
-    };
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: [dirtyRowFromHouseholdA], error: null })
+  // output shape is the entire enforcement mechanism. The source shift row
+  // carries household_id, carer_id and a note naming another family; none of
+  // that, nor the opaque source_uid, may leave this function.
+  it('returns ONLY {starts_at, ends_at, kind} — never a household/user/note field', async () => {
+    await shift(
+      's-secret',
+      CARER,
+      '2026-08-03T09:00:00.000Z',
+      '2026-08-03T13:00:00.000Z'
     );
-
-    const repo = new BusyBlockRepository();
-    const [block] = await repo.listForCarer(
-      'carer-1',
-      '2026-08-01T00:00:00Z',
-      '2026-08-07T23:59:59Z'
-    );
-
-    expect(Object.keys(block).sort()).toEqual(
-      ['ends_at', 'kind', 'starts_at'].sort()
-    );
+    const [block] = await repo.listForCarer(CARER, FROM, TO);
+    expect(Object.keys(block).sort()).toEqual(['ends_at', 'kind', 'starts_at']);
     expect(block).toEqual({
-      starts_at: '2026-08-03T09:00:00Z',
-      ends_at: '2026-08-03T13:00:00Z',
+      starts_at: '2026-08-03T09:00:00.000Z',
+      ends_at: '2026-08-03T13:00:00.000Z',
       kind: 'other_commitment',
     });
-    expect((block as Record<string, unknown>).source_uid).toBeUndefined();
-    expect((block as Record<string, unknown>).household_id).toBeUndefined();
-    expect((block as Record<string, unknown>).user_id).toBeUndefined();
-    expect((block as Record<string, unknown>).child_id).toBeUndefined();
-    expect((block as Record<string, unknown>).note).toBeUndefined();
   });
 });
 
 describe('BusyBlockRepository.listForClashEvaluation', () => {
-  it('selects opaque source_uid for server-internal clash self-ignore', async () => {
-    const chain = createMockQueryChain({
-      data: [
-        {
-          starts_at: '2026-08-03T09:00:00Z',
-          ends_at: '2026-08-03T13:00:00Z',
-          kind: 'other_commitment',
-          source_uid: 'shift-1@steadily',
-          household_id: 'household-A-secret',
-        },
-      ],
-      error: null,
-    });
-    mockSupabaseService.from.mockImplementation(() => chain);
-
-    const repo = new BusyBlockRepository();
-    const result = await repo.listForClashEvaluation(
-      'carer-1',
-      '2026-08-01T00:00:00Z',
-      '2026-08-07T23:59:59Z'
+  it('adds opaque source_uid (ical_uid / external_event_id, "" when null) and nothing household-identifying', async () => {
+    await shift(
+      's1',
+      CARER,
+      '2026-08-03T09:00:00.000Z',
+      '2026-08-03T13:00:00.000Z'
     );
-
-    expect(chain.select).toHaveBeenCalledWith(
-      'starts_at, ends_at, kind, source_uid'
+    await run(
+      `INSERT INTO external_busy_blocks (id, user_id, starts_at, ends_at, opacity) VALUES
+       ('b1', ?, '2026-08-02T10:00:00.000Z', '2026-08-02T11:00:00.000Z', 'tentative')`,
+      CARER
     );
-    expect(result).toEqual([
+    const result = await repo.listForClashEvaluation(CARER, FROM, TO);
+    expect([...result].sort(byStart)).toEqual([
       {
-        starts_at: '2026-08-03T09:00:00Z',
-        ends_at: '2026-08-03T13:00:00Z',
+        starts_at: '2026-08-02T10:00:00.000Z',
+        ends_at: '2026-08-02T11:00:00.000Z',
+        kind: 'personal',
+        source_uid: '',
+      },
+      {
+        starts_at: '2026-08-03T09:00:00.000Z',
+        ends_at: '2026-08-03T13:00:00.000Z',
         kind: 'other_commitment',
-        source_uid: 'shift-1@steadily',
+        source_uid: 's1@steadily',
       },
     ]);
-    expect((result[0] as Record<string, unknown>).household_id).toBeUndefined();
   });
 });

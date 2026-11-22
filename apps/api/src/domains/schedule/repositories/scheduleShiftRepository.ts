@@ -15,19 +15,27 @@
  * date), so it goes through the shift domain's idempotent bulk-append pair
  * instead — see `services/scheduleMaterialisationService.ts`'s header.
  *
+ * D1 notes: `local_date` is NOT NULL and no longer trigger-maintained, so every
+ * insert, and every update touching `starts_at`/`timezone`, sets it here via
+ * `shiftLocalDate` (MIGRATION-NOTES §4). Multi-row writes are split under D1's
+ * 100-bound-parameter cap and sent as one `db.batch` (all-or-nothing, like the
+ * single Postgres statement it replaces).
+ *
  * @module domains/schedule/repositories/scheduleShiftRepository
  */
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
-import { supabaseService } from '../../../config/supabase';
+import { and, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { mapDbError } from '../../../db/errors';
+import { shiftLocalDate } from '../../../db/localDate';
+import { shiftChangeRequests, shiftChildren, shifts } from '../../../db/schema';
 import { DatabaseError } from '../../../errors';
-// Cross-domain, and deliberately narrow: 104's exclusion constraint is a
-// SHIFT fact, so the error it maps to and the predicate that recognises it
-// live with the shift domain rather than being re-declared here. Same
-// convention `scheduleMaterialisationService` already follows importing that
-// domain's `ShiftEventRepository` directly.
+// Cross-domain, and deliberately narrow: 104's overlap guard is a SHIFT fact,
+// so the error it maps to lives with the shift domain rather than being
+// re-declared here.
 import { ShiftOverlapsError } from '../../shift/errors/shiftErrors';
-import { isCarerWindowOverlap } from '../../shift/utils/carerWindowOverlap';
 import { RecurringShiftAlreadyExistsError } from '../errors/scheduleErrors';
+import { chunk, nonEmpty } from './chunk';
 
 export interface NewShiftData {
   household_id: string;
@@ -49,56 +57,58 @@ export interface NewShiftChildData {
   ends_at: string | null;
 }
 
-const UNIQUE_VIOLATION = '23505';
-/** Migration 062's partial unique index — the name the 23505 is matched on. */
+/** 062's partial unique index. Matched by NAME — `shifts` has other unique keys (`ical_uid`, 059's extra-shift index). */
 const RECURRING_WINDOW_UNIQUE_INDEX = 'shifts_recurring_window_unique';
+/** 104's carer-overlap guard (a trigger on D1). */
+const CARER_WINDOW_EXCLUSION = 'shifts_carer_window_excl';
 
-/**
- * Whether a Postgres error is 062's duplicate-recurring-window collision.
- * Matched on the CONSTRAINT NAME, not the bare code — `shifts` has other
- * unique keys (`ical_uid`, 059's extra-shift index), and mistranslating one of
- * those would send the materialiser hunting for a duplicate that does not
- * exist. Same shape as `shiftRepository.isExtraWindowCollision`.
- */
-function isRecurringWindowCollision(error: {
-  code?: string;
-  message: string;
-  details?: string | null;
-}): boolean {
+const isRecurringWindowCollision = (err: unknown) => {
+  const mapped = mapDbError(err);
   return (
-    error.code === UNIQUE_VIOLATION &&
-    `${error.message} ${error.details ?? ''}`.includes(
-      RECURRING_WINDOW_UNIQUE_INDEX
-    )
+    mapped?.kind === 'unique' &&
+    mapped.constraint === RECURRING_WINDOW_UNIQUE_INDEX
   );
-}
+};
+
+const isCarerWindowOverlap = (err: unknown) => {
+  const mapped = mapDbError(err);
+  return (
+    mapped?.kind === 'overlap' && mapped.constraint === CARER_WINDOW_EXCLUSION
+  );
+};
+
+const details = (err: unknown) =>
+  err instanceof Error ? err.message : String(err);
+
+const withLocalDate = (row: NewShiftData) => ({
+  ...row,
+  local_date: shiftLocalDate(row.starts_at, row.timezone),
+});
+
+/** 13 bound params per new shift row -> 6 rows per statement. */
+const SHIFT_ROWS_PER_INSERT = 6;
+/** 5 bound params per shift_children row. */
+const CHILD_ROWS_PER_INSERT = 18;
 
 export class ScheduleShiftRepository {
-  private readonly table = 'shifts';
-  private readonly childrenTable = 'shift_children';
-  private readonly changeRequestsTable = 'shift_change_requests';
-
   /**
    * Every shift ever tied to this pattern, any status — the reconciliation
    * set, AND (since it already carries `local_date`) the occurrence lookup
-   * the materialiser indexes in memory. There used to be a
-   * `findByPatternAndDate` called once per occurrence; on a hosted DB that
-   * was one ~150ms round trip per day of the horizon.
+   * the materialiser indexes in memory.
    */
   async findActiveByPattern(patternId: string): Promise<Shift[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('source_pattern_id', patternId);
-
-    if (error) {
+    try {
+      return (await db
+        .select()
+        .from(shifts)
+        .where(eq(shifts.source_pattern_id, patternId))) as Shift[];
+    } catch (err) {
       throw new DatabaseError(
         'Failed to list shifts for pattern',
         'DATABASE_ERROR',
-        { details: error.message, patternId }
+        { details: details(err), patternId }
       );
     }
-    return (data ?? []) as Shift[];
   }
 
   /**
@@ -107,37 +117,40 @@ export class ScheduleShiftRepository {
    * engaged with the shift. `expired` (migration 064, F-B5-5) means "nobody
    * answered for 7 days" and must NOT freeze the shift from
    * re-materialisation forever — see `scheduleMaterialisationService.ts`'s
-   * module doc. One round trip for a whole materialisation run, replacing the
-   * per-shift `hasChangeRequests` probe.
+   * module doc.
    */
   async shiftIdsWithChangeRequests(shiftIds: string[]): Promise<Set<string>> {
     if (shiftIds.length === 0) {
       return new Set();
     }
-    const { data, error } = await supabaseService
-      .from(this.changeRequestsTable)
-      .select('shift_id')
-      .in('shift_id', shiftIds)
-      .neq('status', 'expired');
-
-    if (error) {
+    try {
+      const pages = await Promise.all(
+        chunk(shiftIds).map(ids =>
+          db
+            .select({ shift_id: shiftChangeRequests.shift_id })
+            .from(shiftChangeRequests)
+            .where(
+              and(
+                inArray(shiftChangeRequests.shift_id, ids),
+                ne(shiftChangeRequests.status, 'expired')
+              )
+            )
+        )
+      );
+      return new Set(pages.flat().map(row => row.shift_id));
+    } catch (err) {
       throw new DatabaseError(
         'Failed to check shift change requests',
         'DATABASE_ERROR',
-        { details: error.message, count: shiftIds.length }
+        { details: details(err), count: shiftIds.length }
       );
     }
-    return new Set(
-      (data ?? []).map(row => (row as { shift_id: string }).shift_id)
-    );
   }
 
   /**
    * A live `recurring` shift with exactly this carer and window, whatever
    * pattern produced it — the lookup behind the materialiser's
-   * adopt-on-collision path. Cross-pattern by design: that is the whole point,
-   * since `findByPatternAndDate` is blind to another pattern's row at the same
-   * instant, which is how the duplicates got created in the first place.
+   * adopt-on-collision path. Cross-pattern by design.
    */
   async findRecurringInWindow(
     householdId: string,
@@ -145,146 +158,181 @@ export class ScheduleShiftRepository {
     startsAt: string,
     endsAt: string
   ): Promise<Shift | null> {
-    const base = supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('household_id', householdId)
-      .eq('kind', 'recurring')
-      .eq('starts_at', startsAt)
-      .eq('ends_at', endsAt)
-      .neq('status', 'cancelled');
-    const { data, error } = await (carerId
-      ? base.eq('carer_id', carerId)
-      : base.is('carer_id', null)
-    ).limit(1);
-
-    if (error) {
+    try {
+      const rows = await db
+        .select()
+        .from(shifts)
+        .where(
+          and(
+            eq(shifts.household_id, householdId),
+            eq(shifts.kind, 'recurring'),
+            eq(shifts.starts_at, startsAt),
+            eq(shifts.ends_at, endsAt),
+            ne(shifts.status, 'cancelled'),
+            carerId ? eq(shifts.carer_id, carerId) : isNull(shifts.carer_id)
+          )
+        )
+        .limit(1);
+      return (rows[0] as Shift | undefined) ?? null;
+    } catch (err) {
       throw new DatabaseError(
         'Failed to look for an existing recurring shift',
         'DATABASE_ERROR',
-        { details: error.message, householdId, startsAt, endsAt }
+        { details: details(err), householdId, startsAt, endsAt }
       );
     }
-    return (data?.[0] as Shift | undefined) ?? null;
   }
 
   /**
-   * Translates 062's `shifts_recurring_window_unique` violation (23505) into
+   * Translates 062's `shifts_recurring_window_unique` violation into
    * `RecurringShiftAlreadyExistsError` so the materialiser can adopt the
-   * existing row instead of failing the whole run — same precedent as
-   * `shiftRepository.createShift` and 059.
+   * existing row instead of failing the whole run.
    */
   async create(data: NewShiftData): Promise<Shift> {
-    const { data: created, error } = await supabaseService
-      .from(this.table)
-      .insert(data)
-      .select()
-      .single();
-
-    if (error) {
-      if (isRecurringWindowCollision(error)) {
-        throw new RecurringShiftAlreadyExistsError({
-          householdId: data.household_id,
-          carerId: data.carer_id,
-          startsAt: data.starts_at,
-          endsAt: data.ends_at,
-        });
+    try {
+      const [created] = await db
+        .insert(shifts)
+        .values(withLocalDate(data))
+        .returning();
+      return created as Shift;
+    } catch (err) {
+      const window = {
+        householdId: data.household_id,
+        carerId: data.carer_id,
+        startsAt: data.starts_at,
+        endsAt: data.ends_at,
+      };
+      if (isRecurringWindowCollision(err)) {
+        throw new RecurringShiftAlreadyExistsError(window);
       }
-      // S4a. NOT an adopt signal like the collision above — the existing row
-      // only OVERLAPS this occurrence, so there is nothing to re-point at
-      // this pattern. `scheduleMaterialisationService` records it as a
-      // `pattern_conflict` and carries on with the rest of the horizon.
-      if (isCarerWindowOverlap(error)) {
-        throw new ShiftOverlapsError({
-          householdId: data.household_id,
-          carerId: data.carer_id,
-          startsAt: data.starts_at,
-          endsAt: data.ends_at,
-        });
+      // S4a. NOT an adopt signal — the existing row only OVERLAPS this
+      // occurrence; the service records a `pattern_conflict` and carries on.
+      // Except: on D1 the overlap guard is a BEFORE INSERT trigger, so it
+      // fires before 062's index for an EXACT duplicate window too. Postgres
+      // raised the unique violation there, so look for the twin and keep the
+      // adopt path.
+      if (isCarerWindowOverlap(err)) {
+        const twin = await this.findRecurringInWindow(
+          data.household_id,
+          data.carer_id,
+          data.starts_at,
+          data.ends_at
+        );
+        throw twin
+          ? new RecurringShiftAlreadyExistsError(window)
+          : new ShiftOverlapsError(window);
       }
       throw new DatabaseError('Failed to create shift', 'DATABASE_ERROR', {
-        details: error.message,
-        code: error.code,
+        details: details(err),
+        ...(mapDbError(err) ?? {}),
       });
     }
-    return created as Shift;
   }
 
   /**
-   * Insert a whole horizon's worth of occurrences in ONE statement.
+   * Insert a whole horizon's worth of occurrences in ONE batch.
    *
-   * Returns `null` — never throws `RecurringShiftAlreadyExistsError` — when
-   * 062's window index refuses one of the rows: a multi-row insert is a single
-   * statement, so the violation aborts the lot and PostgREST cannot say WHICH
-   * row lost. Nothing was written, so the caller retries row by row through
-   * `create` (below), where the collision is attributable and the existing
-   * shift can be adopted. Collisions are rare — supersede-on-accept cancels
-   * the prior pattern's rows before this runs (GOLDEN-FIXES #27).
+   * Returns `null` — never throws — when 062's window index or 104's overlap
+   * guard refuses one of the rows: the batch is all-or-nothing and cannot say
+   * WHICH row lost. Nothing was written, so the caller retries row by row
+   * through `create`, where the collision is attributable.
    */
   async createMany(rows: NewShiftData[]): Promise<Shift[] | null> {
     if (rows.length === 0) {
       return [];
     }
-    const { data: created, error } = await supabaseService
-      .from(this.table)
-      .insert(rows)
-      .select();
-
-    if (error) {
-      // Either guard aborts the whole multi-row statement and PostgREST
-      // cannot say WHICH row lost, so both fall back to the per-row retry.
-      if (isRecurringWindowCollision(error) || isCarerWindowOverlap(error)) {
+    try {
+      const results = await db.batch(
+        nonEmpty(
+          chunk(rows.map(withLocalDate), SHIFT_ROWS_PER_INSERT).map(page =>
+            db.insert(shifts).values(page).returning()
+          )
+        )
+      );
+      return results.flat() as Shift[];
+    } catch (err) {
+      if (isRecurringWindowCollision(err) || isCarerWindowOverlap(err)) {
         return null;
       }
       throw new DatabaseError('Failed to create shifts', 'DATABASE_ERROR', {
-        details: error.message,
-        code: error.code,
+        details: details(err),
+        ...(mapDbError(err) ?? {}),
         count: rows.length,
       });
     }
-    return (created ?? []) as Shift[];
   }
 
   async update(id: string, data: Partial<Shift>): Promise<Shift> {
-    const { data: updated, error } = await supabaseService
-      .from(this.table)
-      .update(data)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
+    let rows: unknown[];
+    try {
+      rows = await db
+        .update(shifts)
+        .set(await this.withRetimedLocalDate(id, data))
+        .where(eq(shifts.id, id))
+        .returning();
+    } catch (err) {
       // S4a: this is the ONE path that moves a live shift's times in bulk
       // (`applyUpdates`), so it is the one that can re-time an occurrence on
       // top of another of this carer's windows.
-      if (isCarerWindowOverlap(error)) {
+      if (isCarerWindowOverlap(err)) {
         throw new ShiftOverlapsError({ shiftId: id });
       }
       throw new DatabaseError('Failed to update shift', 'DATABASE_ERROR', {
-        details: error.message,
+        details: details(err),
         id,
       });
     }
-    return updated as Shift;
+    // The old `.single()` errored on zero rows; keep that contract.
+    if (!rows[0]) {
+      throw new DatabaseError('Failed to update shift', 'DATABASE_ERROR', {
+        details: 'No shift with that id',
+        id,
+      });
+    }
+    return rows[0] as Shift;
+  }
+
+  /** `local_date` follows `starts_at`/`timezone`; the missing half is read from the row. */
+  private async withRetimedLocalDate(id: string, data: Partial<Shift>) {
+    if (data.starts_at === undefined && data.timezone === undefined) {
+      return data;
+    }
+    let { starts_at: startsAt, timezone } = data;
+    if (startsAt === undefined || timezone === undefined) {
+      const [current] = await db
+        .select({ starts_at: shifts.starts_at, timezone: shifts.timezone })
+        .from(shifts)
+        .where(eq(shifts.id, id));
+      if (!current) return data; // zero-row update; reported by the caller
+      startsAt ??= current.starts_at;
+      timezone ??= current.timezone;
+    }
+    return { ...data, local_date: shiftLocalDate(startsAt, timezone) };
   }
 
   /**
-   * Apply the SAME patch to many shifts in one statement. Only ever used for
+   * Apply the SAME patch to many shifts in one batch. Only ever used for
    * patches that are identical by construction (the cancel patches); a
-   * per-shift patch still goes through `update`.
+   * per-shift patch — and anything re-timing a shift — goes through `update`.
    */
   async updateMany(ids: string[], data: Partial<Shift>): Promise<void> {
     if (ids.length === 0) {
       return;
     }
-    const { error } = await supabaseService
-      .from(this.table)
-      .update(data)
-      .in('id', ids);
-
-    if (error) {
+    if (data.starts_at !== undefined || data.timezone !== undefined) {
+      throw new Error('updateMany cannot re-time shifts; use update');
+    }
+    try {
+      await db.batch(
+        nonEmpty(
+          chunk(ids).map(page =>
+            db.update(shifts).set(data).where(inArray(shifts.id, page))
+          )
+        )
+      );
+    } catch (err) {
       throw new DatabaseError('Failed to update shifts', 'DATABASE_ERROR', {
-        details: error.message,
+        details: details(err),
         count: ids.length,
       });
     }
@@ -294,23 +342,25 @@ export class ScheduleShiftRepository {
     if (ids.length === 0) {
       return;
     }
-    const { error } = await supabaseService
-      .from(this.table)
-      .delete()
-      .in('id', ids);
-
-    if (error) {
+    try {
+      await db.batch(
+        nonEmpty(
+          chunk(ids).map(page =>
+            db.delete(shifts).where(inArray(shifts.id, page))
+          )
+        )
+      );
+    } catch (err) {
       throw new DatabaseError('Failed to delete shifts', 'DATABASE_ERROR', {
-        details: error.message,
+        details: details(err),
         count: ids.length,
       });
     }
   }
 
   /**
-   * Replace the children of many shifts wholesale: one delete for every
-   * shift_id, one insert for every child row. Two round trips for a whole
-   * horizon instead of two per occurrence.
+   * Replace the children of many shifts wholesale: delete every shift_id's
+   * children, insert every child row — one batch for a whole horizon.
    */
   async replaceChildrenMany(
     entries: { shiftId: string; children: NewShiftChildData[] }[]
@@ -318,36 +368,27 @@ export class ScheduleShiftRepository {
     if (entries.length === 0) {
       return;
     }
-    const shiftIds = entries.map(entry => entry.shiftId);
-    const { error: deleteError } = await supabaseService
-      .from(this.childrenTable)
-      .delete()
-      .in('shift_id', shiftIds);
-
-    if (deleteError) {
-      throw new DatabaseError(
-        'Failed to clear shift children',
-        'DATABASE_ERROR',
-        { details: deleteError.message, count: shiftIds.length }
-      );
-    }
-
     const rows = entries.flatMap(entry =>
       entry.children.map(child => ({ shift_id: entry.shiftId, ...child }))
     );
-    if (rows.length === 0) {
-      return;
-    }
-
-    const { error: insertError } = await supabaseService
-      .from(this.childrenTable)
-      .insert(rows);
-
-    if (insertError) {
+    try {
+      await db.batch(
+        nonEmpty([
+          ...chunk(entries.map(entry => entry.shiftId)).map(page =>
+            db
+              .delete(shiftChildren)
+              .where(inArray(shiftChildren.shift_id, page))
+          ),
+          ...chunk(rows, CHILD_ROWS_PER_INSERT).map(page =>
+            db.insert(shiftChildren).values(page)
+          ),
+        ])
+      );
+    } catch (err) {
       throw new DatabaseError(
-        'Failed to insert shift children',
+        'Failed to replace shift children',
         'DATABASE_ERROR',
-        { details: insertError.message, count: rows.length }
+        { details: details(err), count: rows.length }
       );
     }
   }

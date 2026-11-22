@@ -1,199 +1,218 @@
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+/** ShiftChangeRequestRepository reads + single-row CAS + sweeps, on a real D1. */
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+} from 'bun:test';
 import { ChangeRequestNotPendingError } from '../../../../../src/domains/shift/errors/shiftErrors';
-import { DatabaseError } from '../../../../../src/errors';
+import type { ShiftChangeRequestRepository as Repo } from '../../../../../src/domains/shift/repositories/shiftChangeRequestRepository';
+import { createTestDb, type TestDb } from '../../../../helpers/testDb';
+import {
+  PARENT,
+  requestById,
+  resetShiftTables,
+  seedBase,
+  seedRequest,
+  seedShift,
+} from './changeRequestSeed';
 
-let ShiftChangeRequestRepository: any;
-let mockSupabaseService: any;
-
-function createMockQueryChain(
-  finalResponse: { data: unknown; error: unknown } = { data: null, error: null }
-): any {
-  const chain: any = {
-    select: mock(() => chain),
-    eq: mock(() => chain),
-    neq: mock(() => chain),
-    lt: mock(() => chain),
-    in: mock(() => chain),
-    order: mock(() => chain),
-    update: mock(() => chain),
-    insert: mock(() => chain),
-    single: mock(() => Promise.resolve(finalResponse)),
-    maybeSingle: mock(() => Promise.resolve(finalResponse)),
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-    then: (resolve: (value: unknown) => unknown) =>
-      Promise.resolve(finalResponse).then(resolve),
-  };
-  return chain;
-}
+let t: TestDb;
+let repo: Repo;
+let shiftA: string;
+let shiftB: string;
 
 beforeAll(async () => {
-  mock.module('../../../../../src/config/supabase', () => {
-    const obj = { from: mock(() => createMockQueryChain()) };
-    return { supabase: obj, supabaseService: obj };
-  });
-
-  const mod = await import(
+  t = await createTestDb();
+  mock.module('../../../../../src/db/client', () => ({ db: t.db }));
+  const { ShiftChangeRequestRepository } = await import(
     '../../../../../src/domains/shift/repositories/shiftChangeRequestRepository'
   );
-  ShiftChangeRequestRepository = mod.ShiftChangeRequestRepository;
-  mockSupabaseService = (await import('../../../../../src/config/supabase'))
-    .supabaseService;
+  repo = new ShiftChangeRequestRepository();
+  await seedBase(t);
 });
 
-beforeEach(() => {
-  mockSupabaseService.from.mockClear?.();
+afterAll(() => t.dispose());
+
+beforeEach(async () => {
+  await resetShiftTables(t);
+  shiftA = await seedShift(t, {
+    starts_at: '2026-06-01T08:00:00.000Z',
+    ends_at: '2026-06-01T16:00:00.000Z',
+  });
+  shiftB = await seedShift(t, {
+    starts_at: '2026-06-02T08:00:00.000Z',
+    ends_at: '2026-06-02T16:00:00.000Z',
+  });
 });
 
-describe('ShiftChangeRequestRepository.respond', () => {
-  it('writes response_message (never message) and CAS on status=pending', async () => {
-    const updated = {
-      id: 'cr1',
-      status: 'accepted',
-      message: 'requester note',
-      response_message: 'ok',
-    };
-    const chain = createMockQueryChain({ data: updated, error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-    const repo = new ShiftChangeRequestRepository();
+describe('listByShift', () => {
+  it('returns only that shift’s requests, newest first', async () => {
+    const old = await seedRequest(t, shiftA, {
+      status: 'declined',
+      created_at: '2026-05-01T00:00:00.000Z',
+    });
+    const fresh = await seedRequest(t, shiftA, {
+      created_at: '2026-05-02T00:00:00.000Z',
+    });
+    await seedRequest(t, shiftB);
+    const rows = await repo.listByShift(shiftA);
+    expect(rows.map(r => r.id)).toEqual([fresh, old]);
+  });
+});
 
-    const result = await repo.respond('cr1', 'accepted', 'carer-1', 'ok');
-
-    expect(chain.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        status: 'accepted',
-        responded_by: 'carer-1',
-        response_message: 'ok',
-      })
-    );
-    const updateArg = chain.update.mock.calls[0][0];
-    expect(updateArg).not.toHaveProperty('message');
-    expect(chain.eq).toHaveBeenCalledWith('id', 'cr1');
-    expect(chain.eq).toHaveBeenCalledWith('status', 'pending');
-    expect(chain.maybeSingle).toHaveBeenCalled();
-    expect(result).toEqual(updated);
+describe('listPendingByShiftIds', () => {
+  it('returns [] for no ids', async () => {
+    expect(await repo.listPendingByShiftIds([])).toEqual([]);
   });
 
-  it('throws ChangeRequestNotPendingError when no pending row matches', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
+  it('returns only pending rows for the given shifts, newest first', async () => {
+    const a = await seedRequest(t, shiftA, {
+      created_at: '2026-05-01T00:00:00.000Z',
+    });
+    await seedRequest(t, shiftA, { status: 'withdrawn' });
+    const b = await seedRequest(t, shiftB, {
+      created_at: '2026-05-03T00:00:00.000Z',
+    });
+    const other = await seedShift(t, {
+      starts_at: '2026-06-03T08:00:00.000Z',
+      ends_at: '2026-06-03T16:00:00.000Z',
+    });
+    await seedRequest(t, other);
+    const rows = await repo.listPendingByShiftIds([shiftA, shiftB]);
+    expect(rows.map(r => r.id)).toEqual([b, a]);
+    expect(rows.every(r => r.status === 'pending')).toBe(true);
+  });
+});
+
+describe('respond', () => {
+  it('writes response_message, never message, and stamps the responder', async () => {
+    const id = await seedRequest(t, shiftA);
+    const row = await repo.respond(id, 'declined', PARENT, 'no thanks');
+    expect(row).toMatchObject({
+      id,
+      status: 'declined',
+      responded_by: PARENT,
+      response_message: 'no thanks',
+      message: 'requester note',
+    });
+    expect(row.responded_at).toBeTruthy();
+    expect(await requestById(t, id)).toMatchObject({
+      status: 'declined',
+      message: 'requester note',
+    });
+  });
+
+  it('leaves response_message null when no message is given', async () => {
+    const id = await seedRequest(t, shiftA);
+    const row = await repo.respond(id, 'declined', PARENT);
+    expect(row.response_message).toBeNull();
+  });
+
+  it('CAS on pending: a settled row is untouched and throws ChangeRequestNotPendingError', async () => {
+    const id = await seedRequest(t, shiftA, { status: 'withdrawn' });
+    await expect(repo.respond(id, 'declined', PARENT)).rejects.toBeInstanceOf(
+      ChangeRequestNotPendingError
     );
-    const repo = new ShiftChangeRequestRepository();
+    expect(await requestById(t, id)).toMatchObject({
+      status: 'withdrawn',
+      responded_by: null,
+    });
+  });
+
+  it('throws ChangeRequestNotPendingError for a missing id', async () => {
     await expect(
-      repo.respond('cr1', 'declined', 'carer-1')
+      repo.respond('nope', 'declined', PARENT)
     ).rejects.toBeInstanceOf(ChangeRequestNotPendingError);
   });
 });
 
-describe('ShiftChangeRequestRepository.listPendingByShiftIds', () => {
-  it('returns [] without hitting the DB when shiftIds is empty', async () => {
-    const repo = new ShiftChangeRequestRepository();
-    expect(await repo.listPendingByShiftIds([])).toEqual([]);
-    expect(mockSupabaseService.from).not.toHaveBeenCalled();
+describe('withdraw', () => {
+  it('flips pending → withdrawn', async () => {
+    const id = await seedRequest(t, shiftA);
+    expect((await repo.withdraw(id)).status).toBe('withdrawn');
+    expect((await requestById(t, id))?.status).toBe('withdrawn');
   });
 
-  it('filters pending rows for the given shift ids', async () => {
-    const rows = [{ id: 'cr1', status: 'pending', shift_id: 's1' }];
-    const chain = createMockQueryChain({ data: rows, error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-    const repo = new ShiftChangeRequestRepository();
-
-    const result = await repo.listPendingByShiftIds(['s1', 's2']);
-
-    expect(chain.in).toHaveBeenCalledWith('shift_id', ['s1', 's2']);
-    expect(chain.eq).toHaveBeenCalledWith('status', 'pending');
-    expect(result).toEqual(rows);
-  });
-});
-
-describe('ShiftChangeRequestRepository.withdraw', () => {
-  it('CAS on status=pending', async () => {
-    const updated = { id: 'cr1', status: 'withdrawn' };
-    const chain = createMockQueryChain({ data: updated, error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-    const repo = new ShiftChangeRequestRepository();
-
-    const result = await repo.withdraw('cr1');
-
-    expect(chain.update).toHaveBeenCalledWith({ status: 'withdrawn' });
-    expect(chain.eq).toHaveBeenCalledWith('status', 'pending');
-    expect(result).toEqual(updated);
-  });
-
-  it('throws ChangeRequestNotPendingError when no pending row matches', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
-    );
-    const repo = new ShiftChangeRequestRepository();
-    await expect(repo.withdraw('cr1')).rejects.toBeInstanceOf(
+  it('a second withdraw (or any settled row) throws and changes nothing', async () => {
+    const id = await seedRequest(t, shiftA, { status: 'accepted' });
+    await expect(repo.withdraw(id)).rejects.toBeInstanceOf(
       ChangeRequestNotPendingError
     );
+    expect((await requestById(t, id))?.status).toBe('accepted');
   });
 });
 
-describe('ShiftChangeRequestRepository.expirePendingOlderThan', () => {
+describe('expirePendingOlderThan', () => {
   const CUTOFF = '2026-07-30T00:00:00.000Z';
 
   it('flips only pending rows created before the cutoff, and returns them', async () => {
-    const flipped = [
-      { id: 'cr1', status: 'expired', shift_id: 's1' },
-      { id: 'cr2', status: 'expired', shift_id: 's2' },
-    ];
-    const chain = createMockQueryChain({ data: flipped, error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-    const repo = new ShiftChangeRequestRepository();
+    const stale = await seedRequest(t, shiftA, {
+      created_at: '2026-07-01T00:00:00.000Z',
+    });
+    const fresh = await seedRequest(t, shiftB, {
+      created_at: '2026-07-31T00:00:00.000Z',
+    });
+    // Settled before the cutoff — a sweep must never reopen it as expired.
+    const settled = await seedRequest(t, shiftB, {
+      status: 'declined',
+      created_at: '2026-07-01T00:00:00.000Z',
+    });
 
-    const result = await repo.expirePendingOlderThan(CUTOFF);
+    const rows = await repo.expirePendingOlderThan(CUTOFF);
 
-    expect(chain.update).toHaveBeenCalledWith({ status: 'expired' });
-    // CAS on pending: an accepted/declined/withdrawn row is settled and must
-    // never be reopened as `expired` by a sweep that happens to run later.
-    expect(chain.eq).toHaveBeenCalledWith('status', 'pending');
-    expect(chain.lt).toHaveBeenCalledWith('created_at', CUTOFF);
-    expect(chain.select).toHaveBeenCalled();
-    expect(result).toEqual(flipped);
+    expect(rows.map(r => r.id)).toEqual([stale]);
+    expect((await requestById(t, stale))?.status).toBe('expired');
+    expect((await requestById(t, fresh))?.status).toBe('pending');
+    expect((await requestById(t, settled))?.status).toBe('declined');
   });
 
   it('never stamps responded_by or responded_at — nobody responded', async () => {
-    const chain = createMockQueryChain({ data: [], error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-    const repo = new ShiftChangeRequestRepository();
+    const id = await seedRequest(t, shiftA, {
+      created_at: '2026-07-01T00:00:00.000Z',
+    });
+    const [row] = await repo.expirePendingOlderThan(CUTOFF);
+    expect(row).toMatchObject({ id, responded_by: null, responded_at: null });
+  });
 
-    await repo.expirePendingOlderThan(CUTOFF);
-
-    const patch = chain.update.mock.calls[0][0];
-    expect(patch).not.toHaveProperty('responded_by');
-    expect(patch).not.toHaveProperty('responded_at');
+  it('normalises an offset cutoff to the canonical instant', async () => {
+    const id = await seedRequest(t, shiftA, {
+      created_at: '2026-07-29T23:30:00.000Z',
+    });
+    // 01:00+01:00 is 00:00Z — the row is 30 minutes older than that.
+    const rows = await repo.expirePendingOlderThan('2026-07-30T01:00:00+01:00');
+    expect(rows.map(r => r.id)).toEqual([id]);
   });
 
   it('returns [] when nothing is stale — an empty sweep is not an error', async () => {
-    // Unlike `withdraw`/`respond`, matching no row is the NORMAL case here:
-    // most runs find nothing. Throwing ChangeRequestNotPendingError the way
-    // the single-row CAS paths do would fail the job every quiet day.
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: [], error: null })
-    );
-    const repo = new ShiftChangeRequestRepository();
-
+    await seedRequest(t, shiftA, { created_at: '2026-08-01T00:00:00.000Z' });
     await expect(repo.expirePendingOlderThan(CUTOFF)).resolves.toEqual([]);
   });
+});
 
-  it('returns [] when the driver hands back a null body', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
+describe('expirePendingForStartedShifts', () => {
+  it('expires pending requests whose shift has started, leaving future shifts and settled rows', async () => {
+    const started = await seedRequest(t, shiftA);
+    const settled = await seedRequest(t, shiftA, { status: 'declined' });
+    const future = await seedRequest(t, shiftB);
+
+    const rows = await repo.expirePendingForStartedShifts(
+      '2026-06-01T08:00:00.000Z' // exactly shiftA's start: inclusive
     );
-    const repo = new ShiftChangeRequestRepository();
 
-    await expect(repo.expirePendingOlderThan(CUTOFF)).resolves.toEqual([]);
+    expect(rows.map(r => r.id)).toEqual([started]);
+    expect(rows[0]).toMatchObject({ responded_by: null, responded_at: null });
+    expect((await requestById(t, settled))?.status).toBe('declined');
+    expect((await requestById(t, future))?.status).toBe('pending');
   });
 
-  it('throws DatabaseError when the update fails', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: { message: 'boom' } })
-    );
-    const repo = new ShiftChangeRequestRepository();
-
-    await expect(repo.expirePendingOlderThan(CUTOFF)).rejects.toBeInstanceOf(
-      DatabaseError
-    );
+  it('returns [] when no shift has started', async () => {
+    await seedRequest(t, shiftA);
+    expect(
+      await repo.expirePendingForStartedShifts('2026-05-01T00:00:00.000Z')
+    ).toEqual([]);
   });
 });

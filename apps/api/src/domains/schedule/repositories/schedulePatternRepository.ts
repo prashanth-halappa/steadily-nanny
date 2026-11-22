@@ -1,36 +1,43 @@
 /**
  * Schedule-pattern repository — data access for the `schedule_patterns`
- * table. Uses the service-role client, so ownership/authorization is
- * enforced in the SERVICE layer (membership + role checks), never here.
+ * table. Ownership/authorization is enforced in the SERVICE layer
+ * (membership + role checks), never here.
  *
  * @module domains/schedule/repositories/schedulePatternRepository
  */
 import type { SchedulePattern } from '@steadily-nanny/shared-types/schemas/schedule.schema';
-import { supabaseService } from '../../../config/supabase';
+import { and, desc, eq, isNull } from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { schedulePatterns } from '../../../db/schema';
 import { DatabaseError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
 
-export class SchedulePatternRepository extends BaseRepository<SchedulePattern> {
+const details = (err: unknown) =>
+  err instanceof Error ? err.message : String(err);
+
+export class SchedulePatternRepository extends BaseRepository<
+  SchedulePattern,
+  typeof schedulePatterns
+> {
   constructor() {
-    super('schedule_patterns');
+    super(schedulePatterns);
   }
 
   /** Every pattern proposed for a household, newest first. */
   async listForHousehold(householdId: string): Promise<SchedulePattern[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('household_id', householdId)
-      .order('created_at', { ascending: false });
-
-    if (error) {
+    try {
+      return (await db
+        .select()
+        .from(this.table)
+        .where(eq(this.table.household_id, householdId))
+        .orderBy(desc(this.table.created_at))) as SchedulePattern[];
+    } catch (err) {
       throw new DatabaseError(
         'Failed to list schedule patterns for household',
         'DATABASE_ERROR',
-        { details: error.message, householdId }
+        { details: details(err), householdId }
       );
     }
-    return (data ?? []) as SchedulePattern[];
   }
 
   /**
@@ -41,31 +48,33 @@ export class SchedulePatternRepository extends BaseRepository<SchedulePattern> {
    *
    * `carer_id` is nullable and an unassigned pattern is a real shape (014: a
    * parent sketching a usual week during onboarding, before any nanny
-   * exists), so the null case matches `carer_id is null` — `eq('carer_id',
-   * null)` would match nothing at all. Same null branch, same reasoning, as
-   * `shiftRepository.findExtraShiftInWindow`.
+   * exists), so the null case matches `carer_id IS NULL` — `= NULL` would
+   * match nothing at all.
    */
   async listAcceptedByHouseholdAndCarer(
     householdId: string,
     carerId: string | null
   ): Promise<SchedulePattern[]> {
-    const base = supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('household_id', householdId)
-      .eq('status', 'accepted');
-    const { data, error } = await (carerId
-      ? base.eq('carer_id', carerId)
-      : base.is('carer_id', null));
-
-    if (error) {
+    try {
+      return (await db
+        .select()
+        .from(this.table)
+        .where(
+          and(
+            eq(this.table.household_id, householdId),
+            eq(this.table.status, 'accepted'),
+            carerId
+              ? eq(this.table.carer_id, carerId)
+              : isNull(this.table.carer_id)
+          )
+        )) as SchedulePattern[];
+    } catch (err) {
       throw new DatabaseError(
         'Failed to list accepted schedule patterns for a carer',
         'DATABASE_ERROR',
-        { details: error.message, householdId, carerId }
+        { details: details(err), householdId, carerId }
       );
     }
-    return (data ?? []) as SchedulePattern[];
   }
 
   /**
@@ -76,18 +85,17 @@ export class SchedulePatternRepository extends BaseRepository<SchedulePattern> {
    * this domain.
    */
   async listAccepted(): Promise<SchedulePattern[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('status', 'accepted');
-
-    if (error) {
+    try {
+      return (await db
+        .select()
+        .from(this.table)
+        .where(eq(this.table.status, 'accepted'))) as SchedulePattern[];
+    } catch (err) {
       throw new DatabaseError(
         'Failed to list accepted schedule patterns',
         'DATABASE_ERROR',
-        { details: error.message }
+        { details: details(err) }
       );
     }
-    return (data ?? []) as SchedulePattern[];
   }
 }
