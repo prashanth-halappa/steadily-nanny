@@ -26,9 +26,9 @@ And a secrets scan (e.g. `gitleaks detect` or equivalent) against the working tr
 
 ## Level B — infrastructure round-trip (~1 hour; on demand; no product code, no device)
 
-1. **Fresh Supabase project.** Follow `PROVISIONING.md` §1: create the project, apply auth settings, then run migrations:
+1. **Fresh Cloudflare D1 database.** Follow `PROVISIONING.md` §1: create the database, set secrets, then run migrations:
    ```bash
-   bun run db:migrate   # apps/api/scripts/db-migrate.sh — supabase db push
+   bunx wrangler d1 migrations apply steadily-nanny --remote   # from apps/api (the `db:migrate` script still wraps the retired Supabase CLI)
    ```
    **Expect:** all 8 files in `supabase/migrations/` apply cleanly (extensions/helpers, user profiles, device info, job runs, app-config/beta overrides, subscriptions/usage/email, pg_cron+Vault, the widget example). Check the Supabase dashboard's **Security Advisor** — no "RLS disabled" findings on any of your tables.
 
@@ -41,7 +41,7 @@ And a secrets scan (e.g. `gitleaks detect` or equivalent) against the working tr
 
 3. **Run the read-only smoke harness:**
    ```bash
-   QA_TOKEN="<a real Supabase access JWT>" bun scripts/qa-smoke.ts
+   QA_TOKEN="<a real Better Auth session token>" bun scripts/qa-smoke.ts
    ```
    Be precise about what this script actually does — it is explicitly **read-only** (its own header comment says so): it hits `GET /health`, `GET /api/app/status`, `GET /api/v1/users/me`, `GET /api/v1/subscription/status`, `GET /api/v1/subscription/usage`, and `GET /api/v1/widgets` (plus `GET /api/v1/widgets/:id` if the list is non-empty) — asserting each returns the expected status and a valid success envelope, never a `{success:false}` on a 2xx. It then runs anon-RLS deny-checks directly against Postgres (via `SUPABASE_URL`/`SUPABASE_ANON_KEY`) confirming an anonymous client cannot read `user_profiles` or `user_subscriptions`.
 
@@ -61,11 +61,11 @@ And a secrets scan (e.g. `gitleaks detect` or equivalent) against the working tr
 
 ## Level C — cold-agent, on-device certification (~half a day; the v1 sign-off)
 
-A fresh session with no context beyond this repo: "Create a new app called TestApp from this template — follow the repo's own documentation." It runs `SETUP.md` then `PROVISIONING.md` (provisioning real services once — that IS the test of `PROVISIONING.md`), gets a dev build on a device or simulator, then walks the checklist below. Keep TestApp's provisioned services (Supabase project, RC sandbox app, GCP project) afterward as a permanent, cheap-to-reuse test bed — future re-certification then only needs Level B plus this device smoke, not a fresh provisioning pass.
+A fresh session with no context beyond this repo: "Create a new app called TestApp from this template — follow the repo's own documentation." It runs `SETUP.md` then `PROVISIONING.md` (provisioning real services once — that IS the test of `PROVISIONING.md`), gets a dev build on a device or simulator, then walks the checklist below. Keep TestApp's provisioned services (Cloudflare D1/Worker, RC sandbox app, GCP project) afterward as a permanent, cheap-to-reuse test bed — future re-certification then only needs Level B plus this device smoke, not a fresh provisioning pass.
 
 ### Auth & onboarding
 - [ ] Email/password sign-up, then sign-out, then sign-in again — works.
-- [ ] **Deleted-user relaunch recovery:** delete the test user from the Supabase dashboard (Authentication → Users) while the app is still "signed in" on device, then relaunch the app. It should recover gracefully (redirect to a signed-out state), not hang or crash — this proves the launch-time `getUser()` validation in `apps/mobile/src/store/auth.ts` (`GOLDEN-FIXES.md` #6).
+- [ ] **Deleted-user relaunch recovery:** delete the test user's `user` row in D1 (`wrangler d1 execute ... --command "delete from user where email='...'"`) while the app is still "signed in" on device, then relaunch the app. It should recover gracefully (redirect to a signed-out state), not hang or crash — this proves the launch-time `getUser()` validation in `apps/mobile/src/store/auth.ts` (`GOLDEN-FIXES.md` #6).
 - [ ] Social sign-in (Apple / Google) works, once you've completed the matching `PROVISIONING.md` sections.
 - [ ] Onboarding walks Welcome → Profile → Notifications → Paywall (`apps/mobile/src/app/onboarding/`) and completing it lands you on the Home tab.
 
@@ -92,3 +92,5 @@ A fresh session with no context beyond this repo: "Create a new app called TestA
 - You had to guess a step, or look outside this repo, to get past `SETUP.md` or `PROVISIONING.md`.
 - `qc` was green but something in this checklist still failed — the carried unit tests are too shallow at that seam; add coverage there, not just a doc note.
 - A bug already recorded in `GOLDEN-FIXES.md` reappears — the doc isn't surfacing at the point someone would actually hit it; tighten `CLAUDE.md`'s Required-Reading pointer to it.
+
+> Pre-D1 note (2026-11-22): the Level B/C steps above were written for Supabase and Vertex AI. Where they mention the Security Advisor/RLS, `supabase/migrations/`, the LLM `generate-description` path or `generateLlmObject`, those no longer exist: there is no RLS (the API is the sole DB client) and the llm domain was deleted. `qa-smoke.ts`/`level-b-roundtrip.ts` have not been re-verified against D1.

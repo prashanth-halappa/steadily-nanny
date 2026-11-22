@@ -110,7 +110,6 @@ Biome `formatter` + `javascript.formatter` (do not override per-file):
 | Directories | lowercase-with-dashes | `bedtime-reflection/` |
 | Constants | camelCase object `as const` | `const QUERY_TIMING = { ... } as const` |
 | Test files | source name + `.test.ts(x)` | `entityService.ts` → `entityService.test.ts` |
-| LLM service files | prefix `llm` | `llmActivityService.ts` |
 | Query hooks | `use` + noun | `useDailyCard`, `useChildActivities` |
 | Mutation hooks | `use` + verb | `useCreateChild`, `useUpdateUserProfile` |
 
@@ -185,7 +184,7 @@ throw NotFoundError.resource('Entity', id);
 throw ValidationError.missingParameter('entityId');
 ```
 
-Typical inventory: `AuthenticationError` (401), `AuthorizationError` (403), `NotFoundError` (404), `ValidationError` (400), `ConflictError` (409), `DatabaseError` (500), `ExternalServiceError` (502), plus domain-specific (`LLMServiceError`, etc.).
+Typical inventory: `AuthenticationError` (401), `AuthorizationError` (403), `NotFoundError` (404), `ValidationError` (400), `ConflictError` (409), `DatabaseError` (500), `ExternalServiceError` (502), plus domain-specific errors.
 
 ### 5.6 Response envelope
 

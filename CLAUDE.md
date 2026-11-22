@@ -6,10 +6,10 @@ This file guides Claude Code (or any AI agent) working in an app built from this
 
 | Doc | Read it for |
 |---|---|
-| [`docs/README.md`](./docs/README.md) | The routing map for docs 01–12 (stack, monorepo setup, shared-types, API architecture, LLM/jobs, mobile architecture, UI system, conventions, testing, new-app checklist, money, need coverage) |
+| [`docs/README.md`](./docs/README.md) | The routing map for docs 01–12 (stack, monorepo setup, shared-types, API architecture, jobs, mobile architecture, UI system, conventions, testing, new-app checklist, money, need coverage) |
 | [`docs/08-CONVENTIONS.md`](./docs/08-CONVENTIONS.md) | TypeScript non-negotiables, naming, file organization, which Biome rule enforces what |
 | [`docs/09-TESTING.md`](./docs/09-TESTING.md) | `bun:test` patterns, one-file-per-process runner, coverage baselines, mock conventions |
-| [`docs/04-API-ARCHITECTURE.md`](./docs/04-API-ARCHITECTURE.md) / [`05-API-LLM-JOBS.md`](./docs/05-API-LLM-JOBS.md) | Before touching `apps/api` |
+| [`docs/04-API-ARCHITECTURE.md`](./docs/04-API-ARCHITECTURE.md) / [`05-API-LLM-JOBS.md`](./docs/05-API-LLM-JOBS.md) (jobs/cron only; the LLM domain was removed) / [`apps/api/src/db/MIGRATION-NOTES.md`](./apps/api/src/db/MIGRATION-NOTES.md) | Before touching `apps/api` or anything DB-shaped (D1 conventions, the RPC-replacement pattern) |
 | [`docs/06-MOBILE-ARCHITECTURE.md`](./docs/06-MOBILE-ARCHITECTURE.md) / [`docs/design/00-FOUNDATIONS.md`](./docs/design/00-FOUNDATIONS.md) | Before touching `apps/mobile` |
 | [`docs/design/README.md`](./docs/design/README.md) | The design doc set — tokens, the L1–L4 hierarchy rules, voice, art direction, and the per-screen specs — before touching any mobile UI |
 | [`docs/11-MONEY.md`](./docs/11-MONEY.md) | Before touching anything that stores or renders an amount |
@@ -40,20 +40,19 @@ To run a single test file directly: `bun test path/to/file.test.ts`. **Service t
 
 ## Add a feature: copy the timesheet vertical slice
 
-The `timesheet` domain (`apps/api/src/domains/timesheet/` + `apps/mobile/src/domains/timesheet/`) is the reference vertical slice: a real, shipping, end-to-end feature that touches every layer below. Read it before building a new one, and copy the layer you need. It demonstrates CRUD, the CQRS-lite query/command split, a shared wire contract, owner-scoped RLS, and a screen wired through query keys and hooks.
+The `timesheet` domain (`apps/api/src/domains/timesheet/` + `apps/mobile/src/domains/timesheet/`) is the reference vertical slice: a real, shipping, end-to-end feature that touches every layer below. Read it before building a new one, and copy the layer you need. It demonstrates CRUD, the CQRS-lite query/command split, a shared wire contract, owner-scoped service-layer checks (no RLS — the API is the only DB client), and a screen wired through query keys and hooks.
 
 It is NOT a kitchen sink — cross-cutting pieces live elsewhere, and each has exactly one worked example:
-- Background/scheduled work → `apps/api/src/jobs/scheduleHorizonJob.ts` (and the barebones `exampleMaintenanceJob.ts`).
+- Background/scheduled work → `apps/api/src/jobs/scheduleHorizonJob.ts`, scheduled by Workers cron triggers (`apps/api/src/scheduled.ts` + `triggers.crons` in `apps/api/wrangler.jsonc`) (and the barebones `exampleMaintenanceJob.ts`).
 - Push notifications → `apps/api/src/domains/notification/services/notificationSender.ts`.
-- LLM calls + PII masking → `apps/api/src/domains/llm/services/llmGenerate.ts` + `apps/api/src/utils/piiMasking.ts`. **No domain currently wires this in** — `llmGenerate` has zero callers, so treat it as a working building block, not a live example.
 - Role/membership gating → `apps/api/src/domains/household/services/householdCommandService.ts`, one check at the top of each write method.
 
 **Shared contract first:**
 1. `packages/shared-types/src/schemas/<feature>.schema.ts` — Zod request/response schemas + inferred types, following `packages/shared-types/src/schemas/timesheet.schema.ts`. Both apps import from here — never redefine the same shape twice. The timesheet example does exactly this end-to-end: the API side's `apps/api/src/domains/timesheet/schemas.ts` is a thin re-export barrel over the shared module (so domain-internal `../schemas` imports stay stable) that also holds the server-only URL/query schemas, and the mobile side's `apps/mobile/src/api/endpoints/timesheets.ts` imports the same `TimesheetSchema` to validate responses — one wire contract, both apps.
 
 **API side** (`apps/api/src/domains/<feature>/`), in dependency order:
-2. `supabase/migrations/0XX_<feature>.sql` — table + RLS policies (owner-only by default — see `supabase/migrations/002_user_profiles.sql` for the shape), following `017_time_tracking.sql`.
-3. `repositories/<feature>Repository.ts` — extends `BaseRepository<T>`, add domain queries (`timesheetRepository.ts`, `timeEntryRepository.ts`).
+2. `apps/api/src/db/schema/<feature>.ts` — a Drizzle table (JS keys = snake_case column names; export it from `src/db/schema/index.ts`), then `bunx drizzle-kit generate` in `apps/api` for the migration under `apps/api/migrations/` (apply with `wrangler d1 migrations apply`). **No RLS** — ownership/membership checks live in the service. See `src/db/schema/timesheet.ts`.
+3. `repositories/<feature>Repository.ts` — extends `BaseRepository<T>` and calls `super(table)` with the Drizzle table; add domain queries (`timesheetRepository.ts`, `timeEntryRepository.ts`). Test it against a real D1: `createTestDb()` from `apps/api/tests/helpers/testDb.ts` (Miniflare, one DB per test file) + `mock.module('…/src/db/client', () => ({ db: t.db }))` — see `docs/09-TESTING.md` §4.5.
 4. `services/<feature>Service.ts` (or split `QueryService`/`CommandService` for CQRS-lite once the domain has non-trivial write-side logic — see `timesheetQueryService.ts` / `timesheetCommandService.ts`). Business logic and gating live here, never in the controller.
 5. `errors/<feature>Errors.ts` — a `NotFoundError` subclass for "missing or not yours" (see `timesheetErrors.ts`'s `TimesheetNotFoundError` / `TimeEntryNotFoundError` — the SAME error for both cases, deliberately, so existence isn't leaked to a non-member).
 6. `controllers/<feature>Controller.ts` — HTTP layer only (`timesheetController.ts`).
@@ -82,11 +81,23 @@ It is NOT a kitchen sink — cross-cutting pieces live elsewhere, and each has e
 - **`client.ts`'s auth behavior is injected, not automatic.** `configureAuthHandlers({ refreshToken, onUnauthorized })` (`apps/mobile/src/api/client.ts`) must be called once at app start — the auth store already does this. If you replace it, re-wire the injection point, don't hardcode a dependency back into `client.ts`.
 - **Copy obeys `docs/design/02-VOICE.md`.** Acknowledgement is allowed; grading the reader is not. Exclamation marks are allowed only in a `moments.*` title — `apps/mobile/src/i18n/__tests__/voice-guard.test.ts` fails the build on any other.
 
+## D1 gotchas
+
+The API runs as a Cloudflare Worker over D1 (SQLite) via Drizzle; there is no Postgres, no Supabase, no RLS. Full conventions and the 11 reimplemented RPCs: `apps/api/src/db/MIGRATION-NOTES.md`.
+
+- **No interactive transactions, no row locks.** Replace `FOR UPDATE` with a read, then a *guarded* write: repeat the precondition in the write's own `WHERE` (money and single-use inserts as `INSERT … SELECT … WHERE <precondition>`), check affected rows, and `db.batch([...])` the primary write with its dependents (each dependent gated on the primary having happened).
+- **`meta.changes` counts trigger writes.** Rows changed by `AFTER` triggers (updated_at stamps, `household_member_id` stamps) inflate it — count via `returning()` length where the exact number matters.
+- **``db.run(sql`…`)`` with bound params cannot go inside `db.batch`.** Use query-builder statements in batches.
+- **D1 caps a statement at 100 bound parameters.** Chunk large `IN (…)` / multi-row inserts with `apps/api/src/db/chunk.ts`.
+- **Write instants with `toISOString()`**, set `local_date` in the service (no trigger does it), and match errors with `mapDbError(err)` (`src/db/errors.ts`), never raw SQLSTATE or `err.message`.
+- **Local vs remote:** `wrangler dev` uses local D1 by default; `--remote` talks to the real database. Never point a dev server at remote (GOLDEN-FIXES #26).
+- **Kill switch:** a scheduled job is stopped by removing its entry from `triggers.crons` in `apps/api/wrangler.jsonc` and redeploying. Deploy order: `wrangler d1 migrations apply --remote` *before* `wrangler deploy` (`docs/ROLLBACK-RUNBOOK.md`).
+
 ## Dev-log locations
 
 Both apps tee their dev-server stdout into a gitignored log file — check these before assuming a bug is client-side:
 ```
-apps/api/logs/dev.log      # bun run dev — full request/response cycles, LLM calls, errors
+apps/api/logs/dev.log      # bun run dev — `wrangler dev --test-scheduled`: full request/response cycles, cron runs, errors
 apps/mobile/logs/dev.log   # bun run dev — Metro bundler output
 ```
 `tail -f apps/api/logs/dev.log` while reproducing an API issue; `less -R` to view with ANSI colors intact.

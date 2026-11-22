@@ -1,8 +1,8 @@
 # 04 — API Architecture
 
-> Purpose: the layered, clean-architecture blueprint for an Express 5 + Supabase + Bun API — bootstrap, middleware ordering, the four layers (routes → controllers → services → repositories), error handling, auth, Zod validation, env validation, and logging. Reuse the patterns; swap the product specifics.
+> Purpose: the layered, clean-architecture blueprint for an Express 5 + Cloudflare Workers + D1 API — bootstrap, middleware ordering, the four layers (routes → controllers → services → repositories), error handling, auth, Zod validation, env validation, and logging. Reuse the patterns; swap the product specifics.
 
-The stack: **Express 5**, **Bun** runtime + test runner, **Supabase** (Postgres + Auth + Storage), **Zod** validation, **winston** logging, **Sentry** error monitoring, **PostHog** analytics. All examples are real excerpts from a production API (`apps/api/`), labelled with their path.
+The stack: **Express 5** running as a **Cloudflare Worker** (`nodejs_compat` + `httpServerHandler`, entry `src/worker.ts`; `src/index.ts` is a Bun-only local entry), **Bun** test runner, **Cloudflare D1** (SQLite) via **Drizzle ORM**, **Better Auth** (cookie sessions), **Zod** validation, **winston** logging, **Sentry** error monitoring, **PostHog** analytics. All examples are real excerpts from a production API (`apps/api/`), labelled with their path.
 
 ---
 
@@ -42,7 +42,7 @@ This ordering is **load-bearing**. Each layer depends on state set by an earlier
 | # | Middleware / mount | Why it sits here |
 |---|---|---|
 | 0 | `import './config/env'` (first import) | Fail-fast env validation before anything reads `process.env`. |
-| 1 | `app.set('trust proxy', 1)` | Trust exactly **one** proxy hop (e.g. Cloud Run's front-end) so `req.ip` resolves to the real client without trusting a fully client-spoofable `X-Forwarded-For` chain. |
+| 1 | `app.set('trust proxy', 1)` | Trust exactly **one** proxy hop (the Cloudflare edge) so `req.ip` resolves to the real client without trusting a fully client-spoofable `X-Forwarded-For` chain. |
 | 2 | `Sentry.setupExpressErrorHandler(app)` | Error monitoring request handler before routes. |
 | 3 | `helmet(helmetConfig)` | Security headers first. |
 | 4 | `compression()` | gzip/brotli — smaller responses. |
@@ -50,27 +50,28 @@ This ordering is **load-bearing**. Each layer depends on state set by an earlier
 | 6 | `requestId` | Assign a correlation id before anything logs. |
 | 7 | `express.json({ verify })` + `express.urlencoded` | Body parsing. The `verify` callback preserves the **raw body** only for `/api/webhooks/*` so HMAC signatures can be verified (parsed JSON can't be re-hashed). |
 | 8 | `morganMiddleware` | HTTP access log → winston, after body parse. |
-| 9 | **`/api/jobs`** (`jobRoutes`) | **API-KEY auth — mounts BEFORE Supabase auth.** |
-| 9 | **`/api/app`** (`appStatusRoutes`), **`/api/webhooks`** (`subscriptionWebhookRoutes`, signed) | Each has its own / no auth — both mount BEFORE Supabase auth. |
-| 10a | `/api/v1` → `validateSupabaseToken` | Bearer-token auth; attaches `req.user`. |
+| 8b | `/api/auth/*` → `toNodeHandler(auth)` | Better Auth owns these routes end to end and reads the raw body, so it mounts before the body parsers' consumers and before session auth. |
+| 9 | **`/api/jobs`** (`jobRoutes`) | **API-KEY auth — mounts BEFORE session auth.** |
+| 9 | **`/api/app`** (`appStatusRoutes`), **`/api/webhooks`** (`subscriptionWebhookRoutes`, signed) | Each has its own / no auth — both mount BEFORE session auth. |
+| 10a | `/api/v1` → `validateSession` | Better Auth cookie-session auth (`auth.api.getSession`); attaches `req.user`. |
 | 10b | `/api/v1` → `userRateLimiter` | After auth so the rate-limit key is the user ID. |
 | 10c | `/api/v1` → inline user-context middleware | `Sentry.setUser({ id: req.user.id })` — email deliberately omitted (PII minimization). |
 | 10d | `/api/v1` → `apiRoutes` | The actual versioned router (see `src/routes/index.ts`). |
 | 11 | `/health`, `/` | Health check for the orchestrator; root returns a status message. |
 | 12 | `errorHandler` | **ALWAYS LAST** — Express only catches `next(err)` in middleware registered after the routes. |
 
-This template does **not** ship a streak-recording middleware, a `/api/unsubscribe` route, or a dev-only Swagger/API-docs mount. All three exist in the reference app this template was extracted from, but were deliberately left out of v1 — they're tied to features (a streak/gamification model, an email-preferences model, an API-docs UI) this template doesn't include yet. See `PORTING.md` for what each did and how to add one back if your app needs it. The rule for adding your own doesn't change: any route needing its own auth scheme mounts **before** the `/api/v1` → `validateSupabaseToken` line, exactly like the job/webhook/app-status routes above.
+This template does **not** ship a streak-recording middleware, a `/api/unsubscribe` route, or a dev-only Swagger/API-docs mount. All three exist in the reference app this template was extracted from, but were deliberately left out of v1 — they're tied to features (a streak/gamification model, an email-preferences model, an API-docs UI) this template doesn't include yet. See `PORTING.md` for what each did and how to add one back if your app needs it. The rule for adding your own doesn't change: any route needing its own auth scheme mounts **before** the `/api/v1` → `validateSession` line, exactly like the job/webhook/app-status routes above.
 
 Example: `apps/api/src/app.ts`
 ```ts
-// Job routes - API-key authentication (not Supabase token).
-// Must be mounted before Supabase auth middleware.
+// Job routes - API-key authentication (not a session).
+// Must be mounted before session auth middleware.
 app.use('/api/jobs', jobRoutes);
 app.use('/api/app', appStatusRoutes);
 app.use('/api/webhooks', subscriptionWebhookRoutes);
 
-// Supabase-authenticated API (order matters).
-app.use('/api/v1', validateSupabaseToken); // attaches req.user
+// Session-authenticated API (order matters).
+app.use('/api/v1', validateSession); // attaches req.user
 app.use('/api/v1', userRateLimiter); // after auth so the key is the user id
 app.use('/api/v1', (req, _res, next) => {
   if (req.user) {
@@ -81,7 +82,7 @@ app.use('/api/v1', (req, _res, next) => {
 app.use('/api/v1', apiRoutes);
 ```
 
-**Why job routes mount before auth:** scheduled jobs are invoked by an external scheduler (Supabase `pg_cron` + `pg_net`, or any cron hitting the HTTP endpoint). There is no logged-in user and no Supabase JWT — only a shared `X-Job-Api-Key` secret. If `/api/jobs` mounted under `validateSupabaseToken`, every cron call would 401. So the job router carries its own `validateJobApiKey` guard and is mounted on the app *before* the `/api/v1` auth layer. The same logic applies to the signed webhook route and the pre-auth app-status route.
+**Why job routes mount before auth:** scheduled jobs normally run from Workers cron triggers (`src/scheduled.ts`, no HTTP at all); `/api/jobs/*` exists for manual runs. There is no logged-in user and no session — only a shared `X-Job-Api-Key` secret. If `/api/jobs` mounted under `validateSession`, every manual call would 401. So the job router carries its own `validateJobApiKey` guard and is mounted on the app *before* the `/api/v1` auth layer. The same logic applies to the signed webhook route and the pre-auth app-status route.
 
 A ready-to-fill, fully-commented version of this file is at `templates/api/app.ts`.
 
@@ -181,7 +182,7 @@ Two helpers (`apps/api/src/utils/asyncHandler.ts`) make this safe and terse:
 export function asyncHandler(fn: AsyncHandler) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 }
-// Pulls the authed id; safe because validateSupabaseToken guarantees req.user.
+// Pulls the authed id; safe because validateSession guarantees req.user.
 export function getAuthUserId(req: Request): string {
   const id = req.user?.id;
   if (!id) throw new Error('Unreachable: auth middleware guarantees user');
@@ -211,22 +212,21 @@ static async createMemory(
 
 ### 2.4 Repositories — DB access, extend BaseRepository
 
-A repository owns one table and extends `BaseRepository<T>` for CRUD, adding domain queries on top.
+A repository owns one Drizzle table and extends `BaseRepository<T>` for CRUD, adding domain queries on top.
 
-Example: `apps/api/src/domains/memory/repositories/memoryRepository.ts`
+Example shape (see `apps/api/src/domains/timesheet/repositories/`):
 ```ts
-export class MemoryRepository extends BaseRepository<Memory> {
-  constructor() { super('child_memory'); }
+export class TimesheetRepository extends BaseRepository<Timesheet> {
+  constructor() { super(timesheets); } // the Drizzle table object, not a string
 
-  async findByChildId(childId: string, filters?: MemoryQueryFilters): Promise<Memory[]> {
-    let query = supabaseService.from(this.table).select('*').eq('child_id', childId);
-    if (filters?.status) query = query.eq('status', filters.status);
-    const { data, error } = await query.order('created_at', { ascending: false });
-    if (error) throw new DatabaseError(/* ... */);
-    return data ?? [];
+  async findByHousehold(householdId: string): Promise<Timesheet[]> {
+    return db.select().from(timesheets)
+      .where(eq(timesheets.household_id, householdId))
+      .orderBy(desc(timesheets.created_at));
   }
 }
 ```
+`db` comes from `src/db/client.ts` (Drizzle over the D1 binding). Multi-statement writes use `db.batch([...])` as guarded atomic writes — D1 has no interactive transactions (see `apps/api/src/db/MIGRATION-NOTES.md`).
 
 ---
 
@@ -256,56 +256,32 @@ A minimal new domain is just `{ controllers, routes, services, repositories, err
 
 ## 4. BaseRepository
 
-`BaseRepository<T>` (at `apps/api/src/shared/repositories/baseRepository.ts`) provides `findById`, `findAll(filters)`, `create`, `update`, `delete` — each wrapping a Supabase query and throwing a typed `DatabaseError` on failure. Subclasses call `super('table_name')` and inherit CRUD, then add their own queries (see §2.4).
+`BaseRepository<T, TTable>` (at `apps/api/src/shared/repositories/baseRepository.ts`) provides `findById`, `findAll(filters)`, `create`, `update`, `delete` over a Drizzle table — each throwing a typed `DatabaseError` on failure (via `mapDbError`, which classifies unique / foreign_key / check / overlap violations; never test `err.message` directly because Drizzle wraps driver errors). Subclasses call `super(table)` and inherit CRUD, then add their own queries (see §2.4).
 
-```ts
-async findById(id: string): Promise<T | null> {
-  const { data, error } = await supabaseService
-    .from(this.table).select('*').eq('id', id).maybeSingle();
-  if (error) throw new DatabaseError(`Failed to find ${this.table} by id`,
-    'DATABASE_ERROR', { id, operation: 'findById' });
-  return data;
-}
-```
-A genericized copy is at `templates/api/baseRepository.ts`.
+A genericized copy is at `templates/api/baseRepository.ts` (still the old supabase-js shape — treat it as a layering sketch only).
 
 ---
 
-## 5. Supabase Clients — anon vs service role
+## 5. Database access — D1 via Drizzle
 
-Two clients are created once and shared (`apps/api/src/config/supabase.ts`):
+One handle, created once per isolate in `apps/api/src/db/client.ts`: `drizzle(env.DB, { schema })` over the D1 binding declared in `wrangler.jsonc`. Schema lives in `src/db/schema/*.ts`; migrations in `apps/api/migrations/` (`drizzle-kit generate`, applied with `wrangler d1 migrations apply`).
 
-```ts
-export const supabase = createClient(supabaseUrl, supabaseKey);          // ANON key
-export const supabaseService = createClient(supabaseUrl, supabaseServiceKey); // SERVICE role
-```
-
-- **`supabase` (anon key)** — used to verify user JWTs (`supabase.auth.getUser(token)`). Subject to Row-Level Security.
-- **`supabaseService` (service-role key)** — used by **all repositories**. It **bypasses RLS**, so it must be **server-side only and never exposed to clients**. Because RLS is bypassed, the service/repository layer is responsible for ownership enforcement (e.g. the generic `makeOwnershipValidator` middleware factory — see §2.1 — plus service-level checks).
-
-The service key is a top-tier secret — keep it in env, never in the bundle, never in logs.
+- **There is no RLS.** The API is the only DB client, so the service/repository layer is solely responsible for authorization (membership/role checks at the top of each service method, plus the `makeOwnershipValidator` middleware factory — §2.1). A "missing or not yours" lookup throws the same `NotFoundError`.
+- D1 gotchas: statement-level atomicity only (guarded writes / `db.batch`), 100 bound parameters per statement (chunk large `IN` lists), `meta.changes` counts trigger writes. Full list in `apps/api/src/db/MIGRATION-NOTES.md`.
 
 ---
 
 ## 6. Authentication
 
-### 6.1 User auth — `validateSupabaseToken`
+### 6.1 User auth — `validateSession`
 
-Bearer token → cache lookup → verify with Supabase → cache the result. Caching avoids a round-trip to Supabase Auth on every request.
+Better Auth (`apps/api/src/auth.ts`, mounted at `/api/auth/*`) issues a cookie session (email/password, Apple and Google id-token sign-in; the Expo plugin carries the cookie on mobile). `validateSession` resolves it with `auth.api.getSession` and attaches `req.user = { id, email, name }`; no or expired session → 401.
 
 Example: `apps/api/src/middlewares/auth.ts`
 ```ts
-const token = extractBearerToken(req);                 // Authorization: Bearer <jwt>
-if (!token) return sendErrorResponse(res, 'MISSING_TOKEN', '...', 401);
-
-const cached = cache.get<User>(CacheKeys.token(token)); // 1. cache
-if (cached) { req.user = cached; return next(); }
-
-const { data: { user }, error } = await supabase.auth.getUser(token); // 2. verify
-if (error || !user) return sendErrorResponse(res, 'INVALID_TOKEN', '...', 401);
-
-cache.set(CacheKeys.token(token), user, TTL.TOKEN);     // 3. cache + attach
-req.user = user;
+const session = await auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
+if (!session) return sendErrorResponse(res, 'UNAUTHORIZED', 'Invalid or expired token', 401);
+req.user = { id: session.user.id, email: session.user.email, name: session.user.name };
 next();
 ```
 A companion `requireAuth` middleware (used inside the presets) asserts `req.user.id` exists and otherwise forwards an `AuthenticationError`.
@@ -353,7 +329,7 @@ export abstract class BaseError extends Error {
 }
 ```
 
-Concrete subclasses (`apps/api/src/errors/`): `ValidationError`, `NotFoundError`, `AuthenticationError`, `AuthorizationError`, `ConflictError`, `DatabaseError`, `ExternalServiceError`, `LLMServiceError`, etc. An intermediate `ContextualError<TContext>` adds a typed `context` object plus an overridable `sanitizeContext()` hook for redacting sensitive fields before serialization (used by `LLMServiceError`, and available for any domain error that needs a redactable typed context).
+Concrete subclasses (`apps/api/src/errors/`): `ValidationError`, `NotFoundError`, `AuthenticationError`, `AuthorizationError`, `ConflictError`, `DatabaseError`, `ExternalServiceError`, etc. An intermediate `ContextualError<TContext>` adds a typed `context` object plus an overridable `sanitizeContext()` hook for redacting sensitive fields before serialization (available for any domain error that needs a redactable typed context).
 
 Domain errors subclass the generic ones with a fixed code, e.g. `apps/api/src/domains/memory/errors/memoryErrors.ts`:
 ```ts
@@ -420,11 +396,11 @@ export function validate<T>(schema, property: 'body'|'query'|'params' = 'body') 
 
 ## 9. Env Validation
 
-`config/env.ts` validates `process.env` with Zod at import time and **fails fast** with a formatted error if anything required is missing. It is the **first import in `app.ts`**, so a misconfigured deploy crashes at boot rather than on the first request. The schema itself is split across two files merged by `env.ts`: `config/env.core.ts` (the framework-level schema — Supabase, Vertex AI, Sentry, PostHog, job auth, email, RevenueCat *shape*) and `config/app.env.ts` (an intentionally near-empty extension point for your own app-specific vars). `config/config.ts` re-exports a small typed `Config` object derived from `env`.
+`config/env.ts` validates `process.env` with Zod at import time and **fails fast** with a formatted error if anything required is missing. It is the **first import in `app.ts`**, so a misconfigured deploy crashes at boot rather than on the first request. The schema itself is split across two files merged by `env.ts`: `config/env.core.ts` (the framework-level schema — Better Auth, Apple/Google ids, Sentry, job auth, email) and `config/app.env.ts` (an intentionally near-empty extension point for your own app-specific vars). `config/config.ts` re-exports a small typed `Config` object derived from `env`.
 
-- **Required** vars (no defaults): `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`, `GOOGLE_VERTEX_PROJECT`; `PORT`/`NODE_ENV`/`GOOGLE_VERTEX_LOCATION` (default `us-central1`) have defaults. Note: the LLM integration authenticates to Vertex AI via **Application Default Credentials (ADC)**, not an API key — there is no `LLM_GOOGLE_API_KEY` in this template (see `05-API-LLM-JOBS.md` §1). Locally, ADC comes from `gcloud auth application-default login` or a `GOOGLE_APPLICATION_CREDENTIALS` service-account path.
-- **Optional / defaulted**: `SENTRY_DSN`, `LOG_LEVEL`, `EMAIL_FROM`, `REVENUECAT_PROJECT_ID`, plus your own app-specific vars in `app.env.ts`.
-- **Production-only enforcement**: `productionRequiredCoreKeys` in `env.core.ts` (currently `JOB_API_KEY`, `RESEND_API_KEY`, `REVENUECAT_WEBHOOK_SECRET`) are optional in dev/test but throw if absent when `NODE_ENV === 'production'`.
+- **Required**: `BETTER_AUTH_SECRET` (>= 32 chars; rotating it signs everyone out). `PORT`/`NODE_ENV`/`BETTER_AUTH_URL` have defaults. On Workers, vars come from `wrangler.jsonc` `vars` and `wrangler secret put`; locally from `apps/api/.dev.vars` (`wrangler dev`). `nodejs_compat` populates `process.env` from them, which is what `env.ts` reads.
+- **Optional / defaulted**: `APPLE_*`/`GOOGLE_*` client ids (a provider is on only when its client id is set), `RESEND_WEBHOOK_SECRET`, `SENTRY_DSN`, `LOG_LEVEL`, `EMAIL_FROM`, plus your own app-specific vars in `app.env.ts`.
+- **Production-only enforcement**: `productionRequiredCoreKeys` in `env.core.ts` (currently `JOB_API_KEY`, `RESEND_API_KEY`) are optional in dev/test but throw if absent when `NODE_ENV === 'production'`.
 - **Test stub**: when `NODE_ENV === 'test'`, env resolution returns a hardcoded placeholder object (`coreTestEnv` merged with `appTestEnv`) so unit tests run without a real `.env`.
 
 ```ts
@@ -477,4 +453,4 @@ A `logError(error, req)` helper enriches log entries with `requestId`, `userId`,
 - `templates/api/baseRepository.ts` — genericized base repository
 - `templates/api/run-tests-one-file.sh` — one-file-per-process test runner
 
-See `05-API-LLM-JOBS.md` for the LLM model registry, structured output, prompt conventions, and the background-jobs system.
+See `05-API-LLM-JOBS.md` for the background-jobs system (Workers cron).

@@ -43,11 +43,11 @@ Decide your **Bun version** now and use it everywhere (the reference repo's `pac
 
 ## Phase 3 — API skeleton  · docs 04, 05
 
-1. `apps/api/package.json` (`@steadily-nanny/api`) with Express 5, `@supabase/supabase-js`, `ai` + `@ai-sdk/google`, `zod`, `winston`, Sentry, helmet, compression, rate-limit (versions in doc 01). Scripts: `dev` (with `tee -a logs/dev.log`), `build` (`tsc --noEmit`), `test` (`bash scripts/run-tests-one-file.sh tests/unit`), `typecheck`.
+1. `apps/api/package.json` (`@steadily-nanny/api`) with Express 5, `drizzle-orm`, `better-auth` + `@better-auth/expo`, `zod`, `@sentry/cloudflare`, helmet, compression, rate-limit, plus `wrangler` and `drizzle-kit` as dev deps (versions in doc 01). Scripts: `dev` (`wrangler dev --test-scheduled`, tee'd to `logs/dev.log`), `deploy` (`wrangler deploy`), `build` (`tsc --noEmit`), `test` (`bash scripts/run-tests-one-file.sh tests/unit`), `typecheck`.
 2. Configs: [`templates/api/tsconfig.json`](./templates/api/tsconfig.json) (strict, `@steadily-nanny/shared-types` path alias), [`templates/api/bunfig.toml`](./templates/api/bunfig.toml), [`templates/api/run-tests-one-file.sh`](./templates/api/run-tests-one-file.sh).
-3. `src/config/env.ts` from [`templates/api/env.ts`](./templates/api/env.ts) — Zod-validated, **fail-fast at startup**, test-mode stub. Add `src/config/supabase.ts` exporting `supabase` (anon) and `supabaseService` (service role — server-only, never shipped to client). Add `src/config/llmConfig.ts` model registry (flash/pro split — doc 05).
-4. `src/app.ts` from [`templates/api/app.ts`](./templates/api/app.ts) — wire the middleware **in the exact order** (Sentry → helmet → compression → requestId → body parsers → `/api/jobs` *before* auth → `/api/v1` behind `validateSupabaseToken` → routes → global error handler **last**). doc 04 explains the ordering, especially why job routes mount before auth.
-5. `src/index.ts` — `app.listen` + graceful shutdown (flush PostHog).
+3. `src/config/env.ts` from [`templates/api/env.ts`](./templates/api/env.ts) — Zod-validated, **fail-fast at startup**, test-mode stub. (The template file still lists Supabase vars; replace them with `BETTER_AUTH_SECRET`/`BETTER_AUTH_URL`, see `apps/api/src/config/env.core.ts`.) Add `wrangler.jsonc` (D1 binding `DB`, `nodejs_compat`, `triggers.crons`), `src/worker.ts` (`httpServerHandler`), `src/db/client.ts` (`drizzle(env.DB)`), `src/db/schema/*` and `src/auth.ts` (Better Auth at `/api/auth/*`). Create the database with `wrangler d1 create`; migrations via `drizzle-kit generate` then `wrangler d1 migrations apply`. There is no RLS — authorization lives in services.
+4. `src/app.ts` from [`templates/api/app.ts`](./templates/api/app.ts) — wire the middleware **in the exact order** (Sentry → helmet → compression → requestId → body parsers → `/api/jobs` *before* auth → `/api/v1` behind `validateSession` → routes → global error handler **last**). doc 04 explains the ordering, especially why job routes mount before auth.
+5. `src/index.ts` (Bun-only local entry) and `src/worker.ts` (the deployed Worker entry; also exports `scheduled` for cron).
 6. Error hierarchy: `src/errors/BaseError.ts` + the global `errorHandler` middleware (ZodError → 422, BaseError → its status, unknown → 500). doc 04.
 7. Repositories: `src/shared/repositories/baseRepository.ts` from [`templates/api/baseRepository.ts`](./templates/api/baseRepository.ts).
 8. **Verify:** `bun run dev` boots and serves a health check; env validation throws clearly if a required var is missing.
@@ -57,14 +57,14 @@ Decide your **Bun version** now and use it everywhere (the reference repo's `pac
 ## Phase 4 — Mobile skeleton  · docs 06, 07
 
 1. `apps/mobile` via Expo (`bun create expo`), then set the package name to `@steadily-nanny/mobile`. Install Expo-managed deps with **`bun expo install`** so they track the SDK (doc 01).
-2. Add expo-router, TanStack Query, Zustand + `react-native-mmkv`, NativeWind 4 + Tailwind, `@supabase/supabase-js`, axios, i18next, Sentry, PostHog (doc 01 list).
+2. Add expo-router, TanStack Query, Zustand + `react-native-mmkv`, NativeWind 4 + Tailwind, `better-auth` + `@better-auth/expo`, `expo-secure-store`, axios, i18next, Sentry, PostHog (doc 01 list).
 3. Configs from `templates/mobile/`: [`tsconfig.json`](./templates/mobile/tsconfig.json) (aliases `@/`, `~/`, `@steadily-nanny/shared-types`), [`babel.config.js`](./templates/mobile/babel.config.js), [`metro.config.js`](./templates/mobile/metro.config.js) (monorepo `watchFolders` + NativeWind + Sentry wrap), [`tailwind.config.js`](./templates/mobile/tailwind.config.js), [`bunfig.toml`](./templates/mobile/bunfig.toml), [`eas.json`](./templates/mobile/eas.json). Copy [`.env.example`](./templates/mobile/.env.example) → `.env` and fill **your** `EXPO_PUBLIC_*` values (never commit real keys).
 4. `app.json`: set `scheme`, iOS bundle id / Android package, deep-link `associatedDomains`/`intentFilters`, plugins. **Do not** reuse the reference EAS `projectId` — run `eas init` to get your own.
-5. `global.css` + the CSS-variable theme (light + `.dark:root`); `polyfills.ts` (imported **first** in the root layout — for AI-SDK streaming). doc 07 / 06.
+5. `global.css` + the CSS-variable theme (light + `.dark:root`); `polyfills.ts` (imported **first** in the root layout). doc 07 / 06.
 6. `src/` layout (doc 06): `app/` (routes), `domains/`, `components/ui/`, `hooks/queries|mutations/`, `api/`, `store/`, `lib/`, `i18n/`.
    - `src/api/client.ts` — axios instance + token injection + **single-flight 401 refresh** (doc 06).
    - `src/api/queryClient.ts` + `src/api/queryKeys.ts` (hierarchical factory).
-   - `src/store/auth.ts` — Zustand + **encrypted MMKV** persistence + Supabase auth listener.
+   - `src/store/auth.ts` — Zustand store over the Better Auth client (`src/lib/authClient.ts`); session cookie persisted by the Expo plugin in SecureStore.
    - Root `app/_layout.tsx` provider tree (order: polyfills → global.css → i18n → GestureHandlerRootView → SafeAreaView → QueryClientProvider → PostHog → Stack); auth gating in `app/(private)/_layout.tsx`.
 7. **Verify:** app boots to a welcome/login screen; unauthenticated users are redirected; Sentry + PostHog initialize.
 
@@ -109,7 +109,7 @@ The 80% case. Each step maps to an annotated template under [`templates/`](./tem
 2. **API data access** — [`templates/api/feature-repository.ts`](./templates/api/feature-repository.ts): extend `BaseRepository`. (doc 04)
 3. **API logic** — [`templates/api/feature-service.ts`](./templates/api/feature-service.ts): business logic + ownership checks; injectable repo for testability. (doc 04)
 4. **API HTTP** — [`templates/api/feature-controller.ts`](./templates/api/feature-controller.ts): parse → call service → `sendSuccessResponse`/`next(error)`. (doc 04)
-5. **API routing** — [`templates/api/feature-routes.ts`](./templates/api/feature-routes.ts): `validate()` + `asyncHandler`; mount on `/api/v1` (already behind `validateSupabaseToken`). (doc 04)
+5. **API routing** — [`templates/api/feature-routes.ts`](./templates/api/feature-routes.ts): `validate()` + `asyncHandler`; mount on `/api/v1` (already behind `validateSession`). (doc 04)
 6. **mobile endpoint** — [`templates/mobile/feature-endpoint.ts`](./templates/mobile/feature-endpoint.ts): `apiClient` call + response Zod parse. Never imported by components. (doc 06)
 7. **mobile read** — [`templates/mobile/feature-query-hook.ts`](./templates/mobile/feature-query-hook.ts): `useQuery` gated on auth; add the key to `queryKeys`. (doc 06)
 8. **mobile write** — [`templates/mobile/feature-mutation-hook.ts`](./templates/mobile/feature-mutation-hook.ts): `useMutation` + `invalidateQueries` + localized error toast. (doc 06)

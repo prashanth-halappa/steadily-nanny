@@ -26,7 +26,7 @@ here rather than restating the maths.
 **Naming debt (deliberate):** the DB table and API routes stay `child_commitments`
 / `commitments`; mobile query keys use `commitments`. Every user-visible string
 says **care hours** (i18n under `household`, `today`, `schedule`). Renaming the
-table was not worth the migration and RLS churn — the doc and UI agree on
+table was not worth the migration churn — the doc and UI agree on
 semantics; only internal identifiers keep the old noun.
 
 ---

@@ -47,8 +47,8 @@ of the first Android build, and the whole Google-Sign-In chain hangs off it.
    (package `com.jetto.steadily.nanny` + that SHA-1).
 3. Upload the AAB to Play → read Play's **app-signing** SHA-1 → add a
    **second** Android OAuth client.
-4. Add **both** client IDs to Supabase's Google provider audience list —
-   `signInWithIdToken` rejects unlisted audiences.
+4. Make sure every client ID the app presents is accepted as an id-token audience by the API (`GOOGLE_CLIENT_ID` / `GOOGLE_IOS_CLIENT_ID` Worker secrets, Better Auth) —
+   unlisted audiences are rejected.
 
 Skipping step 2 or 4 builds fine and fails at runtime with `DEVELOPER_ERROR`.
 

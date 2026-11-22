@@ -1,5 +1,7 @@
 # TRUST-AND-TERMS-PLAYBOOK.md
 
+> **Pre-D1 note (2026-11-22):** this is a historical record written when the stack was Supabase/Postgres with RLS and pg_cron. The app has since moved to Cloudflare D1 (Drizzle), Better Auth and Workers cron, with no RLS (checks live in services). Read references to Supabase, RLS, PostgREST and `supabase/migrations/` as describing the old stack; the current picture is in `apps/api/src/db/MIGRATION-NOTES.md`.
+
 Written 2026-08-10 against `main` @ `9459d9e`. This playbook turns three product
 audits — the scheduling flow, the payment flow, and the pay-terms coverage gap
 analysis — into an executable, phase-by-phase build. It is **self-contained**:

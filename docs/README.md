@@ -1,6 +1,6 @@
 # App Blueprint
 
-A product-agnostic blueprint for building **mobile (Expo/React Native)** and **API (Express + Supabase)** apps in a **Bun + Turborepo monorepo**. This repo *is* the runnable starter — the architecture, toolchain, and conventions described here are live in `apps/` and `packages/`, not just described in prose.
+A product-agnostic blueprint for building **mobile (Expo/React Native)** and **API (Express on Cloudflare Workers + D1)** apps in a **Bun + Turborepo monorepo**. This repo *is* the runnable starter — the architecture, toolchain, and conventions described here are live in `apps/` and `packages/`, not just described in prose.
 
 > **What this is:** docs for the working monorepo skeleton around them (`apps/`, `packages/`), plus copy-paste config templates for adding new features. Point an AI agent (or yourself) at this folder to understand the shapes, layering, and rules before writing code.
 >
@@ -13,15 +13,15 @@ A product-agnostic blueprint for building **mobile (Expo/React Native)** and **A
 ```
 monorepo (Bun workspaces + Turborepo)
 ├── apps/
-│   ├── api/      Express 5 + Supabase + Vercel AI SDK   ── doc 04, 05
+│   ├── api/      Express 5 on Workers + D1/Drizzle + Better Auth ── doc 04, 05
 │   └── mobile/   Expo SDK 57 + expo-router + NativeWind  ── doc 06, 07
 └── packages/
     └── shared-types/   types · const-maps · DTOs · Zod   ── doc 03
         (consumed by both apps via tsconfig path alias, no build step)
 
-Data flow:  Mobile ──axios + Supabase JWT──▶ API /api/v1/* ──service-role──▶ Supabase (Postgres/Auth/Storage)
-                                                  └── LLM via Vercel AI SDK (Gemini flash/pro)
-Tooling:  Bun (pkg mgr + runtime + test) · Biome (format+lint) · Turbo (task runner) · Husky+lint-staged · GitHub Actions
+Data flow:  Mobile ──axios + Better Auth session cookie──▶ Worker /api/v1/* ──Drizzle──▶ Cloudflare D1 (no RLS; checks live in services)
+                                                  └── Workers cron triggers ──▶ scheduled jobs
+Tooling:  Bun (pkg mgr + test) · Wrangler (Workers/D1) · Biome (format+lint) · Turbo (task runner) · Husky+lint-staged · GitHub Actions
 ```
 
 The contract between apps lives in `shared-types`: the API validates requests with Zod schemas and returns typed responses; the mobile app imports the same types and re-validates responses at the edge. Neither app duplicates a type the other owns.
@@ -37,13 +37,13 @@ The contract between apps lives in `shared-types`: the API validates requests wi
 | 02 | [MONOREPO-SETUP](./02-MONOREPO-SETUP.md) | Workspace scaffold: root manifest, `bunfig.toml`, `biome.json`, `turbo.json`, qc script, husky, CI |
 | 03 | [SHARED-PACKAGES](./03-SHARED-PACKAGES.md) | The `shared-types` package: subpath exports, const-map-not-enum, how apps import it |
 | 04 | [API-ARCHITECTURE](./04-API-ARCHITECTURE.md) | Bootstrap + middleware order, routes→controllers→services→repositories, BaseRepository, auth, errors, Zod, env, logging |
-| 05 | [API-LLM-JOBS](./05-API-LLM-JOBS.md) | LLM model registry, `generateObject` + Zod structured output, prompts, graceful degradation, `/api/jobs/*` |
+| 05 | [API-LLM-JOBS](./05-API-LLM-JOBS.md) | Background jobs: Workers cron triggers, `CRON_JOBS`, manual `/api/jobs/*` (filename kept for link stability; the LLM layer was removed) |
 | 06 | [MOBILE-ARCHITECTURE](./06-MOBILE-ARCHITECTURE.md) | `src/` layout, expo-router groups + auth gating, axios client + single-flight 401 refresh, TanStack Query + Zustand/MMKV, i18n, deep links, push, observability |
 | 07 | [design/00-FOUNDATIONS](./design/00-FOUNDATIONS.md) | NativeWind 4 + CSS-variable theme, design tokens, `@rn-primitives` + CVA components, **the Reanimated `className` gotcha** — formerly `07-MOBILE-UI-SYSTEM.md`, now part of the [`design/`](./design/README.md) doc set, alongside [`01-LAWS.md`](./design/01-LAWS.md) (the hierarchy rung model) and [`02-VOICE.md`](./design/02-VOICE.md) (copy tone) |
 | 08 | [CONVENTIONS](./08-CONVENTIONS.md) | TypeScript non-negotiables, naming, file organization, which Biome rule enforces what |
 | 09 | [TESTING](./09-TESTING.md) | `bun:test`, one-file-per-process + why, coverage baselines, API `mock.module` pattern, DB integration tier (`bun run test:db`), mobile Pattern A/B, Maestro E2E |
 | 10 | [NEW-APP-CHECKLIST](./10-NEW-APP-CHECKLIST.md) | Step-by-step build order from empty folder to first end-to-end feature |
-| 11 | [MONEY](./11-MONEY.md) | Minor-unit + currency-column convention, pay arrangements (effective-dated, append-only), compute-live/freeze-at-approval, no-arrangement-never-zero, PTO ledger, reimbursements-are-not-wages, money-table RLS stance |
+| 11 | [MONEY](./11-MONEY.md) | Minor-unit + currency-column convention, pay arrangements (effective-dated, append-only), compute-live/freeze-at-approval, no-arrangement-never-zero, PTO ledger, reimbursements-are-not-wages, money-table access stance (service-layer gates, no RLS) |
 | 12 | [NEED-COVERAGE](./12-NEED-COVERAGE.md) | Per-child need windows vs shift cover, `computeUncovered` in shared-types, live UI vs append-only `uncovered_care` events, detection triggers, `parent_cover`, role visibility, push dedupe |
 | — | [ROLLBACK-RUNBOOK](./ROLLBACK-RUNBOOK.md) | Per-risk rollback and kill-switch runbook — which scheduled jobs to unschedule, deploy ordering, and accepted open risks |
 | — | [ONBOARDING-PAY-SCHEDULE-GAPS](./ONBOARDING-PAY-SCHEDULE-GAPS.md) | Parent/nanny onboarding permutations, use-case support matrix, and open gaps across onboarding / pay / schedule |
@@ -72,7 +72,7 @@ templates/
 
 The `feature-*` files (plus `shared/widget.schema.ts`) are an annotated **vertical slice** for the most common task — adding an authenticated endpoint and consuming it from a mobile screen. Read them top-to-bottom in the order listed in doc 10's quick recipe; each is heavily commented with the rule it embodies. Replace `Widget`/`widget` with your entity.
 
-The `.ts`/`.js` files under `templates/` are **teaching scaffolds**, kept as annotated reference: they reference modules (`./middlewares/auth`, `../../config/supabase`, …) that exist only once copied into a real app, so they will show "cannot find module" until then. That's expected — the **live, compiling** versions of these same patterns exist in `apps/api`, `apps/mobile`, and `packages/shared-types`. (Biome is configured to skip `docs/**`, so the teaching scaffolds don't affect `bun run qc`.)
+The `.ts`/`.js` files under `templates/` are **teaching scaffolds**, kept as annotated reference: they reference modules (`./middlewares/auth`, `../../config/<db-client>`, …) that exist only once copied into a real app, so they will show "cannot find module" until then. That's expected — the **live, compiling** versions of these same patterns exist in `apps/api`, `apps/mobile`, and `packages/shared-types`. (Biome is configured to skip `docs/**`, so the teaching scaffolds don't affect `bun run qc`.)
 
 ---
 

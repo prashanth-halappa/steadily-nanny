@@ -1,6 +1,6 @@
 # Monorepo Template
 
-A Bun monorepo starter for shipping a mobile app with a real backend fast: **Expo SDK 57 (React Native) + Express 5 + Supabase**, with the cross-cutting mechanisms a production app needs already wired in — auth, layered API architecture, monetization (RevenueCat), push notifications, remote-config/kill-switch, an LLM integration (Google Vertex AI via the Vercel AI SDK), a store-rating prompt, and i18n. It ships with one compiling example feature (the "widget" domain) end-to-end so none of this is theoretical — clone it, run it, and it boots.
+A Bun monorepo starter for shipping a mobile app with a real backend fast: **Expo SDK 57 (React Native) + Express 5 on Cloudflare Workers + D1**, with the cross-cutting mechanisms a production app needs already wired in — auth, layered API architecture, monetization (RevenueCat), push notifications, remote-config/kill-switch, a store-rating prompt, and i18n. It ships with one compiling example feature (the "widget" domain) end-to-end so none of this is theoretical — clone it, run it, and it boots.
 
 This is a **template**, not a shared runtime library. You copy it once per app and diverge freely from there.
 
@@ -8,7 +8,7 @@ This is a **template**, not a shared runtime library. You copy it once per app a
 
 | You want to… | Read, in order |
 |---|---|
-| **Create a new app from this template** | [`SETUP.md`](./SETUP.md) (code-side: identities, env, EAS) → [`PROVISIONING.md`](./PROVISIONING.md) (dashboard-side: Supabase, Apple, Google, RevenueCat, Sentry, PostHog, EAS, Cloud Run) → boot it and confirm it against `docs/09-TESTING.md`'s suite |
+| **Create a new app from this template** | [`SETUP.md`](./SETUP.md) (code-side: identities, env, EAS) → [`PROVISIONING.md`](./PROVISIONING.md) (dashboard-side: Cloudflare, Apple, Google, Sentry, PostHog, EAS) → boot it and confirm it against `docs/09-TESTING.md`'s suite |
 | **Build features in an app made from this template** | [`CLAUDE.md`](./CLAUDE.md) (toolchain rules, conventions, the add-a-feature recipe) → [`docs/README.md`](./docs/README.md) (the architecture/conventions playbook set, docs 01–10) |
 
 An AI agent (or a human) with nothing but this repo should be able to do either job start to finish without outside context. If you get stuck and the answer isn't written down anywhere in this repo, that's a documentation defect — the same severity as a code defect.
@@ -17,13 +17,12 @@ An AI agent (or a human) with nothing but this repo should be able to do either 
 
 ```
 apps/mobile (Expo SDK 57, expo-router, NativeWind, TanStack Query, Zustand+MMKV)
-   │  axios + Supabase JWT (single-flight 401 refresh)
+   │  axios + Better Auth session cookie (expo plugin, SecureStore)
    ▼
-apps/api (Express 5, /api/v1/* behind validateSupabaseToken; /api/jobs/* behind an API key)
-   │  supabaseService (service-role key, bypasses RLS — server-only)
+apps/api (Express 5 on a Cloudflare Worker; Better Auth at /api/auth/*; /api/v1/* behind session auth; /api/jobs/* behind an API key; cron triggers in scheduled.ts)
+   │  Drizzle ORM — the API is the sole DB client, so access checks live in services (no RLS)
    ▼
-Supabase (Postgres + Auth + Storage; RLS on every table)
-   └── LLM: Google Gemini via the Vercel AI SDK, through Vertex AI (ADC — no API key)
+Cloudflare D1 (SQLite; migrations applied with `wrangler d1 migrations apply`)
 
 packages/shared-types — the contract both apps import (no build step, path-alias only)
 ```
@@ -38,12 +37,11 @@ This template is deliberately slim. Legal/consent publishing, translation toolin
 
 ```
 apps/
-  api/      Express 5 + Supabase + Vertex AI — see docs/04, docs/05
+  api/      Express 5 + Cloudflare Workers + D1 (Drizzle) + Better Auth — see docs/04, docs/05
   mobile/   Expo SDK 57 + expo-router + NativeWind — see docs/06, docs/07
 packages/
   shared-types/   Zod schemas, DTOs, error codes, app-config shape — see docs/03
-supabase/
-  migrations/     8 SQL migrations: profiles, devices, jobs, app-config/beta, subscriptions, cron+Vault, widget example
+  api/migrations/ D1 SQL migrations (drizzle-kit generate + hand-written triggers); schema in apps/api/src/db/schema/
 docs/               The architecture/conventions playbook (10 numbered docs) — read via docs/README.md
 scripts/setup.ts    The identity find-replace tool — see SETUP.md
 ```

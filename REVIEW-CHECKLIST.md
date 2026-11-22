@@ -8,7 +8,7 @@ This checklist operationalizes real App Store rejections the reference app hit, 
 
 ## 1. Sign in with Apple — name-first-auth handling
 
-- [ ] Confirm `apps/mobile/src/store/auth.ts`'s `signInWithApple` captures `fullName`/`email` from the **initial** authorization credential (not a later refresh) and writes it via `supabase.auth.updateUser`.
+- [ ] Confirm `apps/mobile/src/store/auth.ts`'s `signInWithApple` captures `fullName`/`email` from the **initial** authorization credential (not a later refresh) and writes it via the Better Auth client (`authClient.updateUser`).
 - [ ] Manually verify the returning-user case: revoke your test Apple ID's authorization for the app (Settings → Apple ID → Sign in with Apple → your app → Stop Using) and sign in again — this is the only way to re-trigger Apple sending name/email, since a normal re-sign-in on an already-authorized account omits them. Confirm the profile still shows the name from the very first authorization (i.e., it was persisted, not re-requested).
 
 ## 2. `supportsTablet` decision
@@ -32,7 +32,7 @@ This checklist operationalizes real App Store rejections the reference app hit, 
 
 Apple (and increasingly Play) requires that a user can delete their account from **inside the app**, not just via a support email or web form.
 
-- [ ] The API side is shipped and working: `DELETE /api/v1/users/me` (`apps/api/src/domains/user/controllers/userController.ts` → `UserService.deleteUser`) deletes the Supabase auth user and cascades the profile/child rows via `ON DELETE CASCADE`. The mobile API client method also exists: `userApi.deleteAccount()` in `apps/mobile/src/api/endpoints/user.ts`.
+- [ ] The API side is shipped and working: `DELETE /api/v1/users/me` (`apps/api/src/domains/user/controllers/userController.ts` → `UserService.deleteUser`) deletes the Better Auth `user` row and cascades the profile/child rows via `ON DELETE CASCADE`. The mobile API client method also exists: `userApi.deleteAccount()` in `apps/mobile/src/api/endpoints/user.ts`.
 - [x] **Gap CLOSED (verified 2026-08-12, Phase 6).** The earlier note here said "no UI in the app actually calls it" — that is no longer true and the checklist was stale. `apps/mobile/src/app/(private)/settings/index.tsx` now ships a "Delete account" row wired through `useDeleteAccount` → `userApi.deleteAccount()`, behind a confirmation sheet that states the consequences in two bullets (the account and profile go; hours worked and approved timesheets stay for the household) **and requires the user to type their own email to confirm** — appropriate friction for something irreversible. All 8 `deleteAccount*` copy keys exist in both `en` and `es`. Re-verify this row after any settings-screen refactor; it is a hard rejection if it regresses.
 
 ## 7. Provisional push behavior

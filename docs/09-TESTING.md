@@ -42,7 +42,7 @@ Two mechanisms enforce this:
 
 ```bash
 #!/usr/bin/env bash
-# Run each matching test file in a separate bun process so mock.module('ai', …)
+# Run each matching test file in a separate bun process so mock.module(…)
 # and similar hooks do not leak between files.
 set -euo pipefail
 root="${1:?test root directory (e.g. tests/unit)}"
@@ -103,13 +103,15 @@ import { NotFoundError } from '../../../src/errors';
 
 // Declared, not imported — populated after mocks are set up
 let EntityService: typeof import('../../../src/domains/entity').EntityService;
-let mockSupabase: { from: ReturnType<typeof mock> };
+let mockRepo: { findById: ReturnType<typeof mock> };
 
 beforeAll(async () => {
   // 1) Register mocks FIRST
-  mock.module('../../../src/config/supabase', () => {
-    const obj = { from: mock(() => ({})), auth: { getUser: mock() } };
-    return { supabase: obj, supabaseService: obj };
+  // Service tests mock the REPOSITORY, never the DB client. (SQL behaviour is
+  // tested against a real D1 — see §4.5.)
+  mock.module('../../../src/domains/entity/repositories/entityRepository', () => {
+    const repo = { findById: mock(() => Promise.resolve(null)) };
+    return { EntityRepository: class { findById = repo.findById }, __repo: repo };
   });
   mock.module('../../../src/middlewares/logger', () => ({
     logger: { info: mock(), error: mock(), warn: mock(), debug: mock() },
@@ -118,41 +120,18 @@ beforeAll(async () => {
   // 2) Dynamic import AFTER mocks
   const mod = await import('../../../src/domains/entity');
   EntityService = mod.EntityService;
-  mockSupabase = (await import('../../../src/config/supabase')).supabase;
+  mockRepo = (await import('../../../src/domains/entity/repositories/entityRepository') as any).__repo;
 });
 
 beforeEach(() => {
   // Reset call counts; do NOT use mock.restore() — it breaks later tests
-  mockSupabase.from.mockClear?.();
+  mockRepo.findById.mockClear?.();
 });
 ```
 
-### 4.1 Chainable Supabase / query-builder mock
+### 4.1 Mocking repositories
 
-> **Legacy (D1 migration in progress).** The API is moving from supabase-js to
-> Drizzle on Cloudflare D1. Don't write new chainable Supabase mocks — for
-> repository/query code use the real D1 test database (§4.5); for service
-> logic mock the repository. `tests/helpers/mockSupabase.ts` goes away once
-> the last domain is ported.
-
-Builder-style DB clients (Supabase) need a self-returning chain so any method order resolves. *Example: `apps/api/tests/unit/domains/engagement/services/deepeningMilestoneService.test.ts`*:
-
-```typescript
-const createMockQueryChain = (finalResponse = { data: null, error: null }) => {
-  const chain: any = {
-    select: mock(() => chain), eq: mock(() => chain), or: mock(() => chain),
-    order: mock(() => chain), limit: mock(() => chain), in: mock(() => chain),
-    insert: mock(() => chain), update: mock(() => chain), upsert: mock(() => chain),
-    maybeSingle: mock(() => Promise.resolve(finalResponse)),
-    single: mock(() => Promise.resolve(finalResponse)),
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-    then: (resolve: any) => Promise.resolve(finalResponse).then(resolve),
-  };
-  return chain;
-};
-```
-
-Per-test, override sequential calls with `mockImplementationOnce`.
+For service logic, mock the repository module (above) and set per-test behaviour with `mockImplementationOnce`. Don't mock a query-builder chain: anything whose correctness lives in SQL belongs in a real D1 test (§4.5).
 
 ### 4.2 Controller tests — top-level mocks are fine
 
@@ -168,15 +147,9 @@ mock.module('../../../src/domains/entity', () => ({
 );
 ```
 
-### 4.3 LLM-dependent services
+### 4.3 External services
 
-Mock the AI SDK and model config so no network call happens:
-
-```typescript
-mock.module('ai', () => ({
-  generateObject: mock(() => Promise.resolve({ object: mockCardContent })),
-}));
-```
+Mock the module that wraps the external call (Resend, Expo push, Sentry) at the boundary so no network call happens.
 
 ### 4.4 Cases to cover per service method
 
@@ -363,70 +336,19 @@ appId: com.jetto.steadily.nanny
 ### Debugging E2E failures
 
 1. App/server error → API runtime log (`apps/api/logs/dev.log`).
-2. DB / auth error → Supabase logs (`mcp__supabase__get_logs`).
+2. DB / auth error → `wrangler tail` (deployed) or the `wrangler dev` output in `apps/api/logs/dev.log` (local); inspect the DB with `wrangler d1 execute steadily-nanny --local|--remote --command '…'`.
 3. Client state → `mcp__maestro__take_screenshot`.
 4. Wrong selector → `mcp__maestro__inspect_view_hierarchy`. Prefer `mcp__maestro__run_flow` over the CLI when the CLI hits `MAESTRO_DRIVER_STARTUP_TIMEOUT`.
 
 ---
 
-## 8. Integration tier (`bun run test:db`)
+## 8. Database tests (no separate tier)
 
-> **D1 migration:** this tier targets the old Supabase/Postgres stack. Trigger,
-> index and guarded-write behaviour on D1 is tested in `tests/unit` with the
-> D1 test database (§4.5) instead.
+The old Postgres integration tier (`bun run test:db`, a local Supabase stack, real JWTs, RLS policy tests) was retired with the move to D1: there is no RLS to test and no stack to start. Triggers, unique/check/FK errors, guarded writes and `db.batch` atomicity are tested in `tests/unit` against a real Miniflare D1 per file (§4.5, `tests/helpers/testDb.ts`) — fast enough that it is part of `bun run test` and `bun run qc`.
 
-`apps/api/tests/integration/` is a separate, opt-in tier — real Postgres,
-real auth users, real materialisation code paths. It is **NOT** part of
-`bun run test` / `bun run qc`; those sweep `tests/unit` only, and `qc` stays
-read-only and DB-free on purpose (`docs/DEFECT-LOG.md` D52 — never put a
-writing command in `qc`'s `CHECKS`). Nobody runs `bun run test:db` by
-accident.
+> **Unfinished cleanup:** `apps/api/tests/integration/`, the `test:db` script, `scripts/db-migrate.sh` and CI's `db-migrations-and-rls` job still exist in the repo from the Postgres era. Treat them as dead until ported to `testDb.ts` or deleted.
 
-**What belongs here, and what doesn't.** Anything a text assertion cannot
-prove: RPC bodies, RLS policies driven by a real JWT, a trigger's exact
-behaviour (does it bump a column or not), a unique index accepting/rejecting
-the right rows. If a unit test with a mocked Supabase client can prove it,
-it belongs in `tests/unit`, not here — this tier exists for the residue a
-mock can't reach, not as a second home for ordinary service tests.
-
-**Shared plumbing:** `tests/integration/helpers/localStack.ts` —
-`requireEnv`, the loopback guard (imported from the repo-root
-`scripts/localSupabaseGuard.ts`, GOLDEN-FIXES #26), `serviceClient()` /
-`anonClient()`, `createUser()` / `deleteUsers()` (mint + sign in a real auth
-user for a real JWT), `insertOne()`, and `withHousehold()` (seed a household
-+ parent/nanny/helper members in one call). Every file in this tier imports
-from it rather than reinventing env/guard boilerplate — see
-`rls.integration.test.ts` and `timesheetParentViewed.integration.test.ts` for
-the shape.
-
-**Running locally:**
-
-```bash
-supabase start
-supabase db reset --local   # replays supabase/migrations onto an empty DB
-eval "$(supabase status -o env | \
-  sed 's/^API_URL=/SUPABASE_URL=/;s/^ANON_KEY=/SUPABASE_ANON_KEY=/;s/^SERVICE_ROLE_KEY=/SUPABASE_SERVICE_KEY=/' | \
-  sed 's/^/export /')"
-cd apps/api && bun run test:db   # or from the repo root: bun run test:db
-```
-
-To run one file directly during development: `bun test
-tests/integration/<file>.integration.test.ts` (same exported env).
-
-**The lock convention.** More than one agent/session can share the same
-local stack. Before `supabase db reset --local` + a `test:db` run, take a
-simple `mkdir`-based lock so a reset doesn't land mid-run for someone else:
-
-```bash
-until mkdir /tmp/steadily-local-db.lock 2>/dev/null; do sleep 5; done
-trap 'rmdir /tmp/steadily-local-db.lock' EXIT
-supabase db reset --local && bun run test:db
-```
-
-**CI:** the `db-migrations-and-rls` job (`.github/workflows/ci.yml`) starts
-the local stack, runs `supabase db reset --local` (the only place the
-migration set is actually EXECUTED, not just grepped — F-B11-2), exports the
-stack's credentials, then runs `bun run test:db` once for the whole tier.
+What a D1 test cannot prove: production-only behaviour (the Workers runtime, cron triggers, the `nodejs_compat` layer). Cover those with `wrangler dev --local` plus the QA smoke script, and with a post-deploy check.
 
 ---
 

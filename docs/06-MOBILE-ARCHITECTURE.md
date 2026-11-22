@@ -4,7 +4,7 @@ Purpose: the reusable Expo / React Native app skeleton — folder layout, expo-r
 
 Real excerpts below are labeled "Example: `path`". When you build a new app, swap product/domain names but keep the shapes.
 
-Stack: Expo SDK 57 / React Native 0.86 / React 19, expo-router (file-based), TanStack Query (server state), Zustand + MMKV (client state), NativeWind 4, Supabase auth, axios, i18next, Sentry + PostHog.
+Stack: Expo SDK 57 / React Native 0.86 / React 19, expo-router (file-based), TanStack Query (server state), Zustand + MMKV (client state), NativeWind 4, Better Auth (cookie session), axios, i18next, Sentry + PostHog.
 
 ---
 
@@ -26,7 +26,7 @@ apps/mobile/
     ├── hooks/                 # queries/  mutations/  navigation/  custom/  (+ shared utils.ts)
     ├── api/                   # client.ts, queryClient.ts, queryKeys.ts, endpoints/*
     ├── store/                 # Zustand stores (auth, onboarding, …) + persist helpers
-    ├── lib/                   # app services: supabase, pushNotification, analytics/, toast, …
+    ├── lib/                   # app services: authClient, pushNotification, analytics/, toast, …
     ├── i18n/                  # i18next init + locales/<lang>/<namespace>.json
     ├── config/, constants/, utils/, test-utils/, __mocks__/
 ```
@@ -39,7 +39,7 @@ What lives where:
 - **`src/hooks/queries/` + `src/hooks/mutations/`** — TanStack Query wrappers. Components NEVER call API methods directly — they call these hooks.
 - **`src/api/`** — the axios instance, the `QueryClient`, the central `queryKeys` factory, and one `endpoints/<domain>.ts` module per API domain (request functions + Zod response validation).
 - **`src/store/`** — Zustand stores for client/UI state only (auth session, current selection, onboarding progress). Server data is never duplicated here.
-- **`src/lib/`** — non-UI app services: Supabase client, push notifications, analytics, toast, error localization, storage adapters.
+- **`src/lib/`** — non-UI app services: Better Auth client (`authClient.ts`), push notifications, analytics, toast, error localization, storage adapters.
 
 ### Representative domain structure
 
@@ -140,7 +140,7 @@ Auth init happens in an effect, not in render:
 
 ```tsx
 useEffect(() => {
-  initializeAuth();          // attach Supabase auth listener + 401 callback
+  initializeAuth();          // bootstrap the Better Auth session + register the 401 handlers
   return () => cleanupAuth(); // unsubscribe
 }, [cleanupAuth, initializeAuth]);
 ```
@@ -183,91 +183,27 @@ return (
 
 ---
 
-## 3. API client (axios + single-flight 401 refresh)
+## 3. API client (axios + session cookie + single-flight 401 re-check)
 
-Example: `src/api/client.ts`. The token is held in a module-level variable (not React state) so interceptors can read it synchronously without re-renders.
+Example: `src/api/client.ts`. Auth is a **Better Auth session cookie** (`name=value; ...`), not a bearer token. `src/lib/authClient.ts` (`createAuthClient` + `expoClient`, storage = `expo-secure-store`) keeps it; the store hands the cookie string to the axios client, which holds it in a module-level variable (not React state) so interceptors read it synchronously.
 
 ```ts
-let currentAuthToken: string | null = null;
+let currentAuthToken: string | null = null;           // the cookie string
 export const updateAuthToken = (token: string) => { currentAuthToken = token; };
 export const clearAuthToken = () => { currentAuthToken = null; };
 export const hasAuthToken = (): boolean => currentAuthToken !== null;
 ```
 
-**Request interceptor** — attach the bearer, and fail-fast on authed routes when there is no token (so a stale refetch after sign-out never hits the server):
+**Request interceptor** — send it as the `Cookie` header (`config.headers.Cookie = currentAuthToken`) and fail fast on authed routes when there is none, so a stale refetch after sign-out never hits the server.
 
-```ts
-apiClient.interceptors.request.use(config => {
-  if (currentAuthToken) {
-    config.headers.Authorization = `Bearer ${currentAuthToken}`;
-  } else if (config.url?.startsWith('/api/v1/')) {
-    // All /api/v1/ routes require auth — reject locally instead of 401ing remotely.
-    return Promise.reject(
-      new axios.AxiosError('Missing auth token — request suppressed', 'MISSING_TOKEN', config)
-    );
-  }
-  return config;
-});
-```
-
-**Response interceptor — single-flight refresh.** Many queries can 401 at the same instant when a token expires. We do NOT want each one to fire its own refresh or trigger a sign-out. Instead they all await ONE `refreshSession()` promise:
-
-```ts
-let refreshPromise: Promise<string | null> | null = null;
-
-async function refreshAccessToken(): Promise<string | null> {
-  if (!refreshPromise) {
-    refreshPromise = (async () => {
-      try {
-        const { supabase } = await import('../lib/supabase'); // lazy: avoid circular import
-        const { data, error } = await supabase.auth.refreshSession();
-        const token = data?.session?.access_token ?? null;
-        if (error || !token) return null;
-        updateAuthToken(token);
-        return token;
-      } catch {
-        return null;
-      } finally {
-        refreshPromise = null;
-      }
-    })();
-  }
-  return refreshPromise; // concurrent callers share the same in-flight refresh
-}
-```
-
-The 401 branch, with guards:
-
-```ts
-if (error.response.status === 401 && !isHandling401) {
-  // Only act on a 401 for the CURRENT session's token. Ignore stale 401s from
-  // in-flight requests that resolve after sign-out / account delete.
-  const isCurrentSession401 =
-    !!currentAuthToken && requestAuthHeader === `Bearer ${currentAuthToken}`;
-
-  if (!isCurrentSession401) {
-    /* ignore */
-  } else if (retriableConfig && !retriableConfig.__isRetryAfter401) {
-    // First 401: refresh once and retry the original request once.
-    const newToken = await refreshAccessToken();
-    if (newToken) {
-      retriableConfig.__isRetryAfter401 = true; // guard against an infinite retry loop
-      retriableConfig.headers.Authorization = `Bearer ${newToken}`;
-      return apiClient(retriableConfig);
-    }
-    await handleUnauthorized('401 + refresh failed - signing out');
-  } else {
-    // A retry still 401'd — give up and sign out.
-    await handleUnauthorized('401 after retry - signing out');
-  }
-}
-```
+**Response interceptor — single-flight re-check.** There are no refresh tokens. Many queries can 401 at once when a session dies; they all await ONE `refreshToken()` call (injected via `configureAuthHandlers({ refreshToken, onUnauthorized })`), which re-asks the server whether the session is alive and returns the current cookie. If it is, the original request is retried once; if not, the sign-out handler runs.
 
 Key invariants:
 - `__isRetryAfter401` on the request config prevents a retry storm (a request is retried at most once).
 - `isHandling401` / `reset401Handler()` gate sign-out so only the first unrecoverable 401 tears down the session.
-- The sign-out callback is injected from the auth store via `setOnUnauthorizedCallback` to avoid a circular import (`client.ts` ⇄ `store/auth.ts`).
-- Other statuses are handled here too: `403 PAYWALL_REQUIRED` auto-presents the paywall; `429` annotates the error with `retryAfter`.
+- Stale 401s from requests sent with a previous session's cookie are ignored.
+- Auth behavior is **injected** (`configureAuthHandlers`), not imported, to avoid a circular import (`client.ts` ⇄ `store/auth.ts`); the auth store calls it at app start.
+- `429` annotates the error with `retryAfter`.
 
 ---
 
@@ -424,7 +360,7 @@ export const zustandSecureStorage: StateStorage = {
 };
 ```
 
-MMKV is synchronous and has no size limits, so it replaces both AsyncStorage and SecureStore. The same `zustandSecureStorage` adapter is reused as the Supabase auth storage so the session lives in encrypted storage — Example: `src/lib/supabase.ts` passes it to `createClient(url, anonKey, { auth: { storage: zustandSecureStorage, autoRefreshToken: true, persistSession: true, detectSessionInUrl: false } })`, and toggles `startAutoRefresh()`/`stopAutoRefresh()` on `AppState` change.
+MMKV is synchronous and has no size limits, so it replaces AsyncStorage for app state. The Better Auth session cookie is **not** stored here: the Expo plugin keeps it in `expo-secure-store`.
 
 ### Persisted store with version + migrate
 
@@ -459,19 +395,18 @@ export function createV1Migrate<T>(getInitial: () => Partial<T> = () => ({})) {
 }
 ```
 
-### Supabase auth listener wiring
+### Auth bootstrap wiring
 
-`initializeAuth()` (called once from the root layout) does three things:
+`initializeAuth()` (called once from the root layout, `src/store/auth.ts`) does three things:
 1. configures native Google sign-in;
-2. registers the 401 sign-out callback into the API client (`setOnUnauthorizedCallback`);
-3. attaches `supabase.auth.onAuthStateChange`, which is the single source of truth for the session.
+2. registers the single-flight re-check and 401 sign-out handlers into the API client (`configureAuthHandlers`);
+3. bootstraps the session: reads `authClient.getCookie()` and `authClient.getSession()`.
 
-The listener handles each event explicitly:
-- updates the API client token (`updateAuthToken`) **before** setting `isInitialized` so queries never fire tokenless;
-- `INITIAL_SESSION` is treated as "auth client ready" (sets `isInitialized: true`);
-- `SIGNED_IN` clears user-scoped client state (React Query cache + child selection) on an account switch so a new login can't see a previous user's data;
-- `TOKEN_REFRESHED` updates the persisted session so consumers reading `access_token` directly (e.g. streaming) don't keep a stale token;
-- `SIGNED_OUT` clears the token and nulls the session.
+Rules it follows:
+- the cookie is set on the API client **before** `isInitialized: true`, so queries never fire tokenless;
+- signing in as a different account clears user-scoped client state (React Query cache + child selection) so a new login can't see a previous user's data;
+- Apple/Google sign-in exchange the native id token via `authClient.signIn.social({ provider, idToken })`; email/password use `signIn.email` / `signUp.email`; password reset emails link to `https://nanny.getsteadily.app/auth/reset` (route `src/app/auth/reset.tsx`);
+- sign-out clears the cookie and nulls the session.
 
 The subscription is stored in a module variable and torn down in `cleanupAuth()`.
 
@@ -601,11 +536,11 @@ If you don't use streaming AI features you can drop this — but keep the "polyf
 | QueryClient defaults | `src/api/queryClient.ts` |
 | Query-key factory | `src/api/queryKeys.ts` |
 | Query timing constants | `src/hooks/queries/utils.ts` |
-| Auth store + Supabase listener | `src/store/auth.ts` |
+| Auth store (Better Auth) | `src/store/auth.ts` |
 | MMKV adapters | `src/lib/mmkvStorage.ts` |
 | Persist migration helper | `src/store/persistMigrations.ts` |
 | Pending deep-link queue | `src/store/pendingDeepLinkStore.ts` |
-| Supabase client | `src/lib/supabase.ts` |
+| Better Auth client | `src/lib/authClient.ts` |
 | i18n init | `src/i18n/index.ts` |
 | Push notifications | `src/lib/pushNotification.ts` |
 | AI-SDK polyfills | `polyfills.ts` |

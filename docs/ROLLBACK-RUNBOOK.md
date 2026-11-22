@@ -3,10 +3,18 @@
 Written 2026-08-12 during Phase 5 (integration freeze) of
 `TRUST-AND-TERMS-PLAYBOOK.md`, per §0.9 and §10 item 8.
 
+**Platform note (2026-11-22).** The stack moved from Supabase (Postgres, pg_cron,
+RLS) to **Cloudflare D1 + Workers** (`apps/api/wrangler.jsonc`). Everything
+below is the D1-era runbook; sections marked **Pre-D1 (historical)** record the
+Postgres-era migrations 074-106 as they were applied and are kept for history
+only. The SQL in those blocks does not run on D1. D1 schema changes are Drizzle
+migrations in `apps/api/migrations/` (see `apps/api/src/db/MIGRATION-NOTES.md`).
+
 **Migrations in this repo are forward-only.** There is no `down` step and no
 schema rollback. "Rollback" therefore means: *stop the new behavior from
-running*, using a switch that exists **before** the risky change ships. This
-document is that list.
+running*, using a switch that exists **before** the risky change ships, or, for
+data damage, restore the database to a point in time (D1 Time Travel, §5a).
+This document is that list.
 
 ---
 
@@ -16,11 +24,12 @@ Read this first — it is shorter than you would like.
 
 | Switch | Where | Scope | Notes |
 |---|---|---|---|
-| `cron.unschedule('<job>')` | Supabase SQL (MCP) | One scheduled job | **The strongest switch we have.** Every background behavior in this build is reachable only via a cron job, so unscheduling it stops that behavior dead without a deploy. |
+| Remove the cron from `triggers.crons` | `apps/api/wrangler.jsonc`, then `wrangler deploy` | One scheduled job | **The strongest switch we have.** Every background behavior is reachable only via a cron trigger, so removing its schedule stops it dead. Costs one deploy (replaces Postgres `cron.unschedule`, which needed none). |
 | `app_config.status` → `'maintenance'` / `'killed'` | `app_config` row (id=1) | **Whole app** | Blunt instrument. Read by `appStatusService.getAppStatus`. Use only for a genuine emergency. |
 | `app_config.min_supported_version` | `app_config` row | Whole fleet | Forces an update. See §4. |
 | Term columns left `NULL` | `pay_arrangements` | Per household | Every new pricing rule is **null-gated** — see §3. This is the real per-household "flag" for money behavior. |
-| Server deploy revert | Fly/host | Whole API | Always available, but **read §5 first** — the deploy order is not symmetric with the migration order. |
+| `wrangler rollback` | Cloudflare Workers | Whole API (code only) | Reverts the Worker to the previous version. Does not touch D1. **Read §5 first** — the deploy order is not symmetric with the migration order. |
+| D1 Time Travel | `wrangler d1 time-travel restore steadily-nanny --timestamp=<ISO>` | Whole database | Point-in-time restore (30-day window). Overwrites everything written since, so it is the last resort for data damage. See §5a. |
 
 **There is no generic feature-flag table.** `app_config` carries exactly
 `min_supported_version`, `latest_version`, `ios_store_url`,
@@ -32,43 +41,46 @@ that does not exist.
 
 ## §2 Scheduled jobs — the primary kill switches
 
-Live in prod today (verified 2026-08-12 after Phase 6 apply of 088/089/090):
+Jobs are Workers cron triggers. The source of truth is `triggers.crons` in
+`apps/api/wrangler.jsonc`, which must match `CRON_JOBS` in
+`apps/api/src/scheduled.ts` string for string. There are 10 triggers (Workers
+Paid plan; the free plan allows 5):
 
 ```
-cancellation-pay-reconcile   25 * * * *
-cover-ask-expiry             3-58/5 * * * *
-integrity-checks             10 4 * * *
-no-show-digest               50 * * * *
-no-show-sweep                */10 * * * *
-reminders-hourly             5 * * * *
 schedule-horizon             0 3 * * *
-shift-completion             40 3 * * *
+reminders                    5 * * * *
+cancellation-pay-reconcile   25 * * * *
+integrity-checks             10 4 * * *
+no-show-sweep                */10 * * * *
 uncovered-digest             35 * * * *
+cover-ask-expiry             3-58/5 * * * *
+shift-completion             40 3 * * *
+no-show-digest               50 * * * *
+job-health                   15 6 * * *
 ```
 
-**New in this build** (migrations 088, 089, 090 — now applied):
+**Kill switch for any job:** delete its line from `triggers.crons` in
+`apps/api/wrangler.jsonc` and `wrangler deploy`. A cron whose schedule is not in
+`CRON_JOBS` only logs `no job registered` and does nothing, but remove it from
+wrangler so it stops firing. **Re-enable** by restoring the line and
+redeploying. Note: `reminders` carries shift reminders, the timesheet-approval
+nudge and the `schedule_not_set` push, so killing it kills all three (§6).
 
-| Job | Migration | Schedule | Risk it carries | Kill switch |
-|---|---|---|---|---|
-| `cover-ask-expiry` | 088 | `3-58/5 * * * *` | D-22/D-47. Expires unanswered cover asks by writing `status='cancelled'`, `cancelled_by=null`. A bug here **mass-cancels shifts**. Highest-blast-radius new job. | `select cron.unschedule('cover-ask-expiry');` |
-| `shift-completion` | 089 | nightly 03:40 | D-24/S2. Batch-writes `completed` on past confirmed shifts. Wrong window = wrong statuses at scale. | `select cron.unschedule('shift-completion');` |
-| `no-show-digest` | 090 | `50 * * * *` (job window still `[07:00,10:00)`) | D-26/A1. Morning "you may have missed this" digest. Worst case is push noise, not data damage. | `select cron.unschedule('no-show-digest');` |
+Manual runs: `POST /api/jobs/<name>` with `X-Job-Api-Key` (the `JOB_API_KEY`
+secret) still works and runs the same tracked handler, for testing a job without
+waiting for its schedule.
 
-**Pending API deploy (migration 105, WP-J1/J2):**
+| Job | Risk it carries | Kill switch |
+|---|---|---|
+| `cover-ask-expiry` | D-22/D-47. Expires unanswered cover asks by writing `status='cancelled'`, `cancelled_by=null`. A bug here **mass-cancels shifts**. Highest-blast-radius job. | Remove `3-58/5 * * * *` from `triggers.crons`, deploy. |
+| `shift-completion` | D-24/S2. Batch-writes `completed` on past confirmed shifts. Wrong window = wrong statuses at scale. | Remove `40 3 * * *`, deploy. |
+| `no-show-digest` | D-26/A1. Morning digest (window `[07:00,10:00)`). Worst case is push noise. | Remove `50 * * * *`, deploy. |
+| `job-health` | J1-b/S2. Read-only: reads `job_runs`, writes nothing. Worst case is a noisy or missing alert. **Softest switch first:** unset `OPS_ALERT_EMAILS` and `OPS_ALERT_USER_IDS` (`wrangler secret delete`) to silence alerting while the job keeps recording findings in `job_runs.summary`. The old pg_net failure probe (`job_http_failures`) no longer exists, so it cannot be the expensive part. | Remove `15 6 * * *`, deploy. |
 
-| Job | Migration | Schedule | Risk it carries | Kill switch |
-|---|---|---|---|---|
-| `job-health` | 105 | daily 06:15 | J1-b/S2. Read-only — reads `job_runs` and `net._http_response` (via `public.job_http_failures()`), writes nothing. Worst case is a noisy or missing alert, never data damage. **Two switches, softest first:** unset both `OPS_ALERT_EMAILS` and `OPS_ALERT_USER_IDS` (env; needs a redeploy to take effect) to silence alerting while the job keeps recording its findings in `job_runs.summary` — only unschedule it outright if the job itself is the problem (e.g. `job_http_failures()` running expensive against a large `net._http_response`). | `select cron.unschedule('job-health');` |
-
-Verify names against reality before trusting this table — migration 054's
-header records that 047/048 once sat in-repo unapplied:
-
-```sql
-select jobname, schedule, active from cron.job order by jobname;
-```
-
-**Re-enable** by re-running the migration's `cron.schedule(...)` block, not by
-hand-editing `cron.job`.
+Verify what is actually live (not what the file says): the Cloudflare
+dashboard Workers > steadily-nanny-api > Settings > Triggers, or `job_runs`
+(`select job_name, max(started_at) from job_runs group by 1`) to see which jobs
+have really run.
 
 ### A note on `shift_events` retention (S8)
 
@@ -145,6 +157,44 @@ build writes `v: 2`. Keep it that way until a release that pins
 
 **This is the one ordering that will take the API down if reversed.**
 
+**Current procedure (D1):**
+
+1. `cd apps/api && wrangler d1 migrations apply steadily-nanny --remote`
+   (migrations first, always; a Worker that writes a column the database does
+   not have 500s every write that touches it).
+2. Verify: `wrangler d1 migrations list steadily-nanny --remote` shows nothing
+   pending, and spot-check the new schema with
+   `wrangler d1 execute steadily-nanny --remote --command "<select>"`.
+3. `wrangler deploy`.
+4. Confirm `triggers.crons` in the dashboard matches `wrangler.jsonc`.
+
+Rehearse a migration locally first: `wrangler d1 migrations apply
+steadily-nanny --local` (local state lives under `.wrangler/state`). A
+migration with a `NOT NULL` column added to a populated table, or a new unique
+index over existing rows, fails at apply time: run its pre-flight SELECT
+first. D1 has no transactional DDL across the whole file, so a failed
+migration can leave a prefix applied; Time Travel (§5a) is the recovery.
+
+### §5a Rolling back
+
+- **Code only:** `wrangler rollback` (or `wrangler rollback <version-id>`).
+  Safe when the migration was additive (new nullable column, new index); the
+  old Worker simply ignores it. Unsafe the other way round: never roll the
+  database back under a newer Worker.
+- **Data damage:** D1 Time Travel. Note the current bookmark first
+  (`wrangler d1 time-travel info steadily-nanny`), then
+  `wrangler d1 time-travel restore steadily-nanny --timestamp=<ISO-8601 UTC>`
+  (or `--bookmark=<id>`). Everything written after that instant is lost,
+  including legitimate writes, so stop writes first (`app_config.status =
+  'maintenance'`). A restore can itself be undone by restoring to the bookmark
+  you noted.
+- **Schema:** forward-only. Ship a corrective migration.
+
+### Pre-D1 (historical): deploy order on Supabase
+
+Everything from here to §6 documents the Postgres-era migrations 074-106 as
+applied to the Supabase project. Do not run the SQL below against D1.
+
 Migration 088 carries DDL, and `shiftRepository.ts` writes
 `cover_ask_expires_at` **unconditionally** on shift creation. So:
 
@@ -155,12 +205,12 @@ Migration 088 carries DDL, and `shiftRepository.ts` writes
 
 1. Apply migrations `074 → 096` in order, via the Supabase MCP (never
    `supabase db push` — the version-scheme mismatch makes it dangerous here).
-2. Verify applied-migrations list **and** `cron.job` contents.
+2. Verify applied-migrations list **and** `cron.job` contents. (Pre-D1.)
 3. Then deploy the server.
 
 Also apply `077` before deploying the payment service — it calls that RPC.
 
-### Migration 101 — multi-block pattern days — APPLIED 2026-08-17
+### Migration 101 — multi-block pattern days — APPLIED 2026-08-17 (Pre-D1, historical)
 
 `101_schedule_pattern_multi_block_days.sql` dropped
 `schedule_pattern_days_pattern_weekday_idx` (unique on `pattern_id, weekday`)
@@ -193,7 +243,7 @@ them as orphans and cancels/deletes them: a second, separate blast radius).
 **So the real rollback remains "revert the app code and leave the index
 alone."** 101's own header carries the full two-step SQL and the same warning.
 
-### Migration 102 — paid-week guards — APPLIED 2026-08-17
+### Migration 102 — paid-week guards — APPLIED 2026-08-17 (Pre-D1, historical)
 
 `102_paid_week_guards.sql` closes `docs/AS-BUILT-PAYMENT.md` §7 P1/P2/P8 in
 one file: an `idempotency_key` on `payments` with a PARTIAL unique index,
@@ -254,7 +304,7 @@ carry it). Today that is zero weeks. Older clients tolerate both new fields
 because `TimesheetSchema.hours_changed_after_payment_at` and
 `CreatePaymentSchema.idempotency_key` are both optional.
 
-### Migrations 103 / 104 — shift read scope + schedule invariants — APPLIED 2026-08-17
+### Migrations 103 / 104 — shift read scope + schedule invariants — APPLIED 2026-08-17 (Pre-D1, historical)
 
 Two migrations, two very different rollback profiles. **Read this before
 applying either.**
@@ -296,9 +346,10 @@ create policy "Members can view day thread" on public.shift_events
 (`shiftQueryService.assertShiftReader`) narrows *identically* to the policy, so
 the two are safe in either order — but only because the API runs as the service
 role and bypasses RLS entirely. **Apply the migration and deploy the server
-together.** Applying 103 alone leaves the hole open for anyone driving
-PostgREST with the bundled anon key; deploying the server alone is harmless but
-buys nothing at the door.
+together.** Applying 103 alone left the hole open for anyone driving
+PostgREST with the bundled anon key; deploying the server alone was harmless but
+bought nothing at the door. (On D1 there is no PostgREST and no RLS: the
+service-side narrowing is the only gate.)
 
 **Rolling BACK the app without rolling back 103 is the safe direction** — the
 policy is stricter than the old service, and nothing in the app reads shifts
@@ -340,7 +391,7 @@ know `ShiftOverlapsError`, so a refused write surfaces as a 500 instead of a
 rather than recording a `pattern_conflict` and continuing. Prefer dropping the
 constraint to rolling the server back.
 
-### Migration 106 — invite pay-offer promotion outcome — APPLIED 2026-08-17
+### Migration 106 — invite pay-offer promotion outcome — APPLIED 2026-08-17 (Pre-D1, historical)
 
 `106_invite_pay_offer_promotion.sql` adds a nullable `pay_offer_promotion` text
 column to `household_invites`, CHECKed against
@@ -380,12 +431,12 @@ server revert. Know them before you ship.
 
 | Change | Why there is no switch | If it goes wrong |
 |---|---|---|
-| Payroll read-scope tightening (D-21, 087) | RLS + service gates, forward-only. Helper loses payroll access; a nanny is forced to own-scope. | Corrective migration. **Fails closed** — the failure mode is "someone cannot see data", never "someone sees too much". That is the right direction to fail. |
+| Payroll read-scope tightening (D-21, 087) | Service gates, forward-only (there is no RLS on D1; the API is the sole DB client and the checks live in services, so a server revert is the lever). Helper loses payroll access; a nanny is forced to own-scope. | Corrective migration. **Fails closed** — the failure mode is "someone cannot see data", never "someone sees too much". That is the right direction to fail. |
 | Cover-ask `pending` no longer counts as covering (S1/D-22) | Pure service logic in the uncovered computation. | Server revert. Expect **more** uncovered alarms than before — that is the intended behavior, not a regression. |
 | One cancellation window (D-48) | Household short-notice readers removed from the cancellation path. No-arrangement now means NOT paid — **stricter** than the old household fallback. | Server revert. Watch for disputes about unpaid late cancellations in week 1. |
 | Sick time-off auto-opens cancel requests (D-23/S10) | Service logic. | Server revert. Worst case is a burst of change requests. |
 | `week_below_guarantee` REPLACES `timesheet_approved` | One act, one push (A8 discipline). | Older clients fall back to the route-map default on an unknown type — a silent no-op tap, not a crash. |
-| `schedule_not_set` push (parent, group `schedule`, **not** quiet-hours exempt) | Emitted inside `reminderJob` at local 09:00, not by a job of its own. `cron.unschedule('reminders-hourly')` would also kill shift reminders and the timesheet-approval nudge, so §2's strongest switch is unavailable here. Server revert is the only lever. | Worst case is push noise, **once ever** per relationship: `buildScheduleNotSetKey` (`reminderJob.ts:314`) is undated (`schedule_not_set:<householdId>:<carerId>`), so the ledger caps it at one send however many mornings pass. Fires only when the household is live, an active nanny has a current arrangement ≥1 day old, and **no** pattern has ever existed for that carer in any status — an abandoned `draft` suppresses it forever, deliberately. Older clients fall back to the route-map default on an unknown type — a silent no-op tap, not a crash. |
+| `schedule_not_set` push (parent, group `schedule`, **not** quiet-hours exempt) | Emitted inside `reminderJob` at local 09:00, not by a job of its own. removing the `reminders` cron would also kill shift reminders and the timesheet-approval nudge, so §2's strongest switch is too blunt here. Server revert is the only lever. | Worst case is push noise, **once ever** per relationship: `buildScheduleNotSetKey` (`reminderJob.ts:314`) is undated (`schedule_not_set:<householdId>:<carerId>`), so the ledger caps it at one send however many mornings pass. Fires only when the household is live, an active nanny has a current arrangement ≥1 day old, and **no** pattern has ever existed for that carer in any status — an abandoned `draft` suppresses it forever, deliberately. Older clients fall back to the route-map default on an unknown type — a silent no-op tap, not a crash. |
 | Query supersede / withdraw-query exit (D-19) | Status machine change. | Server revert. |
 | Paid-week guards (migration 102) | Trigger + CHECK + a new RPC on the write path. No job, no push, no flag. A parent whose week has payments simply cannot reopen it. | Revert the API first (sole caller of `roll_up_timesheet_hours`), then run 102's rollback block in §5 — including restoring 085's five-arg `record_timesheet_payment`. Older clients tolerate the two new optional wire fields. |
 | Timesheet `parent_viewed_at` receipt (migration 100) | Column + own `updated_at` trigger on `timesheets`. No job, no push, no flag. | Drop the trigger, recreate 017's `set_timesheets_updated_at` using `public.set_updated_at()`, then drop the column. Older clients tolerate the missing field because `TimesheetSchema.parent_viewed_at` is optional. **Never** edit the shared `public.set_updated_at` as a rollback shortcut. |
@@ -401,14 +452,14 @@ that watch cannot be armed as written. Substitute signals, in priority order:
 1. **`integrity-checks` cron** (nightly 04:10) — already live, already the
    best automated correctness signal in the system. Read its output first.
    A clean `run_integrity_checks()` covers the money invariants.
-2. **API logs** (`apps/api/logs/dev.log` locally; host logs in prod) — watch
+2. **API logs** (`apps/api/logs/dev.log` locally; `wrangler tail` or Workers Logs in prod) — watch
    for 4xx spikes on the new endpoints and any 500 on shift creation (the §5
    ordering failure signature).
 3. **PostHog funnel events** (D-39): `draft_created` → `terms_shared` →
    `link_opened` → `code_redeemed` → `proposal_viewed` → `proposal_countered`
    → `proposal_accepted` → `first_week_approved`. A funnel that dies at
    `proposal_accepted` is the candidate-activation failure mode (§8).
-4. **`cron.job` contents + `job_runs`** — confirm the three new jobs actually
+4. **Cron triggers + `job_runs`** — confirm the three new jobs actually
    ran, and how many rows each touched. A cover-ask-expiry run cancelling an
    implausible number of shifts is the alarm to act on.
 5. Correction-row usage and cover-ask expiry volumes, per §11.
@@ -470,11 +521,14 @@ freeze. Recorded here so the first person to see the symptom knows the cause.
 
 If something is actively wrong in prod and you do not yet know what:
 
-1. `select jobname, schedule, active from cron.job;` — unschedule the
-   suspect job. This stops most blast radius without a deploy.
-2. `select * from run_integrity_checks();` — is the money still consistent?
+1. Remove the suspect job from `triggers.crons` in `apps/api/wrangler.jsonc`
+   and `wrangler deploy`. This stops most blast radius.
+2. Run the integrity checks: `POST /api/jobs/integrity-checks` with
+   `X-Job-Api-Key`, then read the `job_runs.summary`. Is the money still
+   consistent?
 3. If money is inconsistent, **stop writes before investigating**:
    `app_config.status = 'maintenance'`.
-4. Revert the server deploy only after confirming the migrations do not need
-   to go with it (§5 — they cannot come back).
+4. Revert the Worker with `wrangler rollback` only after confirming the
+   migrations do not need to go with it (§5: schema is forward-only). If data
+   was damaged, D1 Time Travel (§5a).
 5. Never hand-edit a money table. Corrections are new rows (D-20), always.

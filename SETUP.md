@@ -1,6 +1,6 @@
 # SETUP.md — code-side new-app checklist
 
-Everything in this doc happens **in your editor/terminal**, with no dashboard logins. For the dashboard-side work (Supabase, Apple, Google, RevenueCat, Sentry, PostHog, EAS, Cloud Run), do that in [`PROVISIONING.md`](./PROVISIONING.md) — you can do it before, after, or interleaved with this checklist, but the app won't boot against real services until both are done.
+Everything in this doc happens **in your editor/terminal**, with no dashboard logins. For the dashboard-side work (Cloudflare, Apple, Google, Sentry, PostHog, EAS), do that in [`PROVISIONING.md`](./PROVISIONING.md) — you can do it before, after, or interleaved with this checklist, but the app won't boot against real services until both are done.
 
 Each step names the exact command and what you should observe. If a step's observable doesn't match, stop and fix it before moving on — later steps assume earlier ones succeeded.
 
@@ -96,9 +96,9 @@ The setup script only does plain-text find/replace on the *tokens themselves* �
     cp apps/api/.env.example apps/api/.env
     cp apps/mobile/.env.example apps/mobile/.env
     ```
-    **Never commit these** (`.gitignore` already excludes `.env`). Minimum to boot in local dev without any real Supabase project: none — `apps/api/src/config/env.ts` short-circuits to placeholder values when `NODE_ENV=test`, but a real `bun run dev` boot needs real values for `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`, and `GOOGLE_VERTEX_PROJECT` at minimum (the API crashes fast at startup if these are missing — that's intentional, see `docs/04-API-ARCHITECTURE.md` §9). Get these from `PROVISIONING.md`'s Supabase and Google Cloud sections.
+    For the API, `apps/api/.env.example` documents every var; under `wrangler dev` put them in `apps/api/.dev.vars` (same KEY=value format; `.env` is for the Bun-only entry `bun src/index.ts`). **Never commit these** (`.gitignore` excludes them). The only var required to boot is `BETTER_AUTH_SECRET` (>= 32 chars, `openssl rand -base64 32`); `apps/api/src/config/env.ts` validates at startup and short-circuits to placeholders when `NODE_ENV=test`. Production additionally requires `JOB_API_KEY` and `RESEND_API_KEY` (set as Worker secrets, see `PROVISIONING.md` §1).
 
-    On the mobile side, `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` / `EXPO_PUBLIC_API_URL` are the minimum for the app to talk to your API; everything else (Sentry, PostHog, Google/RevenueCat keys) degrades gracefully when unset (a dev-mode console warning, no crash — see `apps/mobile/src/config/env.ts`'s `validateEnv()`).
+    On the mobile side, `EXPO_PUBLIC_API_URL` is the minimum for the app to talk to your API (the Better Auth client derives `/api/auth` from its origin); everything else (Sentry, PostHog, `EXPO_PUBLIC_GOOGLE_*` client ids) degrades gracefully when unset (a dev-mode console warning, no crash — see `apps/mobile/src/config/env.ts`'s `validateEnv()`).
 
 ---
 

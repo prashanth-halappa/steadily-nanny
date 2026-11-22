@@ -1,5 +1,8 @@
 # PROJECT-STATUS.md
 
+> **Platform note (2026-11-22):** the backend moved from Supabase (Postgres + Auth, Cloud Run, pg_cron) to Cloudflare D1 + Drizzle, Better Auth, a Cloudflare Worker and Workers cron triggers; the `llm` domain was deleted. Mentions of Supabase, RLS, PostgREST, `supabase/migrations/*` and Cloud Run below are the **pre-migration record**. Current state: `CLAUDE.md`, `apps/api/src/db/MIGRATION-NOTES.md`, `docs/ROLLBACK-RUNBOOK.md`.
+
+
 Handoff document for Steadily Nanny. Originally written at the end of Wave 0
 (foundation setup); kept current since through Wave 1 (the 1a/1b/1c/1h spine),
 Wave 2, and Wave 3 (an eighteen-defect adversarial sweep — §4g). Sections below
@@ -65,7 +68,7 @@ One-line summary of each flow/view:
 | API domain | `api.nanny.getsteadily.app` |
 | Expo owner | `jetto` |
 | Sentry org | `jettohq` |
-| Backend | Keep `apps/api` (Express + Bun) as the layer between mobile and Supabase — no direct-to-Supabase client calls from mobile for business data |
+| Backend | Keep `apps/api` (Express + Bun) as the layer between mobile and the database (now Cloudflare D1) — no direct DB access from mobile for business data |
 | Calendar views | Build all four (2a–2d), with a switcher, for both roles |
 | Subscriptions | Stripped entirely — no RevenueCat, no paywalls, no entitlement gating |
 | AI | None for now; Vertex plumbing left dormant (boot-time var only, no features wired) |

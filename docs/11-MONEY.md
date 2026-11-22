@@ -481,36 +481,18 @@ The engine implements these definitions exactly, not an approximation:
 
 ---
 
-## 8. RLS on money tables: select-only, service-role writes
+## 8. Money access: the service layer is the only gate (no RLS)
 
-`pay_arrangements` (041), `pto_ledger` (043), `expenses` (044), `payments`
-(067), `reimbursement_settlements` (086), `pay_arrangement_acks` (081, select
-via join through `pay_arrangements`) — and, since **D-21 / migration 087**,
-`timesheets` and `time_entries` — all follow one RLS stance: a single
-**select** policy, and **no insert/update/delete policy at all** (acks excepted:
-the carer may **insert** her own `seen`/`disagreed` row; see §14). Every other
-write goes through the API under the service role, exactly like `shifts`.
+Since the move to Cloudflare D1 there is **no RLS**: the API is the sole database
+client, so every read and write rule on the money tables — `pay_arrangements`,
+`pto_ledger`, `expenses`, `payments`, `reimbursement_settlements`,
+`pay_arrangement_acks`, `timesheets` and `time_entries` — lives in the service
+layer. (The pre-migration Postgres stack also had a select-only RLS backstop; it
+was dropped, and the API had always been service-role so it never enforced
+anything the services did not.) Writes go through the API like every other domain.
 
-Those last two were the exception until August 2026 and it was a real hole
-(gaps P4/P8). 017/018 gave them `can_read_household` — *any active member* —
-which was fine when a timesheet was a row of hours, and stopped being fine the
-day 042 froze `gross_minor` and the `earnings` snapshot onto it. A HELPER and a
-SECOND NANNY could read another carer's weekly pay via `GET /timesheets/:id`,
-the household list and the CSV export, and read her exact clock times, break
-lengths and shift notes off `time_entries`. 087 repoints both at the money-read
-predicate below; `timesheetQueryService.assertPayrollReader` moved in the same
-commit — a backstop wider than the check IS the door.
-
-The **money read circle** at RLS is the same predicate on every table above:
-
-```sql
-using (private.can_write_household(household_id) or carer_id = (select auth.uid()))
-```
-
-That is necessary but, for **`timesheets` and `time_entries`, not sufficient**
-to describe who may read payroll through the API. PostgREST would still let any
-carer pass the self-arm on her own rows; the service gate is what enforces the
-product rule by **role, status second** (`assertPayrollReader`):
+The **money read circle** is enforced by role, status second
+(`timesheetQueryService.assertPayrollReader`):
 
 - **Owner or parent** — household scope: every carer's weeks, entries, exports,
   and payment lists.
@@ -523,44 +505,30 @@ The four pure-money query services (`payArrangementQueryService`,
 `ptoQueryService`, `expenseQueryService`, `paymentQueryService`) enforce the
 same role-shaped scope through their own `assert*` gates;
 `reimbursementSettlementService` delegates to `assertPayrollReader` for the
-same shape. An earlier draft used `private.can_read_household` on the hours
-tables — *every active member* — which was wider than all of the above.
-PostgREST is a real door: a policy looser than the service does not make the
-service's refusal safer, it makes it cosmetic. A nanny can always read her own
-terms and her own weeks, because opaque pay is the disease this feature treats.
+same shape. A nanny can always read her own terms and her own weeks, because
+opaque pay is the disease this feature treats.
 
 **Membership STATUS is not part of that rule, in either direction.** Every
 payroll read resolves scope from the ROLE and accepts a `removed` member: a
 nanny who has left still reads the hours she worked and the weeks she was owed
 for, and the parents who paid keep the household view. Payroll is an audit
-trail, not a live surface that disappears with the badge — which is exactly
-what the row-armed `carer_id = auth.uid()` arm above encodes in SQL. Every
-WRITE gate still resolves an ACTIVE membership, so a removed member can look
-and change nothing.
+trail, not a live surface that disappears with the badge. Every WRITE gate still
+resolves an ACTIVE membership, so a removed member can look and change nothing.
 
-Two notes on the form, both load-bearing:
+**Why no client-exercisable write path exists:** it would let a caller bypass
+every service-enforced rule — the no-future-dating check, append-only, the
+membership assertion in §9. The concrete risk: a carer-self insert path on
+`expenses` would let a nanny insert a row with `status = 'approved'` and an
+arbitrary `amount_minor`, self-approving her own money. Append-only tables
+enforce immutability the same way: not a trigger, but the absence of any
+update/delete code path anywhere in the stack. Atomic multi-step money writes
+(record a payment, settle reimbursements, correct a payment) are guarded D1
+batches in the repositories, not Postgres RPCs — see
+`apps/api/src/db/MIGRATION-NOTES.md`.
 
-- `can_write_household` is called **bare, never `(select ...)`-wrapped** —
-  migration 040's rule is that the initplan optimisation lives *inside* the
-  helpers, and the wrapped form has never existed in this repo. Write-
-  capability is the right predicate for reading money: the people who may set
-  the terms are exactly the people who may see everyone's.
-- The self-arm uses `(select auth.uid())`, 018's house form, where the
-  sub-select *is* the optimisation — `auth.uid()` takes no per-row argument,
-  so Postgres hoists it into one evaluation per scan.
-
-**Why this isn't "tighten it later":** a client-exercisable write policy on
-a money table would let a caller bypass every service-enforced rule — the
-no-future-dating check, append-only, the membership assertion in §9 — using
-nothing more than the anon key and her own JWT. The independent review's
-motivating finding was concrete: a carer-self insert policy on `expenses`
-would let a nanny insert a row with `status = 'approved'` and an arbitrary
-`amount_minor` directly, self-approving her own money with no parent
-involved. Select-only plus service-role writes is what makes every rule in
-this doc *real* rather than advisory — RLS here is a backstop against a
-compromised or misbehaving client, not a substitute for §9's checks.
-Append-only tables enforce immutability the same way: not a trigger, but the
-absence of any update/delete code path anywhere in the stack.
+> Sections below that cite `private.can_*`, `auth.uid()` or migration numbers
+> describe the historical Postgres design; the rule each one expresses is now
+> held by the service-layer checks above.
 
 ---
 
@@ -568,9 +536,9 @@ absence of any update/delete code path anywhere in the stack.
 
 Inherited from `docs/DEFECT-LOG.md` D12–D14 — three real, previously-shipped
 holes, all the same class: **an id accepted from the client and used without
-checking it belongs to the caller.** Repositories run as the service role
-and bypass RLS entirely, so on any write path the service layer is the
-*only* gate — RLS is a backstop, not a check, per §8. Every unvalidated
+checking it belongs to the caller.** The repositories are the only DB client
+(no RLS), so on any write path the service layer is the
+*only* gate, per §8. Every unvalidated
 client-supplied id on a write is a real hole, not a theoretical one.
 
 Applied here: a `carer_id` on a pay-arrangement write must be asserted to be
@@ -638,7 +606,7 @@ enforced; a notice model is a follow-up.
 
 ## 11. The settlement ledger: payments are facts, never a second source of truth
 
-`payments` (`supabase/migrations/067_payments.sql`,
+`payments` (historically migration 067; now the `payments` table in `apps/api/src/db/schema/pay.ts`,
 `packages/shared-types/src/schemas/payment.schema.ts`) records that a week's
 wages **actually moved**, outside the app — bank transfer, cash, whatever a
 family actually does. It is the other half of the loop §3 describes: §3
@@ -767,7 +735,7 @@ is not null`) so rows without a key never collide with each other.
 
 **Append-only is now structural, not a comment.** `PaymentRepository` and
 `ReimbursementSettlementRepository` both inherit `BaseRepository.update` and
-`.delete`, which run as service role where RLS cannot stop them; "append-only"
+`.delete`, which nothing at the DB layer stops (no RLS); "append-only"
 there was enforced by nobody having written the call. Both now **override both
 methods to throw**, before any query. The way back into a wrong payment is a
 `correction` row; there is no way back into a wrong settlement at all.
@@ -859,7 +827,7 @@ D-12, migrations 080 and 107):
 keys, and `weekEarningsService` is the single place keys become dates.
 
 **Privacy.** A custom holiday name can disclose religion, so it is
-member-select-only in RLS, written only through the parent-gated API, and
+readable only by household members (service-layer check), written only through the parent-gated API, and
 reaches **no** export — `EarningsLineSchema` carries no holiday field, and
 the week CSV, terms rows and public terms page name only the line kind
 ("Holiday premium" / "Paid holiday"). Anyone later adding a "which holiday"
@@ -969,7 +937,7 @@ them for grouping labels.
 that the **carer** saw (`kind = 'seen'`) or disagreed with (`kind =
 'disagreed'`, optional 280-char `note`) one arrangement version. One row per
 `(arrangement_id, carer_id, kind)`; parents cannot write on her behalf. A
-dissent blocks nothing — terms stay in force and weeks keep pricing. RLS:
-select through the same money read circle as `pay_arrangements`; insert only
-when `carer_id = auth.uid()` matches the arrangement's carer. No update or
+dissent blocks nothing — terms stay in force and weeks keep pricing. Service
+rules: read through the same money read circle as `pay_arrangements`; insert only
+when the caller is the arrangement's carer. No update or
 delete path.
