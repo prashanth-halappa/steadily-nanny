@@ -1,251 +1,108 @@
 /**
- * `household_custom_holidays` data access (107).
+ * `household_custom_holidays` data access (107), on a real D1.
  *
  * A replace-set, not a toggle: the row existing IS the observance, so an
  * empty payload must delete every row (that is how the last custom day is
- * removed). Deletes go by id after a TypeScript filter — never PostgREST
- * `not.in` with user-supplied names (quoting trap).
+ * removed). Deletes go by id after a TypeScript filter.
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+} from 'bun:test';
+import type { HouseholdCustomHolidayRepository as Repo } from '../../../../../src/domains/household/repositories/householdCustomHolidayRepository';
+import { createTestDb, type TestDb } from '../../../../helpers/testDb';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-const FIXTURE_TS = new Date(Date.now() - 2 * DAY_MS).toISOString();
-const FIXTURE_TS_OFFSET = FIXTURE_TS.replace('.000Z', '+00:00');
+const H = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const OTHER = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
-const HOUSEHOLD_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+let t: TestDb;
+let repo: Repo;
 
-let HouseholdCustomHolidayRepository: any;
-let mockSupabaseService: any;
-
-interface CallRecord {
-  rows: unknown;
-  options: unknown;
-  eqFilters: [string, unknown][];
-  inFilters: [string, unknown][];
-  deleteCalled: boolean;
-  upsertCalled: boolean;
-}
-
-let calls: CallRecord[];
-let nextResponse: { data: unknown; error: unknown }[];
-
-function createMockQueryChain(
-  finalResponse: { data: unknown; error: unknown } = { data: [], error: null }
-): any {
-  const rec: CallRecord = {
-    rows: undefined,
-    options: undefined,
-    eqFilters: [],
-    inFilters: [],
-    deleteCalled: false,
-    upsertCalled: false,
-  };
-  calls.push(rec);
-
-  const chain: any = {
-    select: mock(() => chain),
-    eq: mock((key: string, value: unknown) => {
-      rec.eqFilters.push([key, value]);
-      return chain;
-    }),
-    in: mock((key: string, value: unknown) => {
-      rec.inFilters.push([key, value]);
-      return chain;
-    }),
-    order: mock(() => chain),
-    upsert: mock((rows: unknown, options: unknown) => {
-      rec.upsertCalled = true;
-      rec.rows = rows;
-      rec.options = options;
-      return chain;
-    }),
-    delete: mock(() => {
-      rec.deleteCalled = true;
-      return chain;
-    }),
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-    then: (resolve: any) => Promise.resolve(finalResponse).then(resolve),
-  };
-  return chain;
-}
-
-function customRow(overrides: Record<string, unknown> = {}) {
-  return {
-    id: '11111111-1111-4111-8111-111111111111',
-    household_id: HOUSEHOLD_ID,
-    name: 'Diwali',
-    dates: ['2026-11-08'],
-    created_at: FIXTURE_TS_OFFSET,
-    updated_at: FIXTURE_TS,
-    ...overrides,
-  };
-}
+const run = (sql: string, ...binds: unknown[]) =>
+  t.d1
+    .prepare(sql)
+    .bind(...binds)
+    .run();
 
 beforeAll(async () => {
-  mock.module('../../../../../src/config/supabase', () => {
-    const obj = { from: mock(() => createMockQueryChain()) };
-    return { supabase: obj, supabaseService: obj };
-  });
-
-  ({ HouseholdCustomHolidayRepository } = await import(
+  t = await createTestDb();
+  mock.module('../../../../../src/db/client', () => ({ db: t.db }));
+  const { HouseholdCustomHolidayRepository } = await import(
     '../../../../../src/domains/household/repositories/householdCustomHolidayRepository'
-  ));
-  mockSupabaseService = (await import('../../../../../src/config/supabase'))
-    .supabaseService;
+  );
+  repo = new HouseholdCustomHolidayRepository();
 });
 
-beforeEach(() => {
-  calls = [];
-  nextResponse = [];
-  mockSupabaseService.from.mockClear?.();
-  mockSupabaseService.from.mockImplementation(() => {
-    const response = nextResponse.shift() ?? { data: [], error: null };
-    return createMockQueryChain(response);
-  });
+afterAll(() => t.dispose());
+
+beforeEach(async () => {
+  await run('DELETE FROM households');
+  await run(
+    "INSERT INTO households (id, name) VALUES (?, 'A'), (?, 'B')",
+    H,
+    OTHER
+  );
 });
 
 describe('HouseholdCustomHolidayRepository.listForHousehold', () => {
-  it('scopes the read to the household and returns the rows', async () => {
-    const row = customRow();
-    nextResponse = [{ data: [row], error: null }];
-
-    const repo = new HouseholdCustomHolidayRepository();
-    const rows = await repo.listForHousehold(HOUSEHOLD_ID);
-
-    expect(mockSupabaseService.from).toHaveBeenCalledWith(
-      'household_custom_holidays'
-    );
-    expect(calls[0]!.eqFilters).toEqual([['household_id', HOUSEHOLD_ID]]);
-    expect(rows).toEqual([row]);
-  });
-
-  it('returns [] rather than null when the household has no custom days yet', async () => {
-    nextResponse = [{ data: null, error: null }];
-    const repo = new HouseholdCustomHolidayRepository();
-    expect(await repo.listForHousehold('h1')).toEqual([]);
+  it('returns [] when the household has no custom days yet', async () => {
+    expect(await repo.listForHousehold(H)).toEqual([]);
   });
 
   it('throws DatabaseError when the read fails', async () => {
-    nextResponse = [{ data: null, error: { message: 'boom' } }];
-    const repo = new HouseholdCustomHolidayRepository();
-    await expect(repo.listForHousehold('h1')).rejects.toThrow(
-      /custom holiday/i
-    );
+    await run('ALTER TABLE household_custom_holidays RENAME TO hch_gone');
+    try {
+      await expect(repo.listForHousehold(H)).rejects.toMatchObject({
+        name: 'DatabaseError',
+      });
+    } finally {
+      await run('ALTER TABLE hch_gone RENAME TO household_custom_holidays');
+    }
   });
 });
 
 describe('HouseholdCustomHolidayRepository.replaceSet', () => {
-  it('upserts named rows on the (household_id, name) conflict target', async () => {
-    const diwali = customRow();
-    nextResponse = [
-      { data: [diwali], error: null },
-      { data: [diwali], error: null },
-    ];
-
-    const repo = new HouseholdCustomHolidayRepository();
-    await repo.replaceSet(HOUSEHOLD_ID, [
-      { name: 'Diwali', dates: ['2026-11-08'] },
+  it('inserts rows, name-ascending, with dates round-tripped as an array', async () => {
+    const rows = await repo.replaceSet(H, [
+      { name: 'Teacher day', dates: ['2026-05-01'] },
+      { name: 'Eid', dates: ['2026-03-20', '2026-03-21'] },
     ]);
-
-    const upsert = calls.find(call => call.upsertCalled);
-    expect(upsert?.rows).toEqual([
-      {
-        household_id: HOUSEHOLD_ID,
-        name: 'Diwali',
-        dates: ['2026-11-08'],
-      },
-    ]);
-    expect(upsert?.options).toEqual({ onConflict: 'household_id,name' });
-    for (const row of upsert?.rows as Record<string, unknown>[]) {
-      expect(row).not.toHaveProperty('updated_at');
-      expect(row).not.toHaveProperty('created_at');
-    }
+    expect(rows.map(r => r.name)).toEqual(['Eid', 'Teacher day']);
+    expect(rows[0]?.dates).toEqual(['2026-03-20', '2026-03-21']);
   });
 
-  it('deletes rows whose name is not in the payload, by id', async () => {
-    const keep = customRow({
-      id: '11111111-1111-4111-8111-111111111111',
-      name: 'Diwali',
-      dates: ['2026-11-08'],
-    });
-    const stale = customRow({
-      id: '22222222-2222-4222-8222-222222222222',
-      name: "Grandma's birthday",
-      dates: ['2026-03-01'],
-    });
-    nextResponse = [
-      { data: [keep], error: null },
-      { data: [keep, stale], error: null },
-      { data: null, error: null },
-      { data: [keep], error: null },
-    ];
-
-    const repo = new HouseholdCustomHolidayRepository();
-    await repo.replaceSet(HOUSEHOLD_ID, [
-      { name: 'Diwali', dates: ['2026-11-08'] },
+  it('upserts on (household_id, name): same id, new dates', async () => {
+    const [first] = await repo.replaceSet(H, [
+      { name: 'Eid', dates: ['2026-03-20'] },
     ]);
+    const [second] = await repo.replaceSet(H, [
+      { name: 'Eid', dates: ['2026-03-21'] },
+    ]);
+    expect(second?.id).toBe(first?.id as string);
+    expect(second?.dates).toEqual(['2026-03-21']);
+  });
 
-    const deleted = calls.find(call => call.deleteCalled);
-    expect(deleted).toBeDefined();
-    expect(deleted?.inFilters).toEqual([['id', [stale.id]]]);
+  it('deletes rows whose name is not in the payload, this household only', async () => {
+    await repo.replaceSet(H, [
+      { name: 'Keep', dates: ['2026-01-02'] },
+      { name: 'Drop', dates: ['2026-01-03'] },
+    ]);
+    await repo.replaceSet(OTHER, [{ name: 'Drop', dates: ['2026-01-03'] }]);
+    const rows = await repo.replaceSet(H, [
+      { name: 'Keep', dates: ['2026-01-02'] },
+    ]);
+    expect(rows.map(r => r.name)).toEqual(['Keep']);
+    expect(await repo.listForHousehold(OTHER)).toHaveLength(1);
   });
 
   it('clears every row when the payload is empty', async () => {
-    const first = customRow({
-      id: '11111111-1111-4111-8111-111111111111',
-      name: 'Diwali',
-      dates: ['2026-11-08'],
-    });
-    const second = customRow({
-      id: '22222222-2222-4222-8222-222222222222',
-      name: "Grandma's birthday",
-      dates: ['2026-03-01'],
-    });
-    nextResponse = [
-      { data: [first, second], error: null },
-      { data: null, error: null },
-      { data: [], error: null },
-    ];
-
-    const repo = new HouseholdCustomHolidayRepository();
-    const result = await repo.replaceSet(HOUSEHOLD_ID, []);
-
-    expect(calls.every(call => !call.upsertCalled)).toBe(true);
-    const deleted = calls.find(call => call.deleteCalled);
-    expect(deleted?.inFilters).toEqual([['id', [first.id, second.id]]]);
-    expect(result).toEqual([]);
-  });
-
-  it('returns the list that reflects the final state, name-ascending', async () => {
-    const alpha = customRow({
-      id: '11111111-1111-4111-8111-111111111111',
-      name: 'Alpha Day',
-      dates: ['2026-01-01'],
-    });
-    const zed = customRow({
-      id: '22222222-2222-4222-8222-222222222222',
-      name: 'Zed Day',
-      dates: ['2026-12-01'],
-    });
-    const stale = customRow({
-      id: '33333333-3333-4333-8333-333333333333',
-      name: 'Old Day',
-      dates: ['2026-06-01'],
-    });
-    const finalRows = [alpha, zed];
-    nextResponse = [
-      { data: [zed, alpha], error: null },
-      { data: [alpha, stale, zed], error: null },
-      { data: null, error: null },
-      { data: finalRows, error: null },
-    ];
-
-    const repo = new HouseholdCustomHolidayRepository();
-    const result = await repo.replaceSet(HOUSEHOLD_ID, [
-      { name: 'Zed Day', dates: ['2026-12-01'] },
-      { name: 'Alpha Day', dates: ['2026-01-01'] },
-    ]);
-
-    expect(result).toEqual(finalRows);
+    await repo.replaceSet(H, [{ name: 'Eid', dates: ['2026-03-20'] }]);
+    expect(await repo.replaceSet(H, [])).toEqual([]);
+    expect(await repo.listForHousehold(H)).toEqual([]);
   });
 });

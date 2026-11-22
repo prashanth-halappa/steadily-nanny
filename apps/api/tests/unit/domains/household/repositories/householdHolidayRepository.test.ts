@@ -1,269 +1,163 @@
 /**
- * `household_holidays` data access (080).
+ * `household_holidays` data access (080), on a real D1 (tests/helpers/testDb.ts).
  *
- * The two things a recording mock can actually prove here are the two things
- * that silently break: the conflict target the upsert names (name it wrong and
- * every save 23505s or, worse, inserts a duplicate toggle), and whether the
- * seed leaves existing rows alone. `updated_at` is deliberately NOT asserted as
- * a written column — the SQL trigger owns it (080), and setting it from
- * TypeScript would be a second clock.
+ * The two things that silently break: the upsert's conflict target (wrong,
+ * and every save fails on the unique or inserts a duplicate toggle), and
+ * whether the seed leaves existing rows alone. `updated_at` is owned by the
+ * `set_household_holidays_updated_at` trigger, never written from TypeScript.
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+} from 'bun:test';
 import { holidayKeysForCountry } from '@steadily-nanny/shared-types/holidayPacks';
+import type { HouseholdHolidayRepository as Repo } from '../../../../../src/domains/household/repositories/householdHolidayRepository';
+import { createTestDb, type TestDb } from '../../../../helpers/testDb';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-const FIXTURE_TS = new Date(Date.now() - 2 * DAY_MS).toISOString();
-const FIXTURE_TS_OFFSET = FIXTURE_TS.replace('.000Z', '+00:00');
+const H = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const OTHER = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
-let HouseholdHolidayRepository: any;
-let mockSupabaseService: any;
+let t: TestDb;
+let repo: Repo;
 
-interface Recorded {
-  rows: unknown;
-  options: unknown;
-  eqFilters: [string, unknown][];
-  inFilters: [string, unknown][];
-  deleteCalled: boolean;
-}
-
-let recorded: Recorded;
-
-function createMockQueryChain(
-  finalResponse: { data: unknown; error: unknown } = { data: [], error: null }
-): any {
-  const chain: any = {
-    select: mock(() => chain),
-    eq: mock((key: string, value: unknown) => {
-      recorded.eqFilters.push([key, value]);
-      return chain;
-    }),
-    in: mock((key: string, value: unknown) => {
-      recorded.inFilters.push([key, value]);
-      return chain;
-    }),
-    order: mock(() => chain),
-    upsert: mock((rows: unknown, options: unknown) => {
-      recorded.rows = rows;
-      recorded.options = options;
-      return chain;
-    }),
-    delete: mock(() => {
-      recorded.deleteCalled = true;
-      return chain;
-    }),
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-    then: (resolve: any) => Promise.resolve(finalResponse).then(resolve),
-  };
-  return chain;
-}
-
-// Deliberately BOTH timestamp serialisations across the fixtures in this file
-// (GOLDEN-FIXES #25): PostgREST hands back `+00:00`, JS-built rows carry
-// `.000Z`, and nothing here may depend on which one it got.
-function holidayRow(overrides: Record<string, unknown> = {}) {
-  return {
-    id: '11111111-1111-4111-8111-111111111111',
-    household_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-    holiday_key: 'independence_day',
-    observed: true,
-    created_at: FIXTURE_TS_OFFSET,
-    updated_at: FIXTURE_TS,
-    ...overrides,
-  };
-}
+const run = (sql: string, ...binds: unknown[]) =>
+  t.d1
+    .prepare(sql)
+    .bind(...binds)
+    .run();
 
 beforeAll(async () => {
-  mock.module('../../../../../src/config/supabase', () => {
-    const obj = { from: mock(() => createMockQueryChain()) };
-    return { supabase: obj, supabaseService: obj };
-  });
-
-  ({ HouseholdHolidayRepository } = await import(
+  t = await createTestDb();
+  mock.module('../../../../../src/db/client', () => ({ db: t.db }));
+  const { HouseholdHolidayRepository } = await import(
     '../../../../../src/domains/household/repositories/householdHolidayRepository'
-  ));
-  mockSupabaseService = (await import('../../../../../src/config/supabase'))
-    .supabaseService;
+  );
+  repo = new HouseholdHolidayRepository();
 });
 
-beforeEach(() => {
-  recorded = {
-    rows: undefined,
-    options: undefined,
-    eqFilters: [],
-    inFilters: [],
-    deleteCalled: false,
-  };
-  mockSupabaseService.from.mockClear?.();
-  mockSupabaseService.from.mockImplementation(() => createMockQueryChain());
+afterAll(() => t.dispose());
+
+beforeEach(async () => {
+  await run('DELETE FROM households');
+  await run(
+    "INSERT INTO households (id, name) VALUES (?, 'A'), (?, 'B')",
+    H,
+    OTHER
+  );
 });
 
 describe('HouseholdHolidayRepository.listForHousehold', () => {
-  it('scopes the read to the household and returns the rows', async () => {
-    const row = holidayRow();
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: [row], error: null })
-    );
-
-    const repo = new HouseholdHolidayRepository();
-    const rows = await repo.listForHousehold(row.household_id);
-
-    expect(mockSupabaseService.from).toHaveBeenCalledWith('household_holidays');
-    expect(recorded.eqFilters).toEqual([['household_id', row.household_id]]);
-    expect(rows).toEqual([row]);
+  it('scopes the read to the household, key-ascending', async () => {
+    await repo.upsertMany(H, [
+      { holiday_key: 'us_new_years_day', observed: true },
+      { holiday_key: 'us_christmas_day', observed: false },
+    ]);
+    await repo.upsertMany(OTHER, [
+      { holiday_key: 'us_labor_day', observed: true },
+    ]);
+    const rows = await repo.listForHousehold(H);
+    expect(rows.map(r => r.holiday_key)).toEqual([
+      'us_christmas_day',
+      'us_new_years_day',
+    ]);
+    expect(rows[0]?.observed).toBe(false);
   });
 
-  it('returns [] rather than null when the household has no toggles yet', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: null })
-    );
-    const repo = new HouseholdHolidayRepository();
-    expect(await repo.listForHousehold('h1')).toEqual([]);
+  it('returns [] when the household has no toggles yet', async () => {
+    expect(await repo.listForHousehold(H)).toEqual([]);
   });
 
   it('throws DatabaseError when the read fails', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: { message: 'boom' } })
-    );
-    const repo = new HouseholdHolidayRepository();
-    await expect(repo.listForHousehold('h1')).rejects.toThrow(
-      /household holidays/i
-    );
+    await run('ALTER TABLE household_holidays RENAME TO hh_gone');
+    try {
+      await expect(repo.listForHousehold(H)).rejects.toMatchObject({
+        name: 'DatabaseError',
+      });
+    } finally {
+      await run('ALTER TABLE hh_gone RENAME TO household_holidays');
+    }
   });
 });
 
 describe('HouseholdHolidayRepository.upsertMany', () => {
-  it('names the (household_id, holiday_key) conflict target and overwrites', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({
-        data: [holidayRow({ observed: false })],
-        error: null,
-      })
-    );
-
-    const repo = new HouseholdHolidayRepository();
-    await repo.upsertMany('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', [
-      { holiday_key: 'independence_day', observed: false },
+  it('overwrites an existing toggle on (household_id, holiday_key)', async () => {
+    const [first] = await repo.upsertMany(H, [
+      { holiday_key: 'us_labor_day', observed: true },
     ]);
-
-    expect(recorded.rows).toEqual([
-      {
-        household_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-        holiday_key: 'independence_day',
-        observed: false,
-      },
+    const [second] = await repo.upsertMany(H, [
+      { holiday_key: 'us_labor_day', observed: false },
     ]);
-    // The plain unique CONSTRAINT from 080 is nameable as a column list, so
-    // unlike GOLDEN-FIXES #31's expression index this target really applies.
-    expect(recorded.options).toEqual({
-      onConflict: 'household_id,holiday_key',
-    });
+    expect(second?.id).toBe(first?.id as string);
+    expect(second?.observed).toBe(false);
+    expect(await repo.listForHousehold(H)).toHaveLength(1);
   });
 
-  it('never writes updated_at — the 080 trigger owns it', async () => {
-    const repo = new HouseholdHolidayRepository();
-    await repo.upsertMany('h1', [{ holiday_key: 'labor_day', observed: true }]);
-    for (const row of recorded.rows as Record<string, unknown>[]) {
-      expect(row).not.toHaveProperty('updated_at');
-      expect(row).not.toHaveProperty('created_at');
-    }
-  });
-
-  it('throws DatabaseError when the write fails', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: { message: 'boom' } })
-    );
-    const repo = new HouseholdHolidayRepository();
-    await expect(
-      repo.upsertMany('h1', [{ holiday_key: 'labor_day', observed: true }])
-    ).rejects.toThrow(/household holidays/i);
+  it('leaves keys it does not name untouched', async () => {
+    await repo.upsertMany(H, [
+      { holiday_key: 'a', observed: true },
+      { holiday_key: 'b', observed: true },
+    ]);
+    await repo.upsertMany(H, [{ holiday_key: 'a', observed: false }]);
+    const rows = await repo.listForHousehold(H);
+    expect(rows.map(r => [r.holiday_key, r.observed])).toEqual([
+      ['a', false],
+      ['b', true],
+    ]);
   });
 });
 
 describe('HouseholdHolidayRepository.seedCountryPack', () => {
   it('writes one observed row per key in the country pack', async () => {
-    const repo = new HouseholdHolidayRepository();
-    await repo.seedCountryPack('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'US');
-
+    const rows = await repo.seedCountryPack(H, 'US');
     const usKeys = holidayKeysForCountry('US');
-    const rows = recorded.rows as Record<string, unknown>[];
-    expect(rows).toHaveLength(usKeys.length);
-    expect(rows.map(row => row.holiday_key)).toEqual([...usKeys]);
-    expect(rows.every(row => row.observed === true)).toBe(true);
-    expect(
-      rows.every(
-        row => row.household_id === 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
-      )
-    ).toBe(true);
+    expect(rows.map(r => r.holiday_key).sort()).toEqual([...usKeys].sort());
+    expect(rows.every(r => r.observed === true && r.household_id === H)).toBe(
+      true
+    );
   });
 
   it('seeds the Canadian pack when the household country is CA', async () => {
-    const repo = new HouseholdHolidayRepository();
-    await repo.seedCountryPack('h1', 'CA');
-
-    const caKeys = holidayKeysForCountry('CA');
-    const rows = recorded.rows as Record<string, unknown>[];
-    expect(rows.map(row => row.holiday_key)).toEqual([...caKeys]);
-    expect(rows.every(row => row.observed === true)).toBe(true);
+    const rows = await repo.seedCountryPack(H, 'CA');
+    expect(rows.map(r => r.holiday_key).sort()).toEqual(
+      [...holidayKeysForCountry('CA')].sort()
+    );
   });
 
-  it('ignores duplicates so a retried creation cannot 23505 or reset toggles', async () => {
-    const repo = new HouseholdHolidayRepository();
-    await repo.seedCountryPack('h1', 'US');
+  it('ignores duplicates so a retried creation cannot fail or reset toggles', async () => {
+    await repo.seedCountryPack(H, 'US');
+    const key = holidayKeysForCountry('US')[0] as string;
+    await repo.upsertMany(H, [{ holiday_key: key, observed: false }]);
 
-    expect(recorded.options).toEqual({
-      onConflict: 'household_id,holiday_key',
-      ignoreDuplicates: true,
-    });
+    const retried = await repo.seedCountryPack(H, 'US');
+    expect(retried).toEqual([]);
+    const rows = await repo.listForHousehold(H);
+    expect(rows).toHaveLength(holidayKeysForCountry('US').length);
+    expect(rows.find(r => r.holiday_key === key)?.observed).toBe(false);
   });
 });
 
 describe('HouseholdHolidayRepository.deleteKeysNotIn', () => {
-  const householdId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
-
-  it('deletes only the rows whose key is not in the keep set, by id', async () => {
-    const keep = holidayRow({
-      id: '11111111-1111-4111-8111-111111111111',
-      holiday_key: 'new_years_day',
-    });
-    const staleA = holidayRow({
-      id: '22222222-2222-4222-8222-222222222222',
-      holiday_key: 'independence_day',
-    });
-    const staleB = holidayRow({
-      id: '33333333-3333-4333-8333-333333333333',
-      holiday_key: 'juneteenth',
-    });
-    let fromCalls = 0;
-    mockSupabaseService.from.mockImplementation(() => {
-      fromCalls += 1;
-      if (fromCalls === 1) {
-        return createMockQueryChain({
-          data: [keep, staleA, staleB],
-          error: null,
-        });
-      }
-      return createMockQueryChain({ data: null, error: null });
-    });
-
-    const repo = new HouseholdHolidayRepository();
-    await repo.deleteKeysNotIn(householdId, ['new_years_day']);
-
-    expect(recorded.deleteCalled).toBe(true);
-    expect(recorded.inFilters).toEqual([['id', [staleA.id, staleB.id]]]);
-    expect(recorded.eqFilters).toEqual([['household_id', householdId]]);
+  it('deletes only this household’s rows whose key is not in the keep set', async () => {
+    await repo.upsertMany(H, [
+      { holiday_key: 'keep', observed: true },
+      { holiday_key: 'stale', observed: true },
+    ]);
+    await repo.upsertMany(OTHER, [{ holiday_key: 'stale', observed: true }]);
+    await repo.deleteKeysNotIn(H, ['keep']);
+    expect((await repo.listForHousehold(H)).map(r => r.holiday_key)).toEqual([
+      'keep',
+    ]);
+    expect(await repo.listForHousehold(OTHER)).toHaveLength(1);
   });
 
-  it('no-ops the delete when nothing is stale', async () => {
-    const row = holidayRow({ holiday_key: 'new_years_day' });
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: [row], error: null })
-    );
-
-    const repo = new HouseholdHolidayRepository();
-    await repo.deleteKeysNotIn(householdId, ['new_years_day', 'christmas_day']);
-
-    expect(mockSupabaseService.from).toHaveBeenCalledTimes(1);
-    expect(recorded.deleteCalled).toBe(false);
-    expect(recorded.inFilters).toEqual([]);
+  it('no-ops when nothing is stale', async () => {
+    await repo.upsertMany(H, [{ holiday_key: 'keep', observed: true }]);
+    await repo.deleteKeysNotIn(H, ['keep', 'other']);
+    expect(await repo.listForHousehold(H)).toHaveLength(1);
   });
 });

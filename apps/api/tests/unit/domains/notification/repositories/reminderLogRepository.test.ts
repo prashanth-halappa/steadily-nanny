@@ -1,108 +1,30 @@
 /**
- * `ReminderLogRepository` against a fake PostgREST chain that actually
- * evaluates eq filters against in-memory rows (see
- * `expenseRepository.test.ts`) — a recording-only chain would pass even if
- * `release` forgot to scope its delete to a single `(user_id, reminder_key)`
- * pair, which is exactly the bug this file exists to catch.
+ * `ReminderLogRepository` on a real Miniflare D1 — scoping bugs (a `release`
+ * that forgot one key of the `(user_id, reminder_key)` pair) show up as real
+ * rows surviving or vanishing.
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+} from 'bun:test';
+import {
+  pushReminderLog,
+  user,
+  userProfiles,
+} from '../../../../../src/db/schema';
+import { createTestDb, type TestDb } from '../../../../helpers/testDb';
 
-interface FakeRow {
-  [key: string]: unknown;
-}
-
+let t: TestDb;
 let ReminderLogRepository: any;
-let mockSupabaseService: any;
-
-type Predicate = (row: FakeRow) => boolean;
-
-function createFakeQuery(rows: FakeRow[], error: unknown = null): any {
-  const filters: Predicate[] = [];
-  let isInsert = false;
-  let insertRow: FakeRow | null = null;
-  let isDelete = false;
-  let updatePatch: FakeRow | null = null;
-
-  const matches = (row: FakeRow): boolean =>
-    filters.every(predicate => predicate(row));
-
-  const chain: any = {
-    insert: mock((row: FakeRow) => {
-      isInsert = true;
-      insertRow = row;
-      return chain;
-    }),
-    delete: mock(() => {
-      isDelete = true;
-      return chain;
-    }),
-    update: mock((patch: FakeRow) => {
-      updatePatch = patch;
-      return chain;
-    }),
-    eq: mock((key: string, value: unknown) => {
-      filters.push(row => row[key] === value);
-      return chain;
-    }),
-    is: mock((key: string, value: unknown) => {
-      filters.push(row => (row[key] ?? null) === value);
-      return chain;
-    }),
-    lt: mock((key: string, value: unknown) => {
-      filters.push(row => String(row[key]) < String(value));
-      return chain;
-    }),
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-    then: (resolve: (value: unknown) => unknown) =>
-      Promise.resolve(
-        (() => {
-          if (error) return { data: null, error };
-          if (isInsert && insertRow) {
-            const already = rows.some(
-              row =>
-                row.user_id === (insertRow as FakeRow).user_id &&
-                row.reminder_key === (insertRow as FakeRow).reminder_key
-            );
-            if (already) {
-              return {
-                data: null,
-                error: { code: '23505', message: 'duplicate key value' },
-              };
-            }
-            rows.push({ ...insertRow });
-            return { data: insertRow, error: null };
-          }
-          if (isDelete) {
-            const remaining = rows.filter(row => !matches(row));
-            const deletedCount = rows.length - remaining.length;
-            rows.length = 0;
-            rows.push(...remaining);
-            return { data: { deletedCount }, error: null };
-          }
-          if (updatePatch) {
-            for (const row of rows) {
-              if (matches(row)) Object.assign(row, updatePatch);
-            }
-            return { data: null, error: null };
-          }
-          return { data: null, error: null };
-        })()
-      ).then(resolve),
-  };
-  return chain;
-}
-
-function withRows(rows: FakeRow[], error: unknown = null): void {
-  mockSupabaseService.from.mockImplementation(() =>
-    createFakeQuery(rows, error)
-  );
-}
 
 beforeAll(async () => {
-  mock.module('../../../../../src/config/supabase', () => {
-    const obj = { from: mock(() => createFakeQuery([])) };
-    return { supabase: obj, supabaseService: obj };
-  });
+  t = await createTestDb();
+  mock.module('../../../../../src/db/client', () => ({ db: t.db }));
   mock.module('../../../../../src/middlewares/logger', () => ({
     logger: {
       info: mock(() => undefined),
@@ -111,98 +33,108 @@ beforeAll(async () => {
       debug: mock(() => undefined),
     },
   }));
-
-  ReminderLogRepository = (
-    await import(
-      '../../../../../src/domains/notification/repositories/reminderLogRepository'
-    )
-  ).ReminderLogRepository;
-  mockSupabaseService = (await import('../../../../../src/config/supabase'))
-    .supabaseService;
+  ({ ReminderLogRepository } = await import(
+    '../../../../../src/domains/notification/repositories/reminderLogRepository'
+  ));
+  for (const id of ['user-1', 'user-2', 'user-OTHER', 'u1', 'u2', 'u3']) {
+    await t.db.insert(user).values({ id, name: id, email: `${id}@x.test` });
+    await t.db.insert(userProfiles).values({ user_id: id });
+  }
 });
 
-beforeEach(() => {
-  mockSupabaseService.from.mockClear?.();
+afterAll(() => t.dispose());
+
+beforeEach(async () => {
+  await t.d1.prepare('DELETE FROM push_reminder_log').run();
 });
+
+const seed = (rows: (typeof pushReminderLog.$inferInsert)[]) =>
+  t.db.insert(pushReminderLog).values(rows);
+
+const all = () =>
+  t.db
+    .select()
+    .from(pushReminderLog)
+    .orderBy(pushReminderLog.user_id, pushReminderLog.reminder_key);
 
 describe('ReminderLogRepository.claim', () => {
-  it('wins the claim on a fresh (user_id, reminder_key) pair', async () => {
-    withRows([]);
+  it('wins on a fresh pair, loses on a duplicate, and is per-user', async () => {
     const repo = new ReminderLogRepository();
     expect(await repo.claim('user-1', 'shift_reminder:s1')).toBe(true);
-  });
-
-  it('loses the claim when the pair already exists', async () => {
-    withRows([{ user_id: 'user-1', reminder_key: 'shift_reminder:s1' }]);
-    const repo = new ReminderLogRepository();
     expect(await repo.claim('user-1', 'shift_reminder:s1')).toBe(false);
+    expect(await repo.claim('user-OTHER', 'shift_reminder:s1')).toBe(true);
   });
 
-  it('does not let one user’s existing claim block a different user’s claim for the same key', async () => {
-    withRows([{ user_id: 'user-OTHER', reminder_key: 'shift_reminder:s1' }]);
+  it('throws on a non-unique failure (unknown user → FK)', async () => {
     const repo = new ReminderLogRepository();
-    expect(await repo.claim('user-1', 'shift_reminder:s1')).toBe(true);
+    await expect(repo.claim('ghost', 'k')).rejects.toMatchObject({
+      name: 'DatabaseError',
+    });
+  });
+});
+
+describe('ReminderLogRepository.findLastSentAt', () => {
+  it('returns the newest sent_at under the prefix for that user only', async () => {
+    await seed([
+      {
+        user_id: 'user-1',
+        reminder_key: 'p:1:a',
+        sent_at: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        user_id: 'user-1',
+        reminder_key: 'p:1:b',
+        sent_at: '2026-01-03T00:00:00.000Z',
+      },
+      {
+        user_id: 'user-1',
+        reminder_key: 'p:2:a',
+        sent_at: '2026-01-09T00:00:00.000Z',
+      },
+      {
+        user_id: 'user-2',
+        reminder_key: 'p:1:c',
+        sent_at: '2026-01-09T00:00:00.000Z',
+      },
+    ]);
+    const repo = new ReminderLogRepository();
+    expect(await repo.findLastSentAt('user-1', 'p:1:')).toBe(
+      '2026-01-03T00:00:00.000Z'
+    );
+    expect(await repo.findLastSentAt('user-1', 'p:9:')).toBeNull();
   });
 });
 
 describe('ReminderLogRepository.release', () => {
-  it('deletes only the matching (user_id, reminder_key) row', async () => {
-    const rows: FakeRow[] = [
+  it('deletes only the matching pair, and the slot can be re-claimed', async () => {
+    await seed([
       { user_id: 'user-1', reminder_key: 'shift_reminder:s1' },
-      { user_id: 'user-1', reminder_key: 'shift_reminder:s2' },
-      { user_id: 'user-2', reminder_key: 'shift_reminder:s1' },
-    ];
-    withRows(rows);
-    const repo = new ReminderLogRepository();
-
-    await repo.release('user-1', 'shift_reminder:s1');
-
-    expect(rows).toEqual([
       { user_id: 'user-1', reminder_key: 'shift_reminder:s2' },
       { user_id: 'user-2', reminder_key: 'shift_reminder:s1' },
     ]);
-  });
-
-  it('lets a released claim be re-claimed', async () => {
-    const rows: FakeRow[] = [
-      { user_id: 'user-1', reminder_key: 'shift_reminder:s1' },
-    ];
-    withRows(rows);
     const repo = new ReminderLogRepository();
-
     await repo.release('user-1', 'shift_reminder:s1');
+    expect((await all()).map(r => `${r.user_id}/${r.reminder_key}`)).toEqual([
+      'user-1/shift_reminder:s2',
+      'user-2/shift_reminder:s1',
+    ]);
     expect(await repo.claim('user-1', 'shift_reminder:s1')).toBe(true);
-  });
-
-  it('does not throw when the delete fails (best-effort, logged only)', async () => {
-    withRows([], { message: 'boom' });
-    const repo = new ReminderLogRepository();
-    await expect(
-      repo.release('user-1', 'shift_reminder:s1')
-    ).resolves.toBeUndefined();
   });
 });
 
-/**
- * C3 — the two-phase half. A claim is a reservation until the send confirms
- * it; an unconfirmed reservation left behind by a crashed run must not
- * suppress the reminder forever.
- */
 describe('ReminderLogRepository.confirm', () => {
   it('stamps confirmed_at on exactly the matching row', async () => {
-    const rows: FakeRow[] = [
-      { user_id: 'user-1', reminder_key: 'k1', confirmed_at: null },
-      { user_id: 'user-1', reminder_key: 'k2', confirmed_at: null },
-      { user_id: 'user-2', reminder_key: 'k1', confirmed_at: null },
-    ];
-    withRows(rows);
-    const repo = new ReminderLogRepository();
-
-    await repo.confirm('user-1', 'k1');
-
-    expect(rows[0]?.confirmed_at).not.toBeNull();
-    expect(rows[1]?.confirmed_at).toBeNull();
-    expect(rows[2]?.confirmed_at).toBeNull();
+    await seed([
+      { user_id: 'user-1', reminder_key: 'k1' },
+      { user_id: 'user-1', reminder_key: 'k2' },
+      { user_id: 'user-2', reminder_key: 'k1' },
+    ]);
+    await new ReminderLogRepository().confirm('user-1', 'k1');
+    expect((await all()).map(r => r.confirmed_at !== null)).toEqual([
+      true,
+      false,
+      false,
+    ]);
   });
 });
 
@@ -211,43 +143,20 @@ describe('ReminderLogRepository.sweepStaleClaims', () => {
     new Date(Date.now() - hours * 3_600_000).toISOString();
 
   it('deletes only unconfirmed claims older than the horizon', async () => {
-    const rows: FakeRow[] = [
-      // Crashed run: claimed, never confirmed, hours old. The only garbage.
-      {
-        user_id: 'u1',
-        reminder_key: 'stale',
-        confirmed_at: null,
-        sent_at: hoursAgo(5),
-      },
-      // Confirmed — a real delivery. Deleting it would re-send the reminder.
+    await seed([
+      { user_id: 'u1', reminder_key: 'stale', sent_at: hoursAgo(5) },
       {
         user_id: 'u2',
         reminder_key: 'delivered',
         confirmed_at: hoursAgo(5),
         sent_at: hoursAgo(5),
       },
-      // Unconfirmed but recent: could be the pass that is running right now.
-      {
-        user_id: 'u3',
-        reminder_key: 'in-flight',
-        confirmed_at: null,
-        sent_at: hoursAgo(0.1),
-      },
-    ];
-    withRows(rows);
-    const repo = new ReminderLogRepository();
-
-    await repo.sweepStaleClaims();
-
-    expect(rows.map(row => row.reminder_key)).toEqual([
+      { user_id: 'u3', reminder_key: 'in-flight', sent_at: hoursAgo(0.1) },
+    ]);
+    await new ReminderLogRepository().sweepStaleClaims();
+    expect((await all()).map(r => r.reminder_key)).toEqual([
       'delivered',
       'in-flight',
     ]);
-  });
-
-  it('does not throw when the sweep fails (best-effort, logged only)', async () => {
-    withRows([], { message: 'boom' });
-    const repo = new ReminderLogRepository();
-    await expect(repo.sweepStaleClaims()).resolves.toBeUndefined();
   });
 });

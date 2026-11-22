@@ -64,47 +64,53 @@ function member(overrides: Row = {}): Row {
 }
 
 beforeAll(async () => {
-  mock.module('../../../../../src/config/supabase', () => {
-    const chain: any = {
-      select: mock(() => chain),
-      update: mock((patch: Record<string, unknown>) => {
-        record('changeRequests.update', patch);
-        return chain;
-      }),
-      delete: mock(() => {
-        record('profile.delete');
-        return chain;
-      }),
-      eq: mock((key: string, value: unknown) => {
-        record('filter', key, value);
-        return chain;
-      }),
+  // A recording fake of the Drizzle `db`, keyed by table name. Each WHERE is
+  // rendered to SQL + params so the change-request predicate can be checked.
+  const { getTableName } = await import('drizzle-orm');
+  const { SQLiteSyncDialect } = await import('drizzle-orm/sqlite-core');
+  const dialect = new SQLiteSyncDialect();
+  const where = (cond: any) => {
+    const q = dialect.sqlToQuery(cond);
+    record('filter', q.sql, q.params);
+  };
+  mock.module('../../../../../src/db/client', () => ({
+    db: {
       // `getProfileById` — the departing user's name for the promotion notice.
       // Their profile row is still there: the delete runs after the teardown.
-      maybeSingle: mock(async () => ({
-        data: departingProfile,
-        error: null,
+      select: mock(() => ({
+        from: mock(() => ({
+          where: mock(() => ({
+            limit: mock(async () =>
+              departingProfile ? [departingProfile] : []
+            ),
+          })),
+        })),
       })),
-      // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-      then: (resolve: any) =>
-        Promise.resolve({ data: null, error: null }).then(resolve),
-    };
-    const obj = {
-      from: mock((table: string) => {
-        record(`from:${table}`);
-        return chain;
-      }),
-      auth: {
-        admin: {
-          deleteUser: mock(async () => {
-            record('auth.delete');
-            return { error: null };
+      update: mock((table: any) => {
+        record(`from:${getTableName(table)}`);
+        return {
+          set: mock((patch: Record<string, unknown>) => {
+            record('changeRequests.update', patch);
+            return { where: mock(async (cond: any) => where(cond)) };
           }),
-        },
-      },
-    };
-    return { supabase: obj, supabaseService: obj };
-  });
+        };
+      }),
+      delete: mock((table: any) => ({
+        where: mock(async (cond: any) => {
+          where(cond);
+          if (getTableName(table) === 'user_profiles') {
+            record('profile.delete');
+            return;
+          }
+          // The Better Auth user row (cascades sessions/accounts).
+          record('auth.delete');
+          if (failures.authDelete) {
+            throw new Error('D1_ERROR: database is locked');
+          }
+        }),
+      })),
+    },
+  }));
 
   mock.module('../../../../../src/middlewares/logger', () => ({
     logger: { info: mock(), error: mock(), warn: mock(), debug: mock() },
@@ -309,6 +315,19 @@ describe('UserService.deleteUser — capture before cascade', () => {
   });
 });
 
+describe('UserService.deleteUser — Better Auth user row', () => {
+  it('deletes the user row after the profile, and fails loudly if it cannot', async () => {
+    failures.authDelete = true;
+    await expect(UserService.deleteUser('u1')).rejects.toThrow(
+      'Failed to delete user authentication record'
+    );
+    const names = stepNames();
+    expect(names.indexOf('profile.delete')).toBeLessThan(
+      names.indexOf('auth.delete')
+    );
+  });
+});
+
 describe('UserService.deleteUser — pay arrangements', () => {
   it('end-dates the carer terms in every household, on the household-local date', async () => {
     memberships = [
@@ -425,9 +444,10 @@ describe('UserService.deleteUser — open change requests', () => {
       [{ status: 'withdrawn' }],
     ]);
     // Only this user's, and only the ones still open.
-    const filters = argsFor('filter');
-    expect(filters).toContainEqual(['requested_by', 'u1']);
-    expect(filters).toContainEqual(['status', 'pending']);
+    expect(argsFor('filter')).toContainEqual([
+      '("shift_change_requests"."requested_by" = ? and "shift_change_requests"."status" = ?)',
+      ['u1', 'pending'],
+    ]);
   });
 });
 

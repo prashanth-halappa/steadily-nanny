@@ -15,7 +15,13 @@ import {
 } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import { SHIFT_CHANGE_REQUEST_STATUSES } from '@steadily-nanny/shared-types/schemas/shift.schema';
-import { supabaseService } from '../../../config/supabase';
+import { and, eq } from 'drizzle-orm';
+import { db } from '../../../db/client';
+import {
+  user as authUser,
+  shiftChangeRequests,
+  userProfiles,
+} from '../../../db/schema';
 import { BaseError, DatabaseError } from '../../../errors';
 import { logger } from '../../../middlewares/logger';
 import type {
@@ -79,22 +85,17 @@ export class UserService {
    * never overwrite a name or timezone the user already set.
    */
   static async ensureProfile(userId: string): Promise<void> {
-    const { error } = await supabaseService
-      .from('user_profiles')
-      .upsert(
-        { user_id: userId },
-        { onConflict: 'user_id', ignoreDuplicates: true }
-      );
-
-    if (error) {
+    try {
+      await db
+        .insert(userProfiles)
+        .values({ user_id: userId })
+        .onConflictDoNothing({ target: userProfiles.user_id });
+    } catch (error) {
       logger.error('Error ensuring user profile:', error);
       throw new DatabaseError(
         'Failed to ensure user profile',
         'DATABASE_ERROR',
-        {
-          userId,
-          dbError: error.message,
-        }
+        { userId, dbError: (error as Error).message }
       );
     }
   }
@@ -103,43 +104,47 @@ export class UserService {
     userId: string,
     profileData: UpsertProfileInput
   ): Promise<UserProfile> {
-    const { data, error } = await supabaseService
-      .from('user_profiles')
-      .upsert(
-        {
-          user_id: userId,
-          name: profileData.name,
-          city: profileData.city,
-          country: profileData.country,
-          ...(profileData.additional_data
-            ? { additional_data: profileData.additional_data }
-            : {}),
-          // Omitted (not forced to null) when the caller doesn't send one —
-          // "seeded from the device" is best-effort, and a client that
-          // couldn't detect a zone yet must not clobber one set earlier by a
-          // PATCH /users/me. Same conditional-spread shape as
-          // `additional_data` above.
-          ...(profileData.timezone ? { timezone: profileData.timezone } : {}),
-          // Same conditional spread, same reason (099): a client that didn't
-          // ask for a number must not clobber one already set by a
-          // PATCH /users/me. Clearing a number is the PATCH's job, via null.
-          ...(profileData.phone ? { phone: profileData.phone } : {}),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id' }
-      )
-      .select()
-      .single();
-
-    if (error || !data) {
+    // Undefined fields are skipped on both insert and conflict-update, the
+    // same as supabase-js dropping them from the JSON body.
+    const fields = {
+      name: profileData.name,
+      city: profileData.city,
+      country: profileData.country,
+      ...(profileData.additional_data
+        ? { additional_data: profileData.additional_data }
+        : {}),
+      // Omitted (not forced to null) when the caller doesn't send one —
+      // "seeded from the device" is best-effort, and a client that
+      // couldn't detect a zone yet must not clobber one set earlier by a
+      // PATCH /users/me. Same conditional-spread shape as
+      // `additional_data` above.
+      ...(profileData.timezone ? { timezone: profileData.timezone } : {}),
+      // Same conditional spread, same reason (099): a client that didn't
+      // ask for a number must not clobber one already set by a
+      // PATCH /users/me. Clearing a number is the PATCH's job, via null.
+      ...(profileData.phone ? { phone: profileData.phone } : {}),
+      updated_at: new Date().toISOString(),
+    };
+    let data: unknown;
+    try {
+      [data] = await db
+        .insert(userProfiles)
+        .values({ user_id: userId, ...fields })
+        .onConflictDoUpdate({ target: userProfiles.user_id, set: fields })
+        .returning();
+    } catch (error) {
       logger.error('Error upserting user profile:', error);
       throw new DatabaseError(
         'Failed to upsert user profile',
         'DATABASE_ERROR',
-        {
-          userId,
-          dbError: error?.message,
-        }
+        { userId, dbError: (error as Error).message }
+      );
+    }
+    if (!data) {
+      throw new DatabaseError(
+        'Failed to upsert user profile',
+        'DATABASE_ERROR',
+        { userId }
       );
     }
 
@@ -147,49 +152,58 @@ export class UserService {
   }
 
   static async getProfileById(userId: string): Promise<UserProfile | null> {
-    const { data, error } = await supabaseService
-      .from('user_profiles')
-      .select(
-        'user_id, name, city, country, phone, preferred_locale, timezone, week_starts_on, additional_data'
-      )
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    if (error) {
+    try {
+      const [data] = await db
+        .select({
+          user_id: userProfiles.user_id,
+          name: userProfiles.name,
+          city: userProfiles.city,
+          country: userProfiles.country,
+          phone: userProfiles.phone,
+          preferred_locale: userProfiles.preferred_locale,
+          timezone: userProfiles.timezone,
+          week_starts_on: userProfiles.week_starts_on,
+          additional_data: userProfiles.additional_data,
+        })
+        .from(userProfiles)
+        .where(eq(userProfiles.user_id, userId))
+        .limit(1);
+      return (data as UserProfile | undefined) ?? null;
+    } catch (error) {
       logger.error('Error fetching user profile:', error);
       throw new DatabaseError(
         'Failed to fetch user profile',
         'DATABASE_ERROR',
-        {
-          userId,
-          dbError: error.message,
-        }
+        { userId, dbError: (error as Error).message }
       );
     }
-
-    return (data as UserProfile) ?? null;
   }
 
   static async updateProfile(
     userId: string,
     updateData: UpdateProfileInput
   ): Promise<UserProfile> {
-    const { data, error } = await supabaseService
-      .from('user_profiles')
-      .update({ ...updateData, updated_at: new Date().toISOString() })
-      .eq('user_id', userId)
-      .select()
-      .single();
-
-    if (error || !data) {
+    let data: unknown;
+    try {
+      [data] = await db
+        .update(userProfiles)
+        .set({ ...updateData, updated_at: new Date().toISOString() })
+        .where(eq(userProfiles.user_id, userId))
+        .returning();
+    } catch (error) {
       logger.error('Error updating user profile:', error);
       throw new DatabaseError(
         'Failed to update user profile',
         'DATABASE_ERROR',
-        {
-          userId,
-          dbError: error?.message,
-        }
+        { userId, dbError: (error as Error).message }
+      );
+    }
+    // supabase-js `.single()` errored on zero rows; keep that contract.
+    if (!data) {
+      throw new DatabaseError(
+        'Failed to update user profile',
+        'DATABASE_ERROR',
+        { userId }
       );
     }
 
@@ -242,30 +256,32 @@ export class UserService {
 
       await UserService.tearDownBeforeDelete(userId, memberships, memberRepo);
 
-      const { error: profileError } = await supabaseService
-        .from('user_profiles')
-        .delete()
-        .eq('user_id', userId);
-
-      if (profileError) {
+      try {
+        await db.delete(userProfiles).where(eq(userProfiles.user_id, userId));
+      } catch (profileError) {
         throw new DatabaseError(
           'Failed to delete user profile',
           'DATABASE_ERROR',
-          {
-            userId,
-            dbError: profileError.message,
-          }
+          { userId, dbError: (profileError as Error).message }
         );
       }
 
-      const { error: authError } =
-        await supabaseService.auth.admin.deleteUser(userId);
-
-      if (authError) {
+      // The Better Auth user row. Cascades its sessions and accounts (signing
+      // every device out), user_beta_overrides and email_log; user_profiles
+      // would cascade too but is already gone above.
+      try {
+        await db.delete(authUser).where(eq(authUser.id, userId));
+      } catch (authError) {
         throw new DatabaseError(
           'Failed to delete user authentication record',
           'DATABASE_ERROR',
-          { userId, dbError: authError.message }
+          {
+            userId,
+            dbError:
+              authError instanceof Error
+                ? authError.message
+                : String(authError),
+          }
         );
       }
 
@@ -446,17 +462,24 @@ export class UserService {
   private static async withdrawOpenChangeRequests(
     userId: string
   ): Promise<void> {
-    const { error } = await supabaseService
-      .from('shift_change_requests')
-      .update({ status: SHIFT_CHANGE_REQUEST_STATUSES.WITHDRAWN })
-      .eq('requested_by', userId)
-      .eq('status', SHIFT_CHANGE_REQUEST_STATUSES.PENDING);
-
-    if (error) {
+    try {
+      await db
+        .update(shiftChangeRequests)
+        .set({ status: SHIFT_CHANGE_REQUEST_STATUSES.WITHDRAWN })
+        .where(
+          and(
+            eq(shiftChangeRequests.requested_by, userId),
+            eq(
+              shiftChangeRequests.status,
+              SHIFT_CHANGE_REQUEST_STATUSES.PENDING
+            )
+          )
+        );
+    } catch (error) {
       throw new DatabaseError(
         'Failed to withdraw open shift change requests',
         'DATABASE_ERROR',
-        { userId, dbError: error.message }
+        { userId, dbError: (error as Error).message }
       );
     }
   }

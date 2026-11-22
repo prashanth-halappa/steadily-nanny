@@ -1,16 +1,35 @@
 /**
  * Household invite repository — data access for the `household_invites`
- * table. Uses the service-role Supabase client; the invite lookup-by-code
- * deliberately runs under the service role (no RLS policy lets a stranger
- * select an invite by code), which is also what keeps codes non-enumerable.
+ * table (D1 via Drizzle). There is no RLS: lookup-by-code is gated by the
+ * service, and codes stay non-enumerable because nothing lists them.
  *
  * @module domains/household/repositories/householdInviteRepository
  */
 // Straight from the shared package, not the domain barrel: this is the one
 // type this repository needs and pulling in the barrel buys nothing here.
 import type { PayOfferPromotionOutcome } from '@steadily-nanny/shared-types/schemas/household.schema';
-import { supabaseService } from '../../../config/supabase';
-import { DatabaseError } from '../../../errors';
+import {
+  and,
+  desc,
+  eq,
+  getTableColumns,
+  type InferInsertModel,
+  is,
+  isNull,
+  SQL,
+  sql,
+} from 'drizzle-orm';
+import type { BatchItem } from 'drizzle-orm/batch';
+import type { SQLiteTable } from 'drizzle-orm/sqlite-core';
+import { db } from '../../../db/client';
+import { mapDbError } from '../../../db/errors';
+import {
+  children,
+  householdInvites,
+  householdMembers,
+  households,
+  termsProposals,
+} from '../../../db/schema';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
 import { HOUSEHOLD_INVITE_STATUSES } from '../schemas';
 import type { HouseholdInvite, HouseholdMember } from '../types';
@@ -45,9 +64,12 @@ export type RedeemDraftOutcome =
         | 'target_not_permitted';
     };
 
-export class HouseholdInviteRepository extends BaseRepository<HouseholdInvite> {
+export class HouseholdInviteRepository extends BaseRepository<
+  HouseholdInvite,
+  typeof householdInvites
+> {
   constructor() {
-    super('household_invites');
+    super(householdInvites);
   }
 
   /**
@@ -60,45 +82,35 @@ export class HouseholdInviteRepository extends BaseRepository<HouseholdInvite> {
    * comparison.
    */
   async findByCode(code: string): Promise<HouseholdInvite | null> {
-    const normalized = normalizeInviteCode(code);
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('code', normalized)
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to look up invite by code',
-        'DATABASE_ERROR',
-        { details: error.message, code }
-      );
+    try {
+      const rows = await db
+        .select()
+        .from(householdInvites)
+        .where(eq(householdInvites.code, normalizeInviteCode(code)))
+        .limit(1);
+      return (rows[0] as HouseholdInvite | undefined) ?? null;
+    } catch (err) {
+      throw this.dbError('Failed to look up invite by code in', err, { code });
     }
-    return data as HouseholdInvite | null;
   }
 
   /**
    * Every invite this household has ever minted, newest first — the parent's
    * own record of what she sent and what became of it.
-   *
-   * Backed by `household_invites_household_idx (household_id, created_at desc)`
-   * from 009, so the ordering here is the index's ordering, not a sort.
    */
   async listByHousehold(householdId: string): Promise<HouseholdInvite[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('household_id', householdId)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list household invites',
-        'DATABASE_ERROR',
-        { details: error.message, householdId }
-      );
+    try {
+      const rows = await db
+        .select()
+        .from(householdInvites)
+        .where(eq(householdInvites.household_id, householdId))
+        .orderBy(desc(householdInvites.created_at));
+      return rows as HouseholdInvite[];
+    } catch (err) {
+      throw this.dbError('Failed to list household invites in', err, {
+        householdId,
+      });
     }
-    return (data ?? []) as HouseholdInvite[];
   }
 
   /**
@@ -113,25 +125,25 @@ export class HouseholdInviteRepository extends BaseRepository<HouseholdInvite> {
     id: string,
     acceptedBy: string
   ): Promise<HouseholdInvite | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .update({
-        status: HOUSEHOLD_INVITE_STATUSES.ACCEPTED,
-        accepted_by: acceptedBy,
-        accepted_at: new Date().toISOString(),
-      })
-      .eq('id', id)
-      .eq('status', HOUSEHOLD_INVITE_STATUSES.PENDING)
-      .select()
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError('Failed to claim invite', 'DATABASE_ERROR', {
-        details: error.message,
-        id,
-      });
+    try {
+      const rows = await db
+        .update(householdInvites)
+        .set({
+          status: HOUSEHOLD_INVITE_STATUSES.ACCEPTED,
+          accepted_by: acceptedBy,
+          accepted_at: new Date().toISOString(),
+        })
+        .where(
+          and(
+            eq(householdInvites.id, id),
+            eq(householdInvites.status, HOUSEHOLD_INVITE_STATUSES.PENDING)
+          )
+        )
+        .returning();
+      return (rows[0] as HouseholdInvite | undefined) ?? null;
+    } catch (err) {
+      throw this.dbError('Failed to claim invite in', err, { id });
     }
-    return data as HouseholdInvite | null;
   }
 
   /**
@@ -147,42 +159,46 @@ export class HouseholdInviteRepository extends BaseRepository<HouseholdInvite> {
     id: string,
     householdId: string
   ): Promise<HouseholdInvite | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .update({ status: HOUSEHOLD_INVITE_STATUSES.REVOKED })
-      .eq('id', id)
-      .eq('household_id', householdId)
-      .eq('status', HOUSEHOLD_INVITE_STATUSES.PENDING)
-      .select()
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError('Failed to revoke invite', 'DATABASE_ERROR', {
-        details: error.message,
-        id,
-      });
+    try {
+      const rows = await db
+        .update(householdInvites)
+        .set({ status: HOUSEHOLD_INVITE_STATUSES.REVOKED })
+        .where(
+          and(
+            eq(householdInvites.id, id),
+            eq(householdInvites.household_id, householdId),
+            eq(householdInvites.status, HOUSEHOLD_INVITE_STATUSES.PENDING)
+          )
+        )
+        .returning();
+      return (rows[0] as HouseholdInvite | undefined) ?? null;
+    } catch (err) {
+      throw this.dbError('Failed to revoke invite in', err, { id });
     }
-    return data as HouseholdInvite | null;
   }
 
   /**
-   * Redeem a NANNY-AUTHORED (draft) invite through 094, which does target
-   * resolution, household instantiation, both membership inserts, the children
-   * and proposal copies and the claim inside ONE transaction.
+   * Redeem a NANNY-AUTHORED (draft) invite: target resolution, household
+   * instantiation, both membership inserts, the children and proposal copies
+   * and the claim, as ONE all-or-nothing D1 batch (port of 094's
+   * `redeem_draft_household_invite`, MIGRATION-NOTES §5.9).
    *
-   * A database function rather than seven service calls for the reason 094's
-   * header gives at length: today's path does its CAS and then does more work,
-   * which is why it needs a stranded-claim self-heal, and that crash window
-   * gets LARGER once redemption does this much. Here a rolled-back transaction
-   * never claimed anything, so there is nothing to heal.
+   * D1 has no row locks, so the reads below only build the statements and
+   * pick the early outcomes. The lock replacement: every write is gated on
+   * the invite still being pending and unexpired, and the claim CAS runs LAST,
+   * gated on this batch's nanny membership having landed. A batch runs alone
+   * on D1's single writer, so the first batch to run takes the code and every
+   * later one finds it accepted and writes nothing at all. (Claim-first gated
+   * on `accepted_by`/`accepted_at` would let one user's two same-millisecond
+   * attempts both pass the gate.) A unique violation anywhere rolls the whole
+   * batch back.
    *
    * `targetHouseholdId` null means "instantiate a new live household from the
    * draft"; non-null is §8.2's absorption target, explicitly picked by the
    * parent so absorption can never silently choose a household.
    *
    * `weekStartsOn` is D-8's workweek for an INSTANTIATED household only (096);
-   * null keeps whatever the draft carries. Absorption never reads it — an
-   * existing family's pay week is not the redeeming device's to change.
+   * null keeps whatever the draft carries. Absorption never reads it.
    */
   async redeemDraftHousehold(
     code: string,
@@ -190,83 +206,326 @@ export class HouseholdInviteRepository extends BaseRepository<HouseholdInvite> {
     targetHouseholdId: string | null,
     weekStartsOn: number | null
   ): Promise<RedeemDraftOutcome> {
-    const { data, error } = await supabaseService.rpc(
-      'redeem_draft_household_invite',
-      {
-        p_code: code,
-        p_redeemer_id: redeemerId,
-        p_target_household_id: targetHouseholdId,
-        p_week_starts_on: weekStartsOn,
+    try {
+      return await this.redeemDraft(
+        code,
+        redeemerId,
+        targetHouseholdId,
+        weekStartsOn
+      );
+    } catch (err) {
+      throw this.dbError('Failed to redeem draft invite in', err, {});
+    }
+  }
+
+  private async redeemDraft(
+    code: string,
+    redeemerId: string,
+    targetHouseholdId: string | null,
+    weekStartsOn: number | null
+  ): Promise<RedeemDraftOutcome> {
+    const now = new Date().toISOString();
+
+    // 1. One outcome for missing / used / expired, so the code's existence
+    // never leaks.
+    const invite = await this.findByCode(code);
+    if (
+      !invite ||
+      invite.status !== HOUSEHOLD_INVITE_STATUSES.PENDING ||
+      invite.expires_at < now
+    ) {
+      return { outcome: 'invite_unavailable' };
+    }
+
+    // 2. Not a draft: the caller falls through to the ordinary redeem.
+    const [draft] = await db
+      .select()
+      .from(households)
+      .where(eq(households.id, invite.household_id))
+      .limit(1);
+    if (draft?.state !== 'draft') {
+      return { outcome: 'not_a_draft_invite' };
+    }
+
+    // 3–4. The draft's author is the nanny who joins.
+    const [author] = draft.created_by
+      ? await db
+          .select({ user_id: householdMembers.user_id })
+          .from(householdMembers)
+          .where(
+            and(
+              eq(householdMembers.household_id, draft.id),
+              eq(householdMembers.user_id, draft.created_by),
+              eq(householdMembers.role, 'nanny'),
+              eq(householdMembers.status, 'active')
+            )
+          )
+          .limit(1)
+      : [];
+    if (!author) return { outcome: 'draft_has_no_author' };
+    const nannyId = author.user_id;
+    if (nannyId === redeemerId) return { outcome: 'self_redemption' };
+
+    // Every write below lands only while the code is still unclaimed.
+    const claimed = sql`EXISTS (SELECT 1 FROM household_invites WHERE id = ${invite.id} AND status = 'pending' AND expires_at >= ${now})`;
+    const writes: ReturnType<typeof insertIf>[] = [];
+
+    // 5. Pick the target.
+    const instantiated = targetHouseholdId === null;
+    let targetId: string;
+    let nannyGuard: SQL = claimed;
+    if (targetHouseholdId === null) {
+      targetId = crypto.randomUUID();
+      writes.push(
+        insertIf(
+          households,
+          {
+            id: targetId,
+            name: draft.name ?? 'Our household',
+            timezone: draft.timezone,
+            currency: draft.currency,
+            jurisdiction: draft.jurisdiction,
+            week_starts_on: weekStartsOn ?? draft.week_starts_on,
+            state: 'live',
+            created_by: redeemerId,
+          },
+          claimed
+        ),
+        insertIf(
+          householdMembers,
+          {
+            id: crypto.randomUUID(),
+            household_id: targetId,
+            user_id: redeemerId,
+            role: 'owner',
+            can_edit: true,
+            status: 'active',
+          },
+          claimed
+        )
+      );
+      const draftChildren = await db
+        .select()
+        .from(children)
+        .where(
+          and(eq(children.household_id, draft.id), isNull(children.archived_at))
+        );
+      for (const c of draftChildren) {
+        writes.push(
+          insertIf(
+            children,
+            {
+              id: crypto.randomUUID(),
+              household_id: targetId,
+              name: c.name,
+              birth_date: c.birth_date,
+              colour: c.colour,
+              avatar_initial: c.avatar_initial,
+              routine_notes: c.routine_notes,
+            },
+            claimed
+          )
+        );
       }
+    } else {
+      targetId = targetHouseholdId;
+      const permitted = sql`EXISTS (SELECT 1 FROM households WHERE id = ${targetId} AND state = 'live') AND EXISTS (SELECT 1 FROM household_members WHERE household_id = ${targetId} AND user_id = ${redeemerId} AND status = 'active' AND role IN ('owner', 'parent'))`;
+      const ok = await db.get<{ ok: number }>(sql`SELECT ${permitted} AS ok`);
+      if (!ok?.ok) return { outcome: 'target_not_permitted' };
+      // Re-checked inside the batch so a demotion racing us can't slip through.
+      nannyGuard = sql`${claimed} AND ${permitted}`;
+    }
+
+    // 6. Any existing membership, in any status, answers before the claim.
+    const existing = await this.findMembership(targetId, nannyId);
+    if (existing) {
+      return {
+        outcome: 'already_member',
+        household_id: targetId,
+        status: existing.status,
+      };
+    }
+
+    // 7. The nanny's membership (D-49: candidate when absorbed).
+    const membershipId = crypto.randomUUID();
+    writes.push(
+      insertIf(
+        householdMembers,
+        {
+          id: membershipId,
+          household_id: targetId,
+          user_id: nannyId,
+          role: 'nanny',
+          can_edit: false,
+          status: instantiated ? 'active' : 'candidate',
+        },
+        nannyGuard
+      )
     );
 
-    if (error) {
-      throw new DatabaseError(
-        'Failed to redeem draft invite',
-        'DATABASE_ERROR',
-        { details: error.message }
+    // 8. Copy her latest open draft proposal; the draft's own is untouched.
+    const [draftProposal] = await db
+      .select()
+      .from(termsProposals)
+      .where(
+        and(
+          eq(termsProposals.household_id, draft.id),
+          eq(termsProposals.carer_id, nannyId),
+          eq(termsProposals.status, 'proposed')
+        )
+      )
+      .orderBy(desc(termsProposals.created_at))
+      .limit(1);
+    const proposalId = draftProposal ? crypto.randomUUID() : null;
+    if (draftProposal && proposalId) {
+      writes.push(
+        insertIf(
+          termsProposals,
+          {
+            id: proposalId,
+            household_id: targetId,
+            carer_id: nannyId,
+            proposed_by: nannyId,
+            direction: 'carer',
+            status: 'proposed',
+            terms: draftProposal.terms,
+            note: draftProposal.note,
+            from_invite_id: invite.id,
+            carer_display_name: draftProposal.carer_display_name,
+          },
+          nannyGuard
+        )
       );
     }
-    const payload = data as RedeemDraftOutcome | null;
-    if (!payload?.outcome) {
-      // No answer at all is not "not a draft": falling through to the ordinary
-      // path on a silent failure would run a second redemption attempt against
-      // a code the function may already have claimed.
-      throw new DatabaseError(
-        'Unrecognised draft redemption outcome',
-        'DATABASE_ERROR',
-        { outcome: null }
+
+    // 9. The claim goes LAST and only if her membership landed, so a claim
+    // never stands without the redemption it paid for.
+    const claim = db
+      .update(householdInvites)
+      .set({
+        status: HOUSEHOLD_INVITE_STATUSES.ACCEPTED,
+        accepted_by: redeemerId,
+        accepted_at: now,
+      })
+      .where(
+        and(
+          eq(householdInvites.id, invite.id),
+          eq(householdInvites.status, HOUSEHOLD_INVITE_STATUSES.PENDING),
+          sql`${householdInvites.expires_at} >= ${now}`,
+          sql`EXISTS (SELECT 1 FROM household_members WHERE id = ${membershipId})`
+        )
+      )
+      .returning({ id: householdInvites.id });
+
+    let claimedRows: { id: string }[];
+    try {
+      // `writes` always holds her membership, so the batch is never empty.
+      const items: BatchItem<'sqlite'>[] = [...writes, claim];
+      const results = await db.batch(
+        items as [BatchItem<'sqlite'>, ...BatchItem<'sqlite'>[]]
       );
+      claimedRows = results[results.length - 1] as { id: string }[];
+    } catch (err) {
+      const mapped = mapDbError(err);
+      if (mapped?.constraint === 'terms_proposals_open_unique_idx') {
+        return { outcome: 'proposal_already_open', household_id: targetId };
+      }
+      if (mapped?.constraint === 'household_members_user_household_idx') {
+        const raced = await this.findMembership(targetId, nannyId);
+        if (raced) {
+          return {
+            outcome: 'already_member',
+            household_id: targetId,
+            status: raced.status,
+          };
+        }
+      }
+      throw err;
     }
-    return payload;
+    if (claimedRows.length === 0) {
+      // Nothing landed. Still pending means only the absorb permission
+      // failed between our read and the batch; otherwise someone else won.
+      const now2 = await this.findById(invite.id);
+      return now2?.status === HOUSEHOLD_INVITE_STATUSES.PENDING && !instantiated
+        ? { outcome: 'target_not_permitted' }
+        : { outcome: 'invite_unavailable' };
+    }
+
+    const [membership] = await db
+      .select()
+      .from(householdMembers)
+      .where(eq(householdMembers.id, membershipId));
+    return {
+      outcome: 'redeemed',
+      instantiated,
+      household_id: targetId,
+      draft_household_id: draft.id,
+      carer_id: nannyId,
+      membership: membership as unknown as HouseholdMember,
+      proposal: proposalId ? { id: proposalId } : null,
+    };
+  }
+
+  private async findMembership(householdId: string, userId: string) {
+    const [row] = await db
+      .select({ status: householdMembers.status })
+      .from(householdMembers)
+      .where(
+        and(
+          eq(householdMembers.household_id, householdId),
+          eq(householdMembers.user_id, userId)
+        )
+      )
+      .limit(1);
+    return row ?? null;
   }
 
   /**
    * Stamp the first time the public terms page rendered for this code (§5.3
    * "Opened"), called unauthenticated by the CF worker.
    *
-   * `is('opened_at', null)` makes it idempotent AND makes the timestamp mean
-   * what §5.3 says it means: the FIRST open, never the latest. A second render
-   * matches zero rows, which is the point — the answer she wants is "did this
-   * reach them", deliberately not how many times, from where, or for how long.
+   * The `opened_at IS NULL` predicate makes it idempotent AND makes the
+   * timestamp mean the FIRST open, never the latest.
    */
   async stampOpened(code: string): Promise<void> {
-    const { error } = await supabaseService
-      .from(this.table)
-      .update({ opened_at: new Date().toISOString() })
-      .eq('code', code)
-      .is('opened_at', null);
-
-    if (error) {
-      throw new DatabaseError('Failed to stamp invite open', 'DATABASE_ERROR', {
-        details: error.message,
-        code,
-      });
+    try {
+      await db
+        .update(householdInvites)
+        .set({ opened_at: new Date().toISOString() })
+        .where(
+          and(
+            eq(householdInvites.code, code),
+            isNull(householdInvites.opened_at)
+          )
+        );
+    } catch (err) {
+      throw this.dbError('Failed to stamp invite open in', err, { code });
     }
   }
 
   /**
    * Record what `promoteOfferToProposal` (F3, 106) did with this invite's
    * `pay_offer`. A plain update, not a CAS: the promotion runs exactly once
-   * per redemption and nothing else ever writes this column, so there is no
-   * concurrent writer to race. `promoteOfferToProposal` itself never throws —
-   * this method still can, and the caller wraps it so a failure here costs a
-   * recorded outcome, never the redemption.
+   * per redemption and nothing else ever writes this column. The caller wraps
+   * it so a failure here costs a recorded outcome, never the redemption.
    */
   async updatePayOfferPromotion(
     id: string,
     outcome: PayOfferPromotionOutcome
   ): Promise<void> {
-    const { error } = await supabaseService
-      .from(this.table)
-      .update({ pay_offer_promotion: outcome })
-      .eq('id', id);
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to record pay-offer promotion outcome',
-        'DATABASE_ERROR',
-        { details: error.message, id, outcome }
+    try {
+      await db
+        .update(householdInvites)
+        .set({ pay_offer_promotion: outcome })
+        .where(eq(householdInvites.id, id));
+    } catch (err) {
+      throw this.dbError(
+        'Failed to record pay-offer promotion outcome in',
+        err,
+        {
+          id,
+          outcome,
+        }
       );
     }
   }
@@ -285,24 +544,48 @@ export class HouseholdInviteRepository extends BaseRepository<HouseholdInvite> {
     acceptedBy: string,
     acceptedAt: string
   ): Promise<void> {
-    const { error } = await supabaseService
-      .from(this.table)
-      .update({
-        status: HOUSEHOLD_INVITE_STATUSES.PENDING,
-        accepted_by: null,
-        accepted_at: null,
-      })
-      .eq('id', id)
-      .eq('status', HOUSEHOLD_INVITE_STATUSES.ACCEPTED)
-      .eq('accepted_by', acceptedBy)
-      .eq('accepted_at', acceptedAt);
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to release invite claim',
-        'DATABASE_ERROR',
-        { details: error.message, id }
-      );
+    try {
+      await db
+        .update(householdInvites)
+        .set({
+          status: HOUSEHOLD_INVITE_STATUSES.PENDING,
+          accepted_by: null,
+          accepted_at: null,
+        })
+        .where(
+          and(
+            eq(householdInvites.id, id),
+            eq(householdInvites.status, HOUSEHOLD_INVITE_STATUSES.ACCEPTED),
+            eq(householdInvites.accepted_by, acceptedBy),
+            eq(householdInvites.accepted_at, acceptedAt)
+          )
+        );
+    } catch (err) {
+      throw this.dbError('Failed to release invite claim in', err, { id });
     }
   }
+}
+
+/**
+ * `INSERT INTO <table> SELECT <row> WHERE <guard>` — an insert that lands only
+ * if `guard` holds at write time. Columns not in `row` take their schema
+ * default (`$defaultFn`, then the SQL default), as a plain insert would.
+ */
+function insertIf<T extends SQLiteTable>(
+  table: T,
+  row: Partial<InferInsertModel<T>>,
+  guard: SQL
+) {
+  const given = row as Record<string, unknown>;
+  const values = Object.entries(getTableColumns(table))
+    .filter(([, col]) => !col.generated)
+    .map(([key, col]) => {
+      if (key in given) return sql.param(given[key], col);
+      if (col.defaultFn) return sql.param(col.defaultFn(), col);
+      if (is(col.default, SQL)) return col.default;
+      return sql.param(col.default ?? null, col);
+    });
+  return db
+    .insert(table)
+    .select(sql`SELECT ${sql.join(values, sql`, `)} WHERE ${guard}`);
 }

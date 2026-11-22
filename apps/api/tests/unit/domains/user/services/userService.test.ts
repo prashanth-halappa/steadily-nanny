@@ -1,163 +1,123 @@
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+/** `UserService` profile CRUD on a real D1 (tests/helpers/testDb.ts). */
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+} from 'bun:test';
+import { createTestDb, type TestDb } from '../../../../helpers/testDb';
 
 let UserService: typeof import('../../../../../src/domains/user/services/userService').UserService;
-let mockSupabaseService: any;
+let t: TestDb;
 
-function createMockQueryChain(
-  finalResponse: { data: unknown; error: unknown } = { data: null, error: null }
-): any {
-  const chain: any = {
-    select: mock(() => chain),
-    eq: mock(() => chain),
-    upsert: mock(() => chain),
-    update: mock(() => chain),
-    delete: mock(() => chain),
-    maybeSingle: mock(() => Promise.resolve(finalResponse)),
-    single: mock(() => Promise.resolve(finalResponse)),
-    // biome-ignore lint/suspicious/noThenProperty: intentional thenable for the mock
-    then: (resolve: (value: unknown) => unknown) =>
-      Promise.resolve(finalResponse).then(resolve),
-  };
-  return chain;
-}
+const profileRow = async () =>
+  (await t.d1
+    .prepare("SELECT * FROM user_profiles WHERE user_id = 'u1'")
+    .first()) as Record<string, unknown> | null;
 
 beforeAll(async () => {
-  mock.module('../../../../../src/config/supabase', () => {
-    const obj = {
-      from: mock(() => createMockQueryChain()),
-      auth: { admin: { deleteUser: mock(async () => ({ error: null })) } },
-    };
-    return { supabase: obj, supabaseService: obj };
-  });
+  t = await createTestDb();
+  mock.module('../../../../../src/db/client', () => ({ db: t.db }));
   mock.module('../../../../../src/middlewares/logger', () => ({
     logger: { info: mock(), error: mock(), warn: mock(), debug: mock() },
   }));
-
-  const mod = await import(
+  ({ UserService } = await import(
     '../../../../../src/domains/user/services/userService'
-  );
-  UserService = mod.UserService;
-  mockSupabaseService = (await import('../../../../../src/config/supabase'))
-    .supabaseService;
+  ));
 });
 
-beforeEach(() => {
-  mockSupabaseService.from.mockClear?.();
+afterAll(() => t.dispose());
+
+beforeEach(async () => {
+  await t.d1.prepare('DELETE FROM user').run();
+  await t.d1
+    .prepare(
+      "INSERT INTO user (id, name, email) VALUES ('u1', 'u1', 'u1@x.test')"
+    )
+    .run();
 });
 
 describe('UserService.getProfileById', () => {
-  it('selects timezone and week_starts_on alongside the existing profile fields', async () => {
-    const chain = createMockQueryChain({
-      data: {
-        user_id: 'u1',
-        name: 'Maya',
-        city: 'London',
-        country: 'UK',
-        preferred_locale: null,
-        timezone: 'Europe/London',
-        week_starts_on: 1,
-        additional_data: null,
-      },
-      error: null,
-    });
-    mockSupabaseService.from.mockImplementation(() => chain);
-
+  it('returns timezone and week_starts_on alongside the profile fields', async () => {
+    await t.d1
+      .prepare(
+        "INSERT INTO user_profiles (user_id, name, timezone, week_starts_on) VALUES ('u1', 'Maya', 'Europe/London', 1)"
+      )
+      .run();
     const profile = await UserService.getProfileById('u1');
-
-    expect(chain.select).toHaveBeenCalledWith(
-      expect.stringContaining('timezone')
-    );
-    expect(chain.select).toHaveBeenCalledWith(
-      expect.stringContaining('week_starts_on')
-    );
-    expect(profile?.timezone).toBe('Europe/London');
-    expect(profile?.week_starts_on).toBe(1);
+    expect(profile).toMatchObject({
+      user_id: 'u1',
+      name: 'Maya',
+      timezone: 'Europe/London',
+      week_starts_on: 1,
+    });
+    expect(await UserService.getProfileById('nobody')).toBeNull();
   });
 });
 
 describe('UserService.ensureProfile', () => {
-  it('inserts only the anchor row and ignores an existing one, so nothing is clobbered', async () => {
-    const chain = createMockQueryChain({ data: null, error: null });
-    mockSupabaseService.from.mockImplementation(() => chain);
-
+  it('creates the anchor row and never clobbers an existing one', async () => {
     await UserService.ensureProfile('u1');
+    expect(await profileRow()).toMatchObject({ user_id: 'u1', name: null });
 
-    expect(mockSupabaseService.from).toHaveBeenCalledWith('user_profiles');
-    // Only user_id: a name/city/timezone in this payload would overwrite what
-    // the user set earlier, every time they create a household.
-    expect(chain.upsert).toHaveBeenCalledWith(
-      { user_id: 'u1' },
-      { onConflict: 'user_id', ignoreDuplicates: true }
-    );
+    await t.d1
+      .prepare("UPDATE user_profiles SET name = 'Maya' WHERE user_id = 'u1'")
+      .run();
+    await UserService.ensureProfile('u1');
+    expect((await profileRow())?.name).toBe('Maya');
   });
 
   it('throws a DatabaseError when the insert fails', async () => {
-    mockSupabaseService.from.mockImplementation(() =>
-      createMockQueryChain({ data: null, error: { message: 'boom' } })
-    );
-    await expect(UserService.ensureProfile('u1')).rejects.toThrow(
+    // No `user` row: the FK refuses it.
+    await expect(UserService.ensureProfile('ghost')).rejects.toThrow(
       'Failed to ensure user profile'
     );
   });
 });
 
 describe('UserService.upsertProfile', () => {
-  it('includes timezone in the upsert payload when the caller supplies one', async () => {
-    const chain = createMockQueryChain({
-      data: { user_id: 'u1', name: 'Maya', timezone: 'America/New_York' },
-      error: null,
-    });
-    mockSupabaseService.from.mockImplementation(() => chain);
-
-    await UserService.upsertProfile('u1', {
+  it('stores timezone when the caller supplies one', async () => {
+    const p = await UserService.upsertProfile('u1', {
       name: 'Maya',
       city: '',
       country: '',
       timezone: 'America/New_York',
     });
-
-    expect(chain.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ timezone: 'America/New_York' }),
-      { onConflict: 'user_id' }
-    );
+    expect(p).toMatchObject({ name: 'Maya', timezone: 'America/New_York' });
   });
 
-  it('omits timezone from the upsert payload when not supplied — never forces a value the caller did not send', async () => {
-    const chain = createMockQueryChain({
-      data: { user_id: 'u1', name: 'Maya' },
-      error: null,
-    });
-    mockSupabaseService.from.mockImplementation(() => chain);
-
+  it('keeps an existing timezone when the caller sends none', async () => {
     await UserService.upsertProfile('u1', {
       name: 'Maya',
       city: '',
       country: '',
+      timezone: 'Asia/Kolkata',
     });
-
-    const payload = chain.upsert.mock.calls[0]?.[0];
-    expect(payload).not.toHaveProperty('timezone');
+    const p = await UserService.upsertProfile('u1', {
+      name: 'Maya B',
+      city: '',
+      country: '',
+    });
+    expect(p).toMatchObject({ name: 'Maya B', timezone: 'Asia/Kolkata' });
   });
 });
 
 describe('UserService.updateProfile', () => {
-  it('passes timezone and week_starts_on through to the update payload', async () => {
-    const chain = createMockQueryChain({
-      data: { user_id: 'u1', timezone: 'Asia/Kolkata', week_starts_on: 0 },
-      error: null,
-    });
-    mockSupabaseService.from.mockImplementation(() => chain);
-
-    await UserService.updateProfile('u1', {
+  it('writes timezone and week_starts_on', async () => {
+    await UserService.ensureProfile('u1');
+    const p = await UserService.updateProfile('u1', {
       timezone: 'Asia/Kolkata',
       week_starts_on: 0,
     });
+    expect(p).toMatchObject({ timezone: 'Asia/Kolkata', week_starts_on: 0 });
+  });
 
-    expect(chain.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        timezone: 'Asia/Kolkata',
-        week_starts_on: 0,
-      })
-    );
+  it('throws when there is no profile to update', async () => {
+    await expect(
+      UserService.updateProfile('u1', { timezone: 'Asia/Kolkata' })
+    ).rejects.toThrow('Failed to update user profile');
   });
 });

@@ -3,45 +3,49 @@
  * table (a child's fixed weekly life: preschool, school, activities, naps —
  * see `supabase/migrations/010_children.sql`'s header comment). Extends
  * BaseRepository for standard CRUD and adds the household/child list reads
- * `childCommitmentQueryService` and `coverageGapService` need. Uses the
- * service-role Supabase client, so membership/role authorization is
+ * `childCommitmentQueryService` and `coverageGapService` need. Runs on the
+ * single D1 handle, so membership/role authorization is
  * enforced in the SERVICE layer, never here — same convention as
  * `childRepository`.
  *
  * @module domains/child/repositories/childCommitmentRepository
  */
-import { supabaseService } from '../../../config/supabase';
-import { DatabaseError } from '../../../errors';
+import { asc, eq } from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { childCommitments, households } from '../../../db/schema';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
-// The repository module directly, not the household barrel: the barrel pulls
-// in that domain's services, and one of those reaching back for a child would
-// close an import cycle (the same note `householdCommandService` carries).
-import { HouseholdRepository } from '../../household/repositories/householdRepository';
+import { HOUSEHOLD_STATES } from '../../household/schemas';
 import type { ChildCommitment } from '../types';
 
-export class ChildCommitmentRepository extends BaseRepository<ChildCommitment> {
-  private readonly households = new HouseholdRepository();
-
+/**
+ * D1 behaviour change (MIGRATION-NOTES §3): Postgres silently overwrote
+ * `household_id` with the child's household; the D1 trigger REJECTS a
+ * mismatch (`CHECK constraint failed: child_commitments_household_matches_child`).
+ * Callers must pass the child's own household — `childCommitmentCommandService`
+ * does, after `childQueryService.getOwned` asserts it.
+ */
+export class ChildCommitmentRepository extends BaseRepository<
+  ChildCommitment,
+  typeof childCommitments
+> {
   constructor() {
-    super('child_commitments');
+    super(childCommitments);
   }
 
   /** A child's commitments, oldest-created first. */
   async findByChildId(childId: string): Promise<ChildCommitment[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('child_id', childId)
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list commitments for child',
-        'DATABASE_ERROR',
-        { details: error.message, childId }
-      );
+    try {
+      const rows = await db
+        .select()
+        .from(childCommitments)
+        .where(eq(childCommitments.child_id, childId))
+        .orderBy(asc(childCommitments.created_at));
+      return rows as ChildCommitment[];
+    } catch (err) {
+      throw this.dbError('Failed to list commitments for child', err, {
+        childId,
+      });
     }
-    return (data ?? []) as ChildCommitment[];
   }
 
   /**
@@ -51,20 +55,18 @@ export class ChildCommitmentRepository extends BaseRepository<ChildCommitment> {
    * time).
    */
   async findByHouseholdId(householdId: string): Promise<ChildCommitment[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('household_id', householdId)
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list commitments for household',
-        'DATABASE_ERROR',
-        { details: error.message, householdId }
-      );
+    try {
+      const rows = await db
+        .select()
+        .from(childCommitments)
+        .where(eq(childCommitments.household_id, householdId))
+        .orderBy(asc(childCommitments.created_at));
+      return rows as ChildCommitment[];
+    } catch (err) {
+      throw this.dbError('Failed to list commitments for household', err, {
+        householdId,
+      });
     }
-    return (data ?? []) as ChildCommitment[];
   }
 
   /**
@@ -79,24 +81,20 @@ export class ChildCommitmentRepository extends BaseRepository<ChildCommitment> {
    * A draft cannot legally HOLD a commitment — 093's trigger refuses the insert
    * — so in practice this filters nothing today. That is the point: it is the
    * guard for the day a write path or a service-role script gets one in, and it
-   * costs one batched query rather than a digest fired at a nanny with no
+   * costs one join rather than a digest fired at a nanny with no
    * family.
    */
   async listHouseholdIdsWithCommitments(): Promise<string[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('household_id');
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list households with commitments',
-        'DATABASE_ERROR',
-        { details: error.message }
-      );
+    // One query: the live filter is a join, not a second lookup per household.
+    try {
+      const rows = await db
+        .selectDistinct({ id: childCommitments.household_id })
+        .from(childCommitments)
+        .innerJoin(households, eq(households.id, childCommitments.household_id))
+        .where(eq(households.state, HOUSEHOLD_STATES.LIVE));
+      return rows.map(row => row.id);
+    } catch (err) {
+      throw this.dbError('Failed to list households with commitments', err, {});
     }
-    const ids = [
-      ...new Set((data ?? []).map(row => row.household_id as string)),
-    ];
-    return this.households.listLiveIds(ids);
   }
 }

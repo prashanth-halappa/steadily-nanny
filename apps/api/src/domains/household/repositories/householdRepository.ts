@@ -1,20 +1,31 @@
 /**
  * Household repository — data access for the `households` table. Extends
- * BaseRepository for standard CRUD and adds two domain queries. Uses the
- * service-role Supabase client, so ownership/authorization is enforced in the
- * SERVICE layer, never here.
+ * BaseRepository for standard CRUD and adds two domain queries. There is no
+ * RLS on D1, so ownership/authorization is enforced in the SERVICE layer,
+ * never here.
  *
  * @module domains/household/repositories/householdRepository
  */
-import { supabaseService } from '../../../config/supabase';
-import { DatabaseError } from '../../../errors';
+import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { db } from '../../../db/client';
+import {
+  children,
+  householdMembers,
+  households,
+  shifts,
+  timeEntries,
+  timesheets,
+} from '../../../db/schema';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
 import { HOUSEHOLD_STATES } from '../schemas';
 import type { Household } from '../types';
 
-export class HouseholdRepository extends BaseRepository<Household> {
+export class HouseholdRepository extends BaseRepository<
+  Household,
+  typeof households
+> {
   constructor() {
-    super('households');
+    super(households);
   }
 
   /** Fetch multiple households by id — used to list a user's households via membership. */
@@ -22,20 +33,18 @@ export class HouseholdRepository extends BaseRepository<Household> {
     if (ids.length === 0) {
       return [];
     }
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .in('id', ids)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list households by id',
-        'DATABASE_ERROR',
-        { details: error.message }
-      );
+    try {
+      const rows = await db
+        .select()
+        .from(households)
+        .where(inArray(households.id, ids))
+        .orderBy(desc(households.created_at));
+      return rows as Household[];
+    } catch (err) {
+      throw this.dbError('Failed to list households by id from', err, {
+        operation: 'findByIds',
+      });
     }
-    return (data ?? []) as Household[];
   }
 
   /**
@@ -52,20 +61,22 @@ export class HouseholdRepository extends BaseRepository<Household> {
     if (ids.length === 0) {
       return [];
     }
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('id')
-      .in('id', ids)
-      .eq('state', HOUSEHOLD_STATES.LIVE);
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to filter households by state',
-        'DATABASE_ERROR',
-        { details: error.message }
-      );
+    try {
+      const rows = await db
+        .select({ id: households.id })
+        .from(households)
+        .where(
+          and(
+            inArray(households.id, ids),
+            eq(households.state, HOUSEHOLD_STATES.LIVE)
+          )
+        );
+      return rows.map(row => row.id);
+    } catch (err) {
+      throw this.dbError('Failed to filter by state', err, {
+        operation: 'listLiveIds',
+      });
     }
-    return ((data ?? []) as { id: string }[]).map(row => row.id);
   }
 
   /**
@@ -76,9 +87,9 @@ export class HouseholdRepository extends BaseRepository<Household> {
    * but the record two parties trusted must not vanish because of it.
    */
   private static readonly PAYROLL_TABLES = [
-    'time_entries',
-    'timesheets',
-    'shifts',
+    timeEntries,
+    timesheets,
+    shifts,
   ] as const;
 
   /**
@@ -92,20 +103,22 @@ export class HouseholdRepository extends BaseRepository<Household> {
   ): Promise<Set<string>> {
     const held = new Set<string>();
     for (const table of HouseholdRepository.PAYROLL_TABLES) {
-      const { data, error } = await supabaseService
-        .from(table)
-        .select('household_id')
-        .in('household_id', ids);
-
-      if (error) {
-        throw new DatabaseError(
-          `Failed to check ${table} before reaping households`,
-          'DATABASE_ERROR',
-          { details: error.message }
+      try {
+        const rows = await db
+          .selectDistinct({ household_id: table.household_id })
+          .from(table)
+          .where(inArray(table.household_id, ids));
+        for (const row of rows) {
+          if (row.household_id) held.add(row.household_id);
+        }
+      } catch (err) {
+        throw this.dbError(
+          'Failed to check payroll history before reaping',
+          err,
+          {
+            operation: 'householdsWithPayrollHistory',
+          }
         );
-      }
-      for (const row of (data ?? []) as { household_id: string }[]) {
-        held.add(row.household_id);
       }
     }
     return held;
@@ -147,22 +160,19 @@ export class HouseholdRepository extends BaseRepository<Household> {
       return [];
     }
 
-    const { data, error } = await supabaseService
-      .from('household_members')
-      .select('household_id')
-      .in('household_id', ids);
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to count household members before reaping',
-        'DATABASE_ERROR',
-        { details: error.message }
-      );
+    let peopled: { household_id: string }[];
+    try {
+      peopled = await db
+        .selectDistinct({ household_id: householdMembers.household_id })
+        .from(householdMembers)
+        .where(inArray(householdMembers.household_id, ids));
+    } catch (err) {
+      throw this.dbError('Failed to count members before reaping', err, {
+        operation: 'deleteIfMemberless',
+      });
     }
 
-    const stillPeopled = new Set(
-      ((data ?? []) as { household_id: string }[]).map(row => row.household_id)
-    );
+    const stillPeopled = new Set(peopled.map(row => row.household_id));
     const memberless = ids.filter(id => !stillPeopled.has(id));
     if (memberless.length === 0) {
       return [];
@@ -174,17 +184,12 @@ export class HouseholdRepository extends BaseRepository<Household> {
       return [];
     }
 
-    const { error: deleteError } = await supabaseService
-      .from(this.table)
-      .delete()
-      .in('id', reapable);
-
-    if (deleteError) {
-      throw new DatabaseError(
-        'Failed to delete memberless households',
-        'DATABASE_ERROR',
-        { details: deleteError.message }
-      );
+    try {
+      await db.delete(households).where(inArray(households.id, reapable));
+    } catch (err) {
+      throw this.dbError('Failed to delete memberless', err, {
+        operation: 'deleteIfMemberless',
+      });
     }
     return reapable;
   }
@@ -198,19 +203,22 @@ export class HouseholdRepository extends BaseRepository<Household> {
    * cycle. This is a narrow, read-only exception to normal domain boundaries.
    */
   async listActiveChildFirstNames(householdId: string): Promise<string[]> {
-    const { data, error } = await supabaseService
-      .from('children')
-      .select('name')
-      .eq('household_id', householdId)
-      .is('archived_at', null);
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list children for invite preview',
-        'DATABASE_ERROR',
-        { details: error.message, householdId }
-      );
+    try {
+      const rows = await db
+        .select({ name: children.name })
+        .from(children)
+        .where(
+          and(
+            eq(children.household_id, householdId),
+            isNull(children.archived_at)
+          )
+        );
+      return rows.map(row => row.name);
+    } catch (err) {
+      throw this.dbError('Failed to list children for invite preview of', err, {
+        householdId,
+        operation: 'listActiveChildFirstNames',
+      });
     }
-    return ((data ?? []) as { name: string }[]).map(row => row.name);
   }
 }

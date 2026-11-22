@@ -5,8 +5,19 @@
  *
  * @module domains/household/repositories/householdMemberRepository
  */
-import { supabaseService } from '../../../config/supabase';
-import { DatabaseError } from '../../../errors';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  getTableColumns,
+  gte,
+  inArray,
+  type SQL,
+} from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { mapDbError } from '../../../db/errors';
+import { householdMembers, userProfiles } from '../../../db/schema';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
 import { AlreadyMemberError } from '../errors/householdErrors';
 import {
@@ -15,19 +26,91 @@ import {
 } from '../schemas';
 import type { HouseholdMember, HouseholdMemberStatus } from '../types';
 
-/** Postgres unique_violation error code. */
-const UNIQUE_VIOLATION = '23505';
+const memberColumns = getTableColumns(householdMembers);
 
-/** A member row as PostgREST returns it with the profile embed attached. */
-type MemberRowWithProfile = HouseholdMember & {
-  // `phone` is optional because only `listNonRemovedByHousehold` selects it —
-  // the active-only sibling asks for the name alone (099).
-  user_profiles?: { name: string | null; phone?: string | null } | null;
-};
-
-export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
+export class HouseholdMemberRepository extends BaseRepository<
+  HouseholdMember,
+  typeof householdMembers
+> {
   constructor() {
-    super('household_members');
+    super(householdMembers);
+  }
+
+  /** One row matching `where`, or null (supabase-js `maybeSingle`). */
+  private async findOne(
+    where: SQL | undefined,
+    operation: string,
+    metadata: Record<string, unknown>
+  ): Promise<HouseholdMember | null> {
+    try {
+      const rows = await db
+        .select()
+        .from(householdMembers)
+        .where(where)
+        .limit(1);
+      return (rows[0] as HouseholdMember | undefined) ?? null;
+    } catch (err) {
+      throw this.dbError('Failed to look up membership in', err, {
+        ...metadata,
+        operation,
+      });
+    }
+  }
+
+  /**
+   * Member rows joined to the member's own profile (`user_id`, never
+   * `ended_by` — the two FKs into `user_profiles` since 112), with the
+   * profile's name always and its phone when `withPhone`.
+   */
+  private async listWithProfile(
+    where: SQL | undefined,
+    orderBy: SQL,
+    withPhone: boolean,
+    operation: string,
+    householdId: string
+  ): Promise<HouseholdMember[]> {
+    try {
+      const rows = await db
+        .select({
+          ...memberColumns,
+          profile_name: userProfiles.name,
+          profile_phone: userProfiles.phone,
+        })
+        .from(householdMembers)
+        .leftJoin(
+          userProfiles,
+          eq(userProfiles.user_id, householdMembers.user_id)
+        )
+        .where(where)
+        .orderBy(orderBy);
+      return rows.map(({ profile_phone, ...row }) =>
+        withPhone ? { ...row, profile_phone } : row
+      ) as HouseholdMember[];
+    } catch (err) {
+      throw this.dbError('Failed to list members of', err, {
+        householdId,
+        operation,
+      });
+    }
+  }
+
+  /** A CAS update; null when the guard matched no row. */
+  private async casUpdate(
+    memberId: string,
+    set: Partial<HouseholdMember>,
+    guard: SQL,
+    operation: string
+  ): Promise<HouseholdMember | null> {
+    try {
+      const rows = await db
+        .update(householdMembers)
+        .set(set)
+        .where(and(eq(householdMembers.id, memberId), guard))
+        .returning();
+      return (rows[0] as HouseholdMember | undefined) ?? null;
+    } catch (err) {
+      throw this.dbError('Failed to update', err, { memberId, operation });
+    }
   }
 
   /** The caller's active membership row for a household, or null. */
@@ -35,22 +118,15 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
     householdId: string,
     userId: string
   ): Promise<HouseholdMember | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('household_id', householdId)
-      .eq('user_id', userId)
-      .eq('status', 'active')
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to look up household membership',
-        'DATABASE_ERROR',
-        { details: error.message, householdId, userId }
-      );
-    }
-    return data as HouseholdMember | null;
+    return this.findOne(
+      and(
+        eq(householdMembers.household_id, householdId),
+        eq(householdMembers.user_id, userId),
+        eq(householdMembers.status, 'active')
+      ),
+      'findActiveMembership',
+      { householdId, userId }
+    );
   }
 
   /**
@@ -82,22 +158,15 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
     householdId: string,
     userId: string
   ): Promise<HouseholdMember | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('household_id', householdId)
-      .eq('user_id', userId)
-      .in('status', HOUSEHOLD_MEMBERSHIP_STATUSES)
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to look up household membership',
-        'DATABASE_ERROR',
-        { details: error.message, householdId, userId }
-      );
-    }
-    return data as HouseholdMember | null;
+    return this.findOne(
+      and(
+        eq(householdMembers.household_id, householdId),
+        eq(householdMembers.user_id, userId),
+        inArray(householdMembers.status, [...HOUSEHOLD_MEMBERSHIP_STATUSES])
+      ),
+      'findMembershipAnyStatus',
+      { householdId, userId }
+    );
   }
 
   /**
@@ -117,21 +186,14 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
     householdId: string,
     userId: string
   ): Promise<HouseholdMember | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('household_id', householdId)
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to look up household membership',
-        'DATABASE_ERROR',
-        { details: error.message, householdId, userId }
-      );
-    }
-    return data as HouseholdMember | null;
+    return this.findOne(
+      and(
+        eq(householdMembers.household_id, householdId),
+        eq(householdMembers.user_id, userId)
+      ),
+      'findMembershipIncludingCandidate',
+      { householdId, userId }
+    );
   }
 
   /**
@@ -158,25 +220,15 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
    * `listNonRemovedByHousehold` for the one read that must include her.
    */
   async listActiveByHousehold(householdId: string): Promise<HouseholdMember[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*, user_profiles!household_members_user_id_fkey(name)')
-      .eq('household_id', householdId)
-      .eq('status', 'active')
-      .order('joined_at', { ascending: true });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list household members',
-        'DATABASE_ERROR',
-        { details: error.message, householdId }
-      );
-    }
-    return ((data ?? []) as MemberRowWithProfile[]).map(
-      ({ user_profiles, ...member }) => ({
-        ...member,
-        profile_name: user_profiles?.name ?? null,
-      })
+    return this.listWithProfile(
+      and(
+        eq(householdMembers.household_id, householdId),
+        eq(householdMembers.status, 'active')
+      ),
+      asc(householdMembers.joined_at),
+      false,
+      'listActiveByHousehold',
+      householdId
     );
   }
 
@@ -206,29 +258,18 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
   async listNonRemovedByHousehold(
     householdId: string
   ): Promise<HouseholdMember[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*, user_profiles!household_members_user_id_fkey(name, phone)')
-      .eq('household_id', householdId)
-      .in('status', [
-        HOUSEHOLD_MEMBER_STATUSES.ACTIVE,
-        HOUSEHOLD_MEMBER_STATUSES.CANDIDATE,
-      ])
-      .order('joined_at', { ascending: true });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list household members',
-        'DATABASE_ERROR',
-        { details: error.message, householdId }
-      );
-    }
-    return ((data ?? []) as MemberRowWithProfile[]).map(
-      ({ user_profiles, ...member }) => ({
-        ...member,
-        profile_name: user_profiles?.name ?? null,
-        profile_phone: user_profiles?.phone ?? null,
-      })
+    return this.listWithProfile(
+      and(
+        eq(householdMembers.household_id, householdId),
+        inArray(householdMembers.status, [
+          HOUSEHOLD_MEMBER_STATUSES.ACTIVE,
+          HOUSEHOLD_MEMBER_STATUSES.CANDIDATE,
+        ])
+      ),
+      asc(householdMembers.joined_at),
+      true,
+      'listNonRemovedByHousehold',
+      householdId
     );
   }
 
@@ -262,26 +303,16 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
     householdId: string,
     sinceIso: string
   ): Promise<HouseholdMember[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*, user_profiles!household_members_user_id_fkey(name)')
-      .eq('household_id', householdId)
-      .eq('status', HOUSEHOLD_MEMBER_STATUSES.REMOVED)
-      .gte('ended_at', sinceIso)
-      .order('ended_at', { ascending: false });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list departed household members',
-        'DATABASE_ERROR',
-        { details: error.message, householdId }
-      );
-    }
-    return ((data ?? []) as MemberRowWithProfile[]).map(
-      ({ user_profiles, ...member }) => ({
-        ...member,
-        profile_name: user_profiles?.name ?? null,
-      })
+    return this.listWithProfile(
+      and(
+        eq(householdMembers.household_id, householdId),
+        eq(householdMembers.status, HOUSEHOLD_MEMBER_STATUSES.REMOVED),
+        gte(householdMembers.ended_at, sinceIso)
+      ),
+      desc(householdMembers.ended_at),
+      false,
+      'listDepartedSince',
+      householdId
     );
   }
 
@@ -313,23 +344,24 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
     userId: string,
     status?: HouseholdMemberStatus
   ): Promise<HouseholdMember[]> {
-    const base = supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('user_id', userId);
-    const { data, error } = await (status
-      ? base.eq('status', status)
-      : base
-    ).order('joined_at', { ascending: true });
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list memberships for user',
-        'DATABASE_ERROR',
-        { details: error.message, userId }
-      );
+    try {
+      const rows = await db
+        .select()
+        .from(householdMembers)
+        .where(
+          and(
+            eq(householdMembers.user_id, userId),
+            status ? eq(householdMembers.status, status) : undefined
+          )
+        )
+        .orderBy(asc(householdMembers.joined_at));
+      return rows as HouseholdMember[];
+    } catch (err) {
+      throw this.dbError('Failed to list memberships for user in', err, {
+        userId,
+        operation: 'listRowsByUser',
+      });
     }
-    return (data ?? []) as HouseholdMember[];
   }
 
   /** Every household id the user actively belongs to. */
@@ -355,22 +387,23 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
     userId: string,
     status: HouseholdMemberStatus
   ): Promise<string[]> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('household_id')
-      .eq('user_id', userId)
-      .eq('status', status);
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to list households for user',
-        'DATABASE_ERROR',
-        { details: error.message, userId }
-      );
+    try {
+      const rows = await db
+        .select({ household_id: householdMembers.household_id })
+        .from(householdMembers)
+        .where(
+          and(
+            eq(householdMembers.user_id, userId),
+            eq(householdMembers.status, status)
+          )
+        );
+      return rows.map(row => row.household_id);
+    } catch (err) {
+      throw this.dbError('Failed to list households for user in', err, {
+        userId,
+        operation: 'listHouseholdIdsByStatus',
+      });
     }
-    return ((data ?? []) as { household_id: string }[]).map(
-      row => row.household_id
-    );
   }
 
   /**
@@ -388,25 +421,15 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
    * `removed` matches neither and the double-remove no-op is unaffected.
    */
   async removeMembership(memberId: string): Promise<HouseholdMember | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .update({ status: HOUSEHOLD_MEMBER_STATUSES.REMOVED })
-      .eq('id', memberId)
-      .in('status', [
+    return this.casUpdate(
+      memberId,
+      { status: HOUSEHOLD_MEMBER_STATUSES.REMOVED },
+      inArray(householdMembers.status, [
         HOUSEHOLD_MEMBER_STATUSES.ACTIVE,
         HOUSEHOLD_MEMBER_STATUSES.CANDIDATE,
-      ])
-      .select()
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to remove household member',
-        'DATABASE_ERROR',
-        { details: error.message, memberId }
-      );
-    }
-    return data as HouseholdMember | null;
+      ]),
+      'removeMembership'
+    );
   }
 
   /**
@@ -422,22 +445,12 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
     memberId: string,
     role: string
   ): Promise<HouseholdMember | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .update({ status: 'active', role, can_edit: false })
-      .eq('id', memberId)
-      .eq('status', 'removed')
-      .select()
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to reactivate household member',
-        'DATABASE_ERROR',
-        { details: error.message, memberId }
-      );
-    }
-    return data as HouseholdMember | null;
+    return this.casUpdate(
+      memberId,
+      { status: 'active', role, can_edit: false } as Partial<HouseholdMember>,
+      eq(householdMembers.status, 'removed'),
+      'reactivateMembership'
+    );
   }
 
   /**
@@ -456,22 +469,12 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
    * `nanny`/false, and acceptance is not a promotion.
    */
   async activateCandidate(memberId: string): Promise<HouseholdMember | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .update({ status: HOUSEHOLD_MEMBER_STATUSES.ACTIVE })
-      .eq('id', memberId)
-      .eq('status', HOUSEHOLD_MEMBER_STATUSES.CANDIDATE)
-      .select()
-      .maybeSingle();
-
-    if (error) {
-      throw new DatabaseError(
-        'Failed to activate household candidate',
-        'DATABASE_ERROR',
-        { details: error.message, memberId }
-      );
-    }
-    return data as HouseholdMember | null;
+    return this.casUpdate(
+      memberId,
+      { status: HOUSEHOLD_MEMBER_STATUSES.ACTIVE },
+      eq(householdMembers.status, HOUSEHOLD_MEMBER_STATUSES.CANDIDATE),
+      'activateCandidate'
+    );
   }
 
   /**
@@ -483,22 +486,13 @@ export class HouseholdMemberRepository extends BaseRepository<HouseholdMember> {
   async createMembership(
     data: Partial<HouseholdMember>
   ): Promise<HouseholdMember> {
-    const { data: created, error } = await supabaseService
-      .from(this.table)
-      .insert(data)
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === UNIQUE_VIOLATION) {
+    try {
+      return await this.create(data);
+    } catch (err) {
+      if (mapDbError(err)?.kind === 'unique') {
         throw new AlreadyMemberError(String(data.household_id));
       }
-      throw new DatabaseError(
-        'Failed to create household member',
-        'DATABASE_ERROR',
-        { details: error.message, code: error.code }
-      );
+      throw err;
     }
-    return created as HouseholdMember;
   }
 }

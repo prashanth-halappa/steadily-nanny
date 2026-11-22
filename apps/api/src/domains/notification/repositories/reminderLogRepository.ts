@@ -15,14 +15,15 @@
  *
  * @module domains/notification/repositories/reminderLogRepository
  */
-import { supabaseService } from '../../../config/supabase';
+import { and, desc, eq, isNull, like, lt } from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { mapDbError } from '../../../db/errors';
+import { pushReminderLog as log } from '../../../db/schema';
 import { DatabaseError } from '../../../errors';
 import { logger } from '../../../middlewares/logger';
 
-const TABLE = 'push_reminder_log';
-
-/** Postgres unique_violation error code. */
-const UNIQUE_VIOLATION = '23505';
+const errMsg = (err: unknown) =>
+  err instanceof Error ? err.message : String(err);
 
 /**
  * How long an unconfirmed claim is given before it is treated as garbage from
@@ -41,25 +42,18 @@ export class ReminderLogRepository {
    *   row already exists (skip silently).
    */
   async claim(userId: string, reminderKey: string): Promise<boolean> {
-    const { error } = await supabaseService.from(TABLE).insert({
-      user_id: userId,
-      reminder_key: reminderKey,
-    });
-
-    if (error) {
-      if (error.code === UNIQUE_VIOLATION) {
+    try {
+      await db
+        .insert(log)
+        .values({ user_id: userId, reminder_key: reminderKey });
+    } catch (err) {
+      if (mapDbError(err)?.kind === 'unique') {
         return false;
       }
       throw new DatabaseError(
         'Failed to claim push reminder log row',
         'PUSH_REMINDER_LOG_INSERT_FAILED',
-        {
-          userId,
-          reminderKey,
-          operation: 'claim',
-          dbError: error.message,
-          code: error.code,
-        }
+        { userId, reminderKey, operation: 'claim', dbError: errMsg(err) }
       );
     }
 
@@ -86,30 +80,23 @@ export class ReminderLogRepository {
     userId: string,
     keyPrefix: string
   ): Promise<string | null> {
-    const { data, error } = await supabaseService
-      .from(TABLE)
-      .select('sent_at')
-      .eq('user_id', userId)
-      .like('reminder_key', `${keyPrefix}%`)
-      .order('sent_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) {
+    try {
+      const [row] = await db
+        .select({ sent_at: log.sent_at })
+        .from(log)
+        .where(
+          and(eq(log.user_id, userId), like(log.reminder_key, `${keyPrefix}%`))
+        )
+        .orderBy(desc(log.sent_at))
+        .limit(1);
+      return row?.sent_at ?? null;
+    } catch (err) {
       throw new DatabaseError(
         'Failed to read push reminder log',
         'PUSH_REMINDER_LOG_SELECT_FAILED',
-        {
-          userId,
-          keyPrefix,
-          operation: 'findLastSentAt',
-          dbError: error.message,
-          code: error.code,
-        }
+        { userId, keyPrefix, operation: 'findLastSentAt', dbError: errMsg(err) }
       );
     }
-
-    return data?.sent_at ?? null;
   }
 
   /**
@@ -124,18 +111,16 @@ export class ReminderLogRepository {
    * exists to fix, since it only bites on a second, independent DB failure.
    */
   async release(userId: string, reminderKey: string): Promise<void> {
-    const { error } = await supabaseService
-      .from(TABLE)
-      .delete()
-      .eq('user_id', userId)
-      .eq('reminder_key', reminderKey);
-
-    if (error) {
+    try {
+      await db
+        .delete(log)
+        .where(and(eq(log.user_id, userId), eq(log.reminder_key, reminderKey)));
+    } catch (err) {
       logger.error('Failed to release push reminder log claim', {
         userId,
         reminderKey,
         operation: 'release',
-        dbError: error.message,
+        dbError: errMsg(err),
       });
     }
   }
@@ -150,18 +135,17 @@ export class ReminderLogRepository {
    * caller's release path and re-send it on the next run for certain.
    */
   async confirm(userId: string, reminderKey: string): Promise<void> {
-    const { error } = await supabaseService
-      .from(TABLE)
-      .update({ confirmed_at: new Date().toISOString() })
-      .eq('user_id', userId)
-      .eq('reminder_key', reminderKey);
-
-    if (error) {
+    try {
+      await db
+        .update(log)
+        .set({ confirmed_at: new Date().toISOString() })
+        .where(and(eq(log.user_id, userId), eq(log.reminder_key, reminderKey)));
+    } catch (err) {
       logger.error('Failed to confirm push reminder log claim', {
         userId,
         reminderKey,
         operation: 'confirm',
-        dbError: error.message,
+        dbError: errMsg(err),
       });
     }
   }
@@ -181,17 +165,15 @@ export class ReminderLogRepository {
       Date.now() - STALE_CLAIM_HOURS * 60 * 60 * 1000
     ).toISOString();
 
-    const { error } = await supabaseService
-      .from(TABLE)
-      .delete()
-      .is('confirmed_at', null)
-      .lt('sent_at', cutoff);
-
-    if (error) {
+    try {
+      await db
+        .delete(log)
+        .where(and(isNull(log.confirmed_at), lt(log.sent_at, cutoff)));
+    } catch (err) {
       logger.error('Failed to sweep stale push reminder claims', {
         operation: 'sweepStaleClaims',
         cutoff,
-        dbError: error.message,
+        dbError: errMsg(err),
       });
     }
   }

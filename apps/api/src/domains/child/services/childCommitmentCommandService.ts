@@ -93,24 +93,30 @@ export class ChildCommitmentCommandService {
     householdId: string,
     actorId: string
   ): void {
-    void this.householdRepo.findById(householdId).then(household => {
-      if (!household) {
-        return;
-      }
-      const today = localDateOf(new Date(), household.timezone);
-      for (let day = 0; day < 3; day++) {
-        try {
-          detectUncoveredCareBestEffort({
-            householdId,
-            localDate: addDays(today, day),
-            cause: 'needsAdded',
-            actorId,
-          });
-        } catch {
-          // Best-effort only — never fail the commitment write.
+    void this.householdRepo.findById(householdId).then(
+      household => {
+        if (!household) {
+          return;
         }
+        const today = localDateOf(new Date(), household.timezone);
+        for (let day = 0; day < 3; day++) {
+          try {
+            detectUncoveredCareBestEffort({
+              householdId,
+              localDate: addDays(today, day),
+              cause: 'needsAdded',
+              actorId,
+            });
+          } catch {
+            // Best-effort only — never fail the commitment write.
+          }
+        }
+      },
+      () => {
+        // Best-effort: a failed household read must not become an unhandled
+        // rejection after the write has already succeeded.
       }
-    });
+    );
   }
 
   private async assertWriteRole(

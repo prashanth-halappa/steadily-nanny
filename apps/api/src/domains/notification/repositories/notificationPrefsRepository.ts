@@ -3,9 +3,10 @@
  *
  * @module domains/notification/repositories/notificationPrefsRepository
  */
-import { supabaseService } from '../../../config/supabase';
+import { eq } from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { notificationPrefs } from '../../../db/schema';
 import { DatabaseError } from '../../../errors';
-import { BaseRepository } from '../../../shared/repositories/baseRepository';
 
 export interface NotificationPrefsRow {
   user_id: string;
@@ -26,68 +27,56 @@ export type NotificationPrefsUpsert = {
   timezone: string;
 };
 
-const TABLE = 'notification_prefs';
+const errMsg = (err: unknown) =>
+  err instanceof Error ? err.message : String(err);
 
-export class NotificationPrefsRepository extends BaseRepository<NotificationPrefsRow> {
-  constructor() {
-    super(TABLE);
-  }
-
+/**
+ * Not a BaseRepository: the table is keyed by `user_id` (no `id` column), and
+ * nothing ever called the inherited id-keyed helpers.
+ */
+export class NotificationPrefsRepository {
   async findByUserId(userId: string): Promise<NotificationPrefsRow | null> {
-    const { data, error } = await supabaseService
-      .from(TABLE)
-      .select('*')
-      .eq('user_id', userId)
-      .maybeSingle();
-
-    if (error) {
+    try {
+      const [row] = await db
+        .select()
+        .from(notificationPrefs)
+        .where(eq(notificationPrefs.user_id, userId))
+        .limit(1);
+      return row ?? null;
+    } catch (err) {
       throw new DatabaseError(
         'Failed to load notification prefs',
         'NOTIFICATION_PREFS_QUERY_FAILED',
-        {
-          userId,
-          operation: 'findByUserId',
-          dbError: error.message,
-        }
+        { userId, operation: 'findByUserId', dbError: errMsg(err) }
       );
     }
-
-    return data as NotificationPrefsRow | null;
   }
 
   async upsert(
     userId: string,
     input: NotificationPrefsUpsert
   ): Promise<NotificationPrefsRow> {
-    const { data, error } = await supabaseService
-      .from(TABLE)
-      .upsert(
-        {
-          user_id: userId,
-          disabled_types: input.disabled_types,
-          quiet_hours_enabled: input.quiet_hours_enabled,
-          quiet_hours_start: input.quiet_hours_start,
-          quiet_hours_end: input.quiet_hours_end,
-          timezone: input.timezone,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id' }
-      )
-      .select()
-      .single();
-
-    if (error) {
+    const row = {
+      disabled_types: input.disabled_types,
+      quiet_hours_enabled: input.quiet_hours_enabled,
+      quiet_hours_start: input.quiet_hours_start,
+      quiet_hours_end: input.quiet_hours_end,
+      timezone: input.timezone,
+      updated_at: new Date().toISOString(),
+    };
+    try {
+      const [data] = await db
+        .insert(notificationPrefs)
+        .values({ user_id: userId, ...row })
+        .onConflictDoUpdate({ target: notificationPrefs.user_id, set: row })
+        .returning();
+      return data as NotificationPrefsRow;
+    } catch (err) {
       throw new DatabaseError(
         'Failed to upsert notification prefs',
         'NOTIFICATION_PREFS_UPSERT_FAILED',
-        {
-          userId,
-          operation: 'upsert',
-          dbError: error.message,
-        }
+        { userId, operation: 'upsert', dbError: errMsg(err) }
       );
     }
-
-    return data as NotificationPrefsRow;
   }
 }
