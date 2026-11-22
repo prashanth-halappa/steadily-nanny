@@ -1,7 +1,7 @@
 /**
  * @module tests/unit/middlewares/jobAuth.test
  * S15 (WP-J1/J2) — `jobAuth.ts` had NO test. All five mutating job endpoints
- * sit before the Supabase auth layer, guarded only by this shared static key.
+ * sit before the `validateSession` auth layer, guarded only by this shared static key.
  */
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import type { NextFunction, Request, Response } from 'express';

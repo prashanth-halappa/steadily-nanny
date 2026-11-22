@@ -1,6 +1,6 @@
 /**
  * Terms-proposal repository — data access for `terms_proposals`
- * (supabase/migrations/092_terms_proposals.sql). Extends `BaseRepository` for
+ * (`termsProposals` in db/schema/). Extends `BaseRepository` for
  * `findById`; everything else here exists because the base cannot express it.
  *
  * D1 has no RLS — authorization lives in the two services, never here

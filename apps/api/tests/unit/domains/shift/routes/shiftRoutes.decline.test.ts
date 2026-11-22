@@ -55,8 +55,8 @@ beforeAll(async () => {
       req.user = { id: AUTH_USER_ID };
       next();
     },
-    validateSupabaseToken: mock((_req: any, _res: any, next: any) => next()),
-    extractBearerToken: mock(() => null),
+    validateSession: mock((_req: any, _res: any, next: any) => next()),
+    resolveSessionUser: mock(async () => null),
   }));
   mock.module(
     '../../../../../src/domains/shift/services/shiftQueryService',

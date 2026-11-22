@@ -11,8 +11,8 @@
  *    and every live E2E run so far has landed on a day the pattern doesn't
  *    cover — so the clock-in-against-a-real-shift path has only ever been
  *    exercised ad hoc (`shift_id: null`), which means `time_entries.
- *    scheduled_minutes` (frozen from the linked shift at clock-out — see
- *    supabase/migrations/017_time_tracking.sql) has NEVER actually been
+ *    scheduled_minutes` (frozen from the linked shift at clock-out, by the
+ *    time-entry service copying the shift's planned minutes) has NEVER actually been
  *    populated in a live run. A shift dated today makes that path reachable.
  * 2. A timesheet in `submitted` status (not `approved`). The parent's
  *    Approve button is only enabled when a timesheet is `submitted` (see

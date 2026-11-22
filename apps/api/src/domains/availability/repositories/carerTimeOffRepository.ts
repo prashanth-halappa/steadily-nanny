@@ -5,6 +5,7 @@
  * @module domains/availability/repositories/carerTimeOffRepository
  */
 import { and, asc, eq, inArray, ne } from 'drizzle-orm';
+import { chunk } from '../../../db/chunk';
 import { db } from '../../../db/client';
 import { carerTimeOff } from '../../../db/schema';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
@@ -40,12 +41,15 @@ export class CarerTimeOffRepository extends BaseRepository<
   async listByUserIds(userIds: string[]): Promise<CarerTimeOff[]> {
     if (userIds.length === 0) return [];
     try {
-      const rows = await db
-        .select()
-        .from(this.table)
-        .where(inArray(this.table.user_id, userIds))
-        .orderBy(asc(this.table.starts_at));
-      return rows as CarerTimeOff[];
+      const pages = await Promise.all(
+        chunk(userIds).map(page =>
+          db.select().from(this.table).where(inArray(this.table.user_id, page))
+        )
+      );
+      // Ordered across the whole set, not per chunk.
+      return (pages.flat() as CarerTimeOff[]).sort((a, b) =>
+        a.starts_at.localeCompare(b.starts_at)
+      );
     } catch (err) {
       throw this.dbError('Failed to list', err, { userIds });
     }

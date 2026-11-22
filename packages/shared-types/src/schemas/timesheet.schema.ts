@@ -3,7 +3,7 @@
  * @module packages/shared-types/src/schemas/timesheet.schema
  *
  * Backing tables: `time_entries`, `timesheets`
- * (supabase/migrations/017_time_tracking.sql).
+ * (apps/api/src/db/schema/timesheet.ts).
  *
  * "Hours only — no payments here." This records what actually happened,
  * which is deliberately NOT the same as what was scheduled — see the

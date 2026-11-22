@@ -6,7 +6,8 @@
  *
  * @module domains/household/repositories/householdRepository
  */
-import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { chunk } from '../../../db/chunk';
 import { db } from '../../../db/client';
 import {
   children,
@@ -34,12 +35,15 @@ export class HouseholdRepository extends BaseRepository<
       return [];
     }
     try {
-      const rows = await db
-        .select()
-        .from(households)
-        .where(inArray(households.id, ids))
-        .orderBy(desc(households.created_at));
-      return rows as Household[];
+      const pages = await Promise.all(
+        chunk(ids).map(page =>
+          db.select().from(households).where(inArray(households.id, page))
+        )
+      );
+      // Newest first across the whole set, not per chunk.
+      return (pages.flat() as Household[]).sort((a, b) =>
+        b.created_at.localeCompare(a.created_at)
+      );
     } catch (err) {
       throw this.dbError('Failed to list households by id from', err, {
         operation: 'findByIds',
@@ -62,16 +66,20 @@ export class HouseholdRepository extends BaseRepository<
       return [];
     }
     try {
-      const rows = await db
-        .select({ id: households.id })
-        .from(households)
-        .where(
-          and(
-            inArray(households.id, ids),
-            eq(households.state, HOUSEHOLD_STATES.LIVE)
-          )
-        );
-      return rows.map(row => row.id);
+      const pages = await Promise.all(
+        chunk(ids).map(page =>
+          db
+            .select({ id: households.id })
+            .from(households)
+            .where(
+              and(
+                inArray(households.id, page),
+                eq(households.state, HOUSEHOLD_STATES.LIVE)
+              )
+            )
+        )
+      );
+      return pages.flat().map(row => row.id);
     } catch (err) {
       throw this.dbError('Failed to filter by state', err, {
         operation: 'listLiveIds',
@@ -104,11 +112,15 @@ export class HouseholdRepository extends BaseRepository<
     const held = new Set<string>();
     for (const table of HouseholdRepository.PAYROLL_TABLES) {
       try {
-        const rows = await db
-          .selectDistinct({ household_id: table.household_id })
-          .from(table)
-          .where(inArray(table.household_id, ids));
-        for (const row of rows) {
+        const pages = await Promise.all(
+          chunk(ids).map(page =>
+            db
+              .selectDistinct({ household_id: table.household_id })
+              .from(table)
+              .where(inArray(table.household_id, page))
+          )
+        );
+        for (const row of pages.flat()) {
           if (row.household_id) held.add(row.household_id);
         }
       } catch (err) {
@@ -162,10 +174,15 @@ export class HouseholdRepository extends BaseRepository<
 
     let peopled: { household_id: string }[];
     try {
-      peopled = await db
-        .selectDistinct({ household_id: householdMembers.household_id })
-        .from(householdMembers)
-        .where(inArray(householdMembers.household_id, ids));
+      const pages = await Promise.all(
+        chunk(ids).map(page =>
+          db
+            .selectDistinct({ household_id: householdMembers.household_id })
+            .from(householdMembers)
+            .where(inArray(householdMembers.household_id, page))
+        )
+      );
+      peopled = pages.flat();
     } catch (err) {
       throw this.dbError('Failed to count members before reaping', err, {
         operation: 'deleteIfMemberless',
@@ -185,7 +202,9 @@ export class HouseholdRepository extends BaseRepository<
     }
 
     try {
-      await db.delete(households).where(inArray(households.id, reapable));
+      for (const page of chunk(reapable)) {
+        await db.delete(households).where(inArray(households.id, page));
+      }
     } catch (err) {
       throw this.dbError('Failed to delete memberless', err, {
         operation: 'deleteIfMemberless',

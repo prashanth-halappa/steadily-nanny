@@ -1,7 +1,7 @@
 /**
  * TDD tests for the uncovered-care evening digest. Every dependency is
  * injected via `runUncoveredDigestJob`'s parameters so these never touch
- * Supabase — same shape as `noShowJob.test.ts`, which this job's structure
+ * the database — same shape as `noShowJob.test.ts`, which this job's structure
  * is copied from.
  */
 import { beforeAll, describe, expect, it, mock } from 'bun:test';

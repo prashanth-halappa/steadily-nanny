@@ -6,9 +6,9 @@
 #     with ANOTHER FAMILY or falls outside her marked availability, and
 #     neither may block her... write paths... must NEVER translate a
 #     cross-household overlap into a thrown ConflictError / 409."
-#   - `supabase/migrations/104_schedule_invariants.sql` §3 (S4a): the new
-#     `shifts_carer_window_excl` exclusion constraint that DOES refuse an
-#     overlap is keyed on `household_id with =`, "precisely so that it can
+#   - `apps/api/migrations/0001_triggers.sql` (S4a): the
+#     `shifts_carer_window_excl_{insert,update}` triggers that DO refuse an
+#     overlap only compare shifts in the SAME household, "precisely so that it can
 #     never reach the case this module exists to keep advisory."
 #   - `apps/api/src/domains/shift/errors/shiftErrors.ts`'s `ShiftOverlapsError`
 #     doc: "SCOPED TO ONE HOUSEHOLD, deliberately. A clash with ANOTHER

@@ -1,7 +1,7 @@
 /**
  * Scheduled-job routes.
  *
- * Mounted at `/api/jobs` BEFORE the Supabase auth layer (see app.ts). Every
+ * Mounted at `/api/jobs` BEFORE the Better Auth session layer (see app.ts). Every
  * route is guarded by `validateJobApiKey` — there is no logged-in user, only the
  * shared X-Job-Api-Key secret. `jobHandler` fire-and-forgets the async handler
  * so the route can ACK quickly.

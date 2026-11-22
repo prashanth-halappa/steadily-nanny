@@ -1,7 +1,7 @@
 /**
  * TDD tests for the schedule-horizon-rolling job. `patternRepo` and
  * `commandService` are both injected (see `runScheduleHorizonJob`'s own
- * signature) so these never touch Supabase.
+ * signature) so these never touch the database.
  */
 import {
   afterEach,
@@ -12,7 +12,6 @@ import {
   mock,
   setSystemTime,
 } from 'bun:test';
-import '../../helpers/stubDbClient';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import type { SchedulePattern } from '../../../src/domains/schedule/types';
 import type {
@@ -73,10 +72,10 @@ function noOpJobDeps(
   return {
     commitments: { listHouseholdIdsWithCommitments: mock(async () => []) },
     // S8: injected in every test so the retention sweep never reaches for a
-    // real Supabase client (which times the whole file out, slowly).
+    // real database client (which times the whole file out, slowly).
     events: { deleteSweptEventsOlderThan: mock(async () => 0) },
     // S4b: same reason — the cross-household clash sweep never reaches for a
-    // real Supabase client unless a test overrides these.
+    // real database client unless a test overrides these.
     clashScan: { listLiveForClashScan: mock(async () => []) },
     clashEvents: {
       listEventKeysForDate: mock(async () => new Set<string>()),

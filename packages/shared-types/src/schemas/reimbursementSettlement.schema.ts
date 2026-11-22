@@ -4,7 +4,7 @@
  * @module packages/shared-types/src/schemas/reimbursementSettlement.schema
  *
  * Backing table: `reimbursement_settlements`
- * (supabase/migrations/086_reimbursement_settlements.sql).
+ * (apps/api/src/db/schema/pay.ts).
  *
  * THESE ARE NOT PAYMENTS, and the separate file is part of saying so. An
  * approved reimbursement is excluded from gross, from payable minutes and from

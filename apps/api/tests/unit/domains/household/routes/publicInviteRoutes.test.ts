@@ -5,7 +5,7 @@
  * actually matters about them, which is entirely a property of the wiring:
  *
  *  - They answer with NO Authorization header. If they ever end up behind
- *    `validateSupabaseToken`, the page 401s for every parent who was sent a
+ *    `validateSession`, the page 401s for every parent who was sent a
  *    link, and nothing in a service test would notice.
  *  - The 404 body is opaque — no reason, no code echo (§12 "Error — web page,
  *    dead code").
@@ -219,7 +219,7 @@ describe('POST /v1/household-invites/:code/opened', () => {
 });
 
 /**
- * The routes above are mounted BEFORE `validateSupabaseToken` in `app.ts`, and
+ * The routes above are mounted BEFORE `validateSession` in `app.ts`, and
  * `/api/v1`'s `userRateLimiter` is mounted after it — so these two, and only
  * these two, would otherwise take unlimited unauthenticated traffic. The code
  * is the bearer secret and a hit returns the carer's pay terms, so "no limit

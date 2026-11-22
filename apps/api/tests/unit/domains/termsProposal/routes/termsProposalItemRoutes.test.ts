@@ -89,10 +89,10 @@ beforeAll(async () => {
       req.user = { id: 'parent-1' };
       next();
     },
-    validateSupabaseToken: mock((_r: unknown, _s: unknown, next: () => void) =>
+    validateSession: mock((_r: unknown, _s: unknown, next: () => void) =>
       next()
     ),
-    extractBearerToken: mock(() => null),
+    resolveSessionUser: mock(async () => null),
   }));
 
   mock.module(

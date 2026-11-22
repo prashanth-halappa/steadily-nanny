@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, mock } from 'bun:test';
  * This file constructs `TimesheetCommandService` 121 times POSITIONALLY and
  * never reaches for `mock.module` otherwise, so the gate's default constructor
  * argument — the real singleton, holding a real `PayArrangementRepository` on
- * a real Supabase client — would run in every clock-in, retroactive-entry and
+ * a real D1 client — would run in every clock-in, retroactive-entry and
  * correction case here. Stubbing the module keeps all 121 call sites on the
  * nine/ten-arg constructor and makes this file the regression proof that
  * NOTHING changes when terms are in force. The gate's own refusal behaviour is
@@ -22,7 +22,7 @@ mock.module('../../../../../src/domains/pay/services/termsGateService', () => ({
 /**
  * The ledger read `reopen` consults before it un-approves a week (102, gap
  * P1), stubbed for the same reason the gate above is: the service's default
- * constructor argument is a real `PaymentRepository` on a real Supabase
+ * constructor argument is a real `PaymentRepository` on a real D1
  * client, and this file constructs the service positionally 121 times without
  * ever passing one. Default is "no payments", so every pre-102 reopen test
  * still describes the week it always described; the paid case sets

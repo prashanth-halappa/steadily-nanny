@@ -200,7 +200,7 @@ const stubProposals: any = { withdrawOpenForCarer: mock(async () => null) };
 
 // Same hazard, same guard: both `removeMember` and `leave` end the carer's
 // accepted patterns, and the real default lazily imports the live schedule
-// command service and reaches supabase. Returns the days it emptied.
+// command service and reaches the database. Returns the days it emptied.
 const stubPatterns: any = {
   endAcceptedPatternsForCarer: mock(async () => []),
 };

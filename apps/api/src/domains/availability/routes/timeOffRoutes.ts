@@ -1,6 +1,6 @@
 /**
  * Time-off routes — routing + middleware wiring only. Mounted at
- * `/api/v1/time-off` (behind the global Supabase auth).
+ * `/api/v1/time-off` (behind the global `validateSession`).
  *
  * @module domains/availability/routes/timeOffRoutes
  */

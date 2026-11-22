@@ -9,10 +9,10 @@
  */
 import type { SchedulePatternDayChild } from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import { inArray } from 'drizzle-orm';
+import { chunk } from '../../../db/chunk';
 import { db } from '../../../db/client';
 import { schedulePatternDayChildren } from '../../../db/schema';
 import { DatabaseError } from '../../../errors';
-import { chunk } from './chunk';
 
 export interface NewSchedulePatternDayChildData {
   child_id: string;

@@ -25,6 +25,7 @@
  */
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { and, eq, inArray, isNull, ne } from 'drizzle-orm';
+import { chunk, nonEmpty } from '../../../db/chunk';
 import { db } from '../../../db/client';
 import { mapDbError } from '../../../db/errors';
 import { shiftLocalDate } from '../../../db/localDate';
@@ -35,7 +36,6 @@ import { DatabaseError } from '../../../errors';
 // re-declared here.
 import { ShiftOverlapsError } from '../../shift/errors/shiftErrors';
 import { RecurringShiftAlreadyExistsError } from '../errors/scheduleErrors';
-import { chunk, nonEmpty } from './chunk';
 
 export interface NewShiftData {
   household_id: string;

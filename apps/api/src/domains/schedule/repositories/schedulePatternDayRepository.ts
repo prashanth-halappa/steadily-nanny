@@ -9,10 +9,10 @@
  */
 import type { SchedulePatternDay } from '@steadily-nanny/shared-types/schemas/schedule.schema';
 import { asc, eq } from 'drizzle-orm';
+import { chunk } from '../../../db/chunk';
 import { db } from '../../../db/client';
 import { schedulePatternDays } from '../../../db/schema';
 import { DatabaseError } from '../../../errors';
-import { chunk } from './chunk';
 
 export interface NewSchedulePatternDayData {
   weekday: number;

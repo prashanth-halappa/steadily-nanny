@@ -18,7 +18,7 @@ describe('env.core schema', () => {
     ).toBe(false);
   });
 
-  test('no longer requires any SUPABASE_* var', () => {
+  test('parses with only BETTER_AUTH_SECRET set (no legacy database vars)', () => {
     expect(
       coreEnvSchema.safeParse({ BETTER_AUTH_SECRET: SECRET }).success
     ).toBe(true);

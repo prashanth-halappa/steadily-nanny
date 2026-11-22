@@ -1,6 +1,6 @@
 /**
  * Expense repository — data access for the mutable `expenses` table
- * (supabase/migrations/044_expenses.sql; `docs/11-MONEY.md` §6, §8, §9).
+ * (`expenses` in db/schema/pay.ts; `docs/11-MONEY.md` §6, §8, §9).
  * Extends BaseRepository for `create`/`findById` and adds the domain
  * queries plus three GUARDED writes. There is no RLS behind D1 — authorization and business gating live in the
  * SERVICE layer, never here, but every query below still filters

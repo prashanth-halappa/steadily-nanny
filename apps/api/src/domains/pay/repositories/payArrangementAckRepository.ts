@@ -1,6 +1,6 @@
 /**
  * Pay arrangement ack/dissent repository — data access for the append-only
- * `pay_arrangement_acks` table (supabase/migrations/081_pay_arrangement_acks.sql).
+ * `pay_arrangement_acks` table (`payArrangementAcks` in db/schema/pay.ts).
  * Extends BaseRepository for `findById`; `create` is OVERRIDDEN to translate
  * the table's `unique (arrangement_id, carer_id, kind)` index into an
  * idempotent no-op rather than a raw 500 — see its doc below. D1 has no RLS:

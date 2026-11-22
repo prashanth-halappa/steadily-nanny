@@ -3,7 +3,7 @@
  * actually paid, outside the app.
  * @module packages/shared-types/src/schemas/payment.schema
  *
- * Backing table: `payments` (supabase/migrations/067_payments.sql).
+ * Backing table: `payments` (apps/api/src/db/schema/pay.ts).
  *
  * The app computes and freezes what a week is WORTH (042's snapshot); this is
  * the other half of the loop — the parent recording that money moved. Money

@@ -271,7 +271,7 @@ const stubUsers: any = { ensureProfile: mock(async () => {}) };
 /**
  * The rejoin path's carried-over-PTO sentence reads the ledger; every test
  * that reaches it must stub this, or the ctor default constructs a REAL
- * PtoLedgerRepository whose supabase call turns a unit test into a slow
+ * PtoLedgerRepository whose database call turns a unit test into a slow
  * network failure.
  */
 const stubPtoLedger: any = { listForCarerYear: mock(async () => []) };
@@ -280,7 +280,7 @@ const stubPtoLedger: any = { listForCarerYear: mock(async () => []) };
  * The departure-side pattern teardown, stubbed. Empty list of vacated days by
  * default: every test that is not ABOUT the teardown still has to construct
  * past it, or the real default lazily imports the live command service and
- * reaches a real Supabase call.
+ * reaches a real database call.
  */
 const stubPatterns: any = {
   endAcceptedPatternsForCarer: mock(async () => []),
@@ -297,7 +297,7 @@ const stubDetectUncovered: any = mock(
 /**
  * Same hazard as `stubPtoLedger`, on the create path: `create` seeds the
  * country's holiday pack, so a test that reaches it and leaves this defaulted
- * constructs a REAL HouseholdHolidayRepository and waits on a supabase call.
+ * constructs a REAL HouseholdHolidayRepository and waits on a database call.
  * The seed failure is swallowed by design, so the symptom is a five-second
  * timeout rather than an assertion — which is exactly why it needs a name.
  */
@@ -306,7 +306,7 @@ const stubHolidays: any = { seedCountryPack: mock(async () => []) };
 /**
  * Same hazard again, for F8's new write: `removeMember`/`leave` now call
  * `proposals.withdrawOpenForCarer`, so a test that reaches it and leaves this
- * defaulted constructs a REAL TermsProposalRepository and waits on a supabase
+ * defaulted constructs a REAL TermsProposalRepository and waits on a database
  * call. `create` is stubbed to blow up loudly — nothing outside the P8 promote
  * block should ever reach it.
  */

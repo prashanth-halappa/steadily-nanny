@@ -1,9 +1,9 @@
 /**
  * @module store/__tests__/auth
  *
- * The auth store on Better Auth: session bootstrap (getSession replaces
- * Supabase's INITIAL_SESSION + the live getUser() deleted-user check), the
- * sign-in path (replaces SIGNED_IN), Sentry user-context wiring, unconditional
+ * The auth store on Better Auth: session bootstrap (getCookie + getSession,
+ * which also catches a deleted user server-side), the sign-in path
+ * (completeSignIn), Sentry user-context wiring, unconditional
  * sign-out cleanup, account-switch state clearing, and the sign-up outcome.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
@@ -149,7 +149,7 @@ describe('session bootstrap', () => {
   });
 
   it('clears a stale persisted session when no cookie is stored (pre-migration install)', async () => {
-    useAuthStore.setState({ session: sessionFor('supabase-era') } as never);
+    useAuthStore.setState({ session: sessionFor('legacy-session') } as never);
     getCookieMock.mockImplementation(() => Promise.resolve(''));
     await useAuthStore.getState().initializeAuth();
 

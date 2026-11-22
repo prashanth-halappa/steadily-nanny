@@ -1,6 +1,6 @@
 /**
  * Reimbursement settlement repository — data access for the append-only
- * `reimbursement_settlements` table (supabase/migrations/086, `docs/11-MONEY.md`
+ * `reimbursement_settlements` table (db/schema/pay.ts, `docs/11-MONEY.md`
  * §1/§6/§8). Extends BaseRepository for `findById` and overrides `create` for
  * the one thing this table needs that the base does not: translating the
  * unique violation its index raises into a typed conflict.

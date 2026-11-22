@@ -8,23 +8,23 @@
  *
  * @module domains/notification/services/notificationSender
  */
-import {
-  Expo,
-  type ExpoPushMessage,
-  type ExpoPushTicket,
-} from 'expo-server-sdk';
 import { logger } from '../../../middlewares/logger';
 import type { PushPayload, SendResult } from '../types';
-
-const expo = new Expo();
+import {
+  chunk,
+  type ExpoPushMessage,
+  type ExpoPushTicket,
+  isExpoPushToken,
+  sendPush,
+} from '../utils/expoPush';
 
 /**
  * Send one payload to many push tokens.
  *
  * Golden behaviors preserved from the production sender:
  *  1. Dedupe tokens (a user's devices can share a token).
- *  2. Keep only `Expo.isExpoPushToken`-valid tokens.
- *  3. Chunk into ≤100-message batches via `Expo.chunkPushNotifications`.
+ *  2. Keep only `isExpoPushToken`-valid tokens.
+ *  3. Chunk into ≤100-message batches via `chunk`.
  *  4. Send each chunk and collect tickets.
  *  5. Surface `DeviceNotRegistered` tokens in `invalidTokens` for cleanup.
  *
@@ -38,7 +38,7 @@ export async function sendToTokens(
 ): Promise<SendResult> {
   // 1 + 2: dedupe, then keep only valid Expo tokens.
   const validTokens = Array.from(new Set(tokens)).filter(token =>
-    Expo.isExpoPushToken(token)
+    isExpoPushToken(token)
   );
 
   if (validTokens.length === 0) {
@@ -54,27 +54,27 @@ export async function sendToTokens(
   }));
 
   // 3: chunk into Expo-sized batches.
-  const chunks = expo.chunkPushNotifications(messages);
+  const chunks = chunk(messages);
 
   let sent = 0;
   const invalidTokens: string[] = [];
 
   // 4 + 5: send each chunk; tickets align 1:1 with the chunk's messages.
-  for (const chunk of chunks) {
+  for (const batch of chunks) {
     let tickets: ExpoPushTicket[];
     try {
-      tickets = await expo.sendPushNotificationsAsync(chunk);
+      tickets = await sendPush(batch);
     } catch (error) {
       logger.error('Expo push batch failed', {
-        batchSize: chunk.length,
+        batchSize: batch.length,
         error: error instanceof Error ? error.message : String(error),
       });
       continue;
     }
 
-    for (let i = 0; i < chunk.length; i++) {
+    for (let i = 0; i < batch.length; i++) {
       const ticket = tickets[i];
-      const message = chunk[i];
+      const message = batch[i];
       if (!ticket || !message) continue;
 
       if (ticket.status === 'ok') {

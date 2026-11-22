@@ -1,5 +1,5 @@
 /**
- * Versioned API router (`/api/v1`). Mounted behind Supabase auth in app.ts.
+ * Versioned API router (`/api/v1`). Mounted behind the Better Auth session layer (`validateSession`) in app.ts.
  *
  * SETUP: register your domain routers here, one line each.
  *

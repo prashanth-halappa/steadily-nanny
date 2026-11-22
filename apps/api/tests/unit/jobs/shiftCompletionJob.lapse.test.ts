@@ -106,7 +106,7 @@ describe('runShiftCompletionJob — the recurring lapse arm', () => {
   it('still completes worked shifts when the lapse arm blows up', async () => {
     const writer = writerOf([{ id: 'w1', worked: true }], [pending('s1')]);
     writer.lapseByIds = mock(async () => {
-      throw new Error('supabase is down');
+      throw new Error('database is down');
     });
 
     const result = await runShiftCompletionJob(writer, clock);

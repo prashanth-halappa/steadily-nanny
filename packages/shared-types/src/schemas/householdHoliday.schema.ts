@@ -3,7 +3,7 @@
  * family observes (3-E4, §5 D-12, `docs/design/screens-pay-terms.md` §3/§4.3).
  * @module packages/shared-types/src/schemas/householdHoliday.schema
  *
- * Backing table: `household_holidays` (supabase/migrations/080_holidays.sql).
+ * Backing table: `household_holidays` (apps/api/src/db/schema/household.ts).
  *
  * ONE ROW PER (household, holiday_key) — a TOGGLE, not a date. The dates are
  * a pack, resolved per year by `holidayPacks.ts` for the household's country;

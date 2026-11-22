@@ -3,7 +3,6 @@
  * `cancellation_paid` with no payable `time_entries` row behind them.
  */
 import { describe, expect, it, mock } from 'bun:test';
-import '../../helpers/stubDbClient';
 
 const { TimeEntryNotEditableError } = await import(
   '../../../src/domains/timesheet/errors/timesheetErrors'

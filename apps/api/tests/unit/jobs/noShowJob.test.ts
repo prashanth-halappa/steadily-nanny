@@ -126,7 +126,7 @@ function parentsAre(...ids: string[]) {
 /**
  * D-48: no shift in these fixtures has a declined cancellation. Stubbed in
  * every call because the default lookup would otherwise reach for a real
- * Supabase client and time the whole file out. The suppression itself is
+ * database client and time the whole file out. The suppression itself is
  * covered in `noShowJob.disputedCancel.test.ts`.
  */
 function noneDisputed() {

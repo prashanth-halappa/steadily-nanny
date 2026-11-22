@@ -83,7 +83,7 @@ describe('BaseRepository', () => {
     expect((await repo.findById(h.id))?.name).toBe('New');
   });
 
-  test('update of a missing id throws (supabase .single() contract)', async () => {
+  test('update of a missing id throws (not-found on update is an error, not a silent no-op)', async () => {
     await expect(repo.update('nope', { name: 'x' })).rejects.toMatchObject({
       name: 'DatabaseError',
       metadata: { id: 'nope', operation: 'update' },

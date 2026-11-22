@@ -3,13 +3,13 @@
 # that has to follow it.
 #
 # WHY ONE SCRIPT
-# The chain has six ordered steps and two of them used to be hand-typed psql.
+# The chain has six ordered steps and two of them used to be hand-typed SQL.
 # Run out of order, or with one step skipped, the result is not an error — it is
 # a green run against fixtures that do not exist. `seed-e2e-approval-fixtures.ts`
 # in particular prints `[skip]` and exits 0 when "Our household" is missing, so
 # this script greps for that and fails loudly.
 #
-# A full `supabase db reset` invalidates every id in .env.maestro, so the file
+# A full reset (local D1 wiped, migrations replayed) invalidates every id in .env.maestro, so the file
 # is rewritten from the seeders' own `# --- eval me` output rather than
 # hand-merged. Ids from a prior reset are dead; never merge an old copy.
 #
@@ -19,14 +19,14 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-eval "$(supabase status -o env | sed 's/^/export /')"
-case "$API_URL" in
-  http://127.0.0.1:*|http://localhost:*) ;;
-  *) echo "refusing: local stack reported $API_URL" >&2; exit 1 ;;
-esac
-export SUPABASE_URL="$API_URL"
-export SUPABASE_ANON_KEY="$ANON_KEY"
-export SUPABASE_SERVICE_KEY="$SERVICE_ROLE_KEY"
+# Every read and write below is LOCAL: the seeders use scripts/lib/localDb.ts
+# and the lookups pass `--local`, so there is no remote database to refuse.
+
+# One scalar from the local D1: first column of the first row, or empty.
+d1_scalar() {
+  (cd apps/api && bunx wrangler d1 execute steadily-nanny --local --json --command "$1") \
+    | bun -e 'const r = JSON.parse(await Bun.stdin.text()); const row = r[0]?.results?.[0]; console.log(row ? Object.values(row)[0] ?? "" : "")'
+}
 
 OUT=$(mktemp -t launchpass-seed)
 trap 'rm -f "$OUT"' EXIT
@@ -46,7 +46,7 @@ run_seed() {
 }
 
 if [ "${1:-}" != "--no-reset" ]; then
-  step "supabase db reset (destructive) + migrations + test users"
+  step "local D1 reset (destructive) + migrations + test users"
   scripts/dev-local.sh reset
 else
   step "skipping db reset (--no-reset)"
@@ -67,12 +67,12 @@ run_seed "seed-second-household (LEAKCANARY)" \
 # That seeder prints canary strings but no id, and flow 22 deep-links by id.
 # Flows address carers by user id in a testID (pay-carer-picker-<id>), so the
 # ids of the cast members no seeder prints are needed too.
-NANNY2_ID=$(psql "$DB_URL" -tAc "select id from auth.users where email='nanny2@steadilynanny.test'" | tr -d ' ')
-COPARENT_ID=$(psql "$DB_URL" -tAc "select id from auth.users where email='coparent@steadilynanny.test'" | tr -d ' ')
-OTHER_PARENT_ID=$(psql "$DB_URL" -tAc "select id from auth.users where email='otherparent@steadilynanny.test'" | tr -d ' ')
+NANNY2_ID=$(d1_scalar "select id from user where email='nanny2@steadilynanny.test'")
+COPARENT_ID=$(d1_scalar "select id from user where email='coparent@steadilynanny.test'")
+OTHER_PARENT_ID=$(d1_scalar "select id from user where email='otherparent@steadilynanny.test'")
 : "${NANNY2_ID:?nanny2 user missing}"
-LEAKCANARY_HOUSEHOLD_ID=$(psql "$DB_URL" -tAc \
-  "select id from public.households where name = 'LEAKCANARY the Cole household' limit 1" | tr -d ' ')
+LEAKCANARY_HOUSEHOLD_ID=$(d1_scalar \
+  "select id from households where name = 'LEAKCANARY the Cole household' limit 1")
 : "${LEAKCANARY_HOUSEHOLD_ID:?second household not found after seeding}"
 
 run_seed "seed-phase4-fixtures" \
@@ -83,10 +83,12 @@ run_seed "seed-usual-week-fixtures" \
   bun run scripts/seed-usual-week-fixtures.ts
 USUALWEEK_KV=$(sed -n '/^# --- eval me/,$p' "$OUT" | grep -E '^USUAL_WEEK_[A-Z0-9_]+=' || true)
 
-# The one value no seeder can derive: it must match apps/api/.env or the
-# cover-ask-expiry curl 401s and flow 13b passes against an unexpired ask.
-JOB_API_KEY=$(grep -E '^JOB_API_KEY=' apps/api/.env | cut -d= -f2- | tr -d '"'"'"'')
-: "${JOB_API_KEY:?JOB_API_KEY missing from apps/api/.env}"
+# The one value no seeder can derive: it must match what `wrangler dev` loads
+# (apps/api/.dev.vars, else apps/api/.env) or the cover-ask-expiry curl 401s
+# and flow 13b passes against an unexpired ask.
+JOB_API_KEY=$(grep -hE '^JOB_API_KEY=' apps/api/.dev.vars apps/api/.env 2>/dev/null \
+  | head -1 | cut -d= -f2- | tr -d '"'"'"'' || true)
+: "${JOB_API_KEY:?JOB_API_KEY missing from apps/api/.dev.vars and apps/api/.env}"
 
 # The bootstrap's PHASE4_HOUSEHOLD_ID and the phase4 seeder's must agree — they
 # resolve the same household by the same rule, so a mismatch means one of them
@@ -121,7 +123,7 @@ step "regenerating apps/mobile/.env.maestro"
   echo "COPARENT_ID=${COPARENT_ID}"
   echo "OTHER_PARENT_ID=${OTHER_PARENT_ID}"
   echo
-  echo "# Must match JOB_API_KEY in apps/api/.env (jobAuth middleware)."
+  echo "# Must match JOB_API_KEY in apps/api/.dev.vars or .env (jobAuth middleware)."
   echo "JOB_API_KEY=${JOB_API_KEY}"
   echo
   echo "# Monday anchor for the Hours deep-link regression (flow 05)."

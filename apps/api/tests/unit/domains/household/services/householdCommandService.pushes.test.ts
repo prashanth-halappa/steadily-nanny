@@ -423,7 +423,7 @@ describe('HouseholdCommandService.leave — parents are told', () => {
       { withdrawOpenForCarer: mock(async () => null) } as never,
       undefined,
       // Same hazard again, for the pattern teardown `leave` now runs: the real
-      // default lazily imports the live schedule service and reaches supabase.
+      // default lazily imports the live schedule service and reaches the database.
       { endAcceptedPatternsForCarer: mock(async () => []) } as never,
       mock(() => undefined) as never
     );

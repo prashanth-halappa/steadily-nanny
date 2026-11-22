@@ -59,6 +59,7 @@ import {
   ne,
   or,
 } from 'drizzle-orm';
+import { chunk } from '../db/chunk';
 import { db } from '../db/client';
 import {
   households,
@@ -266,11 +267,15 @@ class DefaultNoShowCandidateSource implements NoShowCandidateSource {
     householdIds: string[]
   ): Promise<Map<string, string>> {
     try {
-      const rows = await db
-        .select({ id: households.id, timezone: households.timezone })
-        .from(households)
-        .where(inArray(households.id, householdIds));
-      return new Map(rows.map(row => [row.id, row.timezone]));
+      const pages = await Promise.all(
+        chunk(householdIds).map(page =>
+          db
+            .select({ id: households.id, timezone: households.timezone })
+            .from(households)
+            .where(inArray(households.id, page))
+        )
+      );
+      return new Map(pages.flat().map(row => [row.id, row.timezone]));
     } catch (error) {
       throw new DatabaseError(
         'Failed to load household timezones for the no-show sweep',
@@ -289,10 +294,15 @@ class DefaultNoShowCandidateSource implements NoShowCandidateSource {
 
     let rows: Array<{ user_id: string; name: string | null }>;
     try {
-      rows = await db
-        .select({ user_id: userProfiles.user_id, name: userProfiles.name })
-        .from(userProfiles)
-        .where(inArray(userProfiles.user_id, carerIds));
+      const pages = await Promise.all(
+        chunk(carerIds).map(page =>
+          db
+            .select({ user_id: userProfiles.user_id, name: userProfiles.name })
+            .from(userProfiles)
+            .where(inArray(userProfiles.user_id, page))
+        )
+      );
+      rows = pages.flat();
     } catch (error) {
       throw new DatabaseError(
         'Failed to load carer names for the no-show sweep',
@@ -388,21 +398,25 @@ export class DefaultDisputedCancellationLookup
       return new Set();
     }
     try {
-      const rows = await db
-        .select({ shift_id: shiftChangeRequests.shift_id })
-        .from(shiftChangeRequests)
-        .where(
-          and(
-            inArray(shiftChangeRequests.shift_id, shiftIds),
-            eq(shiftChangeRequests.kind, SHIFT_CHANGE_REQUEST_KINDS.CANCEL),
-            eq(
-              shiftChangeRequests.status,
-              SHIFT_CHANGE_REQUEST_STATUSES.DECLINED
-            ),
-            gte(shiftChangeRequests.responded_at, sinceIso)
-          )
-        );
-      return new Set(rows.map(row => row.shift_id));
+      const pages = await Promise.all(
+        chunk(shiftIds).map(page =>
+          db
+            .select({ shift_id: shiftChangeRequests.shift_id })
+            .from(shiftChangeRequests)
+            .where(
+              and(
+                inArray(shiftChangeRequests.shift_id, page),
+                eq(shiftChangeRequests.kind, SHIFT_CHANGE_REQUEST_KINDS.CANCEL),
+                eq(
+                  shiftChangeRequests.status,
+                  SHIFT_CHANGE_REQUEST_STATUSES.DECLINED
+                ),
+                gte(shiftChangeRequests.responded_at, sinceIso)
+              )
+            )
+        )
+      );
+      return new Set(pages.flat().map(row => row.shift_id));
     } catch (error) {
       throw new DatabaseError(
         'Failed to load declined cancellations for the no-show sweep',

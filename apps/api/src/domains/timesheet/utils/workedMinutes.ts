@@ -48,13 +48,10 @@ export function computeWorkedMinutes(
  * it is the SHIFT's booking frozen at clock-out, i.e. what she was rostered
  * for, and paying that instead of the clock would bill the roster.
  *
- * SQL TWIN: `public.run_integrity_checks()` re-expresses this exact formula
- * to find timesheets whose total has drifted. The operative copy is the
- * `create or replace` in
- * `supabase/migrations/061_integrity_checks_departed_carers.sql`, including
- * the `greatest(0, …)` that matches the clamp below; 056 introduced the
- * function and is superseded. The two must move together — 061's contract
- * test greps both branches of it.
+ * TWIN: `runIntegrityChecks` (`src/jobs/integrityChecks.ts`) re-expresses
+ * this exact formula to find timesheets whose total has drifted, including
+ * the `Math.max(0, …)` that matches the clamp below. The two must move
+ * together — `tests/unit/jobs/integrityChecks.test.ts` pins it.
  *
  * MOBILE TWIN: `apps/mobile/src/domains/timesheet/utils/entryMinutes.ts`
  * mirrors the cancellation rule (including this clamp) so the week the carer

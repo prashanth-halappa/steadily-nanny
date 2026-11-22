@@ -1,6 +1,6 @@
 /**
  * @module tests/unit/routes/jobRoutes.test
- * S15 — every route in `jobRoutes.ts` sits before the Supabase auth layer,
+ * S15 — every route in `jobRoutes.ts` sits before the `validateSession` auth layer,
  * guarded only by `validateJobApiKey`. This iterates the router's own
  * `router.stack` so a route added later without the guard fails this test
  * automatically, rather than relying on a hand-maintained list of paths.
@@ -100,7 +100,7 @@ describe('jobRoutes — S15: every route requires X-Job-Api-Key', () => {
     // biome-ignore lint/suspicious/noExplicitAny: Router is callable middleware
     await (jobRoutes as any)(req, res, next);
 
-    // The route handler fire-and-forgets async work against a real Supabase
+    // The route handler fire-and-forgets async work against the real D1
     // client in this environment, so a 401 is the only thing this test can
     // assert about failure — success here is simply "not 401".
     expect(res.statusCode).not.toBe(401);

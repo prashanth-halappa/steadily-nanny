@@ -15,7 +15,9 @@ import type {
 import { SHIFT_CHANGE_REQUEST_STATUSES } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { and, desc, eq, inArray, lt, ne, sql } from 'drizzle-orm';
 import type { BatchItem } from 'drizzle-orm/batch';
+import { chunk, nonEmpty } from '../../../db/chunk';
 import { db } from '../../../db/client';
+import { insertIf } from '../../../db/insertIf';
 import { shiftLocalDate } from '../../../db/localDate';
 import {
   shiftChangeRequests,
@@ -25,18 +27,13 @@ import {
 } from '../../../db/schema';
 import { DatabaseError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
-import { chunk, nonEmpty } from '../../schedule/repositories/chunk';
 import {
   ChangeRequestNotPendingError,
   ShiftImmutableError,
   ShiftNotFoundError,
   ShiftOverlapsError,
 } from '../errors/shiftErrors';
-import {
-  insertIf,
-  isCarerWindowOverlap,
-  isoInstant,
-} from '../utils/carerWindowOverlap';
+import { isCarerWindowOverlap, isoInstant } from '../utils/carerWindowOverlap';
 
 /**
  * One day-thread event handed to an RPC to insert inside its own transaction.

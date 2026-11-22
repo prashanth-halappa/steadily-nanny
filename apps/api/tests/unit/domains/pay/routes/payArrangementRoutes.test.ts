@@ -49,7 +49,7 @@
  *    mount it in `routes/index.ts` is exactly the one exercised here — real
  *    evidence the two haven't drifted, but not an HTTP-level proof of the
  *    full app's wiring.
- *  - That `validateSupabaseToken` (the real Supabase JWT verification) ever
+ *  - That `validateSession` (the real Better Auth session check) ever
  *    runs — `requireAuth` is stubbed to skip straight to "authenticated as
  *    this user id", so no real-token/expired-token/malformed-header
  *    behavior is exercised here. That belongs to a test of `middlewares/auth.ts`
@@ -125,8 +125,8 @@ beforeAll(async () => {
       requireAuthMock(req, res, next),
     // Not exercised by these routes, but re-exported in case anything else
     // in the transitive import graph reaches for it.
-    validateSupabaseToken: mock((_req: any, _res: any, next: any) => next()),
-    extractBearerToken: mock(() => null),
+    validateSession: mock((_req: any, _res: any, next: any) => next()),
+    resolveSessionUser: mock(async () => null),
   }));
 
   mock.module(

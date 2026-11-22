@@ -16,17 +16,17 @@
  * `insertMany` retries row by row to make the loser attributable and skip
  * only it.
  * Still append-only: there is NO update/delete method anywhere here,
- * matching the DB's policy: an editable audit trail is not an audit trail
- * (see supabase/migrations/015_shifts.sql).
+ * because an editable audit trail is not an audit trail (`shiftEvents` in
+ * db/schema/shift.ts; pinned by shiftEventRepository.test.ts).
  *
  * @module domains/shift/repositories/shiftEventRepository
  */
 import type { ShiftEvent } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { and, asc, eq, inArray, lt } from 'drizzle-orm';
+import { chunk, nonEmpty } from '../../../db/chunk';
 import { db } from '../../../db/client';
 import { shiftEvents } from '../../../db/schema';
 import { DatabaseError } from '../../../errors';
-import { chunk, nonEmpty } from '../../schedule/repositories/chunk';
 import { isoInstant, isUniqueViolationOn } from '../utils/carerWindowOverlap';
 
 /** One row to append. `shift_id` is nullable for day-level events (see migration 015). */

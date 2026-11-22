@@ -75,8 +75,8 @@ beforeAll(async () => {
   mock.module('../../../../../src/middlewares/auth', () => ({
     requireAuth: (req: any, res: any, next: any) =>
       requireAuthMock(req, res, next),
-    validateSupabaseToken: mock((_req: any, _res: any, next: any) => next()),
-    extractBearerToken: mock(() => null),
+    validateSession: mock((_req: any, _res: any, next: any) => next()),
+    resolveSessionUser: mock(async () => null),
   }));
 
   mock.module(

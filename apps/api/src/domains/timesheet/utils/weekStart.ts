@@ -1,6 +1,6 @@
 /**
  * Week-start helpers. `week_start` on `timesheets`
- * (supabase/migrations/017_time_tracking.sql) means "the first day of the
+ * (db/schema/timesheet.ts) means "the first day of the
  * household's own workweek, in the household's timezone". BOTH halves of that
  * sentence are per-household, and getting either wrong misfiles every weekly
  * total:

@@ -2,7 +2,7 @@
  * Terms-proposal wire contract (D-35, D-38, D-49).
  * @module packages/shared-types/src/schemas/termsProposal.schema
  *
- * Backing table: `terms_proposals` (supabase/migrations/092_terms_proposals.sql).
+ * Backing table: `terms_proposals` (apps/api/src/db/schema/pay.ts).
  * Spec: `docs/design/screens-onboarding-terms-proposal.md` §7, §9, §10.
  *
  * WHAT THIS IS, AND WHAT IT IS NOT

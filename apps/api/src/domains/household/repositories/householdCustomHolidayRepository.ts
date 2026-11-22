@@ -11,6 +11,7 @@
  */
 import type { HouseholdCustomHoliday } from '@steadily-nanny/shared-types/schemas/householdHoliday.schema';
 import { asc, eq, inArray, sql } from 'drizzle-orm';
+import { chunk } from '../../../db/chunk';
 import { db } from '../../../db/client';
 import { householdCustomHolidays } from '../../../db/schema';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
@@ -72,9 +73,11 @@ export class HouseholdCustomHolidayRepository extends BaseRepository<
     }
 
     try {
-      await db
-        .delete(householdCustomHolidays)
-        .where(inArray(householdCustomHolidays.id, staleIds));
+      for (const page of chunk(staleIds)) {
+        await db
+          .delete(householdCustomHolidays)
+          .where(inArray(householdCustomHolidays.id, page));
+      }
     } catch (err) {
       throw this.dbError('Failed to delete stale', err, {
         householdId,

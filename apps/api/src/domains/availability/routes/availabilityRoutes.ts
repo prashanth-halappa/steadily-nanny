@@ -1,6 +1,6 @@
 /**
  * Availability routes — routing + middleware wiring only. Mounted at
- * `/api/v1/availability` (behind the global Supabase auth). Each route reads
+ * `/api/v1/availability` (behind the global `validateSession`). Each route reads
  * as one declarative chain: auth (+ownership) -> validate(input) ->
  * asyncHandler(controller).
  *

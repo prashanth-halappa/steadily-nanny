@@ -1,6 +1,6 @@
 /**
  * The two UNAUTHENTICATED invite routes the public terms page needs (§6.2),
- * mounted at `/api/v1/household-invites` BEFORE `validateSupabaseToken` in
+ * mounted at `/api/v1/household-invites` BEFORE `validateSession` in
  * `app.ts` — the same shape `/api/app`'s pre-auth mount already uses.
  *
  * WHY THEY ARE UNAUTHENTICATED. The reader is a parent who has been sent a
@@ -25,7 +25,7 @@ import { InviteCodeParamSchema } from '../schemas';
 
 const router = Router();
 
-// `/api/v1`'s `userRateLimiter` is mounted AFTER `validateSupabaseToken` and
+// `/api/v1`'s `userRateLimiter` is mounted AFTER `validateSession` and
 // keys on the user id, so it cannot cover a route that runs before auth — and
 // moving this mount behind auth would put the public terms page behind a login,
 // which is the one thing it must not be. So these two routes carry their own

@@ -4,13 +4,14 @@
  * @module domains/notification/repositories/deviceRepository
  */
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
-import { Expo } from 'expo-server-sdk';
+import { chunk } from '../../../db/chunk';
 import { db } from '../../../db/client';
 import { userDeviceInfo } from '../../../db/schema';
 import { DatabaseError } from '../../../errors';
 import { logger } from '../../../middlewares/logger';
 import { DELIVERABLE_NOTIFICATION_PERMISSIONS } from '../constants';
 import type { DeviceRow, UpsertDeviceInput } from '../types';
+import { isExpoPushToken } from '../utils/expoPush';
 
 export class DeviceRepository {
   /**
@@ -60,7 +61,7 @@ export class DeviceRepository {
    * Every push token for a user that is currently deliverable — i.e. a non-null
    * token on a device whose permission is in
    * {@link DELIVERABLE_NOTIFICATION_PERMISSIONS} (so provisional devices are
-   * NOT dropped). Malformed tokens are filtered out with `Expo.isExpoPushToken`.
+   * NOT dropped). Malformed tokens are filtered out with `isExpoPushToken`.
    */
   static async getDeliverableTokensForUser(userId: string): Promise<string[]> {
     let data: { expo_push_token: string | null }[];
@@ -91,9 +92,7 @@ export class DeviceRepository {
 
     return data
       .map(row => row.expo_push_token)
-      .filter(
-        (token): token is string => !!token && Expo.isExpoPushToken(token)
-      );
+      .filter((token): token is string => !!token && isExpoPushToken(token));
   }
 
   /**
@@ -105,10 +104,13 @@ export class DeviceRepository {
     if (tokens.length === 0) return;
 
     try {
-      await db
-        .update(userDeviceInfo)
-        .set({ expo_push_token: null, updated_at: new Date().toISOString() })
-        .where(inArray(userDeviceInfo.expo_push_token, tokens));
+      const updated_at = new Date().toISOString();
+      for (const page of chunk(tokens)) {
+        await db
+          .update(userDeviceInfo)
+          .set({ expo_push_token: null, updated_at })
+          .where(inArray(userDeviceInfo.expo_push_token, page));
+      }
     } catch (err) {
       // Cleanup is best-effort — log rather than throw so a send still succeeds.
       logger.error('Failed to clear invalid push tokens', {

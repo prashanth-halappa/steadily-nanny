@@ -1,6 +1,6 @@
 /**
  * PTO ledger repository — data access for the append-only `pto_ledger`
- * table (supabase/migrations/043_pto_ledger.sql). Extends BaseRepository for
+ * table (`ptoLedger` in db/schema/pay.ts). Extends BaseRepository for
  * `findById`; `create` is OVERRIDDEN (not the inherited plain insert) to
  * translate the table's two partial unique indexes into typed domain errors
  * instead of a raw 500 — see its doc below. There is no RLS behind D1: authorization lives in the SERVICE layer, never
@@ -21,6 +21,7 @@ import {
   type PtoLedgerKind,
 } from '@steadily-nanny/shared-types/schemas/pto.schema';
 import { and, asc, eq, gte, inArray, lte, type SQL, sql } from 'drizzle-orm';
+import { chunk } from '../../../db/chunk';
 import { db } from '../../../db/client';
 import { mapDbError } from '../../../db/errors';
 import { carerTimeOff, ptoLedger } from '../../../db/schema';
@@ -384,12 +385,16 @@ export class PtoLedgerRepository extends BaseRepository<
         // household_member_id stamp trigger's write.
         const landed = results.filter(r => r.meta.changes > 0).length;
         if (landed === ids.length) {
+          const pages = await Promise.all(
+            chunk(ids).map(page =>
+              db.select().from(ptoLedger).where(inArray(ptoLedger.id, page))
+            )
+          );
+          // Ordered across the whole set, not per chunk.
           return asEntries(
-            await db
-              .select()
-              .from(ptoLedger)
-              .where(inArray(ptoLedger.id, ids))
-              .orderBy(asc(ptoLedger.effective_date))
+            pages
+              .flat()
+              .sort((a, b) => a.effective_date.localeCompare(b.effective_date))
           );
         }
         if (landed !== 0) {

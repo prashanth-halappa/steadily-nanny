@@ -47,8 +47,8 @@ const notVoided = ne(timeEntries.status, 'voided');
 export interface NewTimeEntryData {
   household_id: string;
   carer_id: string;
-  // Snapshotted from the carer's profile at clock-in — see
-  // supabase/migrations/033_preserve_payroll_on_carer_deletion.sql. Written
+  // Snapshotted from the carer's profile at clock-in so the
+  // household's payroll record outlives the carer's account. Written
   // once, on insert; never re-derived from `carer_id` on read, so the record
   // survives the carer's profile being deleted.
   carer_display_name: string;

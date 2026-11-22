@@ -1,5 +1,5 @@
 /**
- * Notification routes. Mounted at `/api/v1/notifications` (behind Supabase auth).
+ * Notification routes. Mounted at `/api/v1/notifications` (behind `validateSession`).
  *
  * @module domains/notification/routes/notificationsRoutes
  */

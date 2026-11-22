@@ -40,6 +40,7 @@ import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/no
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { SHIFT_STATUSES } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { and, eq, gte, inArray, isNotNull, lte } from 'drizzle-orm';
+import { chunk } from '../db/chunk';
 import { db } from '../db/client';
 import { households, pushReminderLog, shifts } from '../db/schema';
 import { formatPushTime12h } from '../domains/child/services/uncoveredCareService';
@@ -156,10 +157,15 @@ class DefaultNoShowDigestCandidateSource
     const householdIds = [...new Set(found.map(s => s.household_id))];
     let householdRows: Array<{ id: string; timezone: string }>;
     try {
-      householdRows = await db
-        .select({ id: households.id, timezone: households.timezone })
-        .from(households)
-        .where(inArray(households.id, householdIds));
+      const pages = await Promise.all(
+        chunk(householdIds).map(page =>
+          db
+            .select({ id: households.id, timezone: households.timezone })
+            .from(households)
+            .where(inArray(households.id, page))
+        )
+      );
+      householdRows = pages.flat();
     } catch (error) {
       throw new DatabaseError(
         'Failed to load household timezones for the no-show digest',
@@ -188,15 +194,20 @@ class DefaultNoShowDigestConfirmedChecker
     const keyToId = new Map(shiftIds.map(id => [buildNoShowKey(id), id]));
     let rows: Array<{ reminder_key: string }>;
     try {
-      rows = await db
-        .select({ reminder_key: pushReminderLog.reminder_key })
-        .from(pushReminderLog)
-        .where(
-          and(
-            inArray(pushReminderLog.reminder_key, [...keyToId.keys()]),
-            isNotNull(pushReminderLog.confirmed_at)
-          )
-        );
+      const pages = await Promise.all(
+        chunk([...keyToId.keys()]).map(page =>
+          db
+            .select({ reminder_key: pushReminderLog.reminder_key })
+            .from(pushReminderLog)
+            .where(
+              and(
+                inArray(pushReminderLog.reminder_key, page),
+                isNotNull(pushReminderLog.confirmed_at)
+              )
+            )
+        )
+      );
+      rows = pages.flat();
     } catch (error) {
       throw new DatabaseError(
         'Failed to load already-alerted no-show claims',

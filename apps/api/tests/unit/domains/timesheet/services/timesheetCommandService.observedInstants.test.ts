@@ -75,7 +75,7 @@ let assertAgreed: ReturnType<typeof mock>;
 beforeAll(async () => {
   assertAgreed = mock(async (..._args: unknown[]) => undefined);
   // Before the dynamic import (docs/09-TESTING.md §4), or the constructor's
-  // default argument resolves the real Supabase-backed singleton.
+  // default argument resolves the real D1-backed singleton.
   mock.module(
     '../../../../../src/domains/pay/services/termsGateService',
     () => ({

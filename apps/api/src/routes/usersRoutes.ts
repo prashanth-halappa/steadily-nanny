@@ -1,5 +1,5 @@
 /**
- * User routes — mounted at `/api/v1/users` (behind Supabase auth).
+ * User routes — mounted at `/api/v1/users` (behind `validateSession`).
  *
  * @module routes/usersRoutes
  */

@@ -2,7 +2,7 @@
  * Expense & mileage wire contract: reimbursements are not wages.
  * @module packages/shared-types/src/schemas/expense.schema
  *
- * Backing table: `expenses` (supabase/migrations/044_expenses.sql).
+ * Backing table: `expenses` (apps/api/src/db/schema/pay.ts).
  *
  * Money is integer minor units + a sibling ISO-4217 `currency` code, never a
  * float — see `docs/11-MONEY.md` §1. `amount_minor` is pence (or the

@@ -58,7 +58,7 @@ beforeAll(async () => {
   assertAgreed = mock(async (..._args: unknown[]) => undefined);
   // Registered BEFORE the dynamic import below (docs/09-TESTING.md §4) so the
   // constructor's default 11th argument resolves to this stub rather than the
-  // real singleton and its Supabase-backed repository.
+  // real singleton and its D1-backed repository.
   mock.module(
     '../../../../../src/domains/pay/services/termsGateService',
     () => ({

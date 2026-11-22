@@ -7,8 +7,8 @@
  *
  * `clockOut` is where "hours only — no payments here" becomes concrete: it
  * freezes `scheduled_minutes` from the linked shift AT THIS INSTANT (so a
- * later shift edit can never rewrite history — see
- * supabase/migrations/017_time_tracking.sql), then rolls the worked minutes
+ * later shift edit can never rewrite history — the column is written once
+ * and never re-derived), then rolls the worked minutes
  * into the week's `timesheets` row, creating it on first clock-out of the
  * week. `clockIn`'s pre-check plus `TimeEntryRepository.clockIn`'s 23505
  * translation together guard the DB's
@@ -581,8 +581,8 @@ export class TimesheetCommandService {
   }
 
   /**
-   * Snapshot the carer's display name AT THIS INSTANT onto the new entry —
-   * see supabase/migrations/033_preserve_payroll_on_carer_deletion.sql. Must
+   * Snapshot the carer's display name AT THIS INSTANT onto the new entry
+   * (`time_entries.carer_display_name`, db/schema/timesheet.ts). Must
    * be captured on insert, never derived on read, so the household's payroll
    * record stays legible after the carer's account (and the profile this
    * would otherwise join against) is gone.
@@ -1632,10 +1632,10 @@ export class TimesheetCommandService {
 
     // The observed pair is NEVER written here, and that omission is the only
     // thing making it immutable — there is no column grant and no trigger
-    // enforcing it (113's header says so out loud). A correction moves the
+    // enforcing it (none in migrations/0001_triggers.sql). A correction moves the
     // EFFECTIVE times; what the app watched is evidence and does not move
     // with them. `timeEntryRepo.update` passes whatever it is given straight
-    // to Supabase, so naming either column below would silently overwrite the
+    // to the database, so naming either column below would silently overwrite the
     // observation this whole feature exists to preserve.
     const patch: Partial<TimeEntry> = {};
     if (input.clock_in_at !== undefined) patch.clock_in_at = input.clock_in_at;

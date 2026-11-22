@@ -9,10 +9,10 @@
 # WHY IT IS NEWLY POSSIBLE: flow 14's header records that Register was
 # undrivable because `auth.signUp` navigates nowhere and there is no
 # check-your-inbox screen, so landing in a session depended on the project's
-# confirmation setting. Locally `supabase/config.toml` sets
-# `enable_confirmations = false`, so sign-up returns a live session and the
-# un-onboarded user falls straight into the wizard. This flow is therefore
-# LOCAL-ONLY by construction; against a stack with confirmations on it will
+# confirmation setting. The API's Better Auth config (apps/api/src/auth.ts) sets
+# `requireEmailVerification: false`, so sign-up returns a live session and the
+# un-onboarded user falls straight into the wizard. Against a server with
+# email verification turned on it will
 # fail at the `role-screen` wait, and that failure is correct.
 #
 # FIXTURES: none seeded. Needs one unused email, passed in — reusing

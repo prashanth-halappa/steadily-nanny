@@ -45,7 +45,7 @@ export default function Register() {
     clearError();
   }, [clearError]);
 
-  // Supabase rejects a short password with a 422 the user can't see coming.
+  // The server rejects a short password with an error the user can't see coming.
   // Catch it here so the only round trip they make is one that can succeed.
   // Held back until the first submit — nobody wants to be told their password
   // is too short while typing its second character.

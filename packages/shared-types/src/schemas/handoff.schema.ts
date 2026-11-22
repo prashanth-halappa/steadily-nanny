@@ -2,7 +2,7 @@
  * Daily handoff notes wire contract (design flow 1i).
  * @module packages/shared-types/src/schemas/handoff.schema
  *
- * Backing table: `handoff_notes` (supabase/migrations/021_handoff_notes.sql).
+ * Backing table: `handoff_notes` (apps/api/src/db/schema/shift.ts).
  * No AI/voice — chips + optional free-text body only.
  */
 

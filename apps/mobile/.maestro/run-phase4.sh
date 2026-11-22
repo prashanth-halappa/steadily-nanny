@@ -12,10 +12,9 @@
 #     before. Check with `xcrun simctl list devices booted`.
 #   - Metro on :8081 and the API on :8080 (the flows deep-link through the
 #     expo-development-client URL and this script curls the job endpoint).
-#   - SUPABASE_URL / SUPABASE_SERVICE_KEY exported for the LOCAL stack
-#     (`supabase status -o env`). apps/api/.env points at production, so the
-#     seeder's loopback guard refuses a bare run — that is deliberate
-#     (GOLDEN-FIXES #26).
+#   - The API's LOCAL D1 database (`wrangler dev` in apps/api). The seeders
+#     write to it through scripts/lib/localDb.ts, which binds Miniflare's
+#     on-disk D1 and can never reach the remote database.
 #   - apps/mobile/.env.maestro for the credentials (see .env.maestro.example).
 #
 # Every flow gets its `-e` arguments spelled out one per pair. Word-splitting a

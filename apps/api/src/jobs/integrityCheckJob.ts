@@ -65,7 +65,8 @@ const defaultRunner: IntegrityCheckRunner = () => runIntegrityChecks();
 /**
  * `userService.deleteUser` reaps the households ITS user emptied, which
  * covers the in-app path and nothing else. Households get orphaned by routes
- * that never touch it — a Supabase dashboard delete of the last member, which
+ * that never touch it — a direct database delete of the last member (e.g. via
+ * `wrangler d1 execute`), which
  * is exactly what happened in production — so the same sweep runs here, over
  * everything, once a day.
  *

@@ -3,7 +3,7 @@
  * @module packages/shared-types/src/schemas/schedule.schema
  *
  * Backing tables: `schedule_patterns`, `schedule_pattern_days`,
- * `schedule_pattern_day_children` (supabase/migrations/014_schedule_patterns.sql).
+ * `schedule_pattern_day_children` (apps/api/src/db/schema/schedule.ts).
  *
  * Pattern-day times (`schedule_pattern_days.start_time` / `.end_time` and
  * `schedule_pattern_day_children.start_time` / `.end_time`) are NOMINAL LOCAL

@@ -3,7 +3,7 @@
  * @module packages/shared-types/src/schemas/child.schema
  *
  * Backing tables: `children`, `child_commitments`
- * (supabase/migrations/010_children.sql).
+ * (apps/api/src/db/schema/child.ts).
  */
 
 import { z } from 'zod';

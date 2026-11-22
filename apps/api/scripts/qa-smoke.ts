@@ -2,28 +2,42 @@
 /**
  * QA — API smoke harness (READ-ONLY).
  *
- * Hits the lean-core GET endpoints with a real Supabase JWT, asserts the HTTP
- * status and that the body is a valid success envelope (never `{ success:false }`
- * on a 2xx). Also runs a read-only RLS-lockdown check directly against Postgres
- * via PostgREST when SUPABASE_URL + SUPABASE_ANON_KEY are set.
+ * Signs in through Better Auth (email/password), then hits the lean-core GET
+ * endpoints with that session cookie, asserting the HTTP status and that the
+ * body is a valid success envelope (never `{ success:false }` on a 2xx).
  *
  * Usage:
- *   QA_TOKEN="eyJ..." bun scripts/qa-smoke.ts
- *   QA_TOKEN="eyJ..." QA_BASE_URL="http://localhost:8080" bun scripts/qa-smoke.ts
+ *   QA_EMAIL=parent@steadilynanny.test QA_PASSWORD=... bun scripts/qa-smoke.ts
+ *   QA_BASE_URL="http://localhost:8080" QA_EMAIL=... QA_PASSWORD=... bun scripts/qa-smoke.ts
  *
  * Exit code is non-zero if any check fails, so it can gate CI.
  */
-import { createClient } from '@supabase/supabase-js';
 
 export {}; // module scope for top-level await
 
 const BASE_URL = process.env.QA_BASE_URL ?? 'http://127.0.0.1:8080';
-const TOKEN = process.env.QA_TOKEN;
+const EMAIL = process.env.QA_EMAIL;
+const PASSWORD = process.env.QA_PASSWORD;
 
-if (!TOKEN) {
-  console.error('✗ QA_TOKEN env var is required (a Supabase access JWT).');
+if (!EMAIL || !PASSWORD) {
+  console.error('✗ QA_EMAIL and QA_PASSWORD env vars are required.');
   process.exit(2);
 }
+
+const signIn = await fetch(`${BASE_URL}/api/auth/sign-in/email`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
+});
+if (!signIn.ok) {
+  console.error(`✗ sign-in failed: ${signIn.status} ${await signIn.text()}`);
+  process.exit(2);
+}
+// The API authenticates by session cookie.
+const COOKIE = signIn.headers
+  .getSetCookie()
+  .map(c => c.split(';')[0])
+  .join('; ');
 
 interface Result {
   domain: string;
@@ -52,7 +66,7 @@ async function call(
     const res = await fetch(`${BASE_URL}${path}`, {
       method,
       headers: {
-        ...(auth ? { Authorization: `Bearer ${TOKEN}` } : {}),
+        ...(auth ? { Cookie: COOKIE } : {}),
         'Content-Type': 'application/json',
         'x-app-version': 'qa-smoke',
         'x-app-platform': 'ios',
@@ -95,41 +109,6 @@ await call('user', 'GET', '/api/v1/users/me', [200, 404]); // 404 = profile not 
 // TODO(wave-1): replace with the nanny round-trip — add this app's own
 // domain GET endpoints here (the widget/subscription example round-trip
 // that used to live here was removed along with those example domains).
-
-// ── RLS lockdown (behavioral, bypasses the API) ─────────────────────────────
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
-
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.log('  ⚠ SUPABASE_URL / SUPABASE_ANON_KEY not set — skipping RLS checks\n');
-} else {
-  const anon = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-  async function denyCheck(label: string, table: string): Promise<void> {
-    const start = performance.now();
-    const { data, error } = await anon.from(table).select('*').limit(1);
-    const ms = Math.round(performance.now() - start);
-    // Owner-only RLS: an anon SELECT must return no rows OR an error — never data.
-    const rows = data ?? [];
-    const ok = error !== null || rows.length === 0;
-    results.push({
-      domain: 'rls',
-      method: 'SELECT',
-      path: label,
-      status: error ? 403 : 200,
-      ok,
-      ms,
-      note: error
-        ? 'denied'
-        : rows.length === 0
-          ? 'no rows (RLS enforced)'
-          : `LEAK: ${rows.length} row(s) readable by anon`,
-    });
-  }
-
-  // Owner-only tables: anon must not read other users' rows.
-  await denyCheck('anon → user_profiles', 'user_profiles');
-}
 
 // ── Report ───────────────────────────────────────────────────────────────
 const pass = results.filter(r => r.ok);

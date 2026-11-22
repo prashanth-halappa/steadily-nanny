@@ -66,9 +66,6 @@ apps/api/scripts/translate/output/
 *.aab
 *.api
 
-# Supabase temp files
-supabase/.temp/
-
 # Maestro `takeScreenshot` writes <name>.png into the cwd it was run from.
 # apps/mobile has no legitimate root-level images (they live in assets/).
 apps/mobile/*.png
@@ -77,8 +74,10 @@ apps/mobile/.maestro/**/*.png
 
 # Design staging area — icon concepts, not shipped assets (audit F-B11-10)
 apps/mobile/assets/_staging/
-supabase/.branches/
 .claude/worktrees/
 
 # Wrangler local dev state (miniflare caches, D1 sqlite) — never committed.
 infra/nanny-site/.wrangler/
+
+# Wrangler / Miniflare local state (local D1 lives here)
+.wrangler/

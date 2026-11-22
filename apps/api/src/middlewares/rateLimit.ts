@@ -5,7 +5,7 @@
  * IP). Applied AFTER auth so the key is the user ID.
  *
  * The pre-auth public routes need a SECOND limiter, keyed on IP, because they
- * run before `validateSupabaseToken` and so have no user id to key on — see
+ * run before `validateSession` and so have no user id to key on — see
  * `publicInviteRateLimiter` below.
  */
 import type { Request } from 'express';
@@ -41,7 +41,7 @@ export const PUBLIC_INVITE_MAX_REQUESTS = 60;
 
 /**
  * The unauthenticated invite routes' limiter — IP-keyed, because they are
- * mounted BEFORE `validateSupabaseToken` and there is no user id to key on.
+ * mounted BEFORE `validateSession` and there is no user id to key on.
  * `userRateLimiter` cannot cover them for exactly that reason, and moving the
  * mount would put the public terms page behind auth, which is the one thing
  * it must not be.
@@ -86,7 +86,7 @@ export const publicInviteRateLimiter = rateLimit({
 export const JOB_MAX_REQUESTS = 60;
 
 /**
- * S15 — the job routes (`/api/jobs/*`) sit BEFORE the Supabase auth layer
+ * S15 — the job routes (`/api/jobs/*`) sit BEFORE the Better Auth session layer
  * (`app.ts`) and were guarded only by the shared `X-Job-Api-Key` secret, with
  * no user, household, role or rate limit. IP-keyed for the same reason as
  * `publicInviteRateLimiter`: there is no user id to key on this far ahead of

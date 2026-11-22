@@ -9,7 +9,7 @@
  * the union of those covered intervals is **uncovered care**.
  *
  * This module is the **pure** half of the feature — interval arithmetic only,
- * no Supabase, no push notifications. The impure persist/push shell lives in
+ * no database, no push notifications. The impure persist/push shell lives in
  * the API's `uncoveredCareService`. Both the API and the mobile app import
  * `computeUncovered` from here so the push notification and the on-screen
  * banner can never disagree on what is uncovered.

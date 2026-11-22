@@ -2,8 +2,8 @@
  * Mobile endpoint module skeleton — the API client wrapper for `<feature>`.
  * Lives at: apps/mobile/src/api/endpoints/<feature>.ts
  *
- * Responsibilities: build the request via the shared `apiClient` (which injects the
- * Supabase JWT and handles 401 refresh), then VALIDATE the response with the shared
+ * Responsibilities: build the request via the shared `apiClient` (which sends the
+ * Better Auth session cookie and re-checks the session once on a 401), then VALIDATE the response with the shared
  * Zod schema so a contract drift surfaces here, not three screens deep.
  *
  * RULE: never import this module from a component. Components consume the query/

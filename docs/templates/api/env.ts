@@ -8,15 +8,15 @@
  * Import this module FIRST in app.ts (`import './config/env';`) so validation
  * runs before any other module reads process.env.
  *
- * NOTE: every value below is a placeholder. Never commit real secrets — those
+ * Mirrors apps/api/src/config/env.ts (which splits the schema into env.core.ts
+ * + app.env.ts). NOTE: every value below is a placeholder. Never commit real secrets — those
  * come from the deployment environment / a gitignored .env file.
  */
 
-import dotenv from 'dotenv';
 import { z } from 'zod';
 
-// Load .env into process.env first (no-op in environments that inject vars).
-dotenv.config();
+// No dotenv: Bun loads .env itself; on Workers, vars/secrets arrive in
+// process.env via nodejs_compat (`wrangler dev` reads .dev.vars).
 
 /**
  * Required variables — the API will NOT start without these.
@@ -30,16 +30,9 @@ const requiredEnvSchema = z.object({
     .default(8080),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
 
-  // Supabase
-  SUPABASE_URL: z.url('SUPABASE_URL must be a valid URL'),
-  SUPABASE_ANON_KEY: z.string().min(1, 'SUPABASE_ANON_KEY is required'),
-  SUPABASE_SERVICE_KEY: z.string().min(1, 'SUPABASE_SERVICE_KEY is required'),
-
-  // LLM provider (Google Gemini via the Vercel AI SDK, through Vertex AI in this
-  // stack — authenticated via Application Default Credentials, NOT an API key;
-  // see 05-API-LLM-JOBS.md §1 and PROVISIONING.md §3)
-  GOOGLE_VERTEX_PROJECT: z.string().min(1, 'GOOGLE_VERTEX_PROJECT is required'),
-  GOOGLE_VERTEX_LOCATION: z.string().min(1).default('us-central1'),
+  // Auth (Better Auth)
+  BETTER_AUTH_SECRET: z.string().min(32, 'BETTER_AUTH_SECRET must be at least 32 characters'),
+  BETTER_AUTH_URL: z.url().default('http://localhost:8787'),
 });
 
 /**
@@ -47,15 +40,23 @@ const requiredEnvSchema = z.object({
  * Promote any of these to "required in production" in validateEnv() below.
  */
 const optionalEnvSchema = z.object({
+  // Social sign-in (Better Auth providers)
+  APPLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+
   // Monitoring
   SENTRY_DSN: z.url().optional(),
-  POSTHOG_API_KEY: z.string().optional(),
 
   // Scheduled-job auth (the X-Job-Api-Key shared secret)
   JOB_API_KEY: z.string().optional(),
 
   // Logging
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+
+  // Email (Resend)
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().default('app <hello@example.com>'),
 });
 
 // Zod 4: `.extend(shape)` (not the deprecated `.merge(otherSchema)`).
@@ -70,13 +71,12 @@ function validateEnv(): Env {
     return {
       PORT: 8080,
       NODE_ENV: 'test',
-      SUPABASE_URL: 'http://localhost:54321',
-      SUPABASE_ANON_KEY: 'test-anon-key',
-      SUPABASE_SERVICE_KEY: 'test-service-key',
-      GOOGLE_VERTEX_PROJECT: 'test-gcp-project',
-      GOOGLE_VERTEX_LOCATION: 'us-central1',
+      BETTER_AUTH_SECRET: 'test-better-auth-secret-at-least-32-chars',
+      BETTER_AUTH_URL: 'http://localhost:8787',
       JOB_API_KEY: 'test-job-api-key',
       LOG_LEVEL: 'info',
+      RESEND_API_KEY: 'test-resend-key',
+      EMAIL_FROM: 'app <hello@example.com>',
     } as Env;
   }
 
@@ -99,10 +99,10 @@ function validateEnv(): Env {
 
   // Enforce production-only required variables here, e.g.:
   if (process.env.NODE_ENV === 'production') {
-    if (!result.data.JOB_API_KEY) {
-      throw new Error('JOB_API_KEY is required in production');
+    const missing = (['JOB_API_KEY', 'RESEND_API_KEY'] as const).filter(k => !result.data[k]);
+    if (missing.length > 0) {
+      throw new Error(`The following variables are required in production: ${missing.join(', ')}`);
     }
-    // if (!result.data.SENTRY_DSN) throw new Error('SENTRY_DSN required in production');
   }
 
   return result.data;

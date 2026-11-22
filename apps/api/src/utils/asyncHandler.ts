@@ -20,7 +20,7 @@ export function asyncHandler(fn: AsyncHandler) {
 
 /**
  * Extracts the authenticated user ID. Safe in routes behind
- * `validateSupabaseToken`, which guarantees `req.user.id`.
+ * `validateSession`, which guarantees `req.user.id`.
  */
 export function getAuthUserId(req: Request): string {
   const id = req.user?.id;

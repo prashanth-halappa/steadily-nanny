@@ -1,6 +1,6 @@
 /**
  * TDD tests for the reminders-hourly job. Every dependency is injected via
- * `runReminderJob`'s parameters so these never touch Supabase.
+ * `runReminderJob`'s parameters so these never touch the database.
  */
 import { describe, expect, it, mock } from 'bun:test';
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';

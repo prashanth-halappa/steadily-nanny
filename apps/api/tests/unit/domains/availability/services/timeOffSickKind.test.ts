@@ -96,7 +96,7 @@ function makeService(
     async () => undefined,
     makeMemberRepo(),
     // D-23: stubbed, or a sick day with an overlap reaches for a real
-    // Supabase client and times the file out.
+    // database client and times the file out.
     mock(async () => undefined)
   );
 }

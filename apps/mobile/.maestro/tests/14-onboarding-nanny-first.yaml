@@ -28,8 +28,8 @@
 # SIGN-UP NOTE — the parent account is seeded CONFIRMED via the admin API
 # rather than registered through `register-screen`. `auth.signUp` navigates
 # nowhere and there is no check-your-inbox screen anywhere in the app, so
-# whether a fresh registration lands in a session depends entirely on the local
-# Supabase project's confirmation setting. Seeding removes that coin flip. The
+# whether a fresh registration lands in a session depends entirely on the
+# server's email-verification setting (Better Auth `requireEmailVerification`). Seeding removes that coin flip. The
 # register screen's own testIDs (`register-email`, `register-password`,
 # `register-submit`) are exercised by nothing today.
 appId: com.jetto.steadily.nanny

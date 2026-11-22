@@ -1,108 +1,116 @@
 /**
- * Abstract base repository implementing common CRUD operations against Supabase.
+ * Abstract base repository implementing common CRUD operations on D1 (Drizzle).
+ * Mirrors apps/api/src/shared/repositories/baseRepository.ts (trimmed).
  *
- * All reads/writes go through the SERVICE-ROLE client (`supabaseService`), which
- * bypasses Row-Level Security — this code is server-side only and enforces
- * ownership in the service layer, never by exposing the service key to clients.
+ * The constructor takes the Drizzle TABLE OBJECT (not a name string); the second
+ * generic keeps column typing for subclass queries on `this.table`:
  *
- * Domain repositories extend this and add table-specific queries:
- *
- *   export class WidgetRepository extends BaseRepository<Widget> {
- *     constructor() { super('widgets'); }
- *     async findByOwnerId(ownerId: string): Promise<Widget[]> {
- *       const { data, error } = await supabaseService
- *         .from(this.table).select('*').eq('owner_id', ownerId);
- *       if (error) throw new DatabaseError('Failed to list widgets', 'DATABASE_ERROR', { ownerId });
- *       return data ?? [];
- *     }
+ *   import { widgets } from '../../../db/schema';
+ *   export class WidgetRepository extends BaseRepository<Widget, typeof widgets> {
+ *     constructor() { super(widgets); }
  *   }
+ *
+ * There is no RLS on D1: every query runs with full access, so ownership is
+ * enforced in the SERVICE layer. Every failure is a `DatabaseError` whose
+ * `cause` is the driver error, so `mapDbError(err)` (src/db/errors.ts) works on it.
  */
-import { supabaseService } from '../../config/supabase';
+import { and, eq, getTableColumns, getTableName } from 'drizzle-orm';
+import type { SQLiteColumn, SQLiteTable } from 'drizzle-orm/sqlite-core';
+import { db } from '../../db/client';
+import { mapDbError } from '../../db/errors';
 import { DatabaseError } from '../../errors';
 
-export abstract class BaseRepository<T> {
-  protected table: string;
+/** Any Drizzle table with an `id` primary-key column. */
+export type TableWithId = SQLiteTable & { id: SQLiteColumn };
 
-  constructor(tableName: string) {
-    this.table = tableName;
+export abstract class BaseRepository<T, TTable extends TableWithId = TableWithId> {
+  protected table: TTable;
+  protected tableName: string;
+
+  constructor(table: TTable) {
+    this.table = table;
+    this.tableName = getTableName(table);
   }
 
-  /** Find a record by its ID. Returns null if not found. */
+  protected dbError(message: string, err: unknown, metadata: Record<string, unknown>) {
+    const error = new DatabaseError(`${message} ${this.tableName}`, 'DATABASE_ERROR', {
+      ...metadata,
+      details: err instanceof Error ? err.message : String(err),
+      ...(mapDbError(err) ?? {}),
+    });
+    error.cause = err;
+    return error;
+  }
+
   async findById(id: string): Promise<T | null> {
-    const { data, error } = await supabaseService
-      .from(this.table)
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
-
-    if (error)
-      throw new DatabaseError(`Failed to find ${this.table} by id`, 'DATABASE_ERROR', {
-        id,
-        operation: 'findById',
-      });
-    return data;
-  }
-
-  /** Find all records, optionally filtered by equality on key/value pairs. */
-  async findAll(filters?: Record<string, unknown>): Promise<T[]> {
-    let query = supabaseService.from(this.table).select('*');
-    if (filters) {
-      for (const [key, value] of Object.entries(filters)) {
-        query = query.eq(key, value);
-      }
+    try {
+      const rows = await db
+        .select()
+        .from(this.table as SQLiteTable)
+        .where(eq(this.table.id, id))
+        .limit(1);
+      return (rows[0] as T | undefined) ?? null;
+    } catch (err) {
+      throw this.dbError('Failed to find by id', err, { id, operation: 'findById' });
     }
-    const { data, error } = await query;
-    if (error)
-      throw new DatabaseError(`Failed to list ${this.table}`, 'DATABASE_ERROR', {
-        operation: 'findAll',
-      });
-    return data ?? [];
   }
 
-  /** Create a new record and return it. */
+  /** All filters AND-ed; no filters = no WHERE. */
+  async findAll(filters?: Record<string, unknown>): Promise<T[]> {
+    try {
+      const columns = getTableColumns(this.table);
+      const conditions = Object.entries(filters ?? {}).map(([key, value]) => {
+        const column = columns[key];
+        if (!column) throw new Error(`Unknown column ${key}`);
+        return eq(column, value);
+      });
+      const rows = await db
+        .select()
+        .from(this.table as SQLiteTable)
+        .where(and(...conditions));
+      return rows as T[];
+    } catch (err) {
+      throw this.dbError('Failed to list', err, { operation: 'findAll' });
+    }
+  }
+
   async create(data: Partial<T>): Promise<T> {
-    const { data: created, error } = await supabaseService
-      .from(this.table)
-      // biome-ignore lint/suspicious/noExplicitAny: generic base class; callers provide type safety
-      .insert(data as any)
-      .select()
-      .single();
-
-    if (error)
-      throw new DatabaseError(`Failed to create ${this.table}`, 'DATABASE_ERROR', {
-        operation: 'create',
-        details: error.message,
-        code: error.code,
-      });
-    return created;
+    try {
+      const rows = await db
+        .insert(this.table as SQLiteTable)
+        .values(data as Record<string, unknown>)
+        .returning();
+      return rows[0] as T;
+    } catch (err) {
+      throw this.dbError('Failed to create', err, { operation: 'create' });
+    }
   }
 
-  /** Update a record by ID and return the updated row. */
+  /** Updating a missing id throws (zero rows is an error, not null). */
   async update(id: string, data: Partial<T>): Promise<T> {
-    const { data: updated, error } = await supabaseService
-      .from(this.table)
-      // biome-ignore lint/suspicious/noExplicitAny: generic base class; callers provide type safety
-      .update(data as any)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error)
-      throw new DatabaseError(`Failed to update ${this.table}`, 'DATABASE_ERROR', {
+    let rows: unknown[];
+    try {
+      rows = await db
+        .update(this.table as SQLiteTable)
+        .set(data as Record<string, unknown>)
+        .where(eq(this.table.id, id))
+        .returning();
+    } catch (err) {
+      throw this.dbError('Failed to update', err, { id, operation: 'update' });
+    }
+    if (!rows[0])
+      throw this.dbError('Failed to update', new Error('No row with that id'), {
         id,
         operation: 'update',
       });
-    return updated;
+    return rows[0] as T;
   }
 
-  /** Delete a record by ID. */
   async delete(id: string): Promise<void> {
-    const { error } = await supabaseService.from(this.table).delete().eq('id', id);
-
-    if (error)
-      throw new DatabaseError(`Failed to delete ${this.table}`, 'DATABASE_ERROR', {
-        id,
-        operation: 'delete',
-      });
+    try {
+      await db.delete(this.table as SQLiteTable).where(eq(this.table.id, id));
+    } catch (err) {
+      throw this.dbError('Failed to delete', err, { id, operation: 'delete' });
+    }
   }
 }

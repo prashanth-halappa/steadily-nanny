@@ -1,7 +1,7 @@
 /**
  * Child-commitment repository — data access for the `child_commitments`
  * table (a child's fixed weekly life: preschool, school, activities, naps —
- * see `supabase/migrations/010_children.sql`'s header comment). Extends
+ * the hours care is NOT needed; `childCommitments` in db/schema/child.ts). Extends
  * BaseRepository for standard CRUD and adds the household/child list reads
  * `childCommitmentQueryService` and `coverageGapService` need. Runs on the
  * single D1 handle, so membership/role authorization is

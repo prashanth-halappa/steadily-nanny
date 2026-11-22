@@ -3,7 +3,7 @@
  * multi-row inserts are split. `size` is items per statement: 90 for an id
  * list (leaves room for the other filters), or `floor(90 / columns)` for rows.
  *
- * @module domains/schedule/repositories/chunk
+ * @module db/chunk
  */
 export function chunk<T>(items: T[], size = 90): T[][] {
   const out: T[][] = [];

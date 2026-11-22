@@ -156,7 +156,7 @@ describe('runIntegrityCheckJob', () => {
 /**
  * The memberless-household sweep rides along here rather than in a job of its
  * own: a household can be orphaned by paths that never touch
- * `userService.deleteUser` — a Supabase dashboard delete of the last member,
+ * `userService.deleteUser` — a direct database delete of the last member,
  * which is exactly what happened in production — and this is already the
  * daily "is the data still sane" pass.
  */

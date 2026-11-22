@@ -29,7 +29,7 @@
  *    `:householdId/...`, now that more `:householdId` routes exist.
  *
  * WHAT THIS DOES NOT PROVE:
- *  - Real Supabase JWT verification (`requireAuth` is stubbed) or the role
+ *  - Real Better Auth session verification (`requireAuth` is stubbed) or the role
  *    gate (owner/parent), which lives in the mocked command service.
  */
 
@@ -119,8 +119,8 @@ beforeAll(async () => {
       req.user = { id: AUTH_USER_ID };
       next();
     },
-    validateSupabaseToken: mock((_req: any, _res: any, next: any) => next()),
-    extractBearerToken: mock(() => null),
+    validateSession: mock((_req: any, _res: any, next: any) => next()),
+    resolveSessionUser: mock(async () => null),
   }));
 
   mock.module(

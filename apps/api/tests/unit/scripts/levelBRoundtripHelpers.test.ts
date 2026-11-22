@@ -2,7 +2,7 @@
  * @module tests/unit/scripts/levelBRoundtripHelpers.test
  * Pure helpers pulled out of scripts/level-b-roundtrip.ts's G4 (concurrent
  * accept serialisation) step, so the race-outcome logic can be unit tested
- * without a live Supabase project. The script itself only exercises these
+ * without a live API and database. The script itself only exercises these
  * against real HTTP/DB responses — see the script's own header for what
  * remains unverified outside a live testbed.
  */
@@ -96,7 +96,7 @@ describe('eventsMatchRaceOutcome', () => {
     expect(eventsMatchRaceOutcome(events, winner)).toBe(true);
   });
 
-  it('is false when the accept event is missing (029 crash-safety regression)', () => {
+  it('is false when the accept event is missing (crash-safety regression)', () => {
     const events: ShiftEventRow[] = [
       {
         event_type: 'shift_updated',

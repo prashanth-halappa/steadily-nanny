@@ -4,10 +4,10 @@
  * @module packages/shared-types/src/schemas/availability.schema
  *
  * Backing tables: `carer_availability`, `carer_time_off`
- * (supabase/migrations/011_availability.sql), `household_closures`
- * (035_household_closures.sql), plus the `timezone` / `week_starts_on`
- * columns on `user_profiles`. `AnonymisedBusyBlockSchema` additionally
- * mirrors the `v_busy_blocks` view (016_calendar_seams.sql) — read the
+ * (apps/api/src/db/schema/availability.ts), `household_closures`
+ * (household.ts), plus the `timezone` / `week_starts_on`
+ * columns on `user_profiles` (user.ts). `AnonymisedBusyBlockSchema` additionally
+ * mirrors the `v_busy_blocks` query (definition at the bottom of availability.ts) — read the
  * note on that export before touching it.
  */
 
@@ -270,12 +270,13 @@ export type HouseholdClosureListResponse = z.infer<
 // identifying data: EXACTLY `starts_at`, `ends_at`, `kind`. No household id,
 // no household name, no child, no note, no title.
 //
-// This mirrors the five-column discipline of the `v_busy_blocks` DB view
-// (supabase/migrations/016_calendar_seams.sql), which is itself commented
+// This mirrors the five-column discipline of the `v_busy_blocks` query
+// (apps/api/src/db/schema/availability.ts; run by the API's
+// busyBlockRepository), whose original view was commented
 // "CRITICAL: this view exposes NO household id, household name, child, or
 // note." Adding a field here is a PRIVACY REGRESSION — do not do it without
-// re-reading that view's comment block first, and without the same scrutiny
-// you'd give a change to the RLS policies themselves.
+// re-reading that definition first, and without the same scrutiny
+// you'd give a change to the repository's per-user scoping itself.
 
 /** The wire shape for "when is this carer unavailable" — exactly 3 fields, on purpose. */
 export const AnonymisedBusyBlockSchema = z.object({

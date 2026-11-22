@@ -3,7 +3,7 @@
  * a flag on `carer_time_off`.
  * @module packages/shared-types/src/schemas/pto.schema
  *
- * Backing table: `pto_ledger` (supabase/migrations/043_pto_ledger.sql).
+ * Backing table: `pto_ledger` (apps/api/src/db/schema/pay.ts).
  *
  * `carer_time_off` deliberately carries no household reference
  * (`011_availability.sql`) — that absence is what makes cross-family

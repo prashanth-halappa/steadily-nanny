@@ -28,10 +28,7 @@ import type {
   UpdateProfileInput,
   UpsertProfileInput,
 } from '../../../schemas/user.schema';
-import {
-  invalidateResourceRelationshipCache,
-  invalidateUserTokenCache,
-} from '../../../utils/cache';
+import { invalidateResourceRelationshipCache } from '../../../utils/cache';
 // Every one of these is imported from its own MODULE, never from the domain
 // barrel: `domains/household` and `domains/pay` re-export services that
 // import `UserService` back, and pulling a barrel here would close that loop
@@ -104,8 +101,8 @@ export class UserService {
     userId: string,
     profileData: UpsertProfileInput
   ): Promise<UserProfile> {
-    // Undefined fields are skipped on both insert and conflict-update, the
-    // same as supabase-js dropping them from the JSON body.
+    // Undefined fields are skipped on both insert and conflict-update, so an
+    // omitted field never overwrites the stored value.
     const fields = {
       name: profileData.name,
       city: profileData.city,
@@ -198,7 +195,7 @@ export class UserService {
         { userId, dbError: (error as Error).message }
       );
     }
-    // supabase-js `.single()` errored on zero rows; keep that contract.
+    // Contract: zero rows is an error (throws), never a silent null.
     if (!data) {
       throw new DatabaseError(
         'Failed to update user profile',
@@ -238,8 +235,6 @@ export class UserService {
    */
   static async deleteUser(userId: string): Promise<void> {
     try {
-      invalidateUserTokenCache(userId);
-
       const memberRepo = new HouseholdMemberRepository();
       // Every status, `removed` included: a past membership is still a
       // household whose last row this deletion might be taking away.

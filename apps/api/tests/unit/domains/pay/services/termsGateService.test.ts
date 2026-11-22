@@ -8,7 +8,7 @@
  *
  * A stub repo is injected rather than mocked at module level: the constructor
  * takes `Pick<PayArrangementRepository, 'effectiveOn'>` precisely so this test
- * needs no Supabase client at all.
+ * needs no database client at all.
  */
 import { describe, expect, it, mock } from 'bun:test';
 import { TermsNotAgreedError } from '../../../../../src/domains/pay/errors/payErrors';

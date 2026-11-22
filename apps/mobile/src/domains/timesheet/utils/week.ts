@@ -3,7 +3,7 @@
  * Week math anchored on the HOUSEHOLD's own first day of the week —
  * `households.week_starts_on` (0=Sunday..6=Saturday, migration 075), matching
  * the DB's `timesheets.week_start` convention
- * (`supabase/migrations/017_time_tracking.sql`). There is no universal
+ * (`timesheets` in `apps/api/src/db/schema/timesheet.ts`). There is no universal
  * Monday here: a US household starts Sunday by onboarding default, a UK one
  * Monday, and Saturday is legal too.
  *

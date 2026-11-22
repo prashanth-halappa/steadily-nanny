@@ -54,10 +54,10 @@ beforeAll(async () => {
       req.user = { id: AUTH_USER_ID };
       next();
     },
-    validateSupabaseToken: mock(
-      (_req: unknown, _res: unknown, next: () => void) => next()
+    validateSession: mock((_req: unknown, _res: unknown, next: () => void) =>
+      next()
     ),
-    extractBearerToken: mock(() => null),
+    resolveSessionUser: mock(async () => null),
   }));
   mock.module(
     '../../../../../src/domains/timesheet/services/timesheetCommandService',

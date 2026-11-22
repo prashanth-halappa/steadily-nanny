@@ -8,6 +8,7 @@
   // compat dates >= 2025-04-01), which is what src/config/env.ts validates.
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  "routes": [{ "pattern": "api.nanny.getsteadily.app", "custom_domain": true }],
 
   "d1_databases": [
     {

@@ -41,12 +41,13 @@ import {
   type SQL,
   sql,
 } from 'drizzle-orm';
+import { chunk } from '../../../db/chunk';
 import { db } from '../../../db/client';
+import { insertIf } from '../../../db/insertIf';
 import { shiftLocalDate } from '../../../db/localDate';
 import { shiftChildren, shiftEvents, shifts } from '../../../db/schema';
 import { DatabaseError, ValidationError } from '../../../errors';
 import { BaseRepository } from '../../../shared/repositories/baseRepository';
-import { chunk } from '../../schedule/repositories/chunk';
 // S4b's clash-scan row shape lives with the sweep-line that consumes it, not
 // here — this repository only produces rows shaped for it.
 import type { ClashScanShift } from '../../schedule/utils/crossHouseholdClashes';
@@ -63,13 +64,12 @@ import {
 } from '../errors/shiftErrors';
 import {
   EXTRA_WINDOW_UNIQUE_INDEX,
-  insertIf,
   isCarerWindowOverlap,
   isoInstant,
   isUniqueViolationOn,
 } from '../utils/carerWindowOverlap';
 
-/** A shift joined with its `shift_children` rows — the shape the old Supabase nested select (`*, shift_children(*)`) returned. */
+/** A shift joined with its `shift_children` rows — each shift carries its `shift_children` array inline (`*, shift_children(*)` shape). */
 export interface ShiftWithChildren extends Shift {
   shift_children: ShiftChild[];
 }

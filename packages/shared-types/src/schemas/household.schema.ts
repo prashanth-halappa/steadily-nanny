@@ -3,7 +3,7 @@
  * @module packages/shared-types/src/schemas/household.schema
  *
  * Backing tables: `households`, `household_members`, `household_invites`
- * (supabase/migrations/009_households.sql). This is the ONE place these
+ * (apps/api/src/db/schema/household.ts). This is the ONE place these
  * shapes are defined — the API validates requests against these, the mobile
  * app validates responses against these. Never redefine a `Household` type
  * in either app.
@@ -68,8 +68,8 @@ export type HouseholdApprovalScope =
 /**
  * household_members.role
  *
- * MATCHED PAIR: this const-map and the CHECK constraint in
- * supabase/migrations/009_households.sql only ever change together — one
+ * MATCHED PAIR: this const-map and the `household_members_role_check` CHECK
+ * in apps/api/src/db/schema/household.ts only ever change together — one
  * migration widens the constraint, the same change widens this map (the
  * planned path for agency roles; see TIER0-PLAN.md Phase 0-B).
  */

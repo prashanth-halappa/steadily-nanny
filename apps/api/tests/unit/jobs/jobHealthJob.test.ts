@@ -10,7 +10,6 @@
  * tested with every dependency injected.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
-import '../../helpers/stubDbClient';
 
 const { evaluateJobHealth, REGISTERED_JOBS } = await import(
   '../../../src/jobs/jobHealthJob'

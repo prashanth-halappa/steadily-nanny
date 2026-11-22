@@ -4,8 +4,9 @@
  * (keep under ~200 lines)
  *
  * Wiring order per route: auth (+ownership) → validate(input) → asyncHandler(controller).
- * The global `validateSupabaseToken` is already applied to the whole `/api/v1`
- * mount (see `templates/api/app.ts`), so these presets add the PER-ROUTE pieces:
+ * The global `validateSession` (apps/api/src/middlewares/auth.ts — resolves the
+ * Better Auth session cookie into `req.user`, or 401s) is already applied to the
+ * whole `/api/v1` mount, so these presets add the PER-ROUTE pieces:
  * `requireAuth` (asserts `req.user` is present) + Zod validation + an optional
  * resource-ownership check. Use `authWithValidation(schema)` when there's no
  * ownership concept (e.g. `create`, which can't check ownership before the row

@@ -2,8 +2,8 @@
  * Children and their recurring commitments (care hours, docs/12-NEED-COVERAGE.md).
  *
  * Generated from the Postgres end state (001–113) and hand-checked. Columns keep
- * their snake_case names as JS keys so rows have the same shape supabase-js
- * returned. uuid/timestamptz/date/time → TEXT; jsonb/arrays → JSON TEXT.
+ * their snake_case names as JS keys so rows keep their
+ * wire shape. uuid/timestamptz/date/time → TEXT; jsonb/arrays → JSON TEXT.
  *
  * @module db/schema/child
  */

@@ -94,7 +94,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
 
     /**
      * A sign-in just succeeded: fetch the session the cookie now carries and
-     * apply it. Replaces Supabase's SIGNED_IN event.
+     * apply it. Runs after every successful sign-in / sign-up call.
      */
     const completeSignIn = async (): Promise<boolean> => {
       const { data, error } = await authClient.getSession();
@@ -388,7 +388,7 @@ export const useAuthStore = createPersistedStore<AuthState>(
         const cookie = await authClient.getCookie();
         if (!cookie) {
           // Nothing stored — also catches a pre-Better-Auth install whose
-          // persisted Supabase session is now meaningless.
+          // persisted pre-migration session is now meaningless.
           clearLocalSession();
           set({ isInitialized: true });
           return;

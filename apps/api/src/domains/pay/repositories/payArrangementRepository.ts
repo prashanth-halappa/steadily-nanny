@@ -1,6 +1,6 @@
 /**
  * Pay arrangement repository — data access for the append-only
- * `pay_arrangements` table (supabase/migrations/041_pay_arrangements.sql).
+ * `pay_arrangements` table (`payArrangements` in db/schema/pay.ts).
  * Extends BaseRepository for `create`/`findById` and adds the two queries the
  * domain needs. D1 has no RLS: authorization lives in the SERVICE layer,
  * never here (docs/11-MONEY.md §9).

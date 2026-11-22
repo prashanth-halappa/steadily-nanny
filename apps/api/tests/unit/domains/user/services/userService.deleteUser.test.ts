@@ -118,13 +118,9 @@ beforeAll(async () => {
 
   // The ownership cache holds `(user, resource)` for an hour and nothing
   // invalidates it on a membership change (GOLDEN-FIXES #32), so the flip has
-  // to say so out loud. Only the two invalidators this module uses are
+  // to say so out loud. Only the invalidator this module uses is
   // stubbed; nothing else here reads the cache.
   mock.module('../../../../../src/utils/cache', () => ({
-    invalidateUserTokenCache: mock((userId: string) => {
-      record('cache.invalidateUserToken', userId);
-      return 0;
-    }),
     invalidateResourceRelationshipCache: mock((resourceId: string) => {
       record('cache.invalidateRelationship', resourceId);
     }),

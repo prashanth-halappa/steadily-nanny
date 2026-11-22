@@ -36,7 +36,7 @@ export class HouseholdMemberRepository extends BaseRepository<
     super(householdMembers);
   }
 
-  /** One row matching `where`, or null (supabase-js `maybeSingle`). */
+  /** One row matching `where`, or null when none (never throws on zero rows). */
   private async findOne(
     where: SQL | undefined,
     operation: string,

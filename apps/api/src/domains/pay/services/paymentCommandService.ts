@@ -43,12 +43,12 @@
  * sum here and an insert there, so two parents tapping "Record payment" in
  * the same instant each saw `sum = 0` and both committed, settling the week at
  * twice its gross — with no edit path to take the second row back. The sum,
- * the refusal and the insert are now one `record_timesheet_payment` call
- * behind a `FOR UPDATE` lock on the week's timesheet row, which serialises
- * against concurrent payments AND against an in-flight approve or reopen. The
- * window is unreachable from a unit test (Supabase is mocked everywhere), so
- * the SQL's half of the contract is pinned as source by
- * `tests/unit/migration077PaymentAtomicInsert.test.ts`.
+ * the refusal and the insert are now ONE atomic `INSERT … SELECT … WHERE`
+ * statement (`PaymentRepository.recordForTimesheet`, the D1 replacement for
+ * the old `record_timesheet_payment` RPC): the over-gross sum is evaluated
+ * inside the same statement that inserts, so a concurrent payment cannot slip
+ * between them. That contract runs against real SQL in
+ * `tests/unit/domains/pay/repositories/paymentRepository.test.ts`.
  *
  * Gate 3 SURVIVES the move and is not redundant: it produces the correct 409
  * before any write, and keeps the approved-and-priced judgement in one place.

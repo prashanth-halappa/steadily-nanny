@@ -35,7 +35,7 @@
  *    app — mounting it here would transitively import every domain. The
  *    static-source check at the bottom is textual evidence the mount strings
  *    have not drifted, same compromise as the pay-domain test.
- *  - Anything about real Supabase JWT verification (`requireAuth` is stubbed)
+ *  - Anything about real Better Auth session verification (`requireAuth` is stubbed)
  *    or about membership authorization (it lives in the mocked service).
  */
 
@@ -77,8 +77,8 @@ beforeAll(async () => {
       req.user = { id: AUTH_USER_ID };
       next();
     },
-    validateSupabaseToken: mock((_req: any, _res: any, next: any) => next()),
-    extractBearerToken: mock(() => null),
+    validateSession: mock((_req: any, _res: any, next: any) => next()),
+    resolveSessionUser: mock(async () => null),
   }));
 
   mock.module(

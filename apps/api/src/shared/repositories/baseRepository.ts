@@ -2,8 +2,8 @@
  * Abstract base repository implementing common CRUD operations on D1 (Drizzle).
  * Uses parameter injection for testability — services can pass a mock repo.
  *
- * Migration from supabase-js: the constructor now takes the Drizzle TABLE
- * OBJECT instead of the table-name string, and an optional second generic
+ * Constructor contract: it takes the Drizzle TABLE
+ * OBJECT (not a table-name string), and an optional second generic
  * carries its type so subclass queries on `this.table` keep column typing:
  *
  *   import { shifts } from '../../../db/schema';
@@ -121,7 +121,7 @@ export abstract class BaseRepository<
     } catch (err) {
       throw this.dbError('Failed to update', err, { id, operation: 'update' });
     }
-    // supabase-js `.single()` errored on zero rows; keep that contract.
+    // Contract: updating a missing id throws (zero rows is an error, not null).
     if (!rows[0])
       throw this.dbError('Failed to update', new Error('No row with that id'), {
         id,

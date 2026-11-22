@@ -12,7 +12,7 @@
  * HERE, alongside this re-export.
  *
  * `ChildCommitmentSchema` and its Create/Update/List siblings back the
- * `child_commitments` table (`supabase/migrations/010_children.sql`) — flow
+ * `child_commitments` table (`childCommitments` in `db/schema/child.ts`) — flow
  * 1g ("Per-child coverage & gaps"), wired up by
  * `childCommitmentRepository`/`childCommitmentQueryService`/
  * `childCommitmentCommandService`/`childCommitmentRoutes`+`commitmentRoutes`

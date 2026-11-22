@@ -1,8 +1,8 @@
 /**
  * Cloudflare Cron Triggers → job runners.
  *
- * Replaces the pg_cron → pg_net → POST /api/jobs/* chain (supabase migrations
- * 026…105). Each trigger calls the SAME tracked job as the HTTP route (job_runs
+ * Replaces the pg_cron → pg_net → POST /api/jobs/* chain the API used
+ * before the move to Workers. Each trigger calls the SAME tracked job as the HTTP route (job_runs
  * row, Sentry, error-count semantics) directly — no HTTP hop, no job API key.
  * The cron strings here MUST match `triggers.crons` in wrangler.jsonc exactly.
  *

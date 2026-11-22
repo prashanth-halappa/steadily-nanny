@@ -2,8 +2,9 @@
  * When an unanswered ask stops being answerable (S1 · D-22 + D-47).
  *
  * Pure and synchronous on purpose: the deadline is computed ONCE, at ask time,
- * and stored on `shifts.cover_ask_expires_at`. Nothing recomputes it later —
- * see `supabase/migrations/088_cover_ask_expiry.sql` for the full why, and
+ * and stored on `shifts.cover_ask_expires_at`. Nothing recomputes it later (a
+ * later edit to the shift must not move a deadline already promised) — see
+ * `shifts_cover_ask_expiry_idx` in `db/schema/shift.ts`, and
  * `docs/design/attention-and-notifications.md` §5.2 for the worked failure a
  * derived deadline produces (a 21:00 Thursday ask for a 07:00 Friday shift
  * still `pending` at 07:00, with `shift_no_show` as the first signal).

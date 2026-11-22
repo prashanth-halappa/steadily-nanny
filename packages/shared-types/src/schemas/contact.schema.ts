@@ -4,7 +4,7 @@
  * @module packages/shared-types/src/schemas/contact.schema
  *
  * Backing columns: `user_profiles.phone`, `households.emergency_contact_phone`
- * (supabase/migrations/099_contact_fields.sql). Both are free text with no DB
+ * (apps/api/src/db/schema/user.ts, household.ts). Both are free text with no DB
  * CHECK, so this schema is the only gate either one has — and it is
  * deliberately a loose one.
  */

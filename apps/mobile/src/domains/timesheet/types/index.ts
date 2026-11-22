@@ -3,7 +3,7 @@
  *
  * Domain-facing re-export of the wire types. The actual shapes live next to
  * their Zod schemas in `src/api/endpoints/timeEntries.ts` and
- * `timesheets.ts` (LOCAL MIRRORS of `supabase/migrations/017_time_tracking.sql`
+ * `timesheets.ts` (LOCAL MIRRORS of `apps/api/src/db/schema/timesheet.ts`
  * pending `@steadily-nanny/shared-types/schemas/timesheet.schema` — see those
  * files' headers). Re-exporting here means once the shared schema lands,
  * only the two endpoint files change; every domain-internal import stays

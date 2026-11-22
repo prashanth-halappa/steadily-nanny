@@ -2,7 +2,7 @@
  * Pay arrangement acknowledgment + dissent wire contract (D-31, D-45).
  * @module packages/shared-types/src/schemas/payArrangementAck.schema
  *
- * Backing table: `pay_arrangement_acks` (supabase/migrations/081_pay_arrangement_acks.sql).
+ * Backing table: `pay_arrangement_acks` (apps/api/src/db/schema/pay.ts).
  *
  * Append-only, like every table in this domain: no update schema, no delete
  * — a change of mind is a NEW row for the NEXT arrangement version, never a

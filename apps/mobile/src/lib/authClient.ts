@@ -1,4 +1,4 @@
-// Installed globally before; supabase.ts used to pull it in. Keep it for `new URL()`.
+// URL polyfill: Hermes' `URL` is incomplete; `new URL()` below needs it.
 import 'react-native-url-polyfill/auto';
 import { expoClient } from '@better-auth/expo/client';
 import { createAuthClient } from 'better-auth/react';

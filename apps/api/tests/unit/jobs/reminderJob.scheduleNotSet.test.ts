@@ -7,7 +7,7 @@
  * know when she is working, and the builder is hard to find on its own.
  *
  * Every dependency is injected through `runReminderJob`'s parameters, so
- * nothing here touches Supabase. The candidate-set conditions that live in
+ * nothing here touches the database. The candidate-set conditions that live in
  * SQL (live household, active nanny, arrangement exists and is a day old, no
  * pattern ever) are covered in `reminderJob.scheduleNotSetSource.test.ts`.
  */

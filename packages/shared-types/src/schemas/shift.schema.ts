@@ -3,7 +3,7 @@
  * @module packages/shared-types/src/schemas/shift.schema
  *
  * Backing tables: `shifts`, `shift_children`, `shift_change_requests`,
- * `shift_events` (supabase/migrations/015_shifts.sql).
+ * `shift_events` (apps/api/src/db/schema/shift.ts).
  *
  * TIME MODEL: `starts_at` / `ends_at` are absolute UTC instants — the only
  * truth. `timezone` records the zone the shift was AUTHORED in, so the

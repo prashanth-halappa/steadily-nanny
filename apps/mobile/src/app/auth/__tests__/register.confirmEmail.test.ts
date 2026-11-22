@@ -2,7 +2,7 @@
  * @module app/auth/__tests__/register.confirmEmail
  *
  * A successful sign-up is not the same event as being signed in. With email
- * confirmation enabled, Supabase returns no error and no session; before this
+ * verification required, Better Auth's sign-up returns no error and no session; before this
  * branch existed the screen simply stopped — spinner off, no message, no
  * navigation — and the only feedback the person ever got was "Confirm your
  * email before signing in." on some later attempt.
@@ -12,13 +12,13 @@
  *
  * WHAT IT DOES NOT COVER, deliberately and worth knowing: the rendered swap.
  * The state change is driven from a promise continuation two microtasks deep
- * (the store awaits Supabase, then the caller awaits the store), and it lands
+ * (the store awaits the auth client, then the caller awaits the store), and it lands
  * outside the press's act() scope — `waitFor`, `findBy*` and an explicit
  * act() flush all failed to observe the re-render, while runtime logging
  * confirmed the component receives 'confirm-email' and calls the setter. The
  * OUTCOME half of the contract is properly covered by
  * `src/store/__tests__/auth.signUp.test.ts`, which exercises all three return
- * values against a mocked Supabase. This file pins the wiring between them.
+ * values against a mocked Better Auth client. This file pins the wiring between them.
  *
  * Source-text assertion, same technique as `button.disabled` and the
  * `SchedulePatternBanner` contrast tests, and for the same reason: the thing

@@ -3,7 +3,7 @@
  * travels with it, effective-dated per (household, carer).
  * @module packages/shared-types/src/schemas/payArrangement.schema
  *
- * Backing table: `pay_arrangements` (supabase/migrations/041_pay_arrangements.sql).
+ * Backing table: `pay_arrangements` (apps/api/src/db/schema/pay.ts).
  *
  * Money is integer minor units + a sibling ISO-4217 `currency` code, never a
  * float — see `docs/11-MONEY.md` §1. `rate_minor`, `bill_rate_minor`, and

@@ -1,6 +1,6 @@
 /**
  * Payment repository — data access for the append-only `payments` table
- * (supabase/migrations/067_payments.sql; `docs/11-MONEY.md` §1/§3/§8).
+ * (`payments` in db/schema/pay.ts; `docs/11-MONEY.md` §1/§3/§8).
  * Extends BaseRepository for `create`/`findById` and adds the two reads the
  * domain needs. Uses the service-role client, so it bypasses RLS entirely:
  * authorization lives in the SERVICE layer, never here (docs/11-MONEY.md §9),

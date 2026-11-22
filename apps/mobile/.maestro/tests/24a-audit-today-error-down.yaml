@@ -1,8 +1,9 @@
 # [audit-2026-08-17] Target C (C1) — with the API stopped, the nanny's Today
 # tab shows an ErrorState with retry (`today-tab-error`), never a feed
 # silently missing the clock-in card. Run AFTER the driving agent has killed
-# the local API dev server (same down-window as 23b — Supabase auth itself
-# stays up, so login still works).
+# the local API dev server (same down-window as 23b). NOTE: auth is now served
+# by that same API (Better Auth), so the login step below only passes if the
+# session is already established before the server goes down.
 appId: com.jetto.steadily.nanny
 tags:
   - audit-2026-08-17

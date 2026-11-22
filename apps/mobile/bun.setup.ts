@@ -514,7 +514,7 @@ mock.module('react-native-gesture-handler', () => ({
   BorderlessButton: View,
   FlatList: View,
   GestureHandlerRootView: View,
-  // Self-returning chain — same shape as the documented Supabase
+  // Self-returning chain — same shape as the documented chained
   // query-builder mock (docs/09-TESTING.md §4.1) — so any call order or
   // combination of builder methods resolves. The previous stub only named
   // `onBegin` (which nothing in this codebase even calls — the real caller

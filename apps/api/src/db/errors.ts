@@ -1,7 +1,7 @@
 /**
  * Classify a SQLite / D1 constraint failure — the replacement for matching
  * Postgres SQLSTATEs (`23505` unique, `23P01` exclusion, `23503` FK, `23514`
- * check) on a supabase-js error.
+ * check) the API used before the move to D1.
  *
  * Works on a raw bun:sqlite error, a D1 error (`D1_ERROR: … : SQLITE_CONSTRAINT`)
  * and a drizzle `DrizzleQueryError` (whose `cause` holds the driver error) —
