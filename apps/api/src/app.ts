@@ -1,14 +1,16 @@
 // Validate environment configuration at startup (fail-fast). MUST be first.
 import './config/env';
 
+import { toNodeHandler } from 'better-auth/node';
 import compression from 'compression';
 import express from 'express';
 import helmet from 'helmet';
+import { auth } from './auth';
 import { APP_IDENTITY } from './config/app.identity';
 import helmetConfig from './config/helmetConfig';
 import Sentry from './config/sentry';
 import publicInviteRoutes from './domains/household/routes/publicInviteRoutes';
-import { validateSupabaseToken } from './middlewares/auth';
+import { validateSession } from './middlewares/auth';
 import { cacheControl } from './middlewares/cacheControl';
 import { errorHandler } from './middlewares/errorHandler';
 import { morganMiddleware } from './middlewares/logger';
@@ -36,6 +38,12 @@ app.use(cacheControl);
 // Correlation ID before anything logs.
 app.use(requestId);
 
+// Better Auth owns /api/auth/* end to end. It reads the raw request body
+// itself, so it MUST be mounted before express.json() (which would consume the
+// stream). Express 5 path syntax: `*splat` is the named wildcard. It has its own
+// per-IP rate limiting (memory store) and origin checks against trustedOrigins.
+app.all('/api/auth/*splat', toNodeHandler(auth));
+
 // Body parsing. The `verify` hook preserves the RAW body only for webhook routes
 // so HMAC signatures can be verified (parsed JSON can't be re-hashed).
 app.use(
@@ -53,24 +61,24 @@ app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 // HTTP access log → logger.
 app.use(morganMiddleware);
 
-// ── Routes that DON'T use Supabase token auth — mount BEFORE validateSupabaseToken.
+// ── Routes that DON'T use session auth — mount BEFORE validateSession.
 // Job routes: X-Job-Api-Key auth (external scheduler, no user).
 app.use('/api/jobs', jobRoutes);
-// App status: pre-auth (optional token resolved inside for per-user betaAllPro).
+// App status: pre-auth (optional session resolved inside for per-user betaAllPro).
 app.use('/api/app', appStatusRoutes);
 // The public terms page's two routes (3-O §6.2): the invite CODE is the bearer
 // secret, and the reader is a parent who has been sent a link and has no
-// account yet. Mounted before `validateSupabaseToken` below for that reason;
+// account yet. Mounted before `validateSession` below for that reason;
 // every other `/api/v1/household-invites/...` path falls through this router
 // to the authenticated stack, because an Express Router next()s on a miss.
 app.use('/api/v1/household-invites', publicInviteRoutes);
 // SETUP: mount any signed webhook routes here (their own shared secret, not a
-// Supabase token) — e.g. `app.use('/api/webhooks', myWebhookRoutes)`. The raw
+// session) — e.g. `app.use('/api/webhooks', myWebhookRoutes)`. The raw
 // body needed for signature verification is captured above for any
 // `/api/webhooks/*` path regardless of which webhook route handles it.
 
-// ── Supabase-authenticated API (order matters).
-app.use('/api/v1', validateSupabaseToken); // attaches req.user
+// ── Session-authenticated API (order matters).
+app.use('/api/v1', validateSession); // attaches req.user
 app.use('/api/v1', userRateLimiter); // after auth so the key is the user id
 app.use('/api/v1', (req, _res, next) => {
   if (req.user) {

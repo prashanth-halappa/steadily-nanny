@@ -24,10 +24,17 @@
  * @module scripts/seed-second-household
  */
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { createClient } from '@supabase/supabase-js';
-import { assertLocalSupabaseUrl } from './localSupabaseGuard';
+import { and, count, eq, sql } from 'drizzle-orm';
+import type { Db } from '../apps/api/src/db/client';
+import {
+  children,
+  householdMembers,
+  households,
+  shifts,
+  user,
+  userProfiles,
+} from '../apps/api/src/db/schema';
+import { ensureUser, getLocalDb } from './lib/localDb';
 
 const NANNY_EMAIL = 'nanny@steadilynanny.test';
 const OTHER_PARENT_EMAIL = 'otherparent@steadilynanny.test';
@@ -39,94 +46,17 @@ const TEST_PASSWORD = 'SteadilyTest!2026';
 const OTHER_HOUSEHOLD_NAME = 'LEAKCANARY the Cole household';
 const OTHER_CHILD_NAME = 'LEAKCANARY-Ada';
 
-function loadEnvFile(path: string): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const line of readFileSync(path, 'utf8').split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
-    if (eq === -1) continue;
-    const key = trimmed.slice(0, eq).trim();
-    let value = trimmed.slice(eq + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    env[key] = value;
-  }
-  return env;
+async function findUserByEmail(db: Db, email: string): Promise<string | null> {
+  const [row] = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(eq(user.email, email.toLowerCase()))
+    .limit(1);
+  return row?.id ?? null;
 }
 
-const repoRoot = join(import.meta.dir, '..');
-// An EXPORTED value wins over the file: `apps/api/.env` points at PRODUCTION
-// (GOLDEN-FIXES #26), so reading the file alone would make the loopback guard
-// below refuse every run. Export the local stack's values instead
-// (`supabase status -o env`).
-const fileEnv = loadEnvFile(join(repoRoot, 'apps/api/.env'));
-const url = process.env.SUPABASE_URL ?? fileEnv.SUPABASE_URL;
-const serviceKey =
-  process.env.SUPABASE_SERVICE_KEY ?? fileEnv.SUPABASE_SERVICE_KEY;
-
-if (!url || !serviceKey || serviceKey.startsWith('SET-ME')) {
-  console.error(
-    'Missing or placeholder SUPABASE_URL / SUPABASE_SERVICE_KEY — export them (see `supabase status -o env`) or set them in apps/api/.env'
-  );
-  process.exit(1);
-}
-assertLocalSupabaseUrl(url);
-
-const db = createClient(url, serviceKey, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
-
-async function findUserByEmail(email: string): Promise<string | null> {
-  for (let page = 1; page <= 10; page += 1) {
-    const { data, error } = await db.auth.admin.listUsers({
-      page,
-      perPage: 200,
-    });
-    if (error) throw error;
-    const hit = data.users.find(u => u.email === email);
-    if (hit) return hit.id;
-    if (data.users.length < 200) break;
-  }
-  return null;
-}
-
-async function ensureUser(email: string, name: string): Promise<string> {
-  const existing = await findUserByEmail(email);
-  let userId = existing;
-
-  if (!userId) {
-    const { data, error } = await db.auth.admin.createUser({
-      email,
-      password: TEST_PASSWORD,
-      email_confirm: true,
-    });
-    if (error) throw error;
-    userId = data.user.id;
-    console.log(`[created] ${email} -> ${userId}`);
-  } else {
-    console.log(`[skip]    ${email} already exists -> ${userId}`);
-  }
-
-  // Profile row must exist before any household FK references this user
-  // (GOLDEN-FIXES #7 — household tables target user_profiles, not auth.users).
-  const { error: profileError } = await db
-    .from('user_profiles')
-    .upsert(
-      { user_id: userId, name, timezone: 'Europe/London' },
-      { onConflict: 'user_id' }
-    );
-  if (profileError) throw profileError;
-
-  return userId;
-}
-
-async function main(): Promise<void> {
-  const nannyId = await findUserByEmail(NANNY_EMAIL);
+async function main(db: Db): Promise<void> {
+  const nannyId = await findUserByEmail(db, NANNY_EMAIL);
   if (!nannyId) {
     console.error(
       `${NANNY_EMAIL} not found. Run scripts/seed-test-users.ts first.`
@@ -134,28 +64,49 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const otherParentId = await ensureUser(OTHER_PARENT_EMAIL, 'Other Parent');
+  const { id: otherParentId, created } = await ensureUser(db, {
+    email: OTHER_PARENT_EMAIL,
+    password: TEST_PASSWORD,
+    name: 'Other Parent',
+  });
+  console.log(
+    created
+      ? `[created] ${OTHER_PARENT_EMAIL} -> ${otherParentId}`
+      : `[skip]    ${OTHER_PARENT_EMAIL} already exists -> ${otherParentId}`
+  );
+  // Profile row must exist before any household FK references this user
+  // (GOLDEN-FIXES #7 — household tables target user_profiles).
+  await db
+    .insert(userProfiles)
+    .values({
+      user_id: otherParentId,
+      name: 'Other Parent',
+      timezone: 'Europe/London',
+    })
+    .onConflictDoUpdate({
+      target: userProfiles.user_id,
+      set: { name: 'Other Parent', timezone: 'Europe/London' },
+    });
 
   // Household
-  const { data: existing } = await db
-    .from('households')
-    .select('id')
-    .eq('name', OTHER_HOUSEHOLD_NAME)
-    .maybeSingle();
+  const [existing] = await db
+    .select({ id: households.id })
+    .from(households)
+    .where(eq(households.name, OTHER_HOUSEHOLD_NAME))
+    .limit(1);
 
   let householdId = existing?.id ?? null;
   if (!householdId) {
-    const { data, error } = await db
-      .from('households')
-      .insert({
+    const [row] = await db
+      .insert(households)
+      .values({
         name: OTHER_HOUSEHOLD_NAME,
         timezone: 'Europe/London',
         created_by: otherParentId,
       })
-      .select('id')
-      .single();
-    if (error) throw error;
-    householdId = data.id;
+      .returning({ id: households.id });
+    if (!row) throw new Error('household insert returned no row');
+    householdId = row.id;
     console.log(
       `[created] household ${OTHER_HOUSEHOLD_NAME} -> ${householdId}`
     );
@@ -166,8 +117,9 @@ async function main(): Promise<void> {
   // Memberships: the other parent owns it, the SAME nanny also works here.
   // onConflict on (user_id, household_id) — the unique index that also makes
   // double-redeem safe in the API.
-  const { error: memberError } = await db.from('household_members').upsert(
-    [
+  await db
+    .insert(householdMembers)
+    .values([
       {
         household_id: householdId,
         user_id: otherParentId,
@@ -180,42 +132,48 @@ async function main(): Promise<void> {
         role: 'nanny',
         can_edit: false,
       },
-    ],
-    { onConflict: 'user_id,household_id' }
-  );
-  if (memberError) throw memberError;
+    ])
+    .onConflictDoUpdate({
+      target: [householdMembers.user_id, householdMembers.household_id],
+      set: { role: sql`excluded.role`, can_edit: sql`excluded.can_edit` },
+    });
 
   // A child, so there is something with a name that could leak.
-  const { data: child } = await db
-    .from('children')
-    .select('id')
-    .eq('household_id', householdId)
-    .eq('name', OTHER_CHILD_NAME)
-    .maybeSingle();
+  const [child] = await db
+    .select({ id: children.id })
+    .from(children)
+    .where(
+      and(
+        eq(children.household_id, householdId),
+        eq(children.name, OTHER_CHILD_NAME)
+      )
+    )
+    .limit(1);
   if (!child) {
-    const { error } = await db.from('children').insert({
+    await db.insert(children).values({
       household_id: householdId,
       name: OTHER_CHILD_NAME,
       birth_date: '2021-01-01',
     });
-    if (error) throw error;
   }
 
   // A confirmed shift, so the nanny has real busy time in this household.
-  // Fixed dates, not "now" — the assertions must be reproducible.
-  const startsAt = '2026-09-10T08:00:00+01:00';
-  const { data: shift } = await db
-    .from('shifts')
-    .select('id')
-    .eq('household_id', householdId)
-    .eq('starts_at', startsAt)
-    .maybeSingle();
+  // Fixed dates, not "now" — the assertions must be reproducible. D1 stores
+  // instants as toISOString() UTC text, so the +01:00 literals are normalised.
+  const startsAt = new Date('2026-09-10T08:00:00+01:00').toISOString();
+  const [shift] = await db
+    .select({ id: shifts.id })
+    .from(shifts)
+    .where(
+      and(eq(shifts.household_id, householdId), eq(shifts.starts_at, startsAt))
+    )
+    .limit(1);
   if (!shift) {
-    const { error } = await db.from('shifts').insert({
+    await db.insert(shifts).values({
       household_id: householdId,
       carer_id: nannyId,
       starts_at: startsAt,
-      ends_at: '2026-09-10T17:00:00+01:00',
+      ends_at: new Date('2026-09-10T17:00:00+01:00').toISOString(),
       timezone: 'Europe/London',
       local_date: '1900-01-01', // overwritten by the trigger; proves it fires
       kind: 'recurring',
@@ -223,19 +181,24 @@ async function main(): Promise<void> {
       origin: 'system_generated',
       created_by: otherParentId,
     });
-    if (error) throw error;
     console.log('[created] confirmed shift in the second household');
   } else {
     console.log('[skip]    shift already exists');
   }
 
-  const { count } = await db
-    .from('household_members')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', nannyId)
-    .eq('status', 'active');
+  const [membershipCount] = await db
+    .select({ n: count() })
+    .from(householdMembers)
+    .where(
+      and(
+        eq(householdMembers.user_id, nannyId),
+        eq(householdMembers.status, 'active')
+      )
+    );
 
-  console.log(`\nNanny now belongs to ${count} active household(s).`);
+  console.log(
+    `\nNanny now belongs to ${membershipCount?.n ?? 0} active household(s).`
+  );
   console.log(
     'Flow 8 (cross-family anonymity) is now meaningful rather than vacuous.'
   );
@@ -244,4 +207,9 @@ async function main(): Promise<void> {
   );
 }
 
-await main();
+const { db, dispose } = await getLocalDb();
+try {
+  await main(db);
+} finally {
+  await dispose();
+}

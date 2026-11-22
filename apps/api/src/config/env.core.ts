@@ -2,7 +2,7 @@
  * Core environment schema (framework-level).
  *
  * These are the variables the reusable API core needs regardless of product:
- * server config, Supabase, monitoring,
+ * server config, auth (Better Auth), monitoring,
  * jobs, and email.
  *
  * App-specific variables live in `app.env.ts` (the extension point). Both are
@@ -29,10 +29,27 @@ export const coreEnvSchema = z.object({
     .enum(['development', 'production', 'test'])
     .default('development'),
 
-  // ── Supabase (required) ─────────────────────────────────────────────────────
-  SUPABASE_URL: z.string().url('SUPABASE_URL must be a valid URL'),
-  SUPABASE_ANON_KEY: z.string().min(1, 'SUPABASE_ANON_KEY is required'),
-  SUPABASE_SERVICE_KEY: z.string().min(1, 'SUPABASE_SERVICE_KEY is required'),
+  // ── Better Auth (secret required) ────────────────────────────────────────────
+  // Signs session cookies/tokens. Rotating it signs everyone out.
+  BETTER_AUTH_SECRET: z
+    .string()
+    .min(32, 'BETTER_AUTH_SECRET must be at least 32 characters'),
+  // Public origin of this API; the auth routes live under `${it}/api/auth`.
+  BETTER_AUTH_URL: z.string().url().default('http://localhost:8787'),
+
+  // ── Social sign-in (optional; a provider is enabled only when its id is set) ─
+  // Apple: the Services ID (web flow, Android) and the iOS bundle id (native
+  // flow). Both are accepted as the id-token audience.
+  APPLE_CLIENT_ID: z.string().optional(),
+  APPLE_APP_BUNDLE_IDENTIFIER: z.string().optional(),
+  // Only the Android/web OAuth redirect flow needs this (a signed JWT made from
+  // the .p8 key, max 6 months). Native iOS id-token sign-in works without it.
+  APPLE_CLIENT_SECRET: z.string().optional(),
+  // Google: the web client id (also Android's serverClientId) and the iOS
+  // client id. Both are accepted as the id-token audience.
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_IOS_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
 
   // ── Monitoring (optional; production-recommended) ────────────────────────────
   // `.env.example` ships `SENTRY_DSN=` (empty) — bun loads that as "", which
@@ -73,9 +90,8 @@ export const productionRequiredCoreKeys = [
 export const coreTestEnv: CoreEnv = {
   PORT: 8080,
   NODE_ENV: 'test',
-  SUPABASE_URL: 'http://localhost:54321',
-  SUPABASE_ANON_KEY: 'test-anon-key',
-  SUPABASE_SERVICE_KEY: 'test-service-key',
+  BETTER_AUTH_SECRET: 'test-better-auth-secret-at-least-32-chars',
+  BETTER_AUTH_URL: 'http://localhost:8787',
   LOG_LEVEL: 'info',
   JOB_API_KEY: 'test-job-api-key',
   RESEND_API_KEY: 'test-resend-key',

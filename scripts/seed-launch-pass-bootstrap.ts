@@ -31,10 +31,16 @@
  * @module scripts/seed-launch-pass-bootstrap
  */
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { createClient } from '@supabase/supabase-js';
-import { assertLocalSupabaseUrl } from './localSupabaseGuard';
+import { and, eq, sql } from 'drizzle-orm';
+import type { Db } from '../apps/api/src/db/client';
+import {
+  childCommitments,
+  children,
+  householdMembers,
+  households,
+  user,
+} from '../apps/api/src/db/schema';
+import { getLocalDb } from './lib/localDb';
 
 const PARENT_EMAIL = 'parent@steadilynanny.test';
 const NANNY_EMAIL = 'nanny@steadilynanny.test';
@@ -46,120 +52,74 @@ const CURRENCY = 'GBP';
 const CHILD_NAME = 'Nia';
 const CARE_HOURS_LABEL = 'Care hours';
 
-function loadEnvFile(path: string): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const line of readFileSync(path, 'utf8').split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
-    if (eq === -1) continue;
-    const key = trimmed.slice(0, eq).trim();
-    let value = trimmed.slice(eq + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    env[key] = value;
-  }
-  return env;
-}
-
-const repoRoot = join(import.meta.dir, '..');
-// An EXPORTED value wins over the file: `apps/api/.env` points at PRODUCTION
-// (GOLDEN-FIXES #26), so reading the file alone would make the loopback guard
-// refuse every run. Export the local stack's values instead.
-const fileEnv = loadEnvFile(join(repoRoot, 'apps/api/.env'));
-const url = process.env.SUPABASE_URL ?? fileEnv.SUPABASE_URL;
-const serviceKey =
-  process.env.SUPABASE_SERVICE_KEY ?? fileEnv.SUPABASE_SERVICE_KEY;
-
-if (!url || !serviceKey || serviceKey.startsWith('SET-ME')) {
-  console.error(
-    'Missing or placeholder SUPABASE_URL / SUPABASE_SERVICE_KEY — export them (see `supabase status -o env`)'
-  );
-  process.exit(1);
-}
-assertLocalSupabaseUrl(url);
-
-const db = createClient(url, serviceKey, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
-
-async function findUserByEmail(email: string): Promise<string | null> {
-  for (let page = 1; page <= 10; page += 1) {
-    const { data, error } = await db.auth.admin.listUsers({
-      page,
-      perPage: 200,
-    });
-    if (error) throw error;
-    const hit = data.users.find(u => u.email === email);
-    if (hit) return hit.id;
-    if (data.users.length < 200) break;
-  }
-  return null;
-}
-
-async function requireUser(email: string): Promise<string> {
-  const id = await findUserByEmail(email);
-  if (!id) {
+async function requireUser(db: Db, email: string): Promise<string> {
+  const [row] = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(eq(user.email, email.toLowerCase()))
+    .limit(1);
+  if (!row) {
     console.error(`${email} not found. Run scripts/seed-test-users.ts first.`);
     process.exit(1);
   }
-  return id;
+  return row.id;
 }
 
 /** The named household, disambiguated the same way the fixture seeders do it:
  *  by name AND an active nanny membership. Matching on name alone would adopt
  *  a stray same-named household with no nanny and reproduce the `[skip]`. */
 async function ensureOurHousehold(
+  db: Db,
   parentId: string,
   nannyId: string
 ): Promise<string> {
-  const { data: candidates, error } = await db
-    .from('households')
-    .select('id')
-    .eq('name', HOUSEHOLD_NAME);
-  if (error) throw error;
+  const candidates = await db
+    .select({ id: households.id })
+    .from(households)
+    .where(eq(households.name, HOUSEHOLD_NAME));
 
-  for (const candidate of candidates ?? []) {
-    const { data: membership } = await db
-      .from('household_members')
-      .select('user_id')
-      .eq('household_id', candidate.id)
-      .eq('user_id', nannyId)
-      .eq('status', 'active')
-      .maybeSingle();
+  for (const candidate of candidates) {
+    const [membership] = await db
+      .select({ user_id: householdMembers.user_id })
+      .from(householdMembers)
+      .where(
+        and(
+          eq(householdMembers.household_id, candidate.id),
+          eq(householdMembers.user_id, nannyId),
+          eq(householdMembers.status, 'active')
+        )
+      )
+      .limit(1);
     if (membership) {
       console.log(`[skip]    "${HOUSEHOLD_NAME}" exists -> ${candidate.id}`);
       return candidate.id;
     }
   }
 
-  const { data: created, error: createError } = await db
-    .from('households')
-    .insert({
+  const [created] = await db
+    .insert(households)
+    .values({
       name: HOUSEHOLD_NAME,
       timezone: TIMEZONE,
       currency: CURRENCY,
       created_by: parentId,
     })
-    .select('id')
-    .single();
-  if (createError) throw createError;
+    .returning({ id: households.id });
+  if (!created) throw new Error('household insert returned no row');
   console.log(`[created] "${HOUSEHOLD_NAME}" -> ${created.id}`);
   return created.id;
 }
 
 async function ensureMembers(
+  db: Db,
   householdId: string,
   parentId: string,
   nannyId: string,
   coParentId: string
 ): Promise<void> {
-  const { error } = await db.from('household_members').upsert(
-    [
+  await db
+    .insert(householdMembers)
+    .values([
       {
         household_id: householdId,
         user_id: parentId,
@@ -188,34 +148,37 @@ async function ensureMembers(
         can_edit: true,
         status: 'active',
       },
-    ],
-    { onConflict: 'user_id,household_id' }
-  );
-  if (error) throw error;
+    ])
+    .onConflictDoUpdate({
+      target: [householdMembers.user_id, householdMembers.household_id],
+      set: {
+        role: sql`excluded.role`,
+        can_edit: sql`excluded.can_edit`,
+        status: sql`excluded.status`,
+      },
+    });
   console.log('[ok]      members: parent=owner, nanny=nanny, coparent=parent');
 }
 
-async function ensureChild(householdId: string): Promise<string> {
-  const { data: existing } = await db
-    .from('children')
-    .select('id')
-    .eq('household_id', householdId)
-    .limit(1)
-    .maybeSingle();
+async function ensureChild(db: Db, householdId: string): Promise<string> {
+  const [existing] = await db
+    .select({ id: children.id })
+    .from(children)
+    .where(eq(children.household_id, householdId))
+    .limit(1);
   if (existing) {
     console.log('[skip]    child exists');
     return existing.id;
   }
-  const { data: created, error } = await db
-    .from('children')
-    .insert({
+  const [created] = await db
+    .insert(children)
+    .values({
       household_id: householdId,
       name: CHILD_NAME,
       avatar_initial: CHILD_NAME.slice(0, 1),
     })
-    .select('id')
-    .single();
-  if (error) throw error;
+    .returning({ id: children.id });
+  if (!created) throw new Error('child insert returned no row');
   console.log(`[created] child ${CHILD_NAME}`);
   return created.id;
 }
@@ -235,20 +198,25 @@ async function ensureChild(householdId: string): Promise<string> {
  *  nanny"), and leaves room for flow 40 to WIDEN the window and produce a
  *  genuinely uncovered row. */
 async function ensureCareHours(
+  db: Db,
   householdId: string,
   childId: string
 ): Promise<void> {
-  const { data: existing } = await db
-    .from('child_commitments')
-    .select('id')
-    .eq('child_id', childId)
-    .eq('label', CARE_HOURS_LABEL)
-    .maybeSingle();
+  const [existing] = await db
+    .select({ id: childCommitments.id })
+    .from(childCommitments)
+    .where(
+      and(
+        eq(childCommitments.child_id, childId),
+        eq(childCommitments.label, CARE_HOURS_LABEL)
+      )
+    )
+    .limit(1);
   if (existing) {
     console.log('[skip]    care hours exist');
     return;
   }
-  const { error } = await db.from('child_commitments').insert({
+  await db.insert(childCommitments).values({
     child_id: childId,
     household_id: householdId,
     kind: 'other',
@@ -257,67 +225,69 @@ async function ensureCareHours(
     start_time: '09:00',
     end_time: '17:00',
   });
-  if (error) throw error;
   console.log(`[created] care hours ${CARE_HOURS_LABEL} weekday 09:00-17:00`);
 }
 
-/** Flow 20's fixture. A fresh `supabase db reset` drops it; the fixture seeders
+/** Flow 20's fixture. A fresh local DB reset drops it; the fixture seeders
  *  never touch it (different household), so it only needs creating once per
  *  reset. */
-async function ensureNannyDraftHousehold(nannyId: string): Promise<string> {
-  const { data: existing } = await db
-    .from('households')
-    .select('id')
-    .eq('state', 'draft')
-    .eq('created_by', nannyId)
-    .limit(1)
-    .maybeSingle();
+async function ensureNannyDraftHousehold(
+  db: Db,
+  nannyId: string
+): Promise<string> {
+  const [existing] = await db
+    .select({ id: households.id })
+    .from(households)
+    .where(
+      and(eq(households.state, 'draft'), eq(households.created_by, nannyId))
+    )
+    .limit(1);
   if (existing) {
     console.log(`[skip]    nanny draft household exists -> ${existing.id}`);
     return existing.id;
   }
 
-  const { data: created, error } = await db
-    .from('households')
-    .insert({
+  const [created] = await db
+    .insert(households)
+    .values({
       name: null,
       state: 'draft',
       timezone: TIMEZONE,
       currency: 'USD',
       created_by: nannyId,
     })
-    .select('id')
-    .single();
-  if (error) throw error;
+    .returning({ id: households.id });
+  if (!created) throw new Error('draft household insert returned no row');
 
-  const { error: memberError } = await db.from('household_members').upsert(
-    {
+  await db
+    .insert(householdMembers)
+    .values({
       household_id: created.id,
       user_id: nannyId,
       role: 'nanny',
       can_edit: false,
       status: 'active',
-    },
-    { onConflict: 'user_id,household_id' }
-  );
-  if (memberError) throw memberError;
+    })
+    .onConflictDoNothing({
+      target: [householdMembers.user_id, householdMembers.household_id],
+    });
 
   console.log(`[created] nanny draft household -> ${created.id}`);
   return created.id;
 }
 
-async function main(): Promise<void> {
-  const parentId = await requireUser(PARENT_EMAIL);
-  const nannyId = await requireUser(NANNY_EMAIL);
+async function main(db: Db): Promise<void> {
+  const parentId = await requireUser(db, PARENT_EMAIL);
+  const nannyId = await requireUser(db, NANNY_EMAIL);
   console.log(`[found]   parent ${PARENT_EMAIL} -> ${parentId}`);
   console.log(`[found]   nanny  ${NANNY_EMAIL} -> ${nannyId}`);
 
-  const coParentId = await requireUser(COPARENT_EMAIL);
-  const householdId = await ensureOurHousehold(parentId, nannyId);
-  await ensureMembers(householdId, parentId, nannyId, coParentId);
-  const childId = await ensureChild(householdId);
-  await ensureCareHours(householdId, childId);
-  const draftHouseholdId = await ensureNannyDraftHousehold(nannyId);
+  const coParentId = await requireUser(db, COPARENT_EMAIL);
+  const householdId = await ensureOurHousehold(db, parentId, nannyId);
+  await ensureMembers(db, householdId, parentId, nannyId, coParentId);
+  const childId = await ensureChild(db, householdId);
+  await ensureCareHours(db, householdId, childId);
+  const draftHouseholdId = await ensureNannyDraftHousehold(db, nannyId);
 
   // Same contract as seed-phase4-fixtures.ts: everything above the marker is
   // human-readable progress, everything below is eval-able KEY=VALUE.
@@ -326,7 +296,12 @@ async function main(): Promise<void> {
   console.log(`NANNY_DRAFT_HOUSEHOLD_ID=${draftHouseholdId}`);
 }
 
-main().catch(err => {
+const { db, dispose } = await getLocalDb();
+try {
+  await main(db);
+} catch (err) {
   console.error(err);
-  process.exit(1);
-});
+  process.exitCode = 1;
+} finally {
+  await dispose();
+}

@@ -5,21 +5,28 @@ import {
   productionRequiredCoreKeys,
 } from '../../../src/config/env.core';
 
+const SECRET = 'x'.repeat(32);
+
 describe('env.core schema', () => {
-  test('fails fast when a required var is missing', () => {
-    const result = coreEnvSchema.safeParse({
-      SUPABASE_ANON_KEY: 'a',
-      SUPABASE_SERVICE_KEY: 's',
-      // SUPABASE_URL missing
-    });
-    expect(result.success).toBe(false);
+  test('fails fast when BETTER_AUTH_SECRET is missing', () => {
+    expect(coreEnvSchema.safeParse({}).success).toBe(false);
+  });
+
+  test('rejects a BETTER_AUTH_SECRET shorter than 32 characters', () => {
+    expect(
+      coreEnvSchema.safeParse({ BETTER_AUTH_SECRET: 'short' }).success
+    ).toBe(false);
+  });
+
+  test('no longer requires any SUPABASE_* var', () => {
+    expect(
+      coreEnvSchema.safeParse({ BETTER_AUTH_SECRET: SECRET }).success
+    ).toBe(true);
   });
 
   test('treats an empty-string SENTRY_DSN as unset, not an invalid URL (D2: verbatim .env.example ships SENTRY_DSN=)', () => {
     const result = coreEnvSchema.safeParse({
-      SUPABASE_URL: 'http://localhost:54321',
-      SUPABASE_ANON_KEY: 'a',
-      SUPABASE_SERVICE_KEY: 's',
+      BETTER_AUTH_SECRET: SECRET,
       SENTRY_DSN: '',
     });
     expect(result.success).toBe(true);
@@ -28,15 +35,14 @@ describe('env.core schema', () => {
     }
   });
 
-  test('applies defaults for PORT', () => {
-    const result = coreEnvSchema.safeParse({
-      SUPABASE_URL: 'http://localhost:54321',
-      SUPABASE_ANON_KEY: 'a',
-      SUPABASE_SERVICE_KEY: 's',
-    });
+  test('applies defaults for PORT and BETTER_AUTH_URL; social ids stay optional', () => {
+    const result = coreEnvSchema.safeParse({ BETTER_AUTH_SECRET: SECRET });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.PORT).toBe(8080);
+      expect(result.data.BETTER_AUTH_URL).toBe('http://localhost:8787');
+      expect(result.data.APPLE_CLIENT_ID).toBeUndefined();
+      expect(result.data.GOOGLE_CLIENT_ID).toBeUndefined();
     }
   });
 
@@ -51,6 +57,6 @@ describe('env test short-circuit', () => {
     expect(isTest).toBe(true);
     expect(isProduction).toBe(false);
     expect(env.NODE_ENV).toBe('test');
-    expect(env.SUPABASE_URL).toBe('http://localhost:54321');
+    expect(env.BETTER_AUTH_SECRET.length).toBeGreaterThanOrEqual(32);
   });
 });

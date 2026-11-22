@@ -46,10 +46,17 @@
  * @module scripts/seed-s3-second-carer
  */
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { createClient } from '@supabase/supabase-js';
-import { assertLocalSupabaseUrl } from './localSupabaseGuard';
+import { and, desc, eq } from 'drizzle-orm';
+import type { Db } from '../apps/api/src/db/client';
+import {
+  householdMembers,
+  households,
+  payArrangements,
+  schedulePatternDays,
+  schedulePatterns,
+  user,
+} from '../apps/api/src/db/schema';
+import { getLocalDb } from './lib/localDb';
 
 const NANNY2_EMAIL = 'nanny2@steadilynanny.test';
 const NANNY_EMAIL = 'nanny@steadilynanny.test';
@@ -69,60 +76,19 @@ const NANNY1_PATTERN_DAYS = [1, 3, 5] as const; // Mon, Wed, Fri
 const NANNY1_PATTERN_START = '08:00';
 const NANNY1_PATTERN_END = '14:00';
 
-function loadEnvFile(path: string): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const line of readFileSync(path, 'utf8').split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
-    if (eq === -1) continue;
-    const key = trimmed.slice(0, eq).trim();
-    let value = trimmed.slice(eq + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    env[key] = value;
-  }
-  return env;
+async function findUserByEmail(db: Db, email: string): Promise<string | null> {
+  const [row] = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(eq(user.email, email.toLowerCase()))
+    .limit(1);
+  return row?.id ?? null;
 }
 
-const repoRoot = join(import.meta.dir, '..');
-const fileEnv = loadEnvFile(join(repoRoot, 'apps/api/.env'));
-const url = process.env.SUPABASE_URL ?? fileEnv.SUPABASE_URL;
-const serviceKey =
-  process.env.SUPABASE_SERVICE_KEY ?? fileEnv.SUPABASE_SERVICE_KEY;
-
-if (!url || !serviceKey || serviceKey.startsWith('SET-ME')) {
-  console.error('Missing SUPABASE_URL / SUPABASE_SERVICE_KEY — export them');
-  process.exit(1);
-}
-assertLocalSupabaseUrl(url);
-
-const db = createClient(url, serviceKey, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
-
-async function findUserByEmail(email: string): Promise<string | null> {
-  for (let page = 1; page <= 10; page += 1) {
-    const { data, error } = await db.auth.admin.listUsers({
-      page,
-      perPage: 200,
-    });
-    if (error) throw error;
-    const hit = data.users.find(u => u.email === email);
-    if (hit) return hit.id;
-    if (data.users.length < 200) break;
-  }
-  return null;
-}
-
-async function main(): Promise<void> {
-  const nanny2Id = await findUserByEmail(NANNY2_EMAIL);
-  const nannyId = await findUserByEmail(NANNY_EMAIL);
-  const parentId = await findUserByEmail(PARENT_EMAIL);
+async function main(db: Db): Promise<void> {
+  const nanny2Id = await findUserByEmail(db, NANNY2_EMAIL);
+  const nannyId = await findUserByEmail(db, NANNY_EMAIL);
+  const parentId = await findUserByEmail(db, PARENT_EMAIL);
   if (!nanny2Id || !nannyId || !parentId) {
     console.error('Cast missing. Run scripts/seed-test-users.ts first.');
     process.exit(1);
@@ -130,24 +96,35 @@ async function main(): Promise<void> {
 
   // Same disambiguation the fixture seeders use: name AND an active nanny
   // membership, so a stray same-named household is never adopted.
-  const { data: candidates, error } = await db
-    .from('households')
-    .select('id, currency, timezone')
-    .eq('name', HOUSEHOLD_NAME);
-  if (error) throw error;
+  const candidates = await db
+    .select({
+      id: households.id,
+      currency: households.currency,
+      timezone: households.timezone,
+    })
+    .from(households)
+    .where(eq(households.name, HOUSEHOLD_NAME));
+
+  const activeMember = async (hid: string, uid: string) => {
+    const [m] = await db
+      .select({ user_id: householdMembers.user_id })
+      .from(householdMembers)
+      .where(
+        and(
+          eq(householdMembers.household_id, hid),
+          eq(householdMembers.user_id, uid),
+          eq(householdMembers.status, 'active')
+        )
+      )
+      .limit(1);
+    return m;
+  };
 
   let householdId: string | null = null;
   let currency = 'GBP';
   let timezone = 'UTC';
-  for (const candidate of candidates ?? []) {
-    const { data: m } = await db
-      .from('household_members')
-      .select('user_id')
-      .eq('household_id', candidate.id)
-      .eq('user_id', nannyId)
-      .eq('status', 'active')
-      .maybeSingle();
-    if (m) {
+  for (const candidate of candidates) {
+    if (await activeMember(candidate.id, nannyId)) {
       householdId = candidate.id;
       currency = candidate.currency ?? 'GBP';
       timezone = candidate.timezone ?? 'UTC';
@@ -161,14 +138,7 @@ async function main(): Promise<void> {
 
   // The membership is flow 31's output. Refuse rather than create it: a
   // membership conjured here would leave flow 31 untested and still green.
-  const { data: membership } = await db
-    .from('household_members')
-    .select('user_id')
-    .eq('household_id', householdId)
-    .eq('user_id', nanny2Id)
-    .eq('status', 'active')
-    .maybeSingle();
-  if (!membership) {
+  if (!(await activeMember(householdId, nanny2Id))) {
     console.error(
       `${NANNY2_EMAIL} is not an active member of "${HOUSEHOLD_NAME}". ` +
         'Run tests/31-second-nanny-joins.yaml first — this script will not ' +
@@ -177,23 +147,26 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const { data: existing } = await db
-    .from('pay_arrangements')
-    .select('id, rate_minor')
-    .eq('household_id', householdId)
-    .eq('carer_id', nanny2Id)
-    .order('valid_from', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  const [existing] = await db
+    .select({ id: payArrangements.id, rate_minor: payArrangements.rate_minor })
+    .from(payArrangements)
+    .where(
+      and(
+        eq(payArrangements.household_id, householdId),
+        eq(payArrangements.carer_id, nanny2Id)
+      )
+    )
+    .orderBy(desc(payArrangements.valid_from))
+    .limit(1);
 
   if (existing) {
     console.log(
       `[skip]    nanny2 arrangement exists -> ${existing.id} (${existing.rate_minor} minor)`
     );
   } else {
-    const { data: created, error: insertError } = await db
-      .from('pay_arrangements')
-      .insert({
+    const [created] = await db
+      .insert(payArrangements)
+      .values({
         household_id: householdId,
         carer_id: nanny2Id,
         rate_minor: NANNY2_RATE_MINOR,
@@ -202,11 +175,9 @@ async function main(): Promise<void> {
         carer_display_name: NANNY2_DISPLAY_NAME,
         created_by: parentId,
       })
-      .select('id')
-      .single();
-    if (insertError) throw insertError;
+      .returning({ id: payArrangements.id });
     console.log(
-      `[created] nanny2 arrangement -> ${created.id} (${NANNY2_RATE_MINOR} minor ${currency})`
+      `[created] nanny2 arrangement -> ${created?.id} (${NANNY2_RATE_MINOR} minor ${currency})`
     );
   }
 
@@ -216,13 +187,17 @@ async function main(): Promise<void> {
   // this script (or a prior flow 21/25/33 pass against this SAME household)
   // never collides with it or leaves a duplicate for `resolveActivePattern`
   // to disambiguate.
-  const { data: existingPattern } = await db
-    .from('schedule_patterns')
-    .select('id')
-    .eq('household_id', householdId)
-    .eq('carer_id', nannyId)
-    .eq('status', 'accepted')
-    .maybeSingle();
+  const [existingPattern] = await db
+    .select({ id: schedulePatterns.id })
+    .from(schedulePatterns)
+    .where(
+      and(
+        eq(schedulePatterns.household_id, householdId),
+        eq(schedulePatterns.carer_id, nannyId),
+        eq(schedulePatterns.status, 'accepted')
+      )
+    )
+    .limit(1);
 
   let nanny1PatternId: string;
   if (existingPattern) {
@@ -231,9 +206,10 @@ async function main(): Promise<void> {
       `[skip]    nanny1 accepted pattern exists -> ${nanny1PatternId}`
     );
   } else {
-    const { data: createdPattern, error: patternError } = await db
-      .from('schedule_patterns')
-      .insert({
+    const now = new Date().toISOString();
+    const [createdPattern] = await db
+      .insert(schedulePatterns)
+      .values({
         household_id: householdId,
         carer_id: nannyId,
         status: 'accepted',
@@ -241,17 +217,16 @@ async function main(): Promise<void> {
         dtstart: NANNY1_PATTERN_DTSTART,
         timezone,
         created_by: parentId,
-        sent_at: new Date().toISOString(),
-        responded_at: new Date().toISOString(),
+        sent_at: now,
+        responded_at: now,
       })
-      .select('id')
-      .single();
-    if (patternError) throw patternError;
+      .returning({ id: schedulePatterns.id });
+    if (!createdPattern) throw new Error('pattern insert returned no row');
     nanny1PatternId = createdPattern.id;
 
     // Written straight into `schedule_pattern_days` (see module header for
     // why: no screen this flow reads needs a materialised `shifts` row).
-    const { error: daysError } = await db.from('schedule_pattern_days').insert(
+    await db.insert(schedulePatternDays).values(
       NANNY1_PATTERN_DAYS.map(weekday => ({
         pattern_id: nanny1PatternId,
         weekday,
@@ -259,7 +234,6 @@ async function main(): Promise<void> {
         end_time: NANNY1_PATTERN_END,
       }))
     );
-    if (daysError) throw daysError;
     console.log(
       `[created] nanny1 accepted pattern -> ${nanny1PatternId} ` +
         `(Mon/Wed/Fri ${NANNY1_PATTERN_START}-${NANNY1_PATTERN_END})`
@@ -275,7 +249,12 @@ async function main(): Promise<void> {
   console.log(`S3_NANNY1_PATTERN_ID=${nanny1PatternId}`);
 }
 
-main().catch(err => {
+const { db, dispose } = await getLocalDb();
+try {
+  await main(db);
+} catch (err) {
   console.error(err);
-  process.exit(1);
-});
+  process.exitCode = 1;
+} finally {
+  await dispose();
+}

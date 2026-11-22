@@ -15,5 +15,14 @@
     "ctaOpen": "Open {{appName}}",
     "closing": "We're glad to have you with us.",
     "preheader": "Welcome to {{appName}} &mdash; here's how to get started."
+  },
+  "resetPassword": {
+    "subject": "Reset your {{appName}} password",
+    "preheader": "A link to choose a new {{appName}} password.",
+    "heading": "Choose a new password",
+    "intro": "Someone asked to reset the password for the {{appName}} account on this email address. The button below lets you choose a new one.",
+    "cta": "Choose a new password",
+    "expiry": "The link works once and expires in one hour.",
+    "ignore": "If you didn't ask for this, you can ignore this email. Your password stays the same."
   }
 }

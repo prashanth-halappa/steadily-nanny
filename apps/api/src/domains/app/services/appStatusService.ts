@@ -15,7 +15,10 @@ import type {
   AppStatusResponse,
   AppStatusValue,
 } from '@steadily-nanny/shared-types';
+import { eq } from 'drizzle-orm';
 import { supabaseService } from '../../../config/supabase';
+import { db } from '../../../db/client';
+import { user } from '../../../db/schema';
 import { logger } from '../../../middlewares/logger';
 import { cache, TTL } from '../../../utils/cache';
 
@@ -44,8 +47,12 @@ async function getUserBetaOverride(
   try {
     let resolvedEmail = email;
     if (!resolvedEmail) {
-      const { data } = await supabaseService.auth.admin.getUserById(userId);
-      resolvedEmail = data.user?.email ?? undefined;
+      const [row] = await db
+        .select({ email: user.email })
+        .from(user)
+        .where(eq(user.id, userId))
+        .limit(1);
+      resolvedEmail = row?.email;
     }
 
     let query = supabaseService

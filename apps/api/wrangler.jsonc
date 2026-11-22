@@ -29,9 +29,12 @@
   },
 
   // Secrets (set with `wrangler secret put <NAME>`; use .dev.vars locally):
-  //   BETTER_AUTH_SECRET
-  //   APPLE_CLIENT_ID, APPLE_CLIENT_SECRET (or key material), APPLE_APP_BUNDLE_IDENTIFIER
-  //   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+  //   BETTER_AUTH_SECRET     (required, >= 32 chars; rotating it signs everyone out)
+  //   APPLE_CLIENT_ID, APPLE_APP_BUNDLE_IDENTIFIER   (Apple on when CLIENT_ID set)
+  //   APPLE_CLIENT_SECRET    (optional: only the Android/web redirect flow needs it;
+  //                           a .p8-signed JWT that expires within 6 months)
+  //   GOOGLE_CLIENT_ID, GOOGLE_IOS_CLIENT_ID          (Google on when CLIENT_ID set)
+  //   GOOGLE_CLIENT_SECRET   (optional: id-token sign-in does not use it)
   //   RESEND_API_KEY, RESEND_WEBHOOK_SECRET
   //   JOB_API_KEY            (only for manual POST /api/jobs/*; cron needs no key)
   //   SENTRY_DSN

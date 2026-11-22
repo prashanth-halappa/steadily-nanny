@@ -6,4 +6,5 @@
 export * from './baseLayout';
 export * from './components';
 export * from './designTokens';
+export * from './resetPassword';
 export * from './welcome';

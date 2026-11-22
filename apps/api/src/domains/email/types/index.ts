@@ -67,3 +67,11 @@ export interface WelcomeEmailData {
   /** Recipient locale (falls back to the default). */
   locale?: string;
 }
+
+/** Reset-password email template data. */
+export interface ResetPasswordEmailData {
+  /** The link that opens the app's reset screen with the token. */
+  resetUrl: string;
+  /** Recipient locale (falls back to the default). */
+  locale?: string;
+}

@@ -64,10 +64,19 @@
  * @module scripts/seed-e2e-approval-fixtures
  */
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { createClient } from '@supabase/supabase-js';
-import { assertLocalSupabaseUrl } from './localSupabaseGuard';
+import { and, asc, eq, isNull, ne } from 'drizzle-orm';
+import type { Db } from '../apps/api/src/db/client';
+import {
+  householdMembers,
+  households,
+  payments,
+  shiftEvents,
+  shifts,
+  timeEntries,
+  timesheets,
+  user,
+} from '../apps/api/src/db/schema';
+import { getLocalDb } from './lib/localDb';
 
 const NANNY_EMAIL = 'nanny@steadilynanny.test';
 const PARENT_EMAIL = 'parent@steadilynanny.test';
@@ -106,60 +115,13 @@ const SEED_DEMOTED_SHIFT_LOCAL_DATE = '2026-01-08';
  *  editable (`status: 'submitted'`) for as long as that timesheet is. */
 const SEED_TIME_ENTRY_LOCAL_DATE = '2026-01-06';
 
-function loadEnvFile(path: string): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const line of readFileSync(path, 'utf8').split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
-    if (eq === -1) continue;
-    const key = trimmed.slice(0, eq).trim();
-    let value = trimmed.slice(eq + 1).trim();
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    env[key] = value;
-  }
-  return env;
-}
-
-const repoRoot = join(import.meta.dir, '..');
-// An EXPORTED value wins over the file: `apps/api/.env` points at PRODUCTION
-// (GOLDEN-FIXES #26), so reading the file alone would make the loopback guard
-// below refuse every run. Export the local stack's values instead
-// (`supabase status -o env`).
-const fileEnv = loadEnvFile(join(repoRoot, 'apps/api/.env'));
-const url = process.env.SUPABASE_URL ?? fileEnv.SUPABASE_URL;
-const serviceKey =
-  process.env.SUPABASE_SERVICE_KEY ?? fileEnv.SUPABASE_SERVICE_KEY;
-
-if (!url || !serviceKey || serviceKey.startsWith('SET-ME')) {
-  console.error(
-    'Missing or placeholder SUPABASE_URL / SUPABASE_SERVICE_KEY — export them (see `supabase status -o env`) or set them in apps/api/.env'
-  );
-  process.exit(1);
-}
-assertLocalSupabaseUrl(url);
-
-const db = createClient(url, serviceKey, {
-  auth: { persistSession: false, autoRefreshToken: false },
-});
-
-async function findUserByEmail(email: string): Promise<string | null> {
-  for (let page = 1; page <= 10; page += 1) {
-    const { data, error } = await db.auth.admin.listUsers({
-      page,
-      perPage: 200,
-    });
-    if (error) throw error;
-    const hit = data.users.find(u => u.email === email);
-    if (hit) return hit.id;
-    if (data.users.length < 200) break;
-  }
-  return null;
+async function findUserByEmail(db: Db, email: string): Promise<string | null> {
+  const [row] = await db
+    .select({ id: user.id })
+    .from(user)
+    .where(eq(user.email, email.toLowerCase()))
+    .limit(1);
+  return row?.id ?? null;
 }
 
 /**
@@ -230,28 +192,29 @@ function zonedWallTimeToUtcIso(
  * anything genuinely missing.
  */
 async function resetFixtures(
+  db: Db,
   householdId: string,
   nannyId: string,
   timezone: string
 ): Promise<void> {
-  const { data: timesheet } = await db
-    .from('timesheets')
-    .select('id')
-    .eq('household_id', householdId)
-    .eq('carer_id', nannyId)
-    .eq('week_start', SEED_TIMESHEET_WEEK_START)
-    .maybeSingle();
+  const [timesheet] = await db
+    .select({ id: timesheets.id })
+    .from(timesheets)
+    .where(
+      and(
+        eq(timesheets.household_id, householdId),
+        eq(timesheets.carer_id, nannyId),
+        eq(timesheets.week_start, SEED_TIMESHEET_WEEK_START)
+      )
+    )
+    .limit(1);
 
   if (timesheet) {
-    const { error: paymentsError } = await db
-      .from('payments')
-      .delete()
-      .eq('timesheet_id', timesheet.id);
-    if (paymentsError) throw paymentsError;
+    await db.delete(payments).where(eq(payments.timesheet_id, timesheet.id));
 
-    const { error: resetError } = await db
-      .from('timesheets')
-      .update({
+    await db
+      .update(timesheets)
+      .set({
         status: 'submitted',
         approved_by: null,
         approved_at: null,
@@ -261,27 +224,28 @@ async function resetFixtures(
         earnings_computed_at: null,
         gross_minor: null,
       })
-      .eq('id', timesheet.id);
-    if (resetError) throw resetError;
+      .where(eq(timesheets.id, timesheet.id));
   }
 
   // Week-thread messages are `shift_events` rows with `shift_id = null` and
   // `local_date = week_start` (weekThread.ts — there is no thread table), so
   // clearing them is what puts the query flows back at an empty thread.
-  const { error: threadError } = await db
-    .from('shift_events')
-    .delete()
-    .eq('household_id', householdId)
-    .eq('local_date', SEED_TIMESHEET_WEEK_START)
-    .is('shift_id', null);
-  if (threadError) throw threadError;
+  await db
+    .delete(shiftEvents)
+    .where(
+      and(
+        eq(shiftEvents.household_id, householdId),
+        eq(shiftEvents.local_date, SEED_TIMESHEET_WEEK_START),
+        isNull(shiftEvents.shift_id)
+      )
+    );
 
   // Times AND zone, not just the status: rows seeded before this script read
   // the household's timezone hold Europe/London instants, which render hours
   // off on screen and put flow 04's correction over the 16-hour cap.
-  const { error: entryError } = await db
-    .from('time_entries')
-    .update({
+  await db
+    .update(timeEntries)
+    .set({
       status: 'submitted',
       timezone,
       clock_in_at: zonedWallTimeToUtcIso(
@@ -295,17 +259,20 @@ async function resetFixtures(
         timezone
       ),
     })
-    .eq('household_id', householdId)
-    .eq('carer_id', nannyId)
-    .eq('local_date', SEED_TIME_ENTRY_LOCAL_DATE);
-  if (entryError) throw entryError;
+    .where(
+      and(
+        eq(timeEntries.household_id, householdId),
+        eq(timeEntries.carer_id, nannyId),
+        eq(timeEntries.local_date, SEED_TIME_ENTRY_LOCAL_DATE)
+      )
+    );
 
   // Flow 02 accepts the extra shift; flow 03 edits the confirmed one, which
   // demotes it AND bumps `sequence` and rewrites the times — so the times go
   // back too, not just the status.
-  const { error: extraError } = await db
-    .from('shifts')
-    .update({
+  await db
+    .update(shifts)
+    .set({
       status: 'pending',
       sequence: 0,
       origin: 'parent_proposed',
@@ -321,15 +288,18 @@ async function resetFixtures(
         timezone
       ),
     })
-    .eq('household_id', householdId)
-    .eq('carer_id', nannyId)
-    .eq('local_date', SEED_EXTRA_SHIFT_LOCAL_DATE)
-    .eq('kind', 'extra');
-  if (extraError) throw extraError;
+    .where(
+      and(
+        eq(shifts.household_id, householdId),
+        eq(shifts.carer_id, nannyId),
+        eq(shifts.local_date, SEED_EXTRA_SHIFT_LOCAL_DATE),
+        eq(shifts.kind, 'extra')
+      )
+    );
 
-  const { error: demotedError } = await db
-    .from('shifts')
-    .update({
+  await db
+    .update(shifts)
+    .set({
       status: 'confirmed',
       timezone,
       sequence: 0,
@@ -345,11 +315,14 @@ async function resetFixtures(
         timezone
       ),
     })
-    .eq('household_id', householdId)
-    .eq('carer_id', nannyId)
-    .eq('local_date', SEED_DEMOTED_SHIFT_LOCAL_DATE)
-    .eq('kind', 'cover');
-  if (demotedError) throw demotedError;
+    .where(
+      and(
+        eq(shifts.household_id, householdId),
+        eq(shifts.carer_id, nannyId),
+        eq(shifts.local_date, SEED_DEMOTED_SHIFT_LOCAL_DATE),
+        eq(shifts.kind, 'cover')
+      )
+    );
 
   console.log(
     `[reset]   seed week ${SEED_TIMESHEET_WEEK_START} -> submitted; ` +
@@ -358,15 +331,15 @@ async function resetFixtures(
   );
 }
 
-async function main(): Promise<void> {
-  const nannyId = await findUserByEmail(NANNY_EMAIL);
+async function main(db: Db): Promise<void> {
+  const nannyId = await findUserByEmail(db, NANNY_EMAIL);
   if (!nannyId) {
     console.error(
       `${NANNY_EMAIL} not found. Run scripts/seed-test-users.ts first.`
     );
     process.exit(1);
   }
-  const parentId = await findUserByEmail(PARENT_EMAIL);
+  const parentId = await findUserByEmail(db, PARENT_EMAIL);
   if (!parentId) {
     console.error(
       `${PARENT_EMAIL} not found. Run scripts/seed-test-users.ts first.`
@@ -376,22 +349,29 @@ async function main(): Promise<void> {
 
   // Disambiguate from the OTHER "Our household" (the solo "Tour Parent" one,
   // which has no nanny member) by requiring an ACTIVE nanny membership too.
-  const { data: candidateHouseholds, error: householdError } = await db
-    .from('households')
-    .select('id, name, timezone')
-    .eq('name', HOUSEHOLD_NAME);
-  if (householdError) throw householdError;
+  const candidateHouseholds = await db
+    .select({
+      id: households.id,
+      name: households.name,
+      timezone: households.timezone,
+    })
+    .from(households)
+    .where(eq(households.name, HOUSEHOLD_NAME));
 
   let householdId: string | null = null;
   let householdTimezone: string | null = null;
-  for (const candidate of candidateHouseholds ?? []) {
-    const { data: membership } = await db
-      .from('household_members')
-      .select('user_id')
-      .eq('household_id', candidate.id)
-      .eq('user_id', nannyId)
-      .eq('status', 'active')
-      .maybeSingle();
+  for (const candidate of candidateHouseholds) {
+    const [membership] = await db
+      .select({ user_id: householdMembers.user_id })
+      .from(householdMembers)
+      .where(
+        and(
+          eq(householdMembers.household_id, candidate.id),
+          eq(householdMembers.user_id, nannyId),
+          eq(householdMembers.status, 'active')
+        )
+      )
+      .limit(1);
     if (membership) {
       householdId = candidate.id;
       householdTimezone = candidate.timezone;
@@ -413,32 +393,39 @@ async function main(): Promise<void> {
   console.log(`[found]   parent ${PARENT_EMAIL} -> ${parentId}`);
 
   if (process.argv.includes('--reset')) {
-    await resetFixtures(householdId, nannyId, timezone);
+    await resetFixtures(db, householdId, nannyId, timezone);
   }
 
   // --- Fixture 1: a shift scheduled for TODAY -------------------------------
   const today = localDateOf(new Date(), timezone);
   // `local_date = today` is NOT a unique key — the nanny can hold several rows
   // there (this fixture's `extra`, plus any `cover` ask a Phase 4 flow seeded).
-  // `.maybeSingle()` ERRORS on multiple rows, and a `{ data }`-only destructure
+  // `maybeSingle()` ERRORS on multiple rows, and a `{ data }`-only destructure
   // swallows that error, yielding null and sending the code below down the
   // INSERT path, where it re-inserts a shift that already exists and dies on
   // `shifts_extra_window_unique` (23505). That is the same swallowed-error class
   // as the flow-08 defect, and it is what made `--reset` non-idempotent. So:
-  // order + limit(1) instead of an unwarranted uniqueness assumption, and
-  // surface the error rather than discarding it.
-  const { data: existingShifts, error: todayShiftError } = await db
-    .from('shifts')
-    .select('id, starts_at, ends_at, status')
-    .eq('household_id', householdId)
-    .eq('carer_id', nannyId)
-    .eq('local_date', today)
-    .eq('kind', 'extra')
-    .neq('status', 'cancelled')
-    .order('starts_at', { ascending: true })
+  // orderBy + limit(1) instead of an unwarranted uniqueness assumption, and
+  // let errors throw rather than discarding them.
+  const [existingShift] = await db
+    .select({
+      id: shifts.id,
+      starts_at: shifts.starts_at,
+      ends_at: shifts.ends_at,
+      status: shifts.status,
+    })
+    .from(shifts)
+    .where(
+      and(
+        eq(shifts.household_id, householdId),
+        eq(shifts.carer_id, nannyId),
+        eq(shifts.local_date, today),
+        eq(shifts.kind, 'extra'),
+        ne(shifts.status, 'cancelled')
+      )
+    )
+    .orderBy(asc(shifts.starts_at))
     .limit(1);
-  if (todayShiftError) throw todayShiftError;
-  const existingShift = existingShifts?.[0];
 
   let todayShiftId: string;
   if (existingShift) {
@@ -449,9 +436,9 @@ async function main(): Promise<void> {
   } else {
     const startsAt = zonedWallTimeToUtcIso(today, '08:00', timezone);
     const endsAt = zonedWallTimeToUtcIso(today, '17:00', timezone);
-    const { data: created, error } = await db
-      .from('shifts')
-      .insert({
+    const [created] = await db
+      .insert(shifts)
+      .values({
         household_id: householdId,
         carer_id: nannyId,
         starts_at: startsAt,
@@ -463,9 +450,8 @@ async function main(): Promise<void> {
         origin: 'system_generated',
         created_by: parentId,
       })
-      .select('id')
-      .single();
-    if (error) throw error;
+      .returning({ id: shifts.id });
+    if (!created) throw new Error('shifts insert returned no row');
     todayShiftId = created.id;
     console.log(
       `[created] confirmed shift for today (${today}, 08:00-17:00 ${timezone}) -> ${todayShiftId}`
@@ -473,13 +459,21 @@ async function main(): Promise<void> {
   }
 
   // --- Fixture 2: a `submitted` (not `approved`) timesheet -----------------
-  const { data: existingTimesheet } = await db
-    .from('timesheets')
-    .select('id, status, total_minutes')
-    .eq('household_id', householdId)
-    .eq('carer_id', nannyId)
-    .eq('week_start', SEED_TIMESHEET_WEEK_START)
-    .maybeSingle();
+  const [existingTimesheet] = await db
+    .select({
+      id: timesheets.id,
+      status: timesheets.status,
+      total_minutes: timesheets.total_minutes,
+    })
+    .from(timesheets)
+    .where(
+      and(
+        eq(timesheets.household_id, householdId),
+        eq(timesheets.carer_id, nannyId),
+        eq(timesheets.week_start, SEED_TIMESHEET_WEEK_START)
+      )
+    )
+    .limit(1);
 
   let submittedTimesheetId: string;
   if (existingTimesheet) {
@@ -495,9 +489,9 @@ async function main(): Promise<void> {
       );
     }
   } else {
-    const { data: created, error } = await db
-      .from('timesheets')
-      .insert({
+    const [created] = await db
+      .insert(timesheets)
+      .values({
         household_id: householdId,
         carer_id: nannyId,
         week_start: SEED_TIMESHEET_WEEK_START,
@@ -507,9 +501,8 @@ async function main(): Promise<void> {
         // display name is snapshotted at write time, never joined.
         carer_display_name: 'Test Nanny',
       })
-      .select('id')
-      .single();
-    if (error) throw error;
+      .returning({ id: timesheets.id });
+    if (!created) throw new Error('timesheets insert returned no row');
     submittedTimesheetId = created.id;
     console.log(
       `[created] submitted timesheet for week ${SEED_TIMESHEET_WEEK_START} ` +
@@ -520,14 +513,18 @@ async function main(): Promise<void> {
   // --- Fixture 3: EXTRA_SHIFT_ID — pending extra shift, assigned to nanny --
   // Maestro flow 02 (nanny-accept-extra-shift) deep-links straight to this
   // and taps Accept, mirroring the EXTRA_SHIFT_PROPOSED push route.
-  const { data: existingExtraShift } = await db
-    .from('shifts')
-    .select('id, status')
-    .eq('household_id', householdId)
-    .eq('carer_id', nannyId)
-    .eq('local_date', SEED_EXTRA_SHIFT_LOCAL_DATE)
-    .eq('kind', 'extra')
-    .maybeSingle();
+  const [existingExtraShift] = await db
+    .select({ id: shifts.id, status: shifts.status })
+    .from(shifts)
+    .where(
+      and(
+        eq(shifts.household_id, householdId),
+        eq(shifts.carer_id, nannyId),
+        eq(shifts.local_date, SEED_EXTRA_SHIFT_LOCAL_DATE),
+        eq(shifts.kind, 'extra')
+      )
+    )
+    .limit(1);
 
   let extraShiftId: string;
   if (existingExtraShift) {
@@ -553,9 +550,9 @@ async function main(): Promise<void> {
       '13:00',
       timezone
     );
-    const { data: created, error } = await db
-      .from('shifts')
-      .insert({
+    const [created] = await db
+      .insert(shifts)
+      .values({
         household_id: householdId,
         carer_id: nannyId,
         starts_at: startsAt,
@@ -568,9 +565,8 @@ async function main(): Promise<void> {
         sequence: 0,
         created_by: parentId,
       })
-      .select('id')
-      .single();
-    if (error) throw error;
+      .returning({ id: shifts.id });
+    if (!created) throw new Error('shifts insert returned no row');
     extraShiftId = created.id;
     console.log(
       `[created] pending extra shift (${SEED_EXTRA_SHIFT_LOCAL_DATE}, 08:00-13:00 ${timezone}) -> ${extraShiftId}`
@@ -582,14 +578,18 @@ async function main(): Promise<void> {
   // to pending + parent_proposed (migration 034), nanny leg re-confirms it.
   // `kind: 'cover'` (never `'extra'`) so the demoted row can only ever read
   // as "needs reconfirm", never "fresh proposal" — see the constant's doc.
-  const { data: existingDemotedShift } = await db
-    .from('shifts')
-    .select('id, status')
-    .eq('household_id', householdId)
-    .eq('carer_id', nannyId)
-    .eq('local_date', SEED_DEMOTED_SHIFT_LOCAL_DATE)
-    .eq('kind', 'cover')
-    .maybeSingle();
+  const [existingDemotedShift] = await db
+    .select({ id: shifts.id, status: shifts.status })
+    .from(shifts)
+    .where(
+      and(
+        eq(shifts.household_id, householdId),
+        eq(shifts.carer_id, nannyId),
+        eq(shifts.local_date, SEED_DEMOTED_SHIFT_LOCAL_DATE),
+        eq(shifts.kind, 'cover')
+      )
+    )
+    .limit(1);
 
   let demotedShiftId: string;
   if (existingDemotedShift) {
@@ -615,9 +615,9 @@ async function main(): Promise<void> {
       '17:00',
       timezone
     );
-    const { data: created, error } = await db
-      .from('shifts')
-      .insert({
+    const [created] = await db
+      .insert(shifts)
+      .values({
         household_id: householdId,
         carer_id: nannyId,
         starts_at: startsAt,
@@ -630,9 +630,8 @@ async function main(): Promise<void> {
         sequence: 0,
         created_by: parentId,
       })
-      .select('id')
-      .single();
-    if (error) throw error;
+      .returning({ id: shifts.id });
+    if (!created) throw new Error('shifts insert returned no row');
     demotedShiftId = created.id;
     console.log(
       `[created] confirmed shift (${SEED_DEMOTED_SHIFT_LOCAL_DATE}, 09:00-17:00 ${timezone}) -> ${demotedShiftId}`
@@ -645,13 +644,17 @@ async function main(): Promise<void> {
   // (see `isEntryEditable` in apps/mobile's timesheet/utils/entryEdited.ts)
   // and a timesheet week that isn't yet approved — both true for fixture 2
   // until flow 04's own parent leg approves it.
-  const { data: existingTimeEntry } = await db
-    .from('time_entries')
-    .select('id, status')
-    .eq('household_id', householdId)
-    .eq('carer_id', nannyId)
-    .eq('local_date', SEED_TIME_ENTRY_LOCAL_DATE)
-    .maybeSingle();
+  const [existingTimeEntry] = await db
+    .select({ id: timeEntries.id, status: timeEntries.status })
+    .from(timeEntries)
+    .where(
+      and(
+        eq(timeEntries.household_id, householdId),
+        eq(timeEntries.carer_id, nannyId),
+        eq(timeEntries.local_date, SEED_TIME_ENTRY_LOCAL_DATE)
+      )
+    )
+    .limit(1);
 
   let timeEntryId: string;
   if (existingTimeEntry) {
@@ -677,9 +680,9 @@ async function main(): Promise<void> {
       '17:00',
       timezone
     );
-    const { data: created, error } = await db
-      .from('time_entries')
-      .insert({
+    const [created] = await db
+      .insert(timeEntries)
+      .values({
         household_id: householdId,
         carer_id: nannyId,
         shift_id: null,
@@ -693,9 +696,8 @@ async function main(): Promise<void> {
         // 043's anonymity snapshot — NOT NULL since the column landed.
         carer_display_name: 'Test Nanny',
       })
-      .select('id')
-      .single();
-    if (error) throw error;
+      .returning({ id: timeEntries.id });
+    if (!created) throw new Error('time_entries insert returned no row');
     timeEntryId = created.id;
     console.log(
       `[created] submitted time entry (${SEED_TIME_ENTRY_LOCAL_DATE}, 09:00-17:00 ${timezone}) -> ${timeEntryId}`
@@ -720,4 +722,9 @@ async function main(): Promise<void> {
   );
 }
 
-await main();
+const { db, dispose } = await getLocalDb();
+try {
+  await main(db);
+} finally {
+  await dispose();
+}

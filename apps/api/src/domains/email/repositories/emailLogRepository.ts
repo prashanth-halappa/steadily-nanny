@@ -5,13 +5,15 @@
  *
  * @module domains/email/repositories/emailLogRepository
  */
-
-import { supabaseService } from '../../../config/supabase';
+import { and, count, eq, gte, ne } from 'drizzle-orm';
+import { db } from '../../../db/client';
+import { emailLog } from '../../../db/schema';
 import { DatabaseError } from '../../../errors';
 import { logger } from '../../../middlewares/logger';
 import type { EmailLog, LogSendParams } from '../types';
 
-const TABLE = 'email_log';
+const errMsg = (err: unknown) =>
+  err instanceof Error ? err.message : String(err);
 
 export class EmailLogRepository {
   /**
@@ -20,32 +22,30 @@ export class EmailLogRepository {
    * {@link wasRecentlySent} first.
    */
   static async logSend(params: LogSendParams): Promise<EmailLog> {
-    const { data, error } = await supabaseService
-      .from(TABLE)
-      .insert({
-        user_id: params.userId ?? null,
-        email_type: params.emailType,
-        recipient: params.recipient,
-        status: params.status,
-        dedupe_key: params.dedupeKey ?? null,
-        metadata: params.metadata ?? {},
-      })
-      .select()
-      .single();
-
-    if (error) {
+    try {
+      const [data] = await db
+        .insert(emailLog)
+        .values({
+          user_id: params.userId ?? null,
+          email_type: params.emailType,
+          recipient: params.recipient,
+          status: params.status,
+          dedupe_key: params.dedupeKey ?? null,
+          metadata: params.metadata ?? {},
+        })
+        .returning();
+      return data as EmailLog;
+    } catch (err) {
       throw new DatabaseError(
         'Failed to log email send',
         'EMAIL_LOG_INSERT_FAILED',
         {
           emailType: params.emailType,
           operation: 'logSend',
-          dbError: error.message,
+          dbError: errMsg(err),
         }
       );
     }
-
-    return data as EmailLog;
   }
 
   /**
@@ -54,21 +54,20 @@ export class EmailLogRepository {
    * transient DB blip does not silently drop a legitimate email.
    */
   static async wasRecentlySent(dedupeKey: string): Promise<boolean> {
-    const { data, error } = await supabaseService
-      .from(TABLE)
-      .select('id')
-      .eq('dedupe_key', dedupeKey)
-      .maybeSingle();
-
-    if (error) {
+    try {
+      const rows = await db
+        .select({ id: emailLog.id })
+        .from(emailLog)
+        .where(eq(emailLog.dedupe_key, dedupeKey))
+        .limit(1);
+      return rows.length > 0;
+    } catch (err) {
       logger.error('Failed to check email dedupe key', {
         dedupeKey,
-        error: error.message,
+        error: errMsg(err),
       });
       return false;
     }
-
-    return !!data;
   }
 
   /**
@@ -79,21 +78,24 @@ export class EmailLogRepository {
     const todayStart = new Date();
     todayStart.setUTCHours(0, 0, 0, 0);
 
-    const { count, error } = await supabaseService
-      .from(TABLE)
-      .select('id', { count: 'exact', head: true })
-      .eq('user_id', userId)
-      .neq('status', 'failed')
-      .gte('sent_at', todayStart.toISOString());
-
-    if (error) {
+    try {
+      const [row] = await db
+        .select({ n: count() })
+        .from(emailLog)
+        .where(
+          and(
+            eq(emailLog.user_id, userId),
+            ne(emailLog.status, 'failed'),
+            gte(emailLog.sent_at, todayStart.toISOString())
+          )
+        );
+      return row?.n ?? 0;
+    } catch (err) {
       logger.error('Failed to count emails sent today', {
         userId,
-        error: error.message,
+        error: errMsg(err),
       });
       return 0;
     }
-
-    return count ?? 0;
   }
 }
