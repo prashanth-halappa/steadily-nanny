@@ -129,6 +129,12 @@ beforeEach(() => {
 
 ### 4.1 Chainable Supabase / query-builder mock
 
+> **Legacy (D1 migration in progress).** The API is moving from supabase-js to
+> Drizzle on Cloudflare D1. Don't write new chainable Supabase mocks — for
+> repository/query code use the real D1 test database (§4.5); for service
+> logic mock the repository. `tests/helpers/mockSupabase.ts` goes away once
+> the last domain is ported.
+
 Builder-style DB clients (Supabase) need a self-returning chain so any method order resolves. *Example: `apps/api/tests/unit/domains/engagement/services/deepeningMilestoneService.test.ts`*:
 
 ```typescript
@@ -180,6 +186,37 @@ mock.module('ai', () => ({
 4. **Integration points** — assert the mocked dependencies were called correctly.
 
 ---
+
+### 4.5 D1 test database (`tests/helpers/testDb.ts`)
+
+`createTestDb()` starts an in-memory Miniflare D1 (the same SQLite build
+workerd runs in production), applies `apps/api/migrations/*.sql` in order
+(split on `--> statement-breakpoint`, so all triggers land), and returns
+`{ db, d1, dispose }` — `db` is a Drizzle `Db` over it, `d1` the raw binding.
+Setup is ~0.5s per instance, so make **one per file** in `beforeAll`.
+
+```typescript
+let t: TestDb;
+beforeAll(async () => {
+  t = await createTestDb();
+  // Swap the app's handle BEFORE any dynamic import that reads it.
+  mock.module('../../../../src/db/client', () => ({ db: t.db }));
+  ({ ShiftRepository } = await import('../../../../src/domains/shift/repositories/shiftRepository'));
+});
+afterAll(() => t.dispose());
+beforeEach(() => t.d1.prepare('DELETE FROM shifts').run()); // if tests need a clean table
+```
+
+**Use it** for repositories and anything whose correctness lives in SQL:
+guarded `UPDATE … WHERE <precondition>` / `INSERT … SELECT … WHERE`,
+`db.batch` atomicity, triggers, unique/check/FK errors via `mapDbError`.
+**Use plain mocks** (mock the repository) for service branching logic.
+Examples: `tests/unit/db/testDb.test.ts`,
+`tests/unit/shared/repositories/baseRepository.test.ts`.
+
+**Gotcha:** D1's `meta.changes` counts trigger writes too — an `UPDATE` on a
+table with an `updated_at` trigger reports `2` for one row. A guard check is
+`changes > 0` (or `.returning()` length), never `=== 1`.
 
 ## 5. Mobile Component Test Patterns
 
@@ -333,6 +370,10 @@ appId: com.jetto.steadily.nanny
 ---
 
 ## 8. Integration tier (`bun run test:db`)
+
+> **D1 migration:** this tier targets the old Supabase/Postgres stack. Trigger,
+> index and guarded-write behaviour on D1 is tested in `tests/unit` with the
+> D1 test database (§4.5) instead.
 
 `apps/api/tests/integration/` is a separate, opt-in tier — real Postgres,
 real auth users, real materialisation code paths. It is **NOT** part of
