@@ -41,56 +41,37 @@
 # the gap rather than writing an assertion that would fail for the wrong
 # reason.
 #
-# FIXTURES — same as flow 38/40: no seeder creates an uncovered window, so
-# this flow adds its own commitment via `ManageCommitmentsSection`
-# (defaults: Mon–Fri 09:00–17:00). ASSUMES the household has ≥1 child.
+# FIXTURES — run `D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=… bun run
+# scripts/seed-coverage-gap.ts` BEFORE EVERY RUN and pass its two keys
+# (COVER_GAP_PARENT_EMAIL, COVER_GAP_HOUSEHOLD_ID; password is
+# PHASE4_TEST_PASSWORD). It mints a fresh 'Cover household' whose one care
+# commitment covers every day 00:00–23:59 with nothing booked, so today is
+# uncovered whatever the weekday or hour. PHASE4_HOUSEHOLD_ID (used before)
+# never has a gap today: the approval seeder books nanny@ 08:00–17:00 today
+# (PHASE4_TODAY_SHIFT_ID), covering its weekday 09:00–17:00 care hours.
 # `HouseholdClosuresScreen`'s date fields default to TODAY for both start
 # and end (`HouseholdClosuresScreen.tsx`: `useState(todayISO(...))` twice),
 # so the closure form is submitted UNTOUCHED — a same-day closure needs no
 # date entry at all.
 #
-# HYGIENE CAVEAT — the delete step below addresses the row by the regex
-# `household-closures-delete-.*`, i.e. WHICHEVER closure row Maestro finds
-# first. On a first run that is the only row and unambiguous. On a RE-RUN
-# (no seeder clears `household_closures` either — same gap flow 38/40 flag
-# for `child_commitments`) there could be more than one, and the list's
-# sort order is not verified here, so this may delete a stale prior-run
-# closure instead of the one this run just added. The suppression assertion
-# just above it is unaffected either way (it only needs A closure covering
-# today to exist), but the re-raise half could pass for the wrong reason on
-# a dirty household. Worth a seeder-side cleanup if this joins the batch.
+# SINGLE-USE PER SEED: the fresh household has no closures, so the
+# `household-closures-delete-.*` regex below can only match this run's row;
+# re-run the seeder rather than re-running on a dirty household.
 appId: com.jetto.steadily.nanny
 tags:
   - scheduling
 ---
-# --- Parent: manufacture an uncovered window for today --------------------
-- runFlow: ../flows/login.yaml
+# --- Parent: a fresh household with today uncovered (seed-coverage-gap) ---
 - runFlow:
-    file: ../flows/select-household.yaml
+    file: ../flows/login.yaml
     env:
-      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
-- openLink: steadilynanny:///(private)/settings/children
-- runFlow: cx-dismiss-open-alert.yaml
-- extendedWaitUntil:
-    visible:
-      id: 'manage-children-screen'
-    timeout: 15000
-- tapOn:
-    id: 'commitment-add-.*'
-- extendedWaitUntil:
-    visible:
-      id: 'commitment-form-sheet'
-    timeout: 10000
-- tapOn:
-    id: 'commitment-form-submit'
-- extendedWaitUntil:
-    notVisible:
-      id: 'commitment-form-sheet'
-    timeout: 15000
-- takeScreenshot: ${OUT}/s5-39-a-care-hours-added
+      PARENT_EMAIL: ${COVER_GAP_PARENT_EMAIL}
+      PARENT_PASSWORD: ${PHASE4_TEST_PASSWORD}
+      PHASE4_HOUSEHOLD_ID: ${COVER_GAP_HOUSEHOLD_ID}
 
-- tapOn:
-    id: 'tab-today'
+# settings/* is a stack screen ABOVE (tabs): no tab bar, so deep-link the tab.
+- openLink: steadilynanny:///(private)/(tabs)/home
+- runFlow: cx-dismiss-open-alert.yaml
 - extendedWaitUntil:
     visible:
       id: 'today-coverage-gap-card'
@@ -108,8 +89,34 @@ tags:
     id: 'household-closures-form'
 - assertVisible:
     id: 'household-closures-dates'
+# The empty state only renders once the list has settled (not loading, not
+# errored) — wait for it so the tap doesn't race a header re-render.
+- extendedWaitUntil:
+    visible:
+      id: 'household-closures-empty'
+    timeout: 15000
+- waitForAnimationToEnd
 - tapOn:
     id: 'household-closures-submit'
+# One back-to-back batch run (2026-11-23) saw this tap report COMPLETED with
+# no POST reaching the Worker and no closure row in D1 — a swallowed tap,
+# not an API failure (tap-time bounds matched the button; not reproduced in
+# 3 further 38->39 runs). Retry ONCE, guarded on the POSITIVE empty-state
+# signal: if the first POST landed, the empty state is gone and nothing is
+# re-sent, so this can never create a second closure.
+- extendedWaitUntil:
+    visible:
+      id: 'household-closures-row-.*'
+    timeout: 10000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        id: 'household-closures-empty'
+    commands:
+      - takeScreenshot: ${OUT}/s5-39-c0-submit-retry
+      - tapOn:
+          id: 'household-closures-submit'
 - extendedWaitUntil:
     visible:
       id: 'household-closures-row-.*'
@@ -117,8 +124,9 @@ tags:
 - takeScreenshot: ${OUT}/s5-39-c-closure-added
 
 # --- The closure suppresses the gap ---------------------------------------
-- tapOn:
-    id: 'tab-today'
+# settings/* is a stack screen ABOVE (tabs): no tab bar, so deep-link the tab.
+- openLink: steadilynanny:///(private)/(tabs)/home
+- runFlow: cx-dismiss-open-alert.yaml
 - extendedWaitUntil:
     notVisible:
       id: 'today-coverage-gap-card'
@@ -127,9 +135,19 @@ tags:
 
 - tapOn:
     id: 'tab-schedule'
-- waitForAnimationToEnd
+# The seeded care hours run EVERY day, and the closure spans only today, so
+# the rest of the week stays uncovered by design. Scope the agenda checks to
+# TODAY's row: its id ends with the window end, local 23:59 in Europe/London,
+# which is always today's household-local date in UTC (23:59Z or 22:59Z).
+# Waiting for today's day header first proves the agenda loaded, so the
+# notVisible can't pass on an empty screen.
+- evalScript: "${output.today = (function () { try { return new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' }) } catch (e) { return new Date().toISOString().slice(0, 10) } })()}"
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-day-today-${output.today}'
+    timeout: 15000
 - assertNotVisible:
-    id: 'schedule-uncovered-.*'
+    id: 'schedule-uncovered-[0-9a-f].*\|${output.today}T\d\d:59:00\.000Z'
 - takeScreenshot: ${OUT}/s5-39-e-agenda-clear-during-closure
 
 # --- Remove the closure — the gap comes back ------------------------------
@@ -153,8 +171,9 @@ tags:
     timeout: 15000
 - takeScreenshot: ${OUT}/s5-39-f-closure-removed
 
-- tapOn:
-    id: 'tab-today'
+# settings/* is a stack screen ABOVE (tabs): no tab bar, so deep-link the tab.
+- openLink: steadilynanny:///(private)/(tabs)/home
+- runFlow: cx-dismiss-open-alert.yaml
 - extendedWaitUntil:
     visible:
       id: 'today-coverage-gap-card'
@@ -166,11 +185,9 @@ tags:
 - waitForAnimationToEnd
 - scrollUntilVisible:
     element:
-      id: 'schedule-uncovered-.*'
+      id: 'schedule-uncovered-[0-9a-f].*\|${output.today}T\d\d:59:00\.000Z'
     direction: DOWN
     timeout: 15000
-- assertVisible:
-    id: 'schedule-uncovered-.*'
 # THE CAUSE-COPY FINDING. `cover.cause.closureRemoved` ("Your away dates
 # changed") is what the header above documents as unreachable client-side —
 # what actually renders is the generic `cover.cause.nothingScheduled` line,
@@ -178,5 +195,5 @@ tags:
 # assertion ever starts failing because `closureRemoved` DOES appear, that
 # is `inferUncoveredCauseDetail` having grown the missing branch — a real
 # improvement, and this flow (and its header) should be updated to match.
-- assertVisible: "Nobody's booked yet"
+- assertVisible: "You set these as care hours. Nobody's booked yet."
 - takeScreenshot: ${OUT}/s5-39-h-agenda-cause-after-removal
