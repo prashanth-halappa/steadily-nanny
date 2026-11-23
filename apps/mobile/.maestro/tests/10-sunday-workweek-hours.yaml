@@ -42,7 +42,13 @@ tags:
 - assertVisible:
     id: 'hours-week-label'
 # ...and the seeded entry lands inside that Sunday-anchored week rather than
-# the previous one.
+# the previous one. The day list sits below the parent's approval card (the
+# seeded week is submitted), off-screen on load — scroll, don't bare-assert.
+- scrollUntilVisible:
+    element:
+      id: 'hours-day-${PHASE4_SUNDAY_WEEK_START}'
+    direction: DOWN
+    timeout: 10000
 - assertVisible:
     id: 'hours-day-${PHASE4_SUNDAY_WEEK_START}'
 - takeScreenshot: sunday-workweek-hours

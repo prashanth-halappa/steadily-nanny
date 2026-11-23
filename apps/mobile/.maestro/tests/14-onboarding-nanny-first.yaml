@@ -202,11 +202,16 @@ tags:
     id: 'proposal-accept-checkbox'
 - tapOn:
     id: 'proposal-accept-confirm'
-- waitForAnimationToEnd
-
-# The screen only `router.replace('/settings/pay')`s once the mutation
-# resolves, so landing on the pay hub with a current-terms card is the
+# ProposalReviewScreen swaps to the terms-agreed moment only once the accept
+# mutation resolved; its CTA then `router.replace('/settings/pay')`s for a
+# parent. Landing on the pay hub with a current-terms card is the
 # post-condition that the arrangement is live.
+- extendedWaitUntil:
+    visible:
+      id: 'terms-agreed-moment'
+    timeout: 25000
+- tapOn:
+    id: 'terms-agreed-continue'
 - extendedWaitUntil:
     visible:
       id: 'pay-screen'

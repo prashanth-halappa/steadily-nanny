@@ -435,6 +435,14 @@ describe('CodeEntryScreen — trapped-nanny escape hatches (W1-E fix 2)', () => 
 
     expect(mockSignOut).toHaveBeenCalledTimes(1);
   });
+
+  it('routes to /welcome after sign-out (onboarding has no signed-out redirect)', async () => {
+    const screen = renderWithProviders(<CodeEntryScreen />);
+
+    fireEvent.press(screen.getByTestId('code-screen-sign-out'));
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/welcome'));
+  });
 });
 
 describe('CodeEntryScreen — two entry modes (D-50, §3.4)', () => {

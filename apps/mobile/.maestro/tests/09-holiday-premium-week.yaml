@@ -10,7 +10,10 @@
 # and flow 07 must have run first — it is what sets
 # `worked_holiday_multiplier` on the arrangement, via
 # `pay-setup-worked-holiday-multiplier-input`. Without a multiplier there is
-# no premium to price.
+# no premium to price. Run it IMMEDIATELY after flow 07: re-running
+# seed-phase4-fixtures.ts (as flow 08 does) clears pay_arrangements, and the
+# week then shows "No pay rate set" with no earnings-line-pressable. Recovery:
+# re-seed, merge PHASE4_* into .env.maestro, run 07, then this flow.
 #
 # SCOPING NOTE (3-E4 ledger) — there is NO holiday toggle-list UI. 3-E4 owed
 # it to 3-U1 and it never landed: nothing in apps/mobile writes
@@ -39,6 +42,13 @@ tags:
     id: 'hours-screen'
 - assertVisible:
     id: 'hours-active-week-${PHASE4_HOLIDAY_WEEK_START}'
+# The approval card pushes the earnings line below the fold on a submitted
+# week, so scroll to it before asserting/tapping (same remedy as flow 07).
+- scrollUntilVisible:
+    element:
+      id: 'hours-earnings-line-pressable'
+    direction: DOWN
+    timeout: 10000
 - assertVisible:
     id: 'hours-earnings-line'
 - tapOn:

@@ -4,6 +4,14 @@
 #   PARENT_* / NANNY_* credentials
 #   TIME_ENTRY_ID — a submitted (editable) entry in an actionable week
 #   HOURS_DEEPLINK_WEEK_START — Monday ISO of that week (also used by flow 05)
+# Fixtures: `scripts/seed-e2e-approval-fixtures.ts --reset` (the week must be
+#   `submitted`, not left queried/approved by a prior run) AND a pay
+#   arrangement for (Our household, nanny). The nanny's edit is a PATCH the
+#   terms gate refuses with 409 TERMS_NOT_AGREED ("Clock-in opens when terms
+#   are agreed.") when none is in force — and seed-launch-pass.sh /
+#   seed-phase4-fixtures.ts DELETE it so flow 07 can drive first-run setup.
+#   Run `scripts/seed-carer1-terms.ts` before this flow when 07 hasn't run;
+#   re-run seed-phase4-fixtures.ts before 07 afterwards.
 #
 # Role dance: parent query → logout → nanny correct via ClockOutSheet edit mode
 # → logout → parent approve. Deep-link to Hours with weekStart so both roles

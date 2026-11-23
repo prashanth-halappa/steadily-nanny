@@ -133,9 +133,12 @@ tags:
 # on a shift that already has a pending cancel request. That dance was the
 # Phase 6 B1 red: Maestro reported the tap COMPLETED while the dialog never
 # opened (occlusion / wrong scroll direction after the Changes section).
+# id AND text on the same element, so the sentence is pinned to the card.
+# seed-phase4-fixtures.ts deletes the pay arrangement, so the fixture lands on
+# the `unknown` arm ("no pay terms set, so we can't say whether this one is
+# paid"); the alternation keeps the unpaid / no-terms / paid arms passing if a
+# prior flow (07, or seed-carer1-terms.ts) left terms in place.
 - assertVisible:
     id: 'shift-change-cancel-pay-.*'
-# The no-arrangement fixture lands on the unpaid arm; substring match so the
-# priced arm still passes if terms are present.
-- assertVisible: '.*(isn.t paid|still paid|cancellation pay).*'
+    text: '.*(can.t say whether this one is paid|isn.t paid|still paid).*'
 - takeScreenshot: parent-cancel-paid-hint

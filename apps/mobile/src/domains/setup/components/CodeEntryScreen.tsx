@@ -675,7 +675,12 @@ export function CodeEntryScreen({
         <Button
           testID="code-screen-sign-out"
           variant="ghost"
-          onPress={() => void signOut()}
+          // `/onboarding` sits outside `(private)`, whose layout is the only
+          // signed-out -> /welcome redirect, so without this the wizard
+          // strands on its loading spinner after sign-out.
+          onPress={() =>
+            void signOut().then(() => router.replace('/welcome' as Href))
+          }
         >
           <Text>{t('onboarding.code.signOut')}</Text>
         </Button>

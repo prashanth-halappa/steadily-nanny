@@ -270,3 +270,63 @@ describe('TimeOffCommandService — D77a demote on overlap (update)', () => {
     ]);
   });
 });
+
+describe('TimeOffCommandService — demote runs after the confirmed-shift scan', () => {
+  // Stateful like the real DB: once demoted, a shift is no longer `confirmed`
+  // and drops out of `listConfirmedForCarerInRange`. Demoting first used to
+  // empty the sick-cancel / conflict scans (Maestro flow 08, 2026-11-22).
+  function statefulOverlapRepo(): any {
+    let confirmed = [CONFIRMED_SHIFT];
+    return {
+      listConfirmedForCarerInRange: mock(async () => confirmed),
+      demoteConfirmedToPending: mock(async () => {
+        confirmed = [];
+        return true;
+      }),
+    };
+  }
+
+  it('a sick day still opens a cancel request on the shift it demotes', async () => {
+    const overlapRepo = statefulOverlapRepo();
+    const openCancelRequest = mock(async () => undefined);
+    const svc = new TimeOffCommandService(
+      makeTimeOffRepo() as never,
+      makeQueries() as never,
+      overlapRepo as never,
+      mock(() => undefined),
+      mock(async () => undefined),
+      { listActiveByUser: mock(async () => []) } as never,
+      openCancelRequest,
+      makeEventRepo() as never
+    );
+
+    const res = await svc.create('carer-1', {
+      starts_at: CREATE_START,
+      ends_at: CREATE_END,
+      all_day: true,
+      kind: 'sick',
+    });
+
+    expect(openCancelRequest).toHaveBeenCalledWith('shift-1', 'carer-1');
+    expect(res.affected_shift_count).toBe(1);
+    expect(overlapRepo.demoteConfirmedToPending).toHaveBeenCalledWith(
+      'shift-1'
+    );
+  });
+
+  it('personal time off still counts the shift it demotes', async () => {
+    const overlapRepo = statefulOverlapRepo();
+    const svc = makeSvc({ overlapRepo });
+
+    const res = await svc.create('carer-1', {
+      starts_at: CREATE_START,
+      ends_at: CREATE_END,
+      all_day: true,
+    });
+
+    expect(res.affected_shift_count).toBe(1);
+    expect(overlapRepo.demoteConfirmedToPending).toHaveBeenCalledWith(
+      'shift-1'
+    );
+  });
+});

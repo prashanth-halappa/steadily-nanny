@@ -15,6 +15,12 @@
 # starts_at - 4h)`, migration 088) and cannot be backdated through the API, so
 # a past deadline is only reachable SQL-side.
 #
+# TIMING (deployed Worker): the Worker's own cron runs cover-ask-expiry at
+# minutes 3-58/5 (apps/api/src/scheduled.ts), so the past-deadline ask is
+# expired by the NEXT tick after seeding. Against the Worker, re-seed just after
+# a tick (minute % 5 == 3, ~:15s) and start this flow at once; it takes ~3.5 min.
+# A stale seed fails at `shift-detail-status-pending` (the shift is cancelled).
+#
 # ROLE NOTE — this is the NANNY's screen, not the parent's. Every cover-ask
 # state on ShiftDetailScreen (`shift-detail-answer-by`, `-ask-expired`,
 # `-ask-withdrawn`) is gated on `isAssignedCarer`; a parent opening the same

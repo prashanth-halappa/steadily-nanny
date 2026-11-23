@@ -16,6 +16,11 @@
 #      `local_date = week_start`; there is no thread table), and clearing the
 #      approval columns.
 # Flow 12 then consumes the approved week this flow leaves behind.
+#
+# PREREQUISITE — a pay arrangement for (PHASE4 household, nanny). The phase4
+# seeder DELETES it, and flow 07 recreates it; without it the approve 500s on
+# the snapshot CHECK. So after a phase4 re-seed (merge its PHASE4_* output into
+# .env.maestro), run flow 07 before this one, as run-phase4.sh does.
 appId: com.jetto.steadily.nanny
 tags:
   - timesheet
@@ -50,9 +55,19 @@ tags:
 - tapOn:
     id: 'hours-query-submit'
 - waitForAnimationToEnd
-- assertVisible:
-    id: 'hours-week-thread'
-- assertVisible: 'Thursday looks short — can you check?'
+# The thread mounts BELOW the WeekTotal card, which on this device fills the
+# screen, so it starts off-screen: scroll to it (assertVisible would fail on a
+# thread that is rendered but below the fold).
+- scrollUntilVisible:
+    element:
+      id: 'hours-week-thread'
+    direction: DOWN
+    timeout: 10000
+- scrollUntilVisible:
+    element:
+      text: 'Thursday looks short — can you check?'
+    direction: DOWN
+    timeout: 10000
 - takeScreenshot: parent-opened-thread
 
 # --- Nanny: read the note on the thread and reply ------------------------
@@ -68,13 +83,26 @@ tags:
     id: 'hours-screen'
 # BOTH sides read the same thread — that is 3-T1's claim, and the parent's own
 # words appearing on the nanny's screen is the only proof of it.
-- assertVisible:
-    id: 'hours-week-thread'
-- assertVisible: 'Thursday looks short — can you check?'
+# The thread mounts BELOW the WeekTotal card, which on this device fills the
+# screen, so it starts off-screen: scroll to it (assertVisible would fail on a
+# thread that is rendered but below the fold).
+- scrollUntilVisible:
+    element:
+      id: 'hours-week-thread'
+    direction: DOWN
+    timeout: 10000
+- scrollUntilVisible:
+    element:
+      text: 'Thursday looks short — can you check?'
+    direction: DOWN
+    timeout: 10000
 # The composer is shown to a nanny on a `queried` week (and on a submitted one)
 # by `showComposerFor`.
-- assertVisible:
-    id: 'hours-week-thread-composer'
+- scrollUntilVisible:
+    element:
+      id: 'hours-week-thread-composer'
+    direction: DOWN
+    timeout: 10000
 - tapOn:
     id: 'hours-week-thread-composer'
 - inputText: 'Checked — Thursday is right, I left at 17:00.'
@@ -122,7 +150,11 @@ tags:
 - waitForAnimationToEnd
 # The composer clears only on a successful send, so an empty composer plus the
 # reply on the thread is a real post-condition on the mutation.
-- assertVisible: 'Checked — Thursday is right, I left at 17:00.'
+- scrollUntilVisible:
+    element:
+      text: 'Checked — Thursday is right, I left at 17:00.'
+    direction: DOWN
+    timeout: 10000
 - assertNotVisible:
     id: 'hours-week-thread-error'
 - takeScreenshot: nanny-replied-on-thread
@@ -138,14 +170,29 @@ tags:
 - waitForAnimationToEnd
 - assertVisible:
     id: 'hours-screen'
-- assertVisible:
-    id: 'hours-week-thread'
-- assertVisible: 'Checked — Thursday is right, I left at 17:00.'
+# The thread mounts BELOW the WeekTotal card, which on this device fills the
+# screen, so it starts off-screen: scroll to it (assertVisible would fail on a
+# thread that is rendered but below the fold).
+- scrollUntilVisible:
+    element:
+      id: 'hours-week-thread'
+    direction: DOWN
+    timeout: 10000
+- scrollUntilVisible:
+    element:
+      text: 'Checked — Thursday is right, I left at 17:00.'
+    direction: DOWN
+    timeout: 10000
 
 # The withdraw trigger only renders for a non-readOnly parent on a `queried`
 # week, so its presence is itself the assertion that the query is still open.
-- assertVisible:
-    id: 'hours-withdraw-query-button'
+# The withdraw trigger lives on the WeekTotal card ABOVE the thread we just
+# scrolled to, so scroll back up to it.
+- scrollUntilVisible:
+    element:
+      id: 'hours-withdraw-query-button'
+    direction: UP
+    timeout: 10000
 - tapOn:
     id: 'hours-withdraw-query-button'
 - waitForAnimationToEnd
@@ -160,6 +207,11 @@ tags:
     id: 'hours-withdraw-query-button'
 - takeScreenshot: parent-withdrew-query
 
+- scrollUntilVisible:
+    element:
+      id: 'hours-approve-button'
+    direction: UP
+    timeout: 10000
 - tapOn:
     id: 'hours-approve-button'
 - waitForAnimationToEnd
@@ -169,9 +221,15 @@ tags:
     id: 'hours-approve-dialog-confirm'
 - waitForAnimationToEnd
 # `hours-approve-button` renders regardless of actionability and is merely
-# `disabled`; `isActionable` is submitted-only, so it flipping false is what
-# proves the approve landed (same reasoning as flow 04).
-- assertVisible:
-    id: 'hours-approve-button'
-    enabled: false
+# `disabled`. Disabled ALONE is not proof: it is also disabled while the
+# mutation is pending, and a 500 from the approve (seen 2026-11-22: no pay
+# arrangement -> null gross -> `timesheets_approved_has_snapshot` CHECK) still
+# passed a bare `enabled: false` check. The label swaps to "Approved" only
+# when the refetched week's status is `approved`, so wait for that.
+- extendedWaitUntil:
+    visible:
+      id: 'hours-approve-button'
+      text: 'Approved'
+      enabled: false
+    timeout: 15000
 - takeScreenshot: parent-approved-after-withdraw

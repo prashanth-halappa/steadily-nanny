@@ -255,15 +255,6 @@ export class TimeOffCommandService {
       kind: input.kind ?? CARER_TIME_OFF_KINDS.PERSONAL,
       user_id: userId,
     });
-    // D77a: demote every confirmed shift this time off overlaps, BEFORE the
-    // kind branch below — both personal and sick absences leave a shift with
-    // nobody coming, so both demote. See `safeDemoteOverlapping`.
-    await this.safeDemoteOverlapping(
-      userId,
-      carer_time_off.starts_at,
-      carer_time_off.ends_at,
-      carer_time_off.kind
-    );
     // D-23 / S10: a sick day is not a note, it is an absence with consequences
     // for booked shifts. Handled on its own path so the planned-time-off flow
     // below is untouched.
@@ -273,6 +264,7 @@ export class TimeOffCommandService {
         carer_time_off.starts_at,
         carer_time_off.ends_at
       );
+      await this.demoteAfterScan(userId, carer_time_off);
       if (affected_shift_count === 0) {
         // "if it overlaps none, emit `time_off_requested` as today" (§1.4).
         this.notifyTimeOffRequested(userId, carer_time_off.kind);
@@ -286,6 +278,7 @@ export class TimeOffCommandService {
       carer_time_off.ends_at,
       carer_time_off.kind
     );
+    await this.demoteAfterScan(userId, carer_time_off);
     this.notifyTimeOffRequested(userId, carer_time_off.kind);
     return { carer_time_off, affected_shift_count };
   }
@@ -503,23 +496,32 @@ export class TimeOffCommandService {
       ...input,
       sequence: row.sequence + 1,
     });
-    // D77a: a range widened by this PATCH can newly overlap shifts that were
-    // untouched by the original create — re-run the demote against the
-    // EFFECTIVE (post-update) range on every update, same as the push scan
-    // below it.
-    await this.safeDemoteOverlapping(
-      userId,
-      carer_time_off.starts_at,
-      carer_time_off.ends_at,
-      carer_time_off.kind
-    );
     const affected_shift_count = await this.safeScanAndNotify(
       userId,
       carer_time_off.starts_at,
       carer_time_off.ends_at,
       carer_time_off.kind
     );
+    // D77a: a range widened by this PATCH can newly overlap shifts that were
+    // untouched by the original create — re-run the demote against the
+    // EFFECTIVE (post-update) range on every update.
+    await this.demoteAfterScan(userId, carer_time_off);
     return { carer_time_off, affected_shift_count };
+  }
+
+  /**
+   * D77a demote, run AFTER the overlap scan / sick-cancel open on purpose.
+   * Both of those list `confirmed` shifts only, so demoting first emptied
+   * their result: a sick day opened no cancel request and personal time off
+   * pushed no conflict (Maestro flow 08, 2026-11-22).
+   */
+  private demoteAfterScan(userId: string, row: CarerTimeOff): Promise<void> {
+    return this.safeDemoteOverlapping(
+      userId,
+      row.starts_at,
+      row.ends_at,
+      row.kind
+    );
   }
 
   /**

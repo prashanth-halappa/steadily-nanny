@@ -10,6 +10,10 @@
 #     the setup form is only reachable on a carer who has none. That is also
 #     why this flow never needs the PayChangeSheet path — the seeder makes
 #     setup mode the deterministic one rather than branching at runtime.
+#   - DELETES every terms_proposals round for the same pair: Save sends a
+#     round the nanny then accepts (that accept is what creates the
+#     arrangement), and an open round left by an aborted run would make the
+#     screen render the sent-receipt instead of the form;
 #   - seeds a submitted timesheet + a single 13h entry on
 #     PHASE4_OT_WEEK_START (8 regular + 4 overtime + 1 double time).
 #
@@ -171,42 +175,97 @@ tags:
 # dismisses without tapping any coordinate, so it can't hit the toggle.
 # The preset sheet closes with the page scrolled PAST the weekly threshold
 # (it is above the fold on a 956pt screen) — scroll back up to it first.
+# Each field is CENTRED before its tap. hideKeyboard is a no-op here, so the
+# decimal pad stays up (top edge ~y638) once the first field has focus, and
+# the later fields sit under it: measured 2026-11-22 ("Tapping on element"),
+# the daily/double-time taps resolved at y631-862 and hit KEYS, so every
+# value after "1.5" was typed into the still-focused weekly multiplier (it
+# ended up "2") and the preset's own values silently stood in for the
+# "typed by hand" tiers. Centre (~y478) is always above the keyboard, and the
+# value assert after each field makes a swallowed tap fail by name.
 - scrollUntilVisible:
     element:
       id: 'pay-setup-overtime-threshold-input'
     direction: UP
+    centerElement: true
     timeout: 10000
 - tapOn:
     id: 'pay-setup-overtime-threshold-input'
 - eraseText
 - inputText: '40'
-- hideKeyboard:
-    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
+- assertVisible:
+    id: 'pay-setup-overtime-threshold-input'
+    text: '40'
+- scrollUntilVisible:
+    element:
+      id: 'pay-setup-overtime-multiplier-input'
+    direction: DOWN
+    centerElement: true
+    timeout: 10000
 - tapOn:
     id: 'pay-setup-overtime-multiplier-input'
 - eraseText
 - inputText: '1.5'
-- hideKeyboard:
-    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
+- assertVisible:
+    id: 'pay-setup-overtime-multiplier-input'
+    text: '1.5'
+- scrollUntilVisible:
+    element:
+      id: 'pay-setup-daily-overtime-threshold-input'
+    direction: DOWN
+    centerElement: true
+    timeout: 10000
 - tapOn:
     id: 'pay-setup-daily-overtime-threshold-input'
 - eraseText
 - inputText: '8'
-- hideKeyboard:
-    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
+- assertVisible:
+    id: 'pay-setup-daily-overtime-threshold-input'
+    text: '8'
+- scrollUntilVisible:
+    element:
+      id: 'pay-setup-doubletime-threshold-input'
+    direction: DOWN
+    centerElement: true
+    timeout: 10000
 - tapOn:
     id: 'pay-setup-doubletime-threshold-input'
 - eraseText
 - inputText: '12'
-- hideKeyboard:
-    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
+- assertVisible:
+    id: 'pay-setup-doubletime-threshold-input'
+    text: '12'
+- scrollUntilVisible:
+    element:
+      id: 'pay-setup-doubletime-multiplier-input'
+    direction: DOWN
+    centerElement: true
+    timeout: 10000
 - tapOn:
     id: 'pay-setup-doubletime-multiplier-input'
 - eraseText
 - inputText: '2'
-- hideKeyboard:
-    optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
+- assertVisible:
+    id: 'pay-setup-doubletime-multiplier-input'
+    text: '2'
 - takeScreenshot: pay-setup-ca-overtime
+# The hideKeyboard calls above are no-ops on this screen (WARNED), so the
+# decimal pad from the double-time multiplier is still up (top edge ~y638)
+# and the Holidays header below it is occluded — the old blind tap on it
+# landed on a key (measured 2026-11-22 from maestro.log "Tapping on element":
+# header [22,812][418,861]). Tapping nearby hint copy is not reliable either:
+# the scroll offset here varies run to run, and on one run the double-time
+# hint resolved at y899, under the keyboard. So reuse the proven dismiss from
+# the cancellation step below: scroll to a KNOWN offset (top) and tap the
+# non-interactive backdating hint, which falls through to the ScrollView.
+- scrollUntilVisible:
+    element:
+      id: 'pay-setup-rate-input'
+    direction: UP
+    timeout: 30000 # up to 4 pages from the bottom of the form
+- tapOn:
+    id: 'pay-setup-backdating-hint'
+- waitForAnimationToEnd
 
 # --- Worked-holiday multiplier (flow 09 consumes this same arrangement) ---
 - runFlow:
@@ -214,11 +273,19 @@ tags:
       notVisible:
         id: 'pay-setup-group-holidays-content'
     commands:
+      # The header can stop at ~y884, behind SetupScreenShell's pinned CTA
+      # footer (100%-visible by frame, occluded in pixels). `centerElement`
+      # cannot fix it: at max scroll Holidays sits at ~y226, never mid-screen,
+      # so it fails "No visible element found". The pinned-footer remedy is a
+      # bare `- scroll`: the form clamps at its max offset, which keeps the
+      # header at or below ~y226 and well clear of the footer.
       - scrollUntilVisible:
           element:
             id: 'pay-setup-group-holidays'
           direction: DOWN
           timeout: 10000
+      - scroll
+      - waitForAnimationToEnd
       - tapOn:
           id: 'pay-setup-group-holidays'
       - waitForAnimationToEnd
@@ -288,7 +355,7 @@ tags:
     element:
       id: 'pay-setup-rate-input'
     direction: UP
-    timeout: 10000
+    timeout: 30000 # up to 4 pages from the bottom of the form
 # Tap `pay-setup-backdating-hint` to dismiss the keyboard: it is a `<Small>`
 # with a testID, NON-INTERACTIVE (no onPress, so it is not a touch responder
 # and the tap falls through to the ScrollView, whose default
@@ -324,13 +391,69 @@ tags:
 - tapOn:
     id: 'pay-setup-screen-cta'
 - waitForAnimationToEnd
-# The screen only calls router.back() after the create mutation resolves, so
-# leaving it is the post-condition that the arrangement actually landed.
+# Save SENDS A ROUND now (P1, PaySetupScreen.handleSubmit → proposeTerms):
+# no navigation, the screen re-renders as the persistent sent-receipt once
+# the `proposed` terms_proposals row exists. The receipt IS the
+# post-condition that the round landed.
 - extendedWaitUntil:
-    notVisible:
-      id: 'pay-setup-screen'
+    visible:
+      id: 'pay-terms-receipt'
     timeout: 20000
-- takeScreenshot: pay-terms-saved
+- assertNotVisible:
+    id: 'pay-setup-screen-cta'
+- takeScreenshot: pay-terms-sent
+
+# --- Nanny agrees, which is what creates the arrangement -----------------
+# Earnings price against pay_arrangements, and a proposal is not one until
+# the carer accepts it. Same accept path as flow 16. The seeder clears every
+# round for (household, nanny), so this is the only terms_proposal in her
+# inbox.
+- runFlow: ../flows/login-nanny.yaml
+- openLink: steadilynanny:///(private)/inbox
+- extendedWaitUntil:
+    visible:
+      id: 'inbox-list'
+    timeout: 25000
+- scrollUntilVisible:
+    element:
+      id: 'inbox-item-terms_proposal-.*'
+    direction: DOWN
+    timeout: 15000
+- tapOn:
+    id: 'inbox-item-terms_proposal-.*'
+- extendedWaitUntil:
+    visible:
+      id: 'proposal-review-screen'
+    timeout: 25000
+- scrollUntilVisible:
+    element:
+      id: 'proposal-agree-button'
+    direction: DOWN
+    timeout: 15000
+- waitForAnimationToEnd
+- tapOn:
+    id: 'proposal-agree-button'
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'proposal-accept-sheet'
+- tapOn:
+    id: 'proposal-accept-checkbox'
+- tapOn:
+    id: 'proposal-accept-confirm'
+# ProposalReviewScreen swaps to the terms-agreed moment only once the accept
+# mutation returned (`agreed`), so the moment IS the evidence the arrangement
+# now exists. Nothing after this needs the nanny, so no "See the terms" tap.
+- extendedWaitUntil:
+    visible:
+      id: 'terms-agreed-moment'
+    timeout: 25000
+
+# --- Back to the parent, in the fixture household ------------------------
+- runFlow: ../flows/login.yaml
+- runFlow:
+    file: ../flows/select-household.yaml
+    env:
+      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
 
 # --- The overtime week now prices both daily tiers -----------------------
 - openLink: steadilynanny:///(private)/(tabs)/hours?weekStart=${PHASE4_OT_WEEK_START}
@@ -341,6 +464,15 @@ tags:
     id: 'hours-active-week-${PHASE4_OT_WEEK_START}'
 - assertVisible:
     id: 'hours-earnings-line'
+# The earnings line sits below the approval card, at y~950 on this device —
+# under the tab bar, so an unscrolled tap lands on a tab (measured
+# 2026-11-22). The Hours list ends AT the tab bar, so a plain
+# scrollUntilVisible (100% visible) is clear of it; no centerElement.
+- scrollUntilVisible:
+    element:
+      id: 'hours-earnings-line-pressable'
+    direction: DOWN
+    timeout: 10000
 - tapOn:
     id: 'hours-earnings-line-pressable'
 - waitForAnimationToEnd

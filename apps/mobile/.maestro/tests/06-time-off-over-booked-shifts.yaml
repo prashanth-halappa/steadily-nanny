@@ -9,20 +9,21 @@
 #   2. Switch to parent and openLink the same href the push would open
 #   3. Assert schedule shifts / away UI is reachable
 #
-# Prerequisites: NANNY_* + PARENT_* ; household with at least one confirmed/
-# pending shift overlapping the dates the nanny picks in the date picker.
-# Date picking is device-calendar UI — if the picker blocks automation, set
-# dates via a pre-seeded draft and skip to conflict confirm (documented below).
+# Deterministic overlap (2026-11-22): the form's date range DEFAULTS to
+# today, and seed-phase4-fixtures.ts guarantees nanny@ a CONFIRMED extra shift
+# today (PHASE4_TODAY_SHIFT_ID) and deletes any time off of hers covering today.
+# So with no date picking at all the busy-blocks check must find a conflict —
+# the conflict dialog, the created row and the parent's away summary are all
+# hard assertions now, not `when visible` branches.
 #
-# MANUAL — excluded from every `test:e2e*` script via --exclude-tags=manual.
-# The conflict path this flow exists to exercise is entirely conditional on
-# two things static authoring cannot guarantee: an overlapping shift actually
-# seeded for whatever dates the nanny picks, and a native OS date-range
-# picker driven reliably by fuzzy text ('Confirm' varies by OS/locale). As
-# written this flow can complete end-to-end with zero overlap, zero conflict
-# dialog and zero notification and still report green — negative value, not
-# a regression net. Run it by hand after seeding an overlapping range and
-# confirming the picker interaction on a real device/simulator:
+# Prerequisites: NANNY_* + PARENT_*, and a fresh
+#   D1_REMOTE=1 bun run scripts/seed-phase4-fixtures.ts
+# THIS FLOW CONSUMES IT: it leaves an all-day time off on today for nanny@,
+# which flow 08 (today's shift) and any re-run of this flow need cleared —
+# re-run the seeder before either.
+#
+# Still tagged manual (excluded from `test:e2e*`) because of that fixture
+# coupling with flow 08; run it after the phase-4 seeder.
 #   cd apps/mobile && bash scripts/run-maestro.sh .maestro/tests/06-time-off-over-booked-shifts.yaml
 appId: com.jetto.steadily.nanny
 tags:
@@ -43,36 +44,30 @@ tags:
     id: 'time-off-screen'
 - assertVisible:
     id: 'time-off-request-form'
-# Date range: tap the picker (native UI). Operators may need to adjust dates
-# so the range overlaps a booked shift; conflict dialog is the gate.
-- tapOn:
-    id: 'time-off-request-dates'
-- waitForAnimationToEnd
-# Dismiss / confirm native date UI if shown — fuzzy labels vary by OS.
-- runFlow:
-    when:
-      visible: 'Confirm'
-    commands:
-      - tapOn: 'Confirm'
+# Date range left at its default (today) — overlaps the seeded today-shift.
 - tapOn:
     id: 'time-off-request-message'
-- inputText: 'Family travel — overlaps Tuesday shift'
+- inputText: 'Family travel — overlaps today shift'
 - hideKeyboard:
     optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 - tapOn:
     id: 'time-off-request-submit'
+# The overlap MUST raise the conflict dialog; confirming notifies parents
+# server-side (CARER_TIME_OFF_CONFLICT).
+- extendedWaitUntil:
+    visible:
+      id: 'time-off-conflict-confirm'
+    timeout: 15000
+- tapOn:
+    id: 'time-off-conflict-confirm'
 - waitForAnimationToEnd
-# Overlap path: confirm the conflict dialog (notifies parents server-side).
-- runFlow:
-    when:
-      visible:
-        id: 'time-off-conflict-confirm'
-    commands:
-      - tapOn:
-          id: 'time-off-conflict-confirm'
-      - waitForAnimationToEnd
 - assertVisible:
     id: 'time-off-list'
+# The created row (below the form, so scroll the list to it).
+- scrollUntilVisible:
+    element: '.*overlaps today shift.*'
+    direction: DOWN
+    timeout: 20000
 - takeScreenshot: nanny-time-off-submitted
 
 # --- Parent: land where CARER_TIME_OFF_CONFLICT push would deep-link ---
@@ -95,9 +90,11 @@ tags:
 - waitForAnimationToEnd
 - assertVisible:
     id: 'schedule-shifts-screen'
-# NOT asserting schedule-away-summary here: with no seeded overlap (see the
-# MANUAL note above) it never renders, and a `when visible: X / assertVisible:
-# X` pair is self-referential — it only ever runs when it would trivially
-# pass. Making this a real assertion needs the deterministic overlap fixture
-# this flow doesn't have yet.
+# The nanny's time off covers today, so this week's Agenda (the default view)
+# carries her away row with her note. `schedule-away-summary` is NOT the
+# target: it is only in the Week-ribbon/cross-family header, by design.
+- scrollUntilVisible:
+    element: '.*overlaps today shift.*'
+    direction: DOWN
+    timeout: 20000
 - takeScreenshot: parent-schedule-after-time-off-conflict

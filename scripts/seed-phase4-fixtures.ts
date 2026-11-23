@@ -502,6 +502,23 @@ async function main(db: Db): Promise<void> {
     `[reset]   deleted ${clearedArrangements.length} pay_arrangements ` +
       '(PaySetupScreen redirects to the hub while one exists)'
   );
+  // Flow 07's Save now SENDS A ROUND (a `proposed` terms_proposals row) and
+  // the nanny accepts it. A round left open by an aborted run makes
+  // PaySetupScreen render the sent-receipt instead of the form, so clear the
+  // pair's rounds too.
+  const clearedProposals = await db
+    .delete(termsProposals)
+    .where(
+      and(
+        eq(termsProposals.household_id, householdId),
+        eq(termsProposals.carer_id, nannyId)
+      )
+    )
+    .returning({ id: termsProposals.id });
+  console.log(
+    `[reset]   deleted ${clearedProposals.length} terms_proposals ` +
+      '(PaySetupScreen shows the sent-receipt while one is open)'
+  );
 
   // --- 2. Overtime week ----------------------------------------------------
   await reseedWorkedWeek(db, {

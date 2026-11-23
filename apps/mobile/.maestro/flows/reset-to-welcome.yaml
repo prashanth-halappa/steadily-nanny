@@ -71,6 +71,68 @@ appId: com.jetto.steadily.nanny
 
 # Every other wizard route file under apps/mobile/src/app/onboarding/ — real
 # testIDs from the screen components, no sign-out on any of them.
+# Stuck on household / start / role screen: walk to code-screen, which is the
+# one wizard screen with an in-app sign-out. clearState alone cannot rescue
+# this — iOS keeps the Better Auth session in the Keychain across it, so the
+# relaunch lands right back here (seen when a phase4 re-seed deletes the
+# draft household a fresh parent had just joined). Falls through to the
+# clearState arms below if any hop is missing.
+- runFlow:
+    when:
+      visible:
+        id: 'household-screen'
+    commands:
+      - tapOn:
+          id: 'household-screen-back'
+      - waitForAnimationToEnd
+# START -> ROLE first: after clearState the persisted wizard progress is gone,
+# so START's "join" would itself route to ROLE (no role chosen yet).
+- runFlow:
+    when:
+      visible:
+        id: 'start-screen'
+    commands:
+      - tapOn:
+          id: 'start-screen-back'
+      - waitForAnimationToEnd
+- runFlow:
+    when:
+      visible:
+        id: 'role-screen'
+    commands:
+      - tapOn:
+          id: 'role-parent'
+      - tapOn:
+          id: 'role-screen-cta'
+      - extendedWaitUntil:
+          visible:
+            id: 'start-screen'
+          timeout: 10000
+          optional: true
+      - tapOn:
+          id: 'start-join'
+          optional: true
+      - tapOn:
+          id: 'start-screen-cta'
+          optional: true
+      - extendedWaitUntil:
+          visible:
+            id: 'code-screen-sign-out'
+          timeout: 10000
+          optional: true
+- runFlow:
+    when:
+      visible:
+        id: 'code-screen-sign-out'
+    commands:
+      - tapOn:
+          id: 'code-screen-sign-out'
+      - waitForAnimationToEnd
+      - extendedWaitUntil:
+          visible:
+            id: 'welcome-screen'
+          timeout: 15000
+
 - runFlow:
     when:
       visible:
