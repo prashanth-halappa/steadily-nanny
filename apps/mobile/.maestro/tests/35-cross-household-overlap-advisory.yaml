@@ -18,12 +18,19 @@
 # "Our household" (PHASE4_HOUSEHOLD_ID, this flow's household A — logged
 # into via login.yaml) and "LEAKCANARY the Cole household" (household B,
 # scripts/seed-second-household.ts), which has a CONFIRMED shift
-# 2026-09-10T08:00–17:00 Europe/London for that same nanny.
+# 07:00–16:00 UTC on ${CROSS_HOUSEHOLD_CLASH_DATE} for that same nanny. The
+# seeder rolls that date 400-699 days ahead on every run (a fixed date rotted
+# into the past, where the 'past' warning outranks 'busy') and prints it.
+# SINGLE-USE per seed: this flow CREATES a household-A shift on that day, so
+# a re-run would hit the same-carer hard stop. Re-run the seeder first:
+#   D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=… bun run scripts/seed-second-household.ts
+# and copy its CROSS_HOUSEHOLD_* lines into .env.maestro (seed-launch-pass.sh
+# does that for you). Flow 36 uses the second day, CROSS_HOUSEHOLD_READ_DATE.
 #
 # DRIVE: parent A opens the extra-shift form pre-filled via URL params
 # (`ExtraShiftScreen`'s `useLocalSearchParams` reads `date`/`start`/`end`/
 # `carerId` directly into its initial state — see the component's
-# `useState` initializers) for a window on 2026-09-10 that must overlap
+# `useState` initializers) for a window on that day that must overlap
 # household B's 08:00–17:00 booking. The form is driven by URL params
 # rather than the native date/time wheel pickers deliberately — see the
 # GAP note at the bottom of this file.
@@ -31,7 +38,7 @@
 # WHY 00:00–23:59, NOT 08:00–17:00: household A's actual `timezone` is
 # whatever was set when "Our household" was created (not necessarily
 # Europe/London — `scripts/seed-phase4-fixtures.ts` reads it live rather
-# than assuming, see its own header). A near-full local day on 2026-09-10
+# than assuming, see its own header). A near-full local day on that date
 # converts to a UTC window that overlaps household B's 07:00–16:00 UTC
 # booking for any real-world UTC offset (-12..+14), so the clash fires
 # regardless of household A's actual zone — narrower hours would not.
@@ -51,7 +58,7 @@ tags:
 - runFlow: ../flows/login.yaml
 
 # --- Open the extra-shift form pre-filled with the clashing window --------
-- openLink: steadilynanny:///(private)/schedule/shifts/extra?date=2026-09-10&start=00:00&end=23:59&carerId=${PHASE4_NANNY_ID}
+- openLink: steadilynanny:///(private)/schedule/shifts/extra?date=${CROSS_HOUSEHOLD_CLASH_DATE}&start=00:00&end=23:59&carerId=${PHASE4_NANNY_ID}
 - runFlow: cx-dismiss-open-alert.yaml
 - extendedWaitUntil:
     visible:
@@ -101,8 +108,8 @@ tags:
     notVisible:
       id: 'schedule-extra-shift-screen'
     timeout: 20000
-- assertVisible:
-    id: 'schedule-shifts-screen'
+# (No assertion on where router.back() lands — after a cold deep link it is
+# Today, not schedule-shifts-screen. Leaving the form is the signal; flow 34.)
 # The one error string a same-household overlap WOULD produce
 # (`ShiftOverlapsError`'s message, `shiftErrors.ts`) — confirms no 409 ever
 # reached the client for this cross-household create.

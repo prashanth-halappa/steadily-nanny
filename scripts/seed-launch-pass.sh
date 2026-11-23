@@ -77,6 +77,7 @@ APPROVAL_KV=$(grep -E '^ *(EXTRA_SHIFT_ID|DEMOTED_SHIFT_ID|TIME_ENTRY_ID): ' "$O
 
 run_seed "seed-second-household (LEAKCANARY)" \
   bun run scripts/seed-second-household.ts
+CROSS_KV=$(sed -n '/^# --- eval me/,$p' "$OUT" | grep -E '^CROSS_HOUSEHOLD_[A-Z0-9_]+=' || true)
 # That seeder prints canary strings but no id, and flow 22 deep-links by id.
 # Flows address carers by user id in a testID (pay-carer-picker-<id>), so the
 # ids of the cast members no seeder prints are needed too.
@@ -147,6 +148,9 @@ step "regenerating apps/mobile/.env.maestro"
   echo
   echo "# Monday anchor for the Hours deep-link regression (flow 05)."
   echo "HOURS_DEEPLINK_WEEK_START=2026-01-05"
+  echo
+  echo "# --- seed-second-household.ts (flows 35/36) ---"
+  echo "$CROSS_KV"
   echo
   echo "# --- seed-e2e-approval-fixtures.ts (flows 02/03/04) ---"
   echo "$APPROVAL_KV"

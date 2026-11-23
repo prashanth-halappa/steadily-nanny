@@ -13,8 +13,10 @@
 # FIXTURES: same as `35-cross-household-overlap-advisory.yaml` — the nanny
 # (NANNY_EMAIL) works both "Our household" (PHASE4_HOUSEHOLD_ID, household
 # A) and "LEAKCANARY the Cole household" (household B), which has a
-# CONFIRMED shift 2026-09-10T08:00–17:00 Europe/London. This flow reuses
-# 35's same wide local-day window (00:00–23:59 on 2026-09-10) to trigger the
+# CONFIRMED shift 07:00–16:00 UTC on ${CROSS_HOUSEHOLD_READ_DATE} (the day
+# after flow 35's, both rolled and printed by the seeder, so 35's create
+# can't turn this into a same-carer hard stop). This flow reuses
+# 35's same wide local-day window (00:00–23:59) to trigger the
 # SAME cross-household busy advisory — see 35's header for why that window,
 # not 08:00–17:00, is timezone-safe. It CANCELS out of the dialog rather
 # than creating the shift: this flow's job is what parent A can READ, not
@@ -55,7 +57,7 @@ tags:
 
 # === B3: extra-shift screen + the busy dialog names the CARER, never the ===
 # === other family ===========================================================
-- openLink: steadilynanny:///(private)/schedule/shifts/extra?date=2026-09-10&start=00:00&end=23:59&carerId=${PHASE4_NANNY_ID}
+- openLink: steadilynanny:///(private)/schedule/shifts/extra?date=${CROSS_HOUSEHOLD_READ_DATE}&start=00:00&end=23:59&carerId=${PHASE4_NANNY_ID}
 - runFlow: cx-dismiss-open-alert.yaml
 - extendedWaitUntil:
     visible:
@@ -96,9 +98,15 @@ tags:
 - takeScreenshot: ${OUT}/36-b4-dialog-cancelled
 
 # === B5: Hours — no leak =====================================================
-- tapOn:
-    id: 'tab-hours'
-- waitForAnimationToEnd
+# B2/B3's deep links pushed Schedule and the extra-shift form over the tabs
+# (no tab bar, and back lands on the pushed Schedule), so open Hours by deep
+# link, as flows 04-13 do, rather than tapping tab-hours.
+- openLink: steadilynanny:///(private)/(tabs)/hours
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'hours-screen'
+    timeout: 15000
 - assertVisible:
     id: 'hours-screen'
 - assertNotVisible: 'LEAKCANARY'

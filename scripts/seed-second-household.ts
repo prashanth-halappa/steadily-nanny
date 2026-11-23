@@ -157,34 +157,50 @@ async function main(db: Db): Promise<void> {
     });
   }
 
-  // A confirmed shift, so the nanny has real busy time in this household.
-  // Fixed dates, not "now" — the assertions must be reproducible. D1 stores
-  // instants as toISOString() UTC text, so the +01:00 literals are normalised.
-  const startsAt = new Date('2026-09-10T08:00:00+01:00').toISOString();
-  const [shift] = await db
-    .select({ id: shifts.id })
-    .from(shifts)
+  // Confirmed shifts, so the nanny has real busy time in this household that
+  // a household-A parent's extra-shift form can clash with (flows 35/36).
+  // ROLLING, not fixed: a fixed date rots into the past, where the form's
+  // 'past' warning outranks the cross-household 'busy' one. 400-699 days out
+  // is far past the 84-day pattern horizon, so no materialised shift in
+  // household A can collide. TWO days because flow 35 CREATES a household-A
+  // shift on its day (a re-run there would hit the same-carer hard stop),
+  // while flow 36 only cancels on its own day. Each run replaces this
+  // seeder's previous shifts, so re-running it re-arms both flows.
+  // 07:00-16:00 UTC (08:00-17:00 London in summer); local_date is the same
+  // day in London either way. D1 has no local_date trigger: write it.
+  await db
+    .delete(shifts)
     .where(
-      and(eq(shifts.household_id, householdId), eq(shifts.starts_at, startsAt))
-    )
-    .limit(1);
-  if (!shift) {
+      and(
+        eq(shifts.household_id, householdId),
+        eq(shifts.carer_id, nannyId),
+        eq(shifts.created_by, otherParentId)
+      )
+    );
+  const offsetDays = 400 + Math.floor(Math.random() * 300);
+  const clashDate = new Date(Date.now() + offsetDays * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  const readDate = new Date(Date.parse(clashDate) + 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+  for (const day of [clashDate, readDate]) {
     await db.insert(shifts).values({
       household_id: householdId,
       carer_id: nannyId,
-      starts_at: startsAt,
-      ends_at: new Date('2026-09-10T17:00:00+01:00').toISOString(),
+      starts_at: new Date(`${day}T07:00:00Z`).toISOString(),
+      ends_at: new Date(`${day}T16:00:00Z`).toISOString(),
       timezone: 'Europe/London',
-      local_date: '2026-09-10', // D1 has no local_date trigger (Postgres' sync_*_local_date): write it.
+      local_date: day,
       kind: 'recurring',
       status: 'confirmed',
       origin: 'system_generated',
       created_by: otherParentId,
     });
-    console.log('[created] confirmed shift in the second household');
-  } else {
-    console.log('[skip]    shift already exists');
   }
+  console.log(
+    `[created] confirmed shifts in the second household on ${clashDate} and ${readDate}`
+  );
 
   const [membershipCount] = await db
     .select({ n: count() })
@@ -205,6 +221,9 @@ async function main(db: Db): Promise<void> {
   console.log(
     `Canary strings to grep for: "${OTHER_HOUSEHOLD_NAME}", "${OTHER_CHILD_NAME}"`
   );
+  console.log('\n# --- eval me');
+  console.log(`CROSS_HOUSEHOLD_CLASH_DATE=${clashDate}`);
+  console.log(`CROSS_HOUSEHOLD_READ_DATE=${readDate}`);
 }
 
 const { db, dispose } = await getLocalDb();

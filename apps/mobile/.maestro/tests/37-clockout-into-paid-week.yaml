@@ -21,7 +21,14 @@
 # complete one first (so the week has hours to approve+pay), then start a
 # SECOND session, approve+pay while it's running, and clock it out last.
 #
-# FIXTURES: none beyond the standard cast — no new seeder needed. Reuses
+# RE-RUNNABLE via a reset: a pass leaves the current week approved, paid and
+# flagged, so run `D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=… bun run
+# scripts/seed-paid-week-reset.ts` before every re-run (it deletes nanny@'s
+# time entries, timesheets and payments in "Our household" from the last 7
+# days; the 2026-01 seed weeks are untouched). Also clears a RUNNING entry
+# left by an aborted run, which would otherwise pin the clock-out card.
+#
+# FIXTURES: none beyond the standard cast. Reuses
 # `PHASE4_TODAY_SHIFT_ID` (a confirmed shift for TODAY, reseeded fresh every
 # `seed-phase4-fixtures.ts` run) purely as a plausible clock-in target; the
 # assertions do not depend on shift association. REQUIRES flow
@@ -52,16 +59,27 @@ tags:
 - tapOn:
     id: 'tab-today'
 - waitForAnimationToEnd
+# Off the clock the clock card lives in the FEED, not the pinned slot,
+# whenever anything else owns the slot (here: the seeded cover-ask) — and
+# moment cards can sit above it. Scroll to it; centerElement is safe because
+# ThisWeekCard always renders below it.
+- scrollUntilVisible:
+    element:
+      id: 'today-clock-in'
+    direction: DOWN
+    centerElement: true
+    timeout: 20000
 - assertVisible:
     id: 'today-clock-card'
 - tapOn:
     id: 'today-clock-in'
-- extendedWaitUntil:
-    visible:
+# On the clock the card jumps to the pinned slot at the TOP of the feed,
+# above where we scrolled to — scroll back up to it.
+- scrollUntilVisible:
+    element:
       id: 'today-clock-out'
+    direction: UP
     timeout: 15000
-- assertVisible:
-    id: 'today-clock-receipt'
 - takeScreenshot: ${OUT}/s5-37-a-first-session-running
 
 # Force a real gap so this session's duration cannot round to zero.
@@ -85,18 +103,38 @@ tags:
     notVisible:
       id: 'clockout-sheet'
     timeout: 15000
-- extendedWaitUntil:
-    visible:
+# Off the clock again, the card drops back into the feed below the slot.
+- scrollUntilVisible:
+    element:
       id: 'today-clock-in'
-    timeout: 15000
+    direction: DOWN
+    centerElement: true
+    timeout: 20000
+# The receipt ("Clocked out at …") renders in the OFF-clock branch of
+# ClockInCard, for the most recent completed entry — not while running.
+- assertVisible:
+    id: 'today-clock-receipt'
 - takeScreenshot: ${OUT}/s5-37-b-first-session-clocked-out
 
 # --- Nanny: SECOND session — start it now, before approval ----------------
+# Off the clock the clock card lives in the FEED, not the pinned slot,
+# whenever anything else owns the slot (here: the seeded cover-ask) — and
+# moment cards can sit above it. Scroll to it; centerElement is safe because
+# ThisWeekCard always renders below it.
+- scrollUntilVisible:
+    element:
+      id: 'today-clock-in'
+    direction: DOWN
+    centerElement: true
+    timeout: 20000
 - tapOn:
     id: 'today-clock-in'
-- extendedWaitUntil:
-    visible:
+# On the clock the card jumps to the pinned slot at the TOP of the feed,
+# above where we scrolled to — scroll back up to it.
+- scrollUntilVisible:
+    element:
       id: 'today-clock-out'
+    direction: UP
     timeout: 15000
 - takeScreenshot: ${OUT}/s5-37-c-second-session-running
 
