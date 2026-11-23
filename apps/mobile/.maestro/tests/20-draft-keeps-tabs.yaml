@@ -8,10 +8,10 @@
 # flipped to the draft — so the highest-value assertion here is simply that
 # the tab bar is still there.
 #
-# FIXTURE: `NANNY_DRAFT_HOUSEHOLD_ID` — a third household for the shared seed
-# nanny, state='draft', created via psql on 2026-08-16 (see .env.maestro's
-# comment above that var for the exact statements if it needs re-creating;
-# not produced by seed-phase4-fixtures.ts, so a fresh seed run drops it).
+# FIXTURE: `NANNY_DRAFT_HOUSEHOLD_ID` — a state='draft' household authored by
+# the shared seed nanny, created idempotently by
+# scripts/seed-launch-pass-bootstrap.ts (run by seed-launch-pass.sh). The flow
+# does not mutate it, so re-runs need no re-seed.
 appId: com.jetto.steadily.nanny
 tags:
   - today

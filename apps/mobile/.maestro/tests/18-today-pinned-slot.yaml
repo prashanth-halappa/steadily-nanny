@@ -6,12 +6,30 @@
 # header + slot render, that the feed scrolls, and that the slot is still the
 # first thing you see on scrolling back to the top — not that it stays fixed
 # on screen while the feed scrolls past it (it doesn't; it scrolls too).
+#
+# FIXTURE — the "ordinary day" claims below (parent's occupant = today's
+# cover, nanny's = the clock) need a viewer with NOTHING on the attention
+# ladder (`resolveAttentionOwner`). The seed parent can never be that:
+# `useInboxItems` reads EVERY household she belongs to, and the shared seed
+# household carries flow 15's deliberately-pending absorbed proposal (rung
+# `termsProposal`) plus flows 02-09's change requests / submitted weeks (rung
+# `inbox`), so her slot correctly holds TermsProposalCard / NeedsAttentionCard
+# — a correct app, a wrong fixture. So this flow signs in as the QUIET pair
+# from `scripts/seed-phase4-fixtures.ts` point 10 (fresh accounts per seed:
+# one household, one child, pay agreed, nothing else). Both login subflows
+# select `${PHASE4_HOUSEHOLD_ID}`, so it is overridden per call (same reuse
+# flow 21 documents). Read-only: no re-seed needed between runs.
 appId: com.jetto.steadily.nanny
 tags:
   - today
 ---
 # --- Parent: header + pinned slot present, feed scrolls beneath it --------
-- runFlow: ../flows/login.yaml
+- runFlow:
+    file: ../flows/login.yaml
+    env:
+      PARENT_EMAIL: ${PHASE4_QUIET_PARENT_EMAIL}
+      PARENT_PASSWORD: ${PHASE4_TEST_PASSWORD}
+      PHASE4_HOUSEHOLD_ID: ${PHASE4_QUIET_HOUSEHOLD_ID}
 # login.yaml's select-household.yaml step ends on the Settings tab (it opens
 # the switcher from there and never taps back) — go to Today explicitly.
 - tapOn:
@@ -53,7 +71,12 @@ tags:
 - takeScreenshot: today-pinned-slot-back-at-top
 
 # --- Nanny: on an ordinary day the slot's occupant is the clock-in control -
-- runFlow: ../flows/login-nanny.yaml
+- runFlow:
+    file: ../flows/login-nanny.yaml
+    env:
+      NANNY_EMAIL: ${PHASE4_QUIET_NANNY_EMAIL}
+      NANNY_PASSWORD: ${PHASE4_TEST_PASSWORD}
+      PHASE4_HOUSEHOLD_ID: ${PHASE4_QUIET_HOUSEHOLD_ID}
 - tapOn:
     id: 'tab-today'
 - waitForAnimationToEnd

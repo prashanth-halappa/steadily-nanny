@@ -988,6 +988,72 @@ async function main(db: Db): Promise<void> {
     'Phase4 Decline Nanny'
   );
 
+  // 10. A QUIET live household for flow 18: fresh parent + fresh nanny, both
+  //     active, one child, pay agreed, and NOTHING else — no proposals, no
+  //     shifts, no submitted weeks. Flow 18 asserts the "ordinary day" slot
+  //     occupants (parent: today's cover, nanny: the clock), which only hold
+  //     when the whole attention ladder is empty. The seed parent can never
+  //     give it that: `useInboxItems` reads EVERY household she belongs to,
+  //     and the shared seed household carries flow 15's pending proposal and
+  //     flows 02-09's change requests / submitted weeks. Fresh accounts per
+  //     seed, so no earlier pass can pollute it.
+  const quietParentEmail = `phase4-quiet-parent-${suffix}@steadilynanny.test`;
+  const quietParentId = await createConfirmedUser(
+    db,
+    quietParentEmail,
+    'Phase4 Quiet Parent'
+  );
+  const quietNannyEmail = `phase4-quiet-nanny-${suffix}@steadilynanny.test`;
+  const quietNannyId = await createConfirmedUser(
+    db,
+    quietNannyEmail,
+    'Phase4 Quiet Nanny'
+  );
+  const [quietHousehold] = await db
+    .insert(households)
+    .values({
+      name: 'Quiet household',
+      timezone: TIMEZONE,
+      currency: CURRENCY,
+      created_by: quietParentId,
+    })
+    .returning({ id: households.id });
+  if (!quietHousehold)
+    throw new Error('quiet household insert returned no row');
+  await db.insert(householdMembers).values([
+    {
+      household_id: quietHousehold.id,
+      user_id: quietParentId,
+      role: 'owner',
+      can_edit: true,
+      status: 'active',
+    },
+    {
+      household_id: quietHousehold.id,
+      user_id: quietNannyId,
+      role: 'nanny',
+      can_edit: false,
+      status: 'active',
+    },
+  ]);
+  // A child makes the owner ONBOARDED (see the Sunday household above).
+  await db.insert(children).values({
+    household_id: quietHousehold.id,
+    name: 'Quiet Kid',
+    avatar_initial: 'Q',
+  });
+  // Agreed terms, so the nanny's slot is the clock, not A1's terms block.
+  await db.insert(payArrangements).values({
+    household_id: quietHousehold.id,
+    carer_id: quietNannyId,
+    rate_minor: SUNDAY_RATE_MINOR,
+    currency: CURRENCY,
+    valid_from: ARRANGEMENT_VALID_FROM,
+    carer_display_name: 'Phase4 Quiet Nanny',
+    created_by: quietParentId,
+  });
+  console.log(`[created] quiet household ${quietHousehold.id} (flow 18)`);
+
   // --- Driver contract -----------------------------------------------------
   // ONE guard at the contract boundary, instead of an error check at each of the
   // ~18 `maybeSingle()` lookups that feed it.
@@ -1031,6 +1097,9 @@ async function main(db: Db): Promise<void> {
     ['PHASE4_DECLINE_PARENT_ID', String(declineParentId)],
     ['PHASE4_DECLINE_NANNY_EMAIL', String(declineNannyEmail)],
     ['PHASE4_DECLINE_NANNY_ID', String(declineNannyId)],
+    ['PHASE4_QUIET_HOUSEHOLD_ID', String(quietHousehold.id)],
+    ['PHASE4_QUIET_PARENT_EMAIL', String(quietParentEmail)],
+    ['PHASE4_QUIET_NANNY_EMAIL', String(quietNannyEmail)],
   ];
   const emptyKeys = contract.filter(
     ([, v]) => v === '' || v === 'undefined' || v === 'null'

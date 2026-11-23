@@ -16,29 +16,10 @@
 # sign-out when it exists, else `clearState:true` via onboarding-stuck-clearstate.yaml.
 appId: com.jetto.steadily.nanny
 ---
-- launchApp:
-    clearState: false
-
-# If the intro sheet is up (e.g. first run after a manual reinstall), clear it.
-#
-# The bounded wait is load-bearing and this call site was the one missing it
-# (the two below already had one). The sheet pops ASYNCHRONOUSLY a second or two
-# after launch, so a bare guard here evaluates before it exists, passes over it,
-# and the sheet then covers every assertion that follows — which surfaces as
-# `welcome-screen is visible` failing. Normally the driver's
-# `EXDevMenuIsOnboardingFinished` preference means the sheet never appears at
-# all, but that preference lives in the APP CONTAINER and a reinstall generates
-# a new container and wipes it (observed 2026-08-12: container UUID changed and
-# the key was gone). So this is the arm that has to survive a reinstall.
-- repeat:
-    times: 3
-    commands:
-      - extendedWaitUntil:
-          visible:
-            text: 'Runtime version'
-          timeout: 6000
-          optional: true
-      - runFlow: dismiss-dev-menu.yaml
+# Launch + clear the dev-client intro sheet (it pops ASYNCHRONOUSLY after
+# launch, so relaunch.yaml waits for it before each optional dismiss — see its
+# header). Shared with every mid-flow relaunch.
+- runFlow: relaunch.yaml
 
 # Let the relaunched app settle: a live session auto-loads the bundle to the
 # tabs; a signed-out one lands on welcome.

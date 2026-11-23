@@ -5,8 +5,11 @@
 # test is "the round shows declined, and the parent can still set pay" —
 # since she is by then an ACTIVE member (redeem creates the membership
 # unconditionally, before the offer is even looked at), "set pay" here is the
-# ORDINARY first-arrangement path (`PaySetupScreen`, `useCreatePayArrangement`
-# — a direct write, not a second proposal), not a fresh offer/redeem round.
+# ORDINARY first-time setup path (`PaySetupScreen`), not a fresh offer/redeem
+# round. Since P1 that screen SENDS a new `terms_proposals` round (it no
+# longer writes `pay_arrangements` directly), so "can still set pay" means the
+# declined round does not block a new one: the form is reachable and Save
+# lands the sent-receipt (updated 2026-11-22, same as flow 07).
 #
 # FIXTURES — `PHASE4_DECLINE_PARENT_EMAIL` / `PHASE4_DECLINE_NANNY_EMAIL`,
 # two fresh CONFIRMED accounts with no household
@@ -100,11 +103,21 @@ tags:
     visible:
       id: 'children-screen'
     timeout: 15000
+# HARNESS FIX 2026-11-22 (remote Worker) — same as flow 16: the EmptyState
+# renders only once the children query succeeds, pushing `children-add-button`
+# ~235pt down; tapping before that hits the stale frame ([22,470][418,518]).
+- extendedWaitUntil:
+    visible:
+      text: 'No children yet'
+    timeout: 15000
 - tapOn:
     id: 'children-add-button'
 - waitForAnimationToEnd
-- assertVisible:
-    id: 'child-form-sheet'
+# A testID on the sheet's Modal container is not reliably in the a11y tree.
+- extendedWaitUntil:
+    visible:
+      id: 'child-form-name'
+    timeout: 8000
 - tapOn:
     id: 'child-form-name'
 - inputText: 'Phase4 Kid'
@@ -201,7 +214,7 @@ tags:
 # heading (`PayScheduleFields.tsx`, a plain `<Small>`) in view at this scroll
 # position — use that instead.
 - tapOn:
-    text: 'How often you pay'
+    text: 'How often pay happens' # pay.json payScheduleFieldLabel (copy changed)
 - waitForAnimationToEnd
 # Prove the keyboard is actually down rather than assuming it — `Dictate`
 # only exists in the tree while the iOS keyboard is on screen.
@@ -343,24 +356,22 @@ tags:
 # NANNY x JOIN inserts AVAILABILITY between CODE and the permission screens —
 # see flow 16's matching block for the full why. Finish is disabled until a
 # day is selected; toggle Monday (Postgres dow 1).
+# The week strip is gone: AvailabilityEditor renders one Switch per day,
+# `availability-day-switch-<dow>` (updated 2026-11-22, as flow 16). The
+# toggle is a live upsert and the CTA keys off the SERVER rows, so wait for
+# it to enable rather than asserting immediately.
 - extendedWaitUntil:
     visible:
-      id: 'availability-screen'
+      id: 'availability-day-switch-1'
     timeout: 25000
-# The screen's own `extendedWaitUntil` only proves the ROOT view mounted —
-# measured 2026-08-16: the day-1 tap dispatched (hierarchy showed
-# `availability-week-strip-day-1` present, `enabled=true`) but its `selected`
-# stayed `false` and the CTA stayed `enabled=false`, meaning the tap landed
-# before the strip's press handler was wired up, same "visible but not yet
-# interactive" gap the household-screen swipe/dismiss comments elsewhere in
-# this file already document. One settle beat fixes it.
 - waitForAnimationToEnd
 - tapOn:
-    id: 'availability-week-strip-day-1'
-- waitForAnimationToEnd
-- assertVisible:
-    id: 'availability-screen-cta'
-    enabled: true
+    id: 'availability-day-switch-1'
+- extendedWaitUntil:
+    visible:
+      id: 'availability-screen-cta'
+      enabled: true
+    timeout: 15000
 - tapOn:
     id: 'availability-screen-cta'
 - waitForAnimationToEnd
@@ -476,21 +487,19 @@ tags:
 - tapOn:
     id: 'pay-setup-screen-cta'
 - waitForAnimationToEnd
-# The screen only calls router.back() after the create mutation resolves, so
-# leaving it is the post-condition that the arrangement actually landed.
-- extendedWaitUntil:
-    notVisible:
-      id: 'pay-setup-screen'
-    timeout: 20000
-# `handleSubmit` does `router.back()`, not a fixed redirect — re-open the pay
-# hub explicitly rather than trust where "back" lands from a deep link.
-- openLink: steadilynanny:///(private)/settings/pay
+# Save SENDS A ROUND now (P1, PaySetupScreen.handleSubmit → proposeTerms):
+# no navigation, the screen re-renders as the persistent sent-receipt once
+# the new `proposed` row exists — which is only possible because the declined
+# round is closed (092 allows one open round per household/carer). The
+# receipt IS the post-condition; no arrangement exists until she agrees.
 - extendedWaitUntil:
     visible:
-      id: 'pay-screen'
-    timeout: 25000
+      id: 'pay-terms-receipt'
+    timeout: 20000
+# The receipt is for the NEW round (20.00), not the declined 19.00 offer.
 - assertVisible:
-    id: 'pay-current-terms-card'
+    id: 'pay-terms-receipt-terms'
+    text: '.*20\.00.*'
 - assertNotVisible:
-    id: 'pay-empty-no-arrangement'
+    id: 'pay-setup-screen-cta'
 - takeScreenshot: parent-set-pay-after-decline

@@ -1,0 +1,24 @@
+# Relaunch the app WITHOUT clearing state, then clear the dev-client intro sheet.
+#
+# The sheet pops ASYNCHRONOUSLY a second or two after launch (even with
+# EXDevMenuShowsAtLaunch=false in the app plist — observed 2026-11-22, flow 21),
+# so a bare `launchApp` + one immediate dismiss runs before the sheet exists and
+# the sheet then covers every later assertion (`tab-today is visible` fails with
+# the Today screen plainly behind it). The bounded wait before each optional
+# dismiss is what catches it. Use this for every mid-flow relaunch instead of a
+# bare `launchApp: clearState: false`. reset-to-welcome.yaml starts with it.
+#
+# No verdict: callers assert their own entry state afterwards.
+appId: com.jetto.steadily.nanny
+---
+- launchApp:
+    clearState: false
+- repeat:
+    times: 3
+    commands:
+      - extendedWaitUntil:
+          visible:
+            text: 'Runtime version'
+          timeout: 6000
+          optional: true
+      - runFlow: dismiss-dev-menu.yaml

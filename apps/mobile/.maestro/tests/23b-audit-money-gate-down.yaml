@@ -7,8 +7,7 @@ appId: com.jetto.steadily.nanny
 tags:
   - audit-2026-08-17
 ---
-- launchApp:
-    clearState: false
+- runFlow: ../flows/relaunch.yaml # waits out the async dev-menu sheet
 - waitForAnimationToEnd
 - extendedWaitUntil:
     visible:
