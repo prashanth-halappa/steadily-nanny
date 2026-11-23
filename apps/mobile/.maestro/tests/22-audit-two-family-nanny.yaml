@@ -3,38 +3,44 @@
 # item, terms proposal, Hours deep link, pending schedule) may bleed the
 # wrong family's name/data into the other's screen.
 #
-# Fixtures (this run, direct SQL against the local stack — see the Maestro
-# validation report for the exact statements):
-#   - A running (clocked-in, no clock-out) time_entry for the nanny in
-#     LEAKCANARY the Cole household (household B) while household A
-#     ("Our household") stays her ACTIVE household.
-#   - A `pending` schedule_pattern + one day row in household B (Mon/Wed
-#     08:00-13:00), carer = nanny — PendingScheduleCard fixture (A5).
-#   - A `proposed` terms_proposal in household B, direction='parent' (the
-#     OTHER family proposing to the nanny) — inbox + ProposalReviewScreen
-#     fixture (A3).
+# Fixtures — scripts/seed-two-family-fixtures.ts (run it right before this
+# flow, and with --clean right after: its rows change the nanny's Today and
+# Inbox for every other flow). It deletes its previous rows and seeds, all in
+# household B = LEAKCANARY the Cole household, for nanny@:
+#   - a RUNNING time_entry (clocked in, no clock-out) while household A
+#     (PHASE4_HOUSEHOLD_ID, "Our household") stays her ACTIVE household (A1);
+#   - a `pending` schedule_pattern, Mon/Wed 08:00-13:00 (A2/A5);
+#   - a `proposed` terms_proposal, direction='parent' — the OTHER family
+#     proposing to the nanny (A2/A3).
+# It prints TWO_FAMILY_PATTERN_ID / TWO_FAMILY_PROPOSAL_ID; put them in
+# apps/mobile/.env.maestro. Requires seed-second-household.ts (launch-pass chain).
 #
-# ${LEAKCANARY_HOUSEHOLD_ID} / ${PHASE4_HOUSEHOLD_ID} from apps/mobile/.env.maestro
-# (household A / household B respectively for this run).
+# ${PHASE4_HOUSEHOLD_ID} = household A, ${LEAKCANARY_HOUSEHOLD_ID} = household B.
 appId: com.jetto.steadily.nanny
 tags:
   - audit-2026-08-17
 ---
 - runFlow: ../flows/login-nanny.yaml
 
-# === A1: ClockInCard names family B while clocked in there, A active ======
+# === A1: family B's running clock is named while A is active =============
+# The cross-family surface is CrossFamilyStrip (P5 A2), pinned above Today's
+# header: it names the OTHER family whose clock is running. The ClockInCard
+# is scoped to the active household (A) and is legitimately absent here — A has
+# no agreed terms for this nanny (flow 07 needs none), so the terms gate
+# replaces it (flow 19).
 - tapOn:
     id: 'tab-today'
 - waitForAnimationToEnd
 - extendedWaitUntil:
     visible:
-      id: 'today-clock-card'
+      id: 'cross-family-strip-line'
     timeout: 15000
 - assertVisible:
-    id: 'today-clock-card'
+    id: 'cross-family-strip-line'
+    text: 'LEAKCANARY the Cole household · still clocked in since .*'
 - assertVisible:
-    text: 'LEAKCANARY'
-- takeScreenshot: 22-a1-clockin-card-names-family-b
+    id: 'cross-family-strip-switch'
+- takeScreenshot: 22-a1-strip-names-family-b
 
 # === A2: inbox items from both families, each in its own zone =============
 - openLink: steadilynanny:///inbox
@@ -42,19 +48,21 @@ tags:
 - assertVisible:
     id: 'inbox-screen'
 - assertVisible:
-    id: 'inbox-item-terms_proposal-d37754a6-960c-491e-9b77-494f1a80ba26'
+    id: 'inbox-item-terms_proposal-${TWO_FAMILY_PROPOSAL_ID}'
 - assertVisible:
-    id: 'inbox-item-pending_pattern-d8eeac9d-146b-4130-8486-6ae4ba131523'
+    id: 'inbox-item-pending_pattern-${TWO_FAMILY_PATTERN_ID}'
 - takeScreenshot: 22-a2-inbox-both-families
 
 # === A3: family B's proposal, opened via inbox, names family B ============
 - tapOn:
-    id: 'inbox-item-terms_proposal-d37754a6-960c-491e-9b77-494f1a80ba26'
+    id: 'inbox-item-terms_proposal-${TWO_FAMILY_PROPOSAL_ID}'
 - waitForAnimationToEnd
 - assertVisible:
     id: 'proposal-review-screen'
 - assertVisible:
-    text: 'LEAKCANARY the Cole household'
+    text: 'Terms from LEAKCANARY the Cole household'
+- assertNotVisible:
+    text: '.*Our household.*'
 - takeScreenshot: 22-a3-proposal-review-names-family-b
 - tapOn:
     id: 'proposal-back'
@@ -79,9 +87,9 @@ tags:
 - waitForAnimationToEnd
 - scrollUntilVisible:
     element:
-      id: 'today-pending-schedule-card-.*'
+      id: 'today-pending-schedule-card-${TWO_FAMILY_PATTERN_ID}'
     direction: DOWN
     timeout: 10000
 - assertVisible:
-    id: 'today-pending-schedule-card-.*'
+    id: 'today-pending-schedule-card-${TWO_FAMILY_PATTERN_ID}'
 - takeScreenshot: 22-a5-pending-schedule-other-family

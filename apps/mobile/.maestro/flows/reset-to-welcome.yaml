@@ -42,6 +42,23 @@ appId: com.jetto.steadily.nanny
       visible:
         id: 'code-screen-sign-out'
     commands:
+      # code-input autoFocuses when empty, so the keyboard is UP and covers
+      # code-screen-sign-out (the last thing in the scroll body). Tapping it
+      # blind lands on a key (seen 2026-11-23: typed 'G', no sign-out). Drop
+      # the keyboard by tapping the non-interactive "where to look" card,
+      # then scroll the sign-out clear before tapping.
+      - hideKeyboard:
+          optional: true
+      - tapOn:
+          id: 'code-entry-where-to-look'
+          optional: true
+      - waitForAnimationToEnd
+      - scrollUntilVisible:
+          element:
+            id: 'code-screen-sign-out'
+          direction: DOWN
+          optional: true
+      - scroll
       - tapOn:
           id: 'code-screen-sign-out'
       - waitForAnimationToEnd
@@ -106,6 +123,23 @@ appId: com.jetto.steadily.nanny
       visible:
         id: 'code-screen-sign-out'
     commands:
+      # code-input autoFocuses when empty, so the keyboard is UP and covers
+      # code-screen-sign-out (the last thing in the scroll body). Tapping it
+      # blind lands on a key (seen 2026-11-23: typed 'G', no sign-out). Drop
+      # the keyboard by tapping the non-interactive "where to look" card,
+      # then scroll the sign-out clear before tapping.
+      - hideKeyboard:
+          optional: true
+      - tapOn:
+          id: 'code-entry-where-to-look'
+          optional: true
+      - waitForAnimationToEnd
+      - scrollUntilVisible:
+          element:
+            id: 'code-screen-sign-out'
+          direction: DOWN
+          optional: true
+      - scroll
       - tapOn:
           id: 'code-screen-sign-out'
       - waitForAnimationToEnd

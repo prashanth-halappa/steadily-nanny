@@ -10,13 +10,14 @@
 # So the code is minted out-of-band and passed in, and this flow starts already
 # signed out. No session switch, nothing to stall.
 #
-# FIXTURES:
-#   -e S3_INVITE_CODE=XXX-XXX   a pending nanny invite on PHASE4_HOUSEHOLD_ID
-#   nanny2@steadilynanny.test exists with no household (seed-test-users.ts)
-#
-# NOT RE-RUNNABLE: once nanny 2 is a member the wizard never appears again and
-# this fails at the `role-screen` wait. That is correct — it has proven what it
-# proves, and re-proving it needs a fresh database.
+# FIXTURES (re-runnable): run, against the Worker's D1,
+#   D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=… bun run scripts/seed-s3-invite.ts
+# It deletes nanny2's membership in "Our household" (so sign-in lands on
+# `role-screen` again), mints a fresh pending NANNY invite there and prints
+#   -e S3_INVITE_CODE=XXX-XXX
+# nanny2@steadilynanny.test itself comes from seed-test-users.ts. A pass
+# re-creates the membership that flows 32+ (seed-s3-second-carer.ts) need, so
+# do not run the seeder without then running this flow (or 31) to completion.
 appId: com.jetto.steadily.nanny
 tags:
   - onboarding
@@ -66,8 +67,11 @@ tags:
 # Tapping the screen title dismisses the keyboard: it sits far above it and has
 # no onPress, so the touch falls through. Deliberately NOT "Invite code" —
 # that string is also code-input's own accessibilityLabel and would refocus it.
+# Dismiss on the non-interactive 'where to look' card, not the title: focusing
+# code-input scrolls the title off-screen, so a title tap can miss and leave
+# the keyboard over the pinned CTA (flow 31, 2026-11-23).
 - tapOn:
-    text: 'Join your household'
+    id: 'code-entry-where-to-look'
 - waitForAnimationToEnd
 
 # Pressed twice by design: the first press previews the code, the second joins.

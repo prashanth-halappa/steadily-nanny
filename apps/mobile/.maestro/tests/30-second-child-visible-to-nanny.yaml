@@ -28,6 +28,9 @@
 # this flow's whole purpose, and nothing downstream keys off "exactly one
 # child" that this would break (checked: PHASE4 fixtures reference "Nia" by
 # looking her up, not by asserting she's the only row).
+# RE-RUNNABLE: the flow removes any "Jet" a previous run left before adding
+# its own, and seed-launch-pass-bootstrap.ts's ensureChild looks Nia up by
+# name, so the leftover Jet never steals the seeded care hours.
 appId: com.jetto.steadily.nanny
 tags:
   - s2
@@ -41,13 +44,43 @@ tags:
     visible:
       id: 'manage-children-screen'
     timeout: 15000
-- assertVisible:
-    id: 'children-add-button'
 # The existing seed child is on screen too — confirms this is "Our
 # household"'s real list, not an empty/wrong one.
-- assertVisible: 'Nia'
+#
+# Child rows are `accessibilityRole="button"` Pressables, so iOS folds the chip
+# and the age into ONE label ("Nia, Age unknown" / "Jet, 4 yrs"). Whether the
+# inner name text ALSO surfaces as its own node is not reliable (on the Worker
+# run it did for the seeded Nia but not for the just-added Jet), so match the
+# folded row label, never the bare name.
+- assertVisible: 'Nia, .*'
+# RE-RUNNABLE: a previous run leaves its "Jet" behind (the nanny half needs
+# it). Remove every leftover first, so the assertions below can only pass on
+# THIS run's add. Remove is a single tap with no confirm
+# (ChildrenManager.tsx's `deleteChild.mutate`); an optional tap is a no-op
+# when no Jet exists.
+- repeat:
+    times: 3
+    commands:
+      - tapOn:
+          text: 'Remove Jet'
+          optional: true
+      - waitForAnimationToEnd
+- extendedWaitUntil:
+    notVisible: 'Jet, .*'
+    timeout: 15000
 - takeScreenshot: ${OUT}/s2-30-a-children-screen-before
 
+# Each child row carries its own care-hours card, so with Nia's hours the add
+# button already sits low, behind ManageChildrenScreen's pinned "Done" footer
+# (the pinned-footer occlusion shape: scrollUntilVisible declares it found
+# without scrolling). Scroll to it, then one bare swipe so the ScrollView
+# clamps at its end and the tap lands on real pixels.
+- scrollUntilVisible:
+    element:
+      id: 'children-add-button'
+    direction: DOWN
+    timeout: 10000
+- scroll
 - tapOn:
     id: 'children-add-button'
 - extendedWaitUntil:
@@ -93,8 +126,10 @@ tags:
     notVisible:
       id: 'child-form-sheet'
     timeout: 15000
-- assertVisible: 'Jet'
-- assertVisible: 'Nia'
+- extendedWaitUntil:
+    visible: 'Jet, 4 yrs'
+    timeout: 15000
+- assertVisible: 'Nia, .*'
 - takeScreenshot: ${OUT}/s2-30-c-jet-added
 
 - openLink: steadilynanny:///(private)/settings

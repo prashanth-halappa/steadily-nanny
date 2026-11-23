@@ -7,7 +7,7 @@
 # it gets a flow that cannot be starved by anything upstream of it: no
 # segmented control, no scroll-to-top, nothing between login and the tab.
 #
-# Needs -e OUT=<absolute dir> (the dir must already exist).
+# Needs -e OUT=<relative dir> (Maestro 2.12 rejects paths outside its own output folder; see scripts/maestro-queue.sh).
 appId: com.jetto.steadily.nanny
 tags:
   - cx

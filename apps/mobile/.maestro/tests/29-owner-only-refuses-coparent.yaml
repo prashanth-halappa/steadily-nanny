@@ -2,29 +2,16 @@
 # refuses it LEGIBLY: the control stays visible and disabled, with a stated
 # reason naming who can act (S4 §7, `useRestrictedAction.ts`), never hidden.
 #
-# PRECONDITION THIS FLOW ASSUMES AND DOES NOT CREATE — READ BEFORE RUNNING:
-# `COPARENT_EMAIL` (coparent@steadilynanny.test) is NOT currently a member of
-# `PHASE4_HOUSEHOLD_ID` ("Our household"). Verified by reading both seeders:
-#   - scripts/seed-test-users.ts:12-14 — "Deliberately does NOT create
-#     households, children, invites, or schedules — those must be created
-#     through the app during the e2e test itself." It only makes the auth
-#     user + `user_profiles` row.
-#   - scripts/seed-launch-pass-bootstrap.ts's `ensureMembers()` (~line 158)
-#     upserts exactly two `household_members` rows for "Our household" —
-#     parent as `owner`, nanny as `nanny`. No co-parent row anywhere in the
-#     seed chain, and no `login-coparent.yaml` flow file exists to pair with
-#     one.
-# Without that membership, `useRestrictedAction` (useRestrictedAction.ts:59-70)
-# resolves `myRole` to `null` for the co-parent — which is not `'parent'`, so
-# the hook returns UNRESTRICTED and this flow's central assertion is simply
-# false, not merely unreachable. THIS FLOW WILL FAIL at "co-parent lands on
-# a tab root" below until a `household_members` row
-# (household_id=${PHASE4_HOUSEHOLD_ID}, user_id=${COPARENT_ID}, role='parent',
-# status='active') exists. Seeding one here via SQL would silently paper over
-# a real gap in the invite path, so this flow deliberately does not do it —
-# see tests/S2-UNWRITABLE.md and the report this flow shipped with for the
-# recommendation (extend `ensureMembers()` with a third row, the same way
-# owner/nanny are wired, OR seed a real invite+accept).
+# FIXTURE: `COPARENT_EMAIL` is an active `role='parent'` member of
+# `PHASE4_HOUSEHOLD_ID`, seeded by scripts/seed-launch-pass-bootstrap.ts's
+# `ensureMembers()` (third row, beside owner and nanny). Without that row
+# `useRestrictedAction` resolves `myRole` to null and the gate never fires;
+# the `tab-today` assertion below is the loud check for it.
+#
+# RE-RUNNABLE: this flow saves `owner_only` and leaves it set. The first step
+# resets the household to `either` through the same screen when needed, and a
+# fresh bootstrap seed resets it too. Owner_only only restricts the co-parent,
+# so the residue does not change any other flow.
 #
 # WHY `shift-detail-cancel`, not one of TodayCoverage's ask-cover buttons —
 # those are also owner_only-gated (`askCoverRestriction` in TodayCoverage.tsx)
@@ -76,6 +63,32 @@ tags:
     timeout: 15000
 - assertVisible:
     id: 'household-approval-mode-owner_only'
+# Idempotence: a previous run left owner_only saved. Selecting `either` makes
+# the diff non-empty only in that case; save it so the owner_only tap below is
+# a real change again. At the bottom of the scroll the `either` chip sits
+# half under the sticky Back header (measured: the tap landed on the header),
+# so scroll UP until it is centred; owner_only stays visible just below it.
+- scrollUntilVisible:
+    element:
+      id: 'household-approval-mode-either'
+    direction: UP
+    centerElement: true
+    timeout: 15000
+- tapOn:
+    id: 'household-approval-mode-either'
+- runFlow:
+    when:
+      visible:
+        id: 'manage-household-screen-cta'
+        enabled: true
+    commands:
+      - tapOn:
+          id: 'manage-household-screen-cta'
+      - extendedWaitUntil:
+          visible:
+            id: 'manage-household-screen-cta'
+            enabled: false
+          timeout: 15000
 - takeScreenshot: ${OUT}/s2-29-a-household-screen
 
 - tapOn:

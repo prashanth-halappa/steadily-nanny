@@ -91,6 +91,12 @@ async function ensureOurHousehold(
       )
       .limit(1);
     if (membership) {
+      // Flow 29 saves `owner_only` through the app and leaves it set; a fresh
+      // seed must hand every flow the default `either` again.
+      await db
+        .update(households)
+        .set({ approval_mode: 'either' })
+        .where(eq(households.id, candidate.id));
       console.log(`[skip]    "${HOUSEHOLD_NAME}" exists -> ${candidate.id}`);
       return candidate.id;
     }
@@ -164,7 +170,11 @@ async function ensureChild(db: Db, householdId: string): Promise<string> {
   const [existing] = await db
     .select({ id: children.id })
     .from(children)
-    .where(eq(children.household_id, householdId))
+    // By NAME, not "any child": flow 30 leaves a second child ("Jet") behind,
+    // and an unordered first-row pick could hang the care hours on it.
+    .where(
+      and(eq(children.household_id, householdId), eq(children.name, CHILD_NAME))
+    )
     .limit(1);
   if (existing) {
     console.log('[skip]    child exists');

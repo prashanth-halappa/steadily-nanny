@@ -3,67 +3,92 @@
 # "Your usual week" entry -> NannyUsualWeekScreen renders the accepted
 # pattern).
 #
-# Fixture (this run, direct SQL): a `pending` schedule_pattern in household A
-# ("Our household"), dtstart = 2026-08-17 (this Monday), Mon/Tue/Wed/Thu/Fri,
-# with MONDAY split into two blocks (07:00-13:00 and 15:00-18:00) exercising
-# migration 101's multi-block-per-weekday support. Accessed directly by
-# pattern id (not the Today CTA) because `today-pending-schedule-card` /
-# `today-pending-schedule-cta` are NOT unique testIDs when a nanny has more
-# than one pending pattern at once (see the validation report's product
-# findings — she does, here, because of the household-B fixture in flow 22).
+# Fixture: `scripts/seed-usual-week-fixtures.ts --two-block` (prefix
+# D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=… for the remote D1). It resets the
+# "Usual Week household" and seeds a `pending` pattern from the parent,
+# dtstart = NEXT Monday, with MONDAY split into two blocks (07:00-13:00 and
+# 15:00-18:00, migration 101's multi-block weekday) and Tue-Fri 08:00-13:00,
+# so '7:00 AM – 1:00 PM' and '3:00 PM – 6:00 PM' only exist on Monday. It
+# prints USUAL_WEEK_TWO_BLOCK_PATTERN_ID; pass it with -e. Single-use (the
+# flow accepts the pattern): re-run the seeder with --two-block before each
+# pass, and WITHOUT it afterwards (a pending week sits in the nanny's global
+# Today inbox and flow 21 needs no pattern at all).
+#
+# Opened by pattern id rather than the Today CTA because
+# `today-pending-schedule-card` / `-cta` are not unique when the nanny has
+# more than one pending pattern at once.
+#
+# Accepting only materialises FUTURE occurrences and the agenda shows one
+# week, so the flow steps to NEXT week: whatever weekday the run lands on and
+# whether her week starts Sunday or Monday, next week holds a Monday
+# occurrence.
 appId: com.jetto.steadily.nanny
 tags:
   - audit-2026-08-17
 ---
-- runFlow: ../flows/login-nanny.yaml
+- runFlow:
+    file: ../flows/login-nanny.yaml
+    env:
+      PHASE4_HOUSEHOLD_ID: ${USUAL_WEEK_HOUSEHOLD_ID}
 
-- openLink: steadilynanny:///(private)/schedule/respond/d8eeac9d-146b-4130-8486-6ae4ba131523
-- waitForAnimationToEnd
-- assertVisible:
-    id: 'schedule-respond-screen'
-- scrollUntilVisible:
-    element:
-      id: 'schedule-respond-accept'
-    direction: DOWN
-    timeout: 10000
-- takeScreenshot: 25-e-respond-screen-two-blocks
-- tapOn:
-    id: 'schedule-respond-accept'
-- waitForAnimationToEnd
+- openLink: steadilynanny:///(private)/schedule/respond/${USUAL_WEEK_TWO_BLOCK_PATTERN_ID}
 - extendedWaitUntil:
     visible:
       id: 'schedule-respond-accept'
     timeout: 15000
 - assertVisible:
-    id: 'schedule-respond-accept'
-    enabled: false
-- takeScreenshot: 25-e-accepted
-
-# === E: the agenda shows TWO Monday shifts (07:00-13:00, 15:00-18:00) =====
+    id: 'schedule-respond-screen'
+# Both Monday blocks are offered (multi-block weekday, migration 101).
+- assertVisible:
+    text: 'Monday · 7:00.AM.1:00.PM'
+- assertVisible:
+    text: 'Monday · 3:00.PM.6:00.PM'
+- takeScreenshot: 25-e-respond-screen-two-blocks
 - tapOn:
-    id: 'tab-schedule'
-- waitForAnimationToEnd
+    id: 'schedule-respond-accept'
+# Accept replaces the respond screen with the pattern household's calendar,
+# a pushed ScheduleShiftsScreen (Back button, no tab bar) carrying the same
+# week nav and "Your usual week" link as the tab root.
 - extendedWaitUntil:
     visible:
       id: 'schedule-shifts-screen'
     timeout: 15000
-- assertVisible:
-    text: '7:00 AM'
-- assertVisible:
-    text: '3:00 PM'
+- assertNotVisible:
+    id: 'schedule-respond-screen'
+- takeScreenshot: 25-e-accepted
+
+# === E: the agenda shows TWO Monday shifts (07:00-13:00, 15:00-18:00) =====
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-week-next'
+    timeout: 15000
+- tapOn:
+    id: 'schedule-week-next'
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      text: '7:00.AM.–.1:00.PM'
+    direction: DOWN
+    timeout: 15000
+- scrollUntilVisible:
+    element:
+      text: '3:00.PM.–.6:00.PM'
+    direction: DOWN
+    timeout: 10000
 - takeScreenshot: 25-e-agenda-two-monday-shifts
 
 # === F/S11: Schedule tab's "Your usual week" -> NannyUsualWeekScreen ======
 - scrollUntilVisible:
     element:
       id: 'schedule-shifts-usual-week-link'
-    direction: DOWN
+    direction: UP
     timeout: 10000
 - tapOn:
     id: 'schedule-shifts-usual-week-link'
-- waitForAnimationToEnd
-- assertVisible:
-    id: 'nanny-usual-week-screen'
+- extendedWaitUntil:
+    visible:
+      id: 'nanny-usual-week-screen'
+    timeout: 15000
 - assertVisible:
     id: 'nanny-usual-week-status'
 - assertVisible:

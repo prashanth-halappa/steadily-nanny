@@ -19,7 +19,11 @@
 #
 # NOTE ON RE-RUNS: once nanny2 is a member, the wizard no longer appears for
 # them and this flow fails at the `role-screen` wait. That is correct — it has
-# already proven what it proves, and re-running it needs a fresh DB.
+# already proven what it proves. To re-run, drop only nanny2's membership:
+# `D1_REMOTE=1 … bun run scripts/seed-s3-invite.ts` does that (and mints the
+# code 31b needs).
+# Flows 32+ (seed-s3-second-carer.ts) NEED that membership, so run 31 again
+# before them.
 appId: com.jetto.steadily.nanny
 tags:
   - onboarding
@@ -85,16 +89,31 @@ tags:
 # autocompleting a previously-typed phrase mid-inputText on a fresh field.
 - eraseText
 - inputText: 'Sam Okafor'
+# Drop the keyboard BEFORE tapping code-input: with it up, code-input sits
+# under the keyboard (occlusion class), the tap lands on a key, focus stays on
+# name-input, and the eraseText/inputText below overwrite the NAME with the
+# code (seen 2026-11-23: name field read 'TSV-DQ9', no preview request sent).
+# Same hideKeyboard as flows 14/16/17, plus a tap on the non-interactive
+# "where to look" card as the guaranteed fallback (harmless if already down).
+- hideKeyboard:
+    optional: true
+- tapOn:
+    id: 'code-entry-where-to-look'
+- waitForAnimationToEnd
 - tapOn:
     id: 'code-input'
 - eraseText
 - inputText: ${maestro.copiedText}
 # The CTA is pinned BELOW the scroll body, so the keyboard covers it and
-# scrolling cannot move it (measured in flow 14). Tap the screen title, which
-# is above the keyboard and has no onPress, so the touch falls through and
-# dismisses. Not "Invite code" — that is also code-input's accessibilityLabel.
+# scrolling cannot move it (measured in flow 14). Dismiss by tapping the
+# non-interactive "where to look" card, which sits just above the focused
+# code-input and so is always on screen. NOT the title 'Join your household':
+# focusing code-input scrolls the title off-screen, the tap reports COMPLETED,
+# the keyboard stays up and the CTA tap lands on a key (seen 2026-11-23).
+- hideKeyboard:
+    optional: true
 - tapOn:
-    text: 'Join your household'
+    id: 'code-entry-where-to-look'
 - waitForAnimationToEnd
 
 # Pressed twice by design: the first press previews the code, the second joins.
@@ -156,11 +175,19 @@ tags:
     id: 'tab-today'
 - takeScreenshot: ${OUT}/s3-31-d-nanny2-today
 
-# The second carer must see this household's real data, not an empty shell.
+# The second carer must land in THIS household's schedule, not an empty shell
+# or the unavailable/error branch. A just-joined carer has no shifts and no
+# accepted usual week, so ScheduleShiftsScreen renders its empty state
+# (`schedule-shifts-empty`) INSTEAD of AgendaView — `calendar-agenda-view`
+# never mounts for her, by design. The empty-state copy names the household
+# she joined, which is the real-data check.
 - tapOn:
     id: 'tab-schedule'
 - extendedWaitUntil:
     visible:
-      id: 'calendar-agenda-view'
+      id: 'schedule-shifts-empty'
     timeout: 15000
+- assertVisible: 'Our household haven.t set your weekly schedule yet\.'
+- assertNotVisible:
+    id: 'schedule-shifts-error'
 - takeScreenshot: ${OUT}/s3-31-e-nanny2-schedule

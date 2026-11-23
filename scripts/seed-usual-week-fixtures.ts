@@ -23,7 +23,13 @@
  * shifts for this household back to empty, so re-running before a Maestro
  * pass undoes whatever the previous pass sent.
  *
- * Usage: bun run scripts/seed-usual-week-fixtures.ts
+ * `--two-block` (flow 25): after the reset, also seed a `pending` pattern
+ * from the parent, starting next Monday, with MONDAY split into two blocks
+ * (07:00-13:00 + 15:00-18:00) and Tue-Fri 08:00-13:00, and print
+ * USUAL_WEEK_TWO_BLOCK_PATTERN_ID. Run the plain seeder afterwards to reset,
+ * because a pending week shows up in the nanny's (global) Today inbox.
+ *
+ * Usage: bun run scripts/seed-usual-week-fixtures.ts [--two-block]
  * Prereqs: scripts/seed-test-users.ts (PARENT_EMAIL / NANNY_EMAIL exist).
  *
  * @module scripts/seed-usual-week-fixtures
@@ -37,6 +43,7 @@ import {
   householdMembers,
   households,
   payArrangements,
+  schedulePatternDays,
   schedulePatterns,
   shifts,
   user,
@@ -235,10 +242,50 @@ async function main(db: Db): Promise<void> {
     console.log(`[reset]   deleted ${deletedShifts.length} shift(s)`);
   }
 
+  let twoBlockPatternId: string | null = null;
+  if (process.argv.includes('--two-block')) {
+    // Next Monday in the household's zone (weekday 1 = Monday, 0 = Sunday).
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: TIMEZONE,
+    }).format(new Date());
+    const dt = new Date(`${today}T00:00:00Z`);
+    dt.setUTCDate(dt.getUTCDate() + ((8 - dt.getUTCDay()) % 7 || 7));
+    const [pattern] = await db
+      .insert(schedulePatterns)
+      .values({
+        household_id: householdId,
+        carer_id: nannyId,
+        status: 'pending',
+        rrule: 'FREQ=WEEKLY;INTERVAL=1',
+        dtstart: dt.toISOString().slice(0, 10),
+        timezone: TIMEZONE,
+        created_by: parentId,
+        sent_at: new Date().toISOString(),
+      })
+      .returning({ id: schedulePatterns.id });
+    if (!pattern) throw new Error('pattern insert returned no row');
+    await db.insert(schedulePatternDays).values(
+      [
+        { weekday: 1, start_time: '07:00', end_time: '13:00' },
+        { weekday: 1, start_time: '15:00', end_time: '18:00' },
+        ...[2, 3, 4, 5].map(weekday => ({
+          weekday,
+          start_time: '08:00',
+          end_time: '13:00',
+        })),
+      ].map(day => ({ ...day, pattern_id: pattern.id }))
+    );
+    twoBlockPatternId = pattern.id;
+    console.log('[created] pending two-block-Monday pattern (flow 25)');
+  }
+
   console.log('\n# --- eval me ---------------------------------------------');
   console.log(`USUAL_WEEK_HOUSEHOLD_ID=${householdId}`);
   console.log(`USUAL_WEEK_NANNY_ID=${nannyId}`);
   console.log(`USUAL_WEEK_PARENT_ID=${parentId}`);
+  if (twoBlockPatternId) {
+    console.log(`USUAL_WEEK_TWO_BLOCK_PATTERN_ID=${twoBlockPatternId}`);
+  }
 }
 
 const { db, dispose } = await getLocalDb();

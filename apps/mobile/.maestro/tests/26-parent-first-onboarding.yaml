@@ -43,6 +43,14 @@ tags:
     id: 'register-email'
 - eraseText
 - inputText: ${S1_EMAIL}
+# HARNESS FIX 2026-11-23. The password field is secure + textContentType
+# "newPassword". On the simulator (no iCloud Keychain) iOS shows no keyboard
+# for it, only a Select All / AutoFill menu, and XCUITest's typed text is
+# dropped: the failure frame showed the field empty with "Use at least 6
+# characters". Revealing it first ("Show") makes it a plain text field, which
+# accepts input. Real devices are unaffected; this is a simulator limitation.
+- tapOn:
+    id: 'register-password-toggle'
 - tapOn:
     id: 'register-password'
 - eraseText
@@ -122,12 +130,23 @@ tags:
 - takeScreenshot: ${OUT}/s1-26-f-children-empty
 
 # --- children: one child ------------------------------------------------
-- tapOn:
-    id: 'children-add-button'
-# Assert on text inside the sheet, never on the sheet's own testID (rule 7).
+# ChildrenManager renders its EmptyState only once the children query
+# SUCCEEDS, which pushes `children-add-button` ~235pt down. Against the remote
+# Worker the fetch lands after mount, so an immediate tap resolves the
+# PRE-shift frame and hits the illustration (flow 16, 2026-11-22). Wait for
+# the settled layout first.
 - extendedWaitUntil:
     visible:
-      text: 'Add a child'
+      text: 'No children yet'
+    timeout: 15000
+- tapOn:
+    id: 'children-add-button'
+- waitForAnimationToEnd
+# Wait on a field inside the sheet, never the sheet's own testID (rule 7), and
+# not on 'Add a child' — that string is also the button behind the sheet.
+- extendedWaitUntil:
+    visible:
+      id: 'child-form-name'
     timeout: 8000
 - takeScreenshot: ${OUT}/s1-26-g-child-sheet
 - tapOn:
@@ -190,6 +209,14 @@ tags:
     id: 'invite-role-picker'
 - tapOn:
     id: 'invite-role-nanny'
+# Pinned-footer occlusion: the button's unscrolled frame sits behind
+# SetupScreenShell's footer, so scrollUntilVisible no-ops and the tap lands in
+# dead padding. One bare swipe clamps the ScrollView (flow 16's fix).
+- scroll
+- waitForAnimationToEnd
+- assertVisible:
+    id: 'invite-generate-button'
+    enabled: true
 - tapOn:
     id: 'invite-generate-button'
 - extendedWaitUntil:

@@ -4,9 +4,15 @@
 #
 # Run BEFORE 23b/23c (the API-down/API-back halves of target B) — this flow's
 # own actions (approve, record a payment) are what makes the week "settled"
-# for those to read. Fixture: a `pay_arrangements` row for household A / the
-# nanny, inserted directly (rate 1500 minor USD, valid_from 2026-01-01) so
-# the seed week (already `submitted`) has a priced gross to approve.
+# for those to read.
+#
+# FIXTURE (remote D1, from the repo root):
+#   D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=... bun run scripts/seed-phase4-fixtures.ts
+#     -> resets the seed week 2026-01-05 to `submitted` with no payments, but
+#        also DELETES carer 1's pay arrangement, so then:
+#   D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=... bun run scripts/seed-carer1-terms.ts
+#     -> 1500 minor/hr arrangement so the week has a priced gross to approve.
+# Single-use: after a run the week is approved + paid; re-seed both to re-run.
 appId: com.jetto.steadily.nanny
 tags:
   - audit-2026-08-17
@@ -58,10 +64,16 @@ tags:
     id: 'hours-record-payment-sheet'
 - takeScreenshot: 23a-payment-recorded
 
+# After the payment sheet closes the list is scrolled PAST the reopen button,
+# which sits at the very top of the list, UNDER the status bar ([44,21][208,69]
+# measured). The hours list starts at y=0, so a 100%-visible check passes and
+# the tap lands on the status bar (iOS scroll-to-top) instead of the button.
+# Scroll UP and centre it so the tap point is clear of the status bar.
 - scrollUntilVisible:
     element:
       id: 'hours-reopen-button'
-    direction: DOWN
+    direction: UP
+    centerElement: true
     timeout: 15000
 - tapOn:
     id: 'hours-reopen-button'
@@ -76,8 +88,10 @@ tags:
 - waitForAnimationToEnd
 - assertVisible:
     id: 'hours-reopen-dialog-refusal'
+# Maestro `text` is a FULL-match regex; the banner is one longer sentence
+# that also names the recorded amount (hours.json reopenDialog.refusedPaid).
 - assertVisible:
-    text: 'Adjust it in the next payment'
+    text: ".*paid £40\\.00 on this week\\. Adjust it in the next payment.*"
 - takeScreenshot: 23a-reopen-refused
 - tapOn:
     id: 'hours-reopen-dialog-cancel'

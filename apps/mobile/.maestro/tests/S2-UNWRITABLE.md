@@ -50,5 +50,5 @@ this file) rather than carrying them forward as open work.
 The two modes that DO still exist — `either` (the default; both parents can
 act) and `owner_only` (only the owner can) — are exercised by
 `29-owner-only-refuses-coparent.yaml` (`owner_only` refuses a co-parent,
-legibly) to the extent current fixtures allow; see that flow's own header for
-the co-parent-membership precondition it depends on and does not create.
+legibly). The co-parent membership it needs is seeded by
+`scripts/seed-launch-pass-bootstrap.ts`'s `ensureMembers()`.

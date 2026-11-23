@@ -366,8 +366,11 @@ tags:
     optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
 # Dismiss on non-interactive content, not `hideKeyboard` — see flow 14's
 # header for why the CTA sits behind the keyboard otherwise.
+# Dismiss on the non-interactive 'where to look' card, not the title: focusing
+# code-input scrolls the title off-screen, so a title tap can miss and leave
+# the keyboard over the pinned CTA (flow 31, 2026-11-23).
 - tapOn:
-    text: 'Join your household'
+    id: 'code-entry-where-to-look'
 - waitForAnimationToEnd
 - tapOn:
     id: 'code-screen-cta'

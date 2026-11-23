@@ -101,8 +101,11 @@ tags:
 # so the touch falls through and dismisses. Deliberately NOT selecting on
 # "Invite code" — that string is also the `code-input`'s own accessibilityLabel,
 # so it would match the input and just refocus it.
+# Dismiss on the non-interactive 'where to look' card, not the title: focusing
+# code-input scrolls the title off-screen, so a title tap can miss and leave
+# the keyboard over the pinned CTA (flow 31, 2026-11-23).
 - tapOn:
-    text: 'Join your household'
+    id: 'code-entry-where-to-look'
 - waitForAnimationToEnd
 # The CTA is pressed TWICE by design: the first press checks the code and
 # renders the preview, the second joins. Asserting the preview between them is

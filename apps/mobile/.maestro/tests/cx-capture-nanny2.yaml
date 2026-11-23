@@ -6,7 +6,7 @@
 # this env block) rather than login-nanny.yaml, because nanny 2 belongs to
 # exactly one household and has nothing to switch into.
 #
-# Needs -e OUT=<absolute dir> (the dir must already exist).
+# Needs -e OUT=<relative dir> (Maestro 2.12 rejects paths outside its own output folder; see scripts/maestro-queue.sh).
 appId: com.jetto.steadily.nanny
 tags:
   - cx

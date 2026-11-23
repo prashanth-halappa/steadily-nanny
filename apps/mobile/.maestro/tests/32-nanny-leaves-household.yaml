@@ -4,22 +4,24 @@
 # ManageHouseholdScreen, which is parent-only — so the member the action exists
 # for could not reach it, and a nanny had to ask the family to remove her.
 #
-# NOT RE-RUNNABLE without re-seeding. It ends a membership; the second run
-# finds no leave button because the nanny is already a past member of
-# HOUSEHOLD_ID. Same constraint 31-second-nanny-joins.yaml carries.
+# FIXTURE (re-runnable): the leave is destructive, so it runs on a disposable
+# nanny in a disposable household, never the shared cast. Before EVERY run:
+#   D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=… bun run scripts/seed-leave-household.ts
+# and pass its two printed keys: -e LEAVE_NANNY_EMAIL=… -e LEAVE_HOUSEHOLD_ID=…
+# (password is the shared PHASE4_TEST_PASSWORD). Each seed mints fresh
+# accounts; a consumed pair finds no leave button on a second run.
 #
 # Requires ONE booted simulator (two make Maestro drive the wrong one and
-# --udid does not help), Metro on :8081 and the API on :8080.
-#
-# Env, all passed with an explicit `-e` per pair — a single word-split ENV
-# string does not survive zsh into `maestro test`:
-#   NANNY_EMAIL, NANNY_PASSWORD, HOUSEHOLD_ID
+# --udid does not help) and Metro on :8081. Pass -e for every var in
+# .env.maestro plus the two above.
 appId: com.jetto.steadily.nanny
 ---
 - runFlow:
     file: ../flows/login-nanny.yaml
     env:
-      PHASE4_HOUSEHOLD_ID: ${HOUSEHOLD_ID}
+      NANNY_EMAIL: ${LEAVE_NANNY_EMAIL}
+      NANNY_PASSWORD: ${PHASE4_TEST_PASSWORD}
+      PHASE4_HOUSEHOLD_ID: ${LEAVE_HOUSEHOLD_ID}
 
 # --- reach her own map of where she works -----------------------------------
 - tapOn:

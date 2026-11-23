@@ -2,7 +2,7 @@
 # to bottom. Evidence-gathering for the in-character review — see
 # ../flows/capture-tabs.yaml for why each tap is asserted.
 #
-# Needs -e OUT=<absolute dir> (the dir must already exist).
+# Needs -e OUT=<relative dir> (Maestro 2.12 rejects paths outside its own output folder; see scripts/maestro-queue.sh).
 appId: com.jetto.steadily.nanny
 tags:
   - cx

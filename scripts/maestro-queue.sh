@@ -21,6 +21,13 @@
 #
 # Usage:
 #   SP=/abs/scratch OUT=/abs/caps/S1 scripts/maestro-queue.sh queue-s1.txt
+#
+# Maestro 2.12+ refuses a takeScreenshot path outside the run's own output
+# folder ("resolves outside this run's takeScreenshot output folder"), so an
+# absolute `-e OUT=/abs` fails every `${OUT}/…` flow at its first screenshot.
+# Each flow therefore runs with --test-output-dir "$OUT/<flow>" and OUT=.,
+# landing captures under "$OUT/<flow>/" (find -name "s*-NN-*"). By hand:
+# pass a RELATIVE OUT (e.g. -e OUT=shots), never an absolute one.
 set -uo pipefail
 
 QUEUE="${1:?queue file required}"
@@ -46,7 +53,9 @@ while IFS= read -r line || [ -n "$line" ]; do
   attempt=1
   while [ "$attempt" -le 2 ]; do
     SP="$SP" CAP="${CAP:-480}" STALL="${STALL:-150}" \
-      bash "$REPO/scripts/maestro-run.sh" "$flow" -e "OUT=$OUT" ${extra[@]+"${extra[@]}"}
+      bash "$REPO/scripts/maestro-run.sh" "$flow" \
+        --test-output-dir "$OUT/$(basename "$flow" .yaml)" -e "OUT=." \
+        ${extra[@]+"${extra[@]}"}
     code=$?
     # Only a STALL is worth a second attempt. A genuine assertion failure will
     # fail again identically, and re-running destroys the failure hierarchy

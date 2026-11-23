@@ -54,17 +54,16 @@ tags:
 - assertNotVisible: '.*22\.50.*'
 - takeScreenshot: ${OUT}/s3-32-b-carer1-rate
 
-# Selecting a carer expands their detail below the picker, which pushes the
-# picker itself out of view — MEASURED: the second carer's chip was reported
-# "Element not found" immediately after the first carer's rate rendered, on a
-# screen where both chips are plainly present. Scroll back to it rather than
-# assuming the list stayed put.
-- scrollUntilVisible:
-    element:
+# Selecting a carer PUSHES a separate route (`/settings/pay/[carerId]`,
+# PayArrangementScreen's `router.push`) that renders only that carer's
+# detail; the picker is not on it. Go back to the hub rather than scrolling
+# for a chip that is not mounted.
+- tapOn:
+    id: 'pay-back'
+- extendedWaitUntil:
+    visible:
       id: 'pay-carer-picker-${NANNY2_ID}'
-    direction: UP
-    centerElement: true
-    timeout: 12000
+    timeout: 10000
 - tapOn:
     id: 'pay-carer-picker-${NANNY2_ID}'
 - extendedWaitUntil:
