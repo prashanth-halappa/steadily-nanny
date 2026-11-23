@@ -5,6 +5,10 @@
  *
  *  1. Deletes nanny2's membership row(s) in "Our household" (flow 31 / 31b's
  *     own output), so sign-in lands on `role-screen` again.
+ *     Also deletes her schedule_patterns and shifts there (left by
+ *     seed-s3-second-carer.ts / flows 32-33), so the re-joined nanny2 is a
+ *     genuinely new carer: no usual week, no shifts — flow 31 asserts the
+ *     "haven't set your weekly schedule yet" empty state.
  *  2. Revokes every still-pending nanny invite this script minted before, and
  *     inserts a fresh one, invited_by the parent.
  *  3. Prints S3_INVITE_CODE for `-e S3_INVITE_CODE=…`.
@@ -17,12 +21,14 @@
  * @module scripts/seed-s3-invite
  */
 
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
 import type { Db } from '../apps/api/src/db/client';
 import {
   householdInvites,
   householdMembers,
   households,
+  schedulePatterns,
+  shifts,
   user,
 } from '../apps/api/src/db/schema';
 import { getLocalDb } from './lib/localDb';
@@ -96,6 +102,38 @@ async function main(db: Db): Promise<void> {
         eq(householdMembers.user_id, nanny2Id)
       )
     );
+
+  const nanny2Patterns = await db
+    .select({ id: schedulePatterns.id })
+    .from(schedulePatterns)
+    .where(
+      and(
+        eq(schedulePatterns.household_id, householdId),
+        eq(schedulePatterns.carer_id, nanny2Id)
+      )
+    );
+  const patternIds = nanny2Patterns.map(p => p.id);
+  await db
+    .delete(shifts)
+    .where(
+      and(
+        eq(shifts.household_id, householdId),
+        patternIds.length > 0
+          ? or(
+              eq(shifts.carer_id, nanny2Id),
+              inArray(shifts.source_pattern_id, patternIds)
+            )
+          : eq(shifts.carer_id, nanny2Id)
+      )
+    );
+  if (patternIds.length > 0) {
+    await db
+      .delete(schedulePatterns)
+      .where(inArray(schedulePatterns.id, patternIds));
+  }
+  console.log(
+    `[reset] nanny2 schedule_patterns (${patternIds.length}) and shifts cleared`
+  );
 
   await db
     .update(householdInvites)

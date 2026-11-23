@@ -58,11 +58,21 @@ tags:
 # THIS run's add. Remove is a single tap with no confirm
 # (ChildrenManager.tsx's `deleteChild.mutate`); an optional tap is a no-op
 # when no Jet exists.
+# ONE tap per removal, then wait for that row to actually leave: the row stays
+# on screen until the DELETE round trip + refetch lands, and a blind second tap
+# aimed at the stale row lands on whatever slides into its place once it goes
+# (MEASURED in the back-to-back run: it opened the Add-a-child sheet, which
+# then covered `children-add-button`). The wait is optional so a second
+# leftover Jet (rows still showing "Remove Jet") just moves to the next pass.
 - repeat:
+    while:
+      visible: 'Remove Jet'
     times: 3
     commands:
-      - tapOn:
-          text: 'Remove Jet'
+      - tapOn: 'Remove Jet'
+      - extendedWaitUntil:
+          notVisible: 'Remove Jet'
+          timeout: 10000
           optional: true
       - waitForAnimationToEnd
 - extendedWaitUntil:

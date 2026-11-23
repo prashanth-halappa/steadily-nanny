@@ -20,6 +20,11 @@ export function useCreateCommitment(householdId: string, childId: string) {
       queryClient.invalidateQueries({
         queryKey: queryKeys.commitments.list(householdId, childId),
       });
+      // The household-wide list feeds uncovered-care detection (Schedule
+      // agenda, Today). Without this it stays stale for its 2-min staleTime.
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.commitments.byHousehold(householdId),
+      });
     },
     onError: error => {
       showErrorToast(getLocalizedErrorMessage(error, t));

@@ -34,6 +34,7 @@ import { SETUP_ROLES } from '@/src/domains/setup/types';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useSchedulePatterns } from '@/src/hooks/queries/useSchedulePatterns';
+import { useAuthStore } from '@/src/store/auth';
 
 export default function ScheduleRoute() {
   const { t } = useTranslation('schedule');
@@ -49,6 +50,7 @@ export default function ScheduleRoute() {
   // row the API listed first win, so a stale `withdrawn` could outrank a
   // week genuinely sitting with the nanny. See `patternPrecedence.ts`.
   const pattern = resolveActivePattern(patterns.data ?? []);
+  const currentUserId = useAuthStore(s => s.user?.id ?? null);
 
   if (onboarding.membershipsError) {
     return (
@@ -100,10 +102,19 @@ export default function ScheduleRoute() {
   }
 
   if (onboarding.role === SETUP_ROLES.NANNY) {
+    // The list is household-wide. A household's SECOND nanny must not read the
+    // first nanny's accepted week as her own ("No shifts this week" instead of
+    // "the family hasn't set your schedule yet"). Unassigned rows (carer_id
+    // null, sketched before any nanny existed) still speak to her.
+    const ownPattern = resolveActivePattern(
+      (patterns.data ?? []).filter(
+        p => p.carer_id == null || p.carer_id === currentUserId
+      )
+    );
     return (
       <ScheduleShiftsScreen
         showBack={false}
-        pattern={pattern}
+        pattern={ownPattern}
         patternLoading={patterns.isLoading}
       />
     );

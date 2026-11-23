@@ -178,9 +178,11 @@ mock.module('expo-router', () => ({
 }));
 
 let ScheduleRoute: typeof import('../schedule').default;
+let useAuthStore: typeof import('@/src/store/auth').useAuthStore;
 
 beforeAll(async () => {
   ScheduleRoute = (await import('../schedule')).default;
+  useAuthStore = (await import('@/src/store/auth')).useAuthStore;
 });
 
 beforeEach(() => {
@@ -311,6 +313,30 @@ describe('ScheduleRoute — role fork (Wave A3 + role === null triage)', () => {
     expect(
       getByTestId('schedule-shifts-screen-mock').props.accessibilityHint
     ).toBe('accepted');
+  });
+
+  // S3: the pattern list is household-wide. A second nanny must not inherit
+  // the FIRST nanny's accepted week — that flipped her empty state to "No
+  // shifts this week" (Maestro flow 31).
+  it("a nanny never takes ANOTHER carer's accepted pattern as her own", () => {
+    useAuthStore.setState({ user: { id: 'nanny-2' } } as never);
+    mockUseIsOnboarded.mockImplementation(() => ({
+      status: 'onboarded' as const,
+      role: 'nanny' as const,
+      householdId: 'h1',
+      membershipsError: false,
+      retryMemberships: mockRetryMemberships,
+    }));
+    mockUseSchedulePatterns.mockImplementation(() => ({
+      data: [{ status: 'accepted', id: 'p1', carer_id: 'nanny-1' }],
+    }));
+
+    const { getByTestId } = render(<ScheduleRoute />);
+
+    expect(
+      getByTestId('schedule-shifts-screen-mock').props.accessibilityHint
+    ).toBe('none');
+    useAuthStore.setState({ user: null } as never);
   });
 
   // REGRESSION (WS-G): a full-screen SchedulePendingScreen used to fork on

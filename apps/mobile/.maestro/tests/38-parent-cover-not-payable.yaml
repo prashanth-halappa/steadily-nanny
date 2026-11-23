@@ -4,64 +4,41 @@
 # like any other confirmed cover, but `weekEarningsService` only sums shifts
 # where `shift.carer_id === carerId` — a carer-less row never enters pay.
 #
-# FIXTURES — no seeder creates an uncovered window on PHASE4_HOUSEHOLD_ID
-# today, so this flow manufactures one the same way flow 40 does: adds a
-# recurring care-hours commitment via `ManageCommitmentsSection`
-# (`/settings/children`), whose defaults (Mon–Fri 09:00–17:00,
-# `CommitmentFormSheet.tsx` DEFAULT_DAYS/DEFAULT_START/DEFAULT_END) are used
-# untouched. ASSUMES the household already has at least one child (every
-# other launch-pass flow that reads children assumes the same); if it has
-# none, `commitment-add-.*` will not exist and this flow fails at that step
-# rather than silently no-op'ing.
+# FIXTURES — run `D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=… bun run
+# scripts/seed-coverage-gap.ts` BEFORE EVERY RUN and pass its two keys
+# (COVER_GAP_PARENT_EMAIL, COVER_GAP_HOUSEHOLD_ID; password is
+# PHASE4_TEST_PASSWORD). It mints a fresh parent + nanny + child + agreed
+# pay arrangement in a fresh 'Cover household', with ONE care commitment
+# covering every day 00:00–23:59 and nothing booked, so today has exactly one
+# uncovered window whatever the weekday or hour. The gap card's "I've got
+# it" action renders only for a SINGLE window.
 #
-# CAVEAT — this depends on TODAY being a weekday for the default Mon–Fri
-# window to produce a gap ON today specifically; the assertion is written
-# against Today's card, not a fixed date, so it is honest about that
-# dependency rather than hiding it.
+# WHY NOT PHASE4_HOUSEHOLD_ID (what this flow used to do): the approval
+# seeder books nanny@ a confirmed 08:00–17:00 shift TODAY
+# (PHASE4_TODAY_SHIFT_ID, flow 08), which covers that household's weekday
+# 09:00–17:00 care hours, so it never has a gap today. And each run here
+# leaves a parent_cover shift behind, so a shared household cannot be re-run.
+# The commitment form itself is exercised by flow 40.
 #
-# HYGIENE — nothing deletes this commitment afterwards (deliberate: the
-# household closure removal in flow 39 wants a window to still exist too).
-# Re-running this flow across sessions accumulates need windows on
-# PHASE4_HOUSEHOLD_ID; there is no seeder-side cleanup for `child_commitments`
-# today (`seed-phase4-fixtures.ts` never touches that table) — worth adding
-# if these flows join the batch runner.
+# SINGLE-USE PER SEED: the parent_cover this flow writes clears the gap.
 appId: com.jetto.steadily.nanny
 tags:
   - money
   - scheduling
 ---
-# --- Parent: manufacture an uncovered window for today --------------------
-- runFlow: ../flows/login.yaml
+# --- Parent: a fresh household with today uncovered (seed-coverage-gap) ---
 - runFlow:
-    file: ../flows/select-household.yaml
+    file: ../flows/login.yaml
     env:
-      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
-- openLink: steadilynanny:///(private)/settings/children
-- runFlow: cx-dismiss-open-alert.yaml
-- extendedWaitUntil:
-    visible:
-      id: 'manage-children-screen'
-    timeout: 15000
-- tapOn:
-    id: 'commitment-add-.*'
-- extendedWaitUntil:
-    visible:
-      id: 'commitment-form-sheet'
-    timeout: 10000
-# Defaults only — Mon–Fri 09:00–17:00, per the sheet's own DEFAULT_* constants.
-- assertVisible:
-    id: 'commitment-form-readback'
-- tapOn:
-    id: 'commitment-form-submit'
-- extendedWaitUntil:
-    notVisible:
-      id: 'commitment-form-sheet'
-    timeout: 15000
-- takeScreenshot: ${OUT}/s5-38-a-care-hours-added
+      PARENT_EMAIL: ${COVER_GAP_PARENT_EMAIL}
+      PARENT_PASSWORD: ${PHASE4_TEST_PASSWORD}
+      PHASE4_HOUSEHOLD_ID: ${COVER_GAP_HOUSEHOLD_ID}
 
 # --- Parent: the gap shows on Today, and pay is untouched before acting ---
-- tapOn:
-    id: 'tab-today'
+# login.yaml ends on Settings (a stack screen ABOVE (tabs), no tab bar), so
+# deep-link the tab.
+- openLink: steadilynanny:///(private)/(tabs)/home
+- runFlow: cx-dismiss-open-alert.yaml
 - extendedWaitUntil:
     visible:
       id: 'today-coverage-gap-card'

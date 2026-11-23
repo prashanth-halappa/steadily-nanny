@@ -10,9 +10,9 @@
 # which is what puts the session on the right side of the app.
 #
 # Params (both required, passed with -e):
-#   OUT   absolute directory for the PNGs. Maestro does NOT mkdir — create it.
-#         config.yaml's screenshotDirectory is ignored by Maestro 2.0.10, and a
-#         bare name would resolve against the CLI's cwd.
+#   OUT   RELATIVE directory for the PNGs (Maestro 2.12 rejects paths outside
+#         its own --test-output-dir; scripts/maestro-queue.sh passes -e OUT=.
+#         with a per-flow --test-output-dir).
 #   ROLE  filename prefix, e.g. parent / nanny / nanny2 / coparent
 #
 # The scroll slices run past the bottom on short screens, so the tail slices
