@@ -3,12 +3,15 @@
 # `header-settings`, with its own `settings-back`). Confirms `time-off-back`
 # (`TimeOffScreen.tsx`'s `router.back()`) actually pops back to Settings
 # rather than stranding the user on Time off.
+#
+# Nanny login: `settings-request-time-off` renders only in Settings' nanny
+# branch (and only with an active membership), so a parent never sees it.
 appId: com.jetto.steadily.nanny
 tags:
   - settings
   - timeoff
 ---
-- runFlow: ../flows/login.yaml
+- runFlow: ../flows/login-nanny.yaml
 - tapOn:
     id: 'header-settings'
 - waitForAnimationToEnd
@@ -26,4 +29,6 @@ tags:
 - waitForAnimationToEnd
 - assertVisible:
     id: 'settings-screen'
+- assertNotVisible:
+    id: 'time-off-screen'
 - takeScreenshot: cx-timeoff-back-ok

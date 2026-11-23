@@ -19,14 +19,10 @@ appId: com.jetto.steadily.nanny
 - inputText: ${NANNY_PASSWORD}
 - hideKeyboard:
     optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
-- tapOn:
-    id: 'login-submit'
-- extendedWaitUntil:
-    notVisible:
-      id: 'welcome-screen'
-    timeout: 20000
-- assertNotVisible:
-    id: 'login-screen'
+- runFlow:
+    file: login-submit.yaml
+    env:
+      LOGIN_PASSWORD: ${NANNY_PASSWORD}
 
 # Post-sign-in overlays, each on its own delay: the iOS Save Password system
 # dialog, then the app's notification soft-ask sheet. Both hide the entire

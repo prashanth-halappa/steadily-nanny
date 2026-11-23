@@ -1,0 +1,42 @@
+# Shared sign-in submit for every email login (login.yaml, login-nanny.yaml,
+# login-no-household.yaml, tests/29). Caller has already typed the email and
+# password on `login-screen`; pass the password again as LOGIN_PASSWORD.
+#
+# ONE RETRY on a failed submit. 2026-11-23, flow 40 in the back-to-back run:
+# the sign-in POST never reached the deployed Worker (wrangler tail shows the
+# sign-out at 09:22:00 and nothing until a cron at 09:22:19), the app showed
+# errors:network and the secure password field came back empty. iOS reuses a
+# keep-alive connection the Worker edge has already closed ("The network
+# connection was lost" — the same class the tail logged for get-session at
+# 06:19 / 07:18), so the first request after a quiet spell can die in
+# transport. A real user taps Sign in again; so does this. A wrong password
+# still fails: the retry hits the same 401 and the final assert goes red.
+appId: com.jetto.steadily.nanny
+---
+- tapOn:
+    id: 'login-submit'
+- extendedWaitUntil:
+    notVisible:
+      id: 'login-screen'
+    timeout: 20000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        id: 'login-screen'
+    commands:
+      - tapOn:
+          id: 'login-password'
+      - eraseText: 40
+      - inputText: ${LOGIN_PASSWORD}
+      - hideKeyboard:
+          optional: true
+      - tapOn:
+          id: 'login-submit'
+      - extendedWaitUntil:
+          notVisible:
+            id: 'login-screen'
+          timeout: 20000
+          optional: true
+- assertNotVisible:
+    id: 'login-screen'

@@ -19,28 +19,28 @@
 # And it proves there is no request storm. The original defect fired ~1/sec of
 # doomed requests into the household she had left until the rate limiter
 # tripped. Count new `http:` lines in apps/api/logs/dev.log across the run:
-# single-digit 404s and ZERO 429s is healthy.
+# single-digit 404s and ZERO 429s is healthy (against the Worker, grep the
+# `wrangler tail` output instead).
 #
-# NOT RE-RUNNABLE without re-seeding — well, almost. It takes no writes at all
-# (that is the point: every write affordance is meant to be gone), so it IS
-# re-runnable as long as the fixture below holds. What it CANNOT survive is a
-# local DB reset: it needs Test Nanny to be `removed` from PAST_HOUSEHOLD_ID
-# and `active` in ACTIVE_HOUSEHOLD_ID at the same time. Re-establish with:
-#   update household_members set status='removed', ended_reason='removed_by_parent'
-#     where household_id=<past> and user_id=<nanny>;
-# PAST_HOUSEHOLD_ID must ALSO have no shifts in the current week: Schedule's
-# layer-4 refusal replaces the EMPTY state only — a past member whose week
-# still holds shifts keeps the list on purpose, because that list IS the
-# read-only record the design preserves (ScheduleShiftsScreen.tsx:714).
-# Hours wants at least one time entry in the current week to show that it kept
-# its data as well as its shape.
+# FIXTURE — run before every pass (fresh accounts each time, touches nothing in
+# the shared cast):
+#   D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=… bun run scripts/seed-past-member.ts
+# It mints a nanny who is `active` in ACTIVE_HOUSEHOLD_ID and `removed`
+# (removed_by_parent) from PAST_HOUSEHOLD_ID, and prints
+# PAST_MEMBER_NANNY_EMAIL / ACTIVE_HOUSEHOLD_ID / PAST_HOUSEHOLD_ID for
+# apps/mobile/.env.maestro (password PHASE4_TEST_PASSWORD). The flow takes no
+# writes, so one seed is re-runnable. PAST_HOUSEHOLD_ID has no shifts at all:
+# Schedule's layer-4 refusal replaces the EMPTY state only — a past member
+# whose week still holds shifts keeps the list on purpose, because that list IS
+# the read-only record the design preserves (ScheduleShiftsScreen.tsx).
 #
 # Requires ONE booted simulator (two make Maestro drive the wrong one and
-# --udid does not help), Metro on :8081 and the API on :8080.
+# --udid does not help) and Metro on :8081.
 #
 # Env, all passed with an explicit `-e` per pair — a single word-split ENV
 # string does not survive zsh into `maestro test`:
-#   NANNY_EMAIL, NANNY_PASSWORD, ACTIVE_HOUSEHOLD_ID, PAST_HOUSEHOLD_ID
+#   PAST_MEMBER_NANNY_EMAIL, PHASE4_TEST_PASSWORD, ACTIVE_HOUSEHOLD_ID,
+#   PAST_HOUSEHOLD_ID
 appId: com.jetto.steadily.nanny
 ---
 # --- A. the live family, first, so "normal" is on the record ----------------
@@ -51,6 +51,8 @@ appId: com.jetto.steadily.nanny
 - runFlow:
     file: ../flows/login-nanny.yaml
     env:
+      NANNY_EMAIL: ${PAST_MEMBER_NANNY_EMAIL}
+      NANNY_PASSWORD: ${PHASE4_TEST_PASSWORD}
       PHASE4_HOUSEHOLD_ID: ${ACTIVE_HOUSEHOLD_ID}
 
 - assertVisible:
@@ -77,8 +79,8 @@ appId: com.jetto.steadily.nanny
 - assertVisible:
     id: 'household-switcher-sheet'
 # Past households live under their own section heading at the BOTTOM of the
-# sheet, below every live one — five households here, so this genuinely
-# scrolls.
+# sheet, below every live one. Scrolled to anyway, so a nanny with more
+# households than fit still works.
 - assertVisible:
     id: 'household-switcher-past-section'
 - scrollUntilVisible:

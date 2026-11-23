@@ -1,10 +1,11 @@
-# Shared helper for the cx-*.yaml capture flows only (see their headers) —
-# NOT one of the existing flows/*.yaml, so composing it doesn't violate "do
-# not modify any existing flow file". Clears the iOS "Open in ‘Steadily
-# Nanny’?" system alert that a custom-scheme `openLink` can raise even
-# without a reinstall (observed repeatedly navigating between deep links in
-# one live session, not just the post-install case the harness already knew
-# about). No-op when the alert is absent.
+# Shared helper subflow, NOT a standalone test (no launch, no assertions;
+# run alone it is a no-op). Composed via `runFlow: cx-dismiss-open-alert.yaml`
+# after an `openLink` by the cx-*.yaml capture flows and by numbered flows
+# (26, 28-40). Clears the iOS "Open in ‘Steadily Nanny’?" system alert that a
+# custom-scheme `openLink` can raise even without a reinstall (observed
+# repeatedly navigating between deep links in one live session). No-op when
+# the alert is absent. Lives in tests/ for historical reasons; queue runners
+# should skip it.
 appId: com.jetto.steadily.nanny
 ---
 - extendedWaitUntil:

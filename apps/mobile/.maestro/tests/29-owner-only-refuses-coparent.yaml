@@ -134,14 +134,10 @@ tags:
 - inputText: ${COPARENT_PASSWORD}
 - hideKeyboard:
     optional: true # Maestro 2.12 + iOS 26 throws when it cannot dismiss; was a silent no-op
-- tapOn:
-    id: 'login-submit'
-- extendedWaitUntil:
-    notVisible:
-      id: 'welcome-screen'
-    timeout: 20000
-- assertNotVisible:
-    id: 'login-screen'
+- runFlow:
+    file: ../flows/login-submit.yaml
+    env:
+      LOGIN_PASSWORD: ${COPARENT_PASSWORD}
 - extendedWaitUntil:
     visible:
       text: 'Not Now'

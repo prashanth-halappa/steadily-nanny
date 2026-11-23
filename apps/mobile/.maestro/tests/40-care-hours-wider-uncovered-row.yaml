@@ -8,8 +8,8 @@
 # it, then the agenda's `schedule-uncovered-{key}` row is the assertion.
 # `CommitmentFormSheet`'s defaults — Mon–Fri, 09:00–17:00
 # (`CommitmentFormSheet.tsx` DEFAULT_DAYS/DEFAULT_START/DEFAULT_END) — are
-# used untouched: nothing on `PHASE4_HOUSEHOLD_ID` is booked against that
-# window today, so it is uncovered by construction. `commitment-form-sheet`
+# used untouched: the seeded household has no shifts at all, so the window
+# is uncovered by construction. `commitment-form-sheet`
 # is a `BottomSheetBase` — its OWN root testID would be invisible if it
 # were an iOS `<Modal>` (it isn't; `BottomSheetBase` is the app's one
 # sanctioned sheet primitive per GOLDEN-FIXES #1), but the assertion below
@@ -28,24 +28,52 @@
 # just added, nothing ever booked against them). Asserted below because it
 # is what actually renders, not because the two causes are the same thing.
 #
-# FIXTURES — no seeder creates a wider-than-booked need window on
-# PHASE4_HOUSEHOLD_ID; this flow creates its own, live. ASSUMES the
-# household already has ≥1 child. CAVEAT: the default Mon–Fri window only
-# produces a gap on a day that is itself Mon–Fri — this flow's assertion is
-# the WEEK's agenda row, not pinned to today's date, so it tolerates a
-# weekend run better than flow 38/39's Today-card assertion does, but a run
-# entirely inside a covered day would still need the scroll below to find
-# it. HYGIENE: nothing deletes the commitment afterwards — same
-# accumulation caveat as flow 38 (no seeder touches `child_commitments`).
+# FIXTURES — run `D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=… bun run
+# scripts/seed-coverage-gap.ts --no-commitment` BEFORE EVERY RUN and pass its
+# two keys (COVER_GAP_PARENT_EMAIL, COVER_GAP_HOUSEHOLD_ID; password is
+# PHASE4_TEST_PASSWORD). It mints a fresh 'Cover household' with one child,
+# NO care hours and nothing booked. So the agenda shows no uncovered row
+# before the add (asserted), and the row afterwards can only come from the
+# commitment this flow writes.
+#
+# WHY NOT PHASE4_HOUSEHOLD_ID (what this flow used to do): nanny@'s seeded
+# shifts and accepted pattern cover parts of that week, so whether a row
+# appeared depended on the seed, and each run left another Mon–Fri
+# commitment behind in the household every other flow shares.
+#
+# SINGLE-USE PER SEED: the commitment stays. A re-run on the same seed fails
+# the "no row before" check by design.
+#
+# CAVEAT: on a run late on a Friday or at the weekend the rest of the week's
+# Mon–Fri windows are already past; whether past windows render is the
+# agenda's call, so expect this flow to be weekday-sensitive.
 appId: com.jetto.steadily.nanny
 tags:
   - scheduling
 ---
-- runFlow: ../flows/login.yaml
 - runFlow:
-    file: ../flows/select-household.yaml
+    file: ../flows/login.yaml
     env:
-      HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
+      PARENT_EMAIL: ${COVER_GAP_PARENT_EMAIL}
+      PARENT_PASSWORD: ${PHASE4_TEST_PASSWORD}
+      PHASE4_HOUSEHOLD_ID: ${COVER_GAP_HOUSEHOLD_ID}
+
+# --- Before: no care hours, so no uncovered row ----------------------------
+# With no shifts and no uncovered windows the Schedule tab shows its empty
+# state (ScheduleShiftsScreen showEmpty); AgendaView, the only renderer of
+# uncovered rows, isn't mounted. Waiting on the empty state proves the
+# screen loaded, so the notVisible can't pass on a blank screen.
+# This visit also primes the household commitments cache, which is what
+# caught useCreateCommitment not invalidating commitments.byHousehold (the
+# agenda stayed empty for the 2-min staleTime after the add).
+- openLink: steadilynanny:///(private)/(tabs)/schedule
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-shifts-empty'
+    timeout: 15000
+- assertNotVisible:
+    id: 'schedule-uncovered-.*'
 
 - openLink: steadilynanny:///(private)/settings/children
 - runFlow: cx-dismiss-open-alert.yaml
@@ -79,8 +107,9 @@ tags:
 - takeScreenshot: ${OUT}/s5-40-b-commitment-saved
 
 # --- The agenda names the gap ---------------------------------------------
-- tapOn:
-    id: 'tab-schedule'
+# settings/* is a stack screen ABOVE (tabs): no tab bar, so deep-link the tab.
+- openLink: steadilynanny:///(private)/(tabs)/schedule
+- runFlow: cx-dismiss-open-alert.yaml
 - waitForAnimationToEnd
 - scrollUntilVisible:
     element:
