@@ -83,8 +83,9 @@ tags:
     notVisible:
       id: 'schedule-extra-shift-screen'
     timeout: 15000
-- assertVisible:
-    id: 'schedule-shifts-screen'
+# `router.back()` returns to whatever was under the deep link (Today here,
+# not the calendar), so leaving the form is the success signal; arm B's
+# overlap dialog and arm C's same-carer toast both prove this shift landed.
 
 # ---------- B. nanny 2 over the same window: ADVISORY, not a refusal ------
 - openLink: steadilynanny:///(private)/schedule/shifts/extra?date=${output.day}&start=11:00&end=13:00&carerId=${NANNY2_ID}
@@ -132,14 +133,44 @@ tags:
     notVisible:
       id: 'schedule-extra-shift-screen'
     timeout: 20000
-- assertVisible:
-    id: 'schedule-shifts-screen'
 # The one error string a genuine SAME-carer 409 would produce
 # (`ShiftOverlapsError`'s message, `apps/api/src/domains/shift/errors/shiftErrors.ts`)
 # — confirms no conflict response ever reached the client for this
 # different-carer create.
 - assertNotVisible: '.*already has a shift overlapping that time.*'
 - takeScreenshot: ${OUT}/s3-34-d-overlap-created-anyway
+# Proof the advisory write really landed: booking nanny 2 into the SAME
+# window again now hits her own (just-created) shift — the same-carer toast.
+- openLink: steadilynanny:///(private)/schedule/shifts/extra?date=${output.day}&start=11:00&end=13:00&carerId=${NANNY2_ID}
+- runFlow: cx-dismiss-open-alert.yaml
+- extendedWaitUntil:
+    visible:
+      id: 'schedule-extra-submit'
+    timeout: 15000
+- assertVisible:
+    id: 'schedule-extra-submit'
+    enabled: true
+# The same-carer block is a toast. tapOn blocks until the UI stops
+# animating; toastify's progress bar animated for the toast's whole life, so
+# the toast was always gone before this assertion ran. The root layout's
+# ToastManager now sets showProgressBar={false}. (waitToSettleTimeoutMs does
+# NOT shorten that wait on iOS under Maestro 2.12.1.)
+- tapOn:
+    id: 'schedule-extra-submit'
+- extendedWaitUntil:
+    visible:
+      text: '.*Sam Okafor already has a shift then\. Pick another time\..*'
+    timeout: 10000
+- assertNotVisible:
+    id: 'schedule-extra-clash-confirm'
+# Leave the form: re-opening the same route while it is mounted keeps the
+# old form state (useState initializers), so arm C would re-submit this one.
+- tapOn:
+    id: 'schedule-extra-back'
+- extendedWaitUntil:
+    notVisible:
+      id: 'schedule-extra-shift-screen'
+    timeout: 10000
 
 # ---------- C. contrast: the SAME carer double-booked IS a hard block -----
 - openLink: steadilynanny:///(private)/schedule/shifts/extra?date=${output.day}&start=11:00&end=12:00&carerId=${PHASE4_NANNY_ID}

@@ -128,6 +128,11 @@ function RootLayout() {
                   <PortalHost />
                   <ToastManager
                     config={toastConfig}
+                    // No progress bar: it animates for the toast's whole life,
+                    // so a UI driver that waits for animations to end after a
+                    // tap (Maestro) only gets control back once the toast is gone,
+                    // and no toast could ever be asserted.
+                    showProgressBar={false}
                     textStyle={{ fontSize: 16, fontWeight: '400' }}
                   />
                   {/* Inside QueryClientProvider so AnimatedSplash can read
