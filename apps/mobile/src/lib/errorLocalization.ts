@@ -48,6 +48,12 @@ export const ERROR_CODE_TO_I18N_KEY: Record<string, string> = {
   // redeemInvite metadata.reason — "join & close" refused because a carer is
   // attached to the household being archived.
   HOUSEHOLD_HAS_CARER: 'errors:householdHasCarer',
+  // TimesheetNotPriceableError metadata.reason (apps/api timesheet domain) —
+  // an approve refused because the week has no gross to freeze. The Hours
+  // screen disables Approve first; this is the stale-client fallback.
+  PAY_NOT_SET_UP: 'errors:payNotSetUp',
+  PAY_CURRENCY_CHANGED: 'errors:payCurrencyChanged',
+  TIMESHEET_CARER_REMOVED: 'errors:timesheetCarerRemoved',
 };
 
 interface ErrorLike {

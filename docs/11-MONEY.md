@@ -721,6 +721,12 @@ acts are different.
 and what `042:87` admitted was only "a service-layer invariant". All four
 columns are set together and cleared together, and `status = 'approved'` is
 what makes them mandatory.
+So a week the engine can't price (`no_arrangement`, `currency_change`, or a
+carer-less week) is **refused at approve** with `TimesheetNotPriceableError`
+(409, `metadata.reason` `PAY_NOT_SET_UP` / `PAY_CURRENCY_CHANGED` /
+`TIMESHEET_CARER_REMOVED`) before the CAS, and stays `submitted`; the parent
+Hours screen disables Approve with the reason. It used to die on the CHECK as
+a raw 500.
 
 **A payment carries an optional `idempotency_key`, minted per INTENT (102).**
 Not per request: the client generates it when the record-payment sheet opens,

@@ -58,6 +58,7 @@ import {
   TimesheetAdjustmentNotAllowedError,
   TimesheetGrossTooLargeError,
   TimesheetNotActionableError,
+  TimesheetNotPriceableError,
 } from '../../../../../src/domains/timesheet/errors/timesheetErrors';
 import {
   computeWorkedMinutes,
@@ -1170,11 +1171,7 @@ describe('TimesheetCommandService.approve', () => {
       makePush(),
       {
         computeForWeek: mock(
-          async (): Promise<WeekEarnings> => ({
-            status: 'no_arrangement',
-            week_start: '2026-08-03',
-            unpriced_dates: [],
-          })
+          async (): Promise<WeekEarnings> => computedEarnings
         ),
       }
     );
@@ -1220,11 +1217,7 @@ describe('TimesheetCommandService.approve', () => {
       push,
       {
         computeForWeek: mock(
-          async (): Promise<WeekEarnings> => ({
-            status: 'no_arrangement',
-            week_start: '2026-08-03',
-            unpriced_dates: [],
-          })
+          async (): Promise<WeekEarnings> => computedEarnings
         ),
       }
     );
@@ -1279,11 +1272,7 @@ describe('TimesheetCommandService.approve', () => {
       push,
       {
         computeForWeek: mock(
-          async (): Promise<WeekEarnings> => ({
-            status: 'no_arrangement',
-            week_start: '2026-08-03',
-            unpriced_dates: [],
-          })
+          async (): Promise<WeekEarnings> => computedEarnings
         ),
       }
     );
@@ -1457,7 +1446,7 @@ describe('TimesheetCommandService.approve', () => {
     );
   });
 
-  it('pushes plain timesheet_approved (never week_below_guarantee) for an unpriceable week — no fabricated guarantee claim', async () => {
+  it('refuses an unpriceable week with PAY_NOT_SET_UP and pushes nobody', async () => {
     const push = makePush();
     const timesheetRepo = makeTimesheetRepo({
       approveSubmittedWithEarnings: mock(
@@ -1495,18 +1484,19 @@ describe('TimesheetCommandService.approve', () => {
       }
     );
 
-    await svc.approve('parent-1', 'ts1');
+    const err = (await svc
+      .approve('parent-1', 'ts1')
+      .catch((e: unknown) => e)) as {
+      statusCode?: number;
+      metadata?: { reason?: string };
+    };
 
-    expect(push.notifyUser).toHaveBeenCalledWith(
-      'carer-1',
-      expect.objectContaining({
-        data: expect.objectContaining({
-          type: PUSH_NOTIFICATION_TYPES.TIMESHEET_APPROVED,
-        }),
-      })
-    );
+    expect(err).toBeInstanceOf(TimesheetNotPriceableError);
+    expect(err.statusCode).toBe(409);
+    expect(err.metadata?.reason).toBe('PAY_NOT_SET_UP');
+    expect(timesheetRepo.approveSubmittedWithEarnings).not.toHaveBeenCalled();
+    expect(push.notifyUser).not.toHaveBeenCalled();
   });
-
   it('rejects a carer (non-parent) trying to approve', async () => {
     const svc = new TimesheetCommandService(
       makeTimeEntryRepo(),
@@ -2505,7 +2495,7 @@ describe('TimesheetCommandService.approve — freezing the earnings snapshot', (
     expect(patch.earnings).toEqual({ ...other, v: 1 });
   });
 
-  it('freezes an unpriceable week as the no_arrangement arm, with no amount at all — never £0.00', async () => {
+  it('refuses an unpriceable week (no_arrangement) instead of approving it with no amount — never £0.00', async () => {
     const noArrangement: WeekEarnings = {
       status: 'no_arrangement',
       week_start: '2026-08-03',
@@ -2524,18 +2514,19 @@ describe('TimesheetCommandService.approve — freezing the earnings snapshot', (
       makeEarnings({ computeForWeek: mock(async () => noArrangement) })
     );
 
-    await svc.approve('parent-1', 'ts1');
+    const err = (await svc
+      .approve('parent-1', 'ts1')
+      .catch((e: unknown) => e)) as {
+      statusCode?: number;
+      metadata?: { reason?: string };
+    };
 
-    const [, patch] = timesheetRepo.approveSubmittedWithEarnings.mock
-      .calls[0] as [string, Record<string, unknown>];
-    expect(patch.gross_minor).toBeNull();
-    expect(patch.currency).toBeNull();
-    // Stamped on the unpriceable arms too — the format claim is about the
-    // jsonb, and every arm the approve path writes is jsonb.
-    expect(patch.earnings).toEqual({ ...noArrangement, v: 1 });
+    expect(err).toBeInstanceOf(TimesheetNotPriceableError);
+    expect(err.statusCode).toBe(409);
+    expect(err.metadata?.reason).toBe('PAY_NOT_SET_UP');
+    expect(timesheetRepo.approveSubmittedWithEarnings).not.toHaveBeenCalled();
   });
-
-  it('approves a departed carer’s week with an empty snapshot rather than inventing a figure', async () => {
+  it('refuses a departed carer’s week rather than approving it without a figure', async () => {
     const timesheetRepo = makeApprovingRepo();
     const earnings = makeEarnings();
     const svc = new TimesheetCommandService(
@@ -2552,19 +2543,19 @@ describe('TimesheetCommandService.approve — freezing the earnings snapshot', (
       earnings
     );
 
-    await svc.approve('parent-1', 'ts1');
+    const err = (await svc
+      .approve('parent-1', 'ts1')
+      .catch((e: unknown) => e)) as {
+      statusCode?: number;
+      metadata?: { reason?: string };
+    };
 
+    expect(err).toBeInstanceOf(TimesheetNotPriceableError);
+    expect(err.statusCode).toBe(409);
+    expect(err.metadata?.reason).toBe('TIMESHEET_CARER_REMOVED');
+    expect(timesheetRepo.approveSubmittedWithEarnings).not.toHaveBeenCalled();
     expect(earnings.computeForWeek).not.toHaveBeenCalled();
-    const [, patch] = timesheetRepo.approveSubmittedWithEarnings.mock
-      .calls[0] as [string, Record<string, unknown>];
-    expect(patch).toMatchObject({
-      gross_minor: null,
-      currency: null,
-      earnings: null,
-      earnings_computed_at: null,
-    });
   });
-
   it('LOSES THE RACE cleanly: status changed between read and write -> no snapshot, house-style error', async () => {
     // D1's surface with money attached: a clock-out roll-up re-opened the
     // week after `assertActionable` passed. The conditional update matches
@@ -2738,7 +2729,7 @@ describe('TimesheetCommandService.approve — a computed gross over the money ca
     expect(patch.gross_minor).toBe(MAX_GROSS_MINOR);
   });
 
-  it('a NON-ok engine arm is untouched by the guard — it freezes a NULL gross, not a big one', async () => {
+  it('a NON-ok engine arm is refused as unpriceable, not as an oversized gross', async () => {
     // The unpriceable arms (`no_arrangement`, `currency_change`) write
     // `gross_minor: null` by design. A guard reading the wrong field would
     // turn every one of those into a spurious 400.
@@ -2753,11 +2744,17 @@ describe('TimesheetCommandService.approve — a computed gross over the money ca
       timesheetRepo
     );
 
-    await svc.approve('parent-1', 'ts1');
+    const err = (await svc
+      .approve('parent-1', 'ts1')
+      .catch((e: unknown) => e)) as {
+      statusCode?: number;
+      metadata?: { reason?: string };
+    };
 
-    const [, patch] = timesheetRepo.approveSubmittedWithEarnings.mock
-      .calls[0] as [string, Record<string, unknown>];
-    expect(patch.gross_minor).toBeNull();
+    expect(err).toBeInstanceOf(TimesheetNotPriceableError);
+    expect(err.statusCode).toBe(409);
+    expect(err.metadata?.reason).toBe('PAY_NOT_SET_UP');
+    expect(timesheetRepo.approveSubmittedWithEarnings).not.toHaveBeenCalled();
   });
 });
 
@@ -2963,7 +2960,7 @@ describe('TimesheetCommandService.approve — freezes figures computed by the RE
     ]);
   });
 
-  it('freezes the engine’s no_arrangement arm — not a £0.00 — when the carer has no pay terms on file', async () => {
+  it('refuses the approval — not a £0.00 — when the REAL engine finds no pay terms on file', async () => {
     // Same wiring, arrangements empty. Proves the arm the approve path writes
     // is the engine's own verdict rather than anything this test decided:
     // gross and currency stay NULL and the week's last day is named as
@@ -2981,18 +2978,17 @@ describe('TimesheetCommandService.approve — freezes figures computed by the RE
       makeRealEarnings([workedEntry()], [])
     );
 
-    await svc.approve('parent-1', 'ts1');
+    const err = (await svc
+      .approve('parent-1', 'ts1')
+      .catch((e: unknown) => e)) as {
+      statusCode?: number;
+      metadata?: { reason?: string };
+    };
 
-    const [, patch] = timesheetRepo.approveSubmittedWithEarnings.mock
-      .calls[0] as [string, Record<string, unknown>];
-    expect(patch.gross_minor).toBeNull();
-    expect(patch.currency).toBeNull();
-    expect(patch.earnings).toEqual({
-      status: 'no_arrangement',
-      week_start: '2026-08-03',
-      unpriced_dates: ['2026-08-03', '2026-08-09'],
-      v: 1,
-    });
+    expect(err).toBeInstanceOf(TimesheetNotPriceableError);
+    expect(err.statusCode).toBe(409);
+    expect(err.metadata?.reason).toBe('PAY_NOT_SET_UP');
+    expect(timesheetRepo.approveSubmittedWithEarnings).not.toHaveBeenCalled();
   });
 });
 
@@ -6993,7 +6989,7 @@ describe('TimesheetCommandService.approve — the parent adjustment', () => {
     expect(timesheetRepo.approveSubmittedWithEarnings).not.toHaveBeenCalled();
   });
 
-  it('leaves the no_arrangement week EXACTLY as it was when no adjustment is supplied', async () => {
+  it('refuses a no_arrangement week with PAY_NOT_SET_UP when no adjustment is supplied', async () => {
     const timesheetRepo = makeApprovingRepo();
     const noArrangement: WeekEarnings = {
       status: 'no_arrangement',
@@ -7005,14 +7001,18 @@ describe('TimesheetCommandService.approve — the parent adjustment', () => {
       makeEarnings({ computeForWeek: mock(async () => noArrangement) })
     );
 
-    await svc.approve('parent-1', 'ts1');
+    const err = (await svc
+      .approve('parent-1', 'ts1')
+      .catch((e: unknown) => e)) as {
+      statusCode?: number;
+      metadata?: { reason?: string };
+    };
 
-    const patch = patchOf(timesheetRepo);
-    expect(patch.gross_minor).toBeNull();
-    expect(patch.currency).toBeNull();
-    expect(patch.earnings).toEqual({ ...noArrangement, v: 1 });
+    expect(err).toBeInstanceOf(TimesheetNotPriceableError);
+    expect(err.statusCode).toBe(409);
+    expect(err.metadata?.reason).toBe('PAY_NOT_SET_UP');
+    expect(timesheetRepo.approveSubmittedWithEarnings).not.toHaveBeenCalled();
   });
-
   it('REFUSES an adjustment on a currency_change week', async () => {
     const timesheetRepo = makeApprovingRepo();
     const currencyChange: WeekEarnings = {
@@ -7033,6 +7033,34 @@ describe('TimesheetCommandService.approve — the parent adjustment', () => {
 
     expect(err).toBeInstanceOf(TimesheetAdjustmentNotAllowedError);
     expect(err.metadata?.reason).toBe('currency_change');
+    expect(timesheetRepo.approveSubmittedWithEarnings).not.toHaveBeenCalled();
+  });
+
+  it('refuses a currency_change week with PAY_CURRENCY_CHANGED when no adjustment is supplied', async () => {
+    const timesheetRepo = makeApprovingRepo();
+    const svc = approvingSvc(
+      timesheetRepo,
+      makeEarnings({
+        computeForWeek: mock(
+          async (): Promise<WeekEarnings> => ({
+            status: 'currency_change',
+            week_start: '2026-08-03',
+            currencies: ['GBP', 'EUR'],
+          })
+        ),
+      })
+    );
+
+    const err = (await svc
+      .approve('parent-1', 'ts1')
+      .catch((e: unknown) => e)) as {
+      statusCode?: number;
+      metadata?: { reason?: string };
+    };
+
+    expect(err).toBeInstanceOf(TimesheetNotPriceableError);
+    expect(err.statusCode).toBe(409);
+    expect(err.metadata?.reason).toBe('PAY_CURRENCY_CHANGED');
     expect(timesheetRepo.approveSubmittedWithEarnings).not.toHaveBeenCalled();
   });
 
@@ -7065,7 +7093,7 @@ describe('TimesheetCommandService.approve — the parent adjustment', () => {
     expect(timesheetRepo.approveSubmittedWithEarnings).not.toHaveBeenCalled();
   });
 
-  it('still approves a departed-carer week with an empty snapshot when no adjustment is supplied', async () => {
+  it('refuses a departed-carer week with TIMESHEET_CARER_REMOVED when no adjustment is supplied', async () => {
     const timesheetRepo = makeApprovingRepo();
     const svc = new TimesheetCommandService(
       makeTimeEntryRepo(),
@@ -7081,11 +7109,18 @@ describe('TimesheetCommandService.approve — the parent adjustment', () => {
       makeEarnings()
     );
 
-    await svc.approve('parent-1', 'ts1');
+    const err = (await svc
+      .approve('parent-1', 'ts1')
+      .catch((e: unknown) => e)) as {
+      statusCode?: number;
+      metadata?: { reason?: string };
+    };
 
-    expect(patchOf(timesheetRepo).gross_minor).toBeNull();
+    expect(err).toBeInstanceOf(TimesheetNotPriceableError);
+    expect(err.statusCode).toBe(409);
+    expect(err.metadata?.reason).toBe('TIMESHEET_CARER_REMOVED');
+    expect(timesheetRepo.approveSubmittedWithEarnings).not.toHaveBeenCalled();
   });
-
   it('drops the adjustment with the rest of the approval when the CAS loses the race', async () => {
     const timesheetRepo = makeApprovingRepo({
       approveSubmittedWithEarnings: mock(async () => null),

@@ -123,11 +123,25 @@ tags:
     visible:
       id: 'children-screen'
     timeout: 15000
+# HARNESS FIX 2026-11-22 (remote Worker). ChildrenManager renders its
+# EmptyState only once the children query SUCCEEDS, which pushes
+# `children-add-button` ~235pt down. Against the remote Worker the fetch
+# lands after the screen mounts, so the tap resolved the PRE-shift frame
+# ([22,470][418,518]) and hit the illustration — COMPLETED, no sheet. Wait
+# for the settled layout first.
+- extendedWaitUntil:
+    visible:
+      text: 'No children yet'
+    timeout: 15000
 - tapOn:
     id: 'children-add-button'
 - waitForAnimationToEnd
-- assertVisible:
-    id: 'child-form-sheet'
+# Wait on a field inside the sheet, not the sheet's own testID (a testID on
+# the sheet's Modal container is not reliably in the a11y tree).
+- extendedWaitUntil:
+    visible:
+      id: 'child-form-name'
+    timeout: 8000
 - tapOn:
     id: 'child-form-name'
 - inputText: 'Phase4 Kid'
@@ -223,9 +237,11 @@ tags:
 # than dismissing it (confirmed: the next assert failed on this exact
 # mistake). "How often you pay" is a genuinely non-interactive section
 # heading (`PayScheduleFields.tsx`, a plain `<Small>`) in view at this scroll
-# position — use that instead.
+# position — use that instead. (Copy is now "How often pay happens",
+# pay.json `payScheduleFieldLabel`; the old "How often you pay" no longer
+# exists — updated 2026-11-22.)
 - tapOn:
-    text: 'How often you pay'
+    text: 'How often pay happens'
 - waitForAnimationToEnd
 # Prove the keyboard is actually down rather than assuming it — `Dictate`
 # only exists in the tree while the iOS keyboard is on screen.
@@ -376,16 +392,22 @@ tags:
 # whose join path has no availability step, so this block has no precedent
 # there. Finish is disabled until a day is selected (AvailabilityScreen's
 # `ctaDisabled={selectedDays.length === 0}`); toggle Monday (Postgres dow 1).
+# The week strip is gone: AvailabilityEditor now renders one Switch per day,
+# `availability-day-switch-<dow>` (updated 2026-11-22). The toggle is a live
+# upsert and the CTA keys off the SERVER rows, so wait for it to enable
+# rather than asserting immediately.
 - extendedWaitUntil:
     visible:
-      id: 'availability-screen'
+      id: 'availability-day-switch-1'
     timeout: 25000
-- tapOn:
-    id: 'availability-week-strip-day-1'
 - waitForAnimationToEnd
-- assertVisible:
-    id: 'availability-screen-cta'
-    enabled: true
+- tapOn:
+    id: 'availability-day-switch-1'
+- extendedWaitUntil:
+    visible:
+      id: 'availability-screen-cta'
+      enabled: true
+    timeout: 15000
 - tapOn:
     id: 'availability-screen-cta'
 - waitForAnimationToEnd
@@ -454,9 +476,17 @@ tags:
 - tapOn:
     id: 'proposal-accept-confirm'
 - waitForAnimationToEnd
-# The post-accept `router.replace` fires only once the arrangement insert has
-# RETURNED — landing on the carer's own pay surface IS the evidence B1's
-# accept worked. `my-pay-screen`, NOT `pay-screen`: `/settings/pay` is the
+# ProposalReviewScreen now renders a `terms-agreed-moment` once the accept
+# RETURNS (updated 2026-11-22) — the redirect below moved behind its CTA.
+- extendedWaitUntil:
+    visible:
+      id: 'terms-agreed-moment'
+    timeout: 25000
+- tapOn:
+    id: 'terms-agreed-continue'
+- waitForAnimationToEnd
+# The moment's CTA `router.replace`s to the accepter's pay surface — landing
+# on the carer's own one IS the evidence B1's accept worked. `my-pay-screen`, NOT `pay-screen`: `/settings/pay` is the
 # PARENT's management surface and gates a carer to `pay-not-available` — the
 # original redirect sent her there and this flow's first run past the tap
 # caught it (fixed in ProposalReviewScreen's accept redirect, now role-forked).

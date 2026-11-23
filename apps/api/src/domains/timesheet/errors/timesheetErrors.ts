@@ -185,14 +185,14 @@ export class TimesheetGrossTooLargeError extends ValidationError {
  * the carer deleted her account (`carer_removed`, 033 — nothing to resolve an
  * arrangement against), no arrangement covers the week (`no_arrangement`), or
  * the week straddles a currency change (`currency_change`). All three already
- * freeze a snapshot with NULL money columns, and `docs/11-MONEY.md` §4 is
+ * have NULL money, and `docs/11-MONEY.md` §4 is
  * explicit about what must not happen next: a bare adjustment folded into
  * nothing would print `£15.00` under an "Approved gross" label for a week the
  * engine could not price at all — a number invented out of a missing one.
  *
- * WITHOUT an adjustment every one of those paths behaves exactly as it always
- * has: the hours are still approved, only the money is absent. This refusal
- * fires ONLY when a client asked to add money to a week that has none.
+ * WITHOUT an adjustment the same weeks are refused as
+ * `TimesheetNotPriceableError` (an approved row must carry a gross). This
+ * refusal fires ONLY when a client asked to add money to a week that has none.
  */
 export class TimesheetAdjustmentNotAllowedError extends ConflictError {
   constructor(
@@ -310,5 +310,31 @@ export class TimesheetNotActionableError extends ConflictError {
       { timesheetId, status }
     );
     this.name = 'TimesheetNotActionableError';
+  }
+}
+
+/** `metadata.reason` per unpriceable arm — the mobile client switches on it. */
+const NOT_PRICEABLE_REASONS = {
+  no_arrangement: 'PAY_NOT_SET_UP',
+  currency_change: 'PAY_CURRENCY_CHANGED',
+  carer_removed: 'TIMESHEET_CARER_REMOVED',
+} as const;
+
+/**
+ * 409 — the week can't be priced, so it can't be approved. An approved row
+ * MUST carry a frozen gross (`timesheets_approved_has_snapshot`), and writing
+ * `0` to satisfy it is the silently-wrong zero `docs/11-MONEY.md` §4 forbids.
+ * Refused before the CAS, so the week stays `submitted` — the parent sets up
+ * pay (or splits the currency change) and approves again. Before this guard
+ * the write died on the CHECK as a raw 500.
+ */
+export class TimesheetNotPriceableError extends ConflictError {
+  constructor(timesheetId: string, cause: keyof typeof NOT_PRICEABLE_REASONS) {
+    super(
+      "This week can't be approved until pay is set up",
+      NOT_PRICEABLE_REASONS[cause],
+      { timesheetId, earningsStatus: cause }
+    );
+    this.name = 'TimesheetNotPriceableError';
   }
 }

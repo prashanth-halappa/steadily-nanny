@@ -993,6 +993,49 @@ describe('HoursScreen — parent, historical weeks stay non-actionable', () => {
     expect(getByTestId('hours-approve-button').props.disabled).toBe(false);
     expect(getByTestId('hours-query-button').props.disabled).toBe(false);
   });
+
+  // The API refuses an approve it can't price (TimesheetNotPriceableError), so
+  // the button is withheld with the reason rather than shown-and-refused.
+  it.each([
+    [
+      {
+        status: 'no_arrangement',
+        week_start: '2026-08-03',
+        unpriced_dates: [],
+      },
+      'approveNeedsPayRate',
+    ],
+    [
+      {
+        status: 'currency_change',
+        week_start: '2026-08-03',
+        currencies: ['GBP', 'EUR'],
+      },
+      'approveNeedsOneCurrency',
+    ],
+  ])('disables Approve on an unpriceable submitted week and says why (%#)', (earnings, note) => {
+    mockUseWeekTimesheet.mockImplementation(() => ({
+      data: [
+        {
+          id: '4359148e-d5ee-4515-9fca-3396b29ee48d',
+          carer_id: 'carer-1',
+          carer_display_name: 'Amara',
+          status: 'submitted',
+          query_note: null,
+          earnings,
+        },
+      ],
+      isLoading: false,
+    }));
+
+    const { getByTestId } = render(<HoursScreen />);
+    fireEvent.press(getByTestId('hours-week-prev'));
+
+    expect(getByTestId('hours-approve-button').props.disabled).toBe(true);
+    expect(getByTestId('hours-approve-waiting').props.children).toBe(note);
+    // Query stays available — a parent can still question unpriced hours.
+    expect(getByTestId('hours-query-button').props.disabled).toBe(false);
+  });
 });
 
 // The removed nanny can now reach the household she left, so this screen is

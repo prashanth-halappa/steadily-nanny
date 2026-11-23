@@ -54,10 +54,14 @@ import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { useSignedOutRedirect } from '@/src/hooks/useSignedOutRedirect';
 import { useSetupProgressStore } from '@/src/store/setupProgress';
 
 export default function OnboardingLayout() {
   const router = useRouter();
+  // Outside `(private)`, so it needs its own signed-out guard — without it a
+  // sign-out (or dead session) mid-wizard sat on the spinner below forever.
+  const signedOut = useSignedOutRedirect();
   const onboarding = useIsOnboarded();
   const wizardEngaged = useSetupProgressStore(s => s.role !== null);
   // Mount-scoped: "wizard has painted at least once on THIS mount".
@@ -65,15 +69,23 @@ export default function OnboardingLayout() {
   const wizardPaintedRef = useRef(false);
 
   useEffect(() => {
+    if (signedOut) return;
     if (onboarding.membershipsError) return;
     if (onboarding.status !== 'onboarded') return;
     if (wizardEngaged) return;
     router.replace('/(private)/(tabs)/home' as Href);
-  }, [onboarding.membershipsError, onboarding.status, wizardEngaged, router]);
+  }, [
+    signedOut,
+    onboarding.membershipsError,
+    onboarding.status,
+    wizardEngaged,
+    router,
+  ]);
 
   // Confirmed new / incomplete user, or an onboarded user actively mid-wizard
   // (see WIZARD-OWNS-COMPLETION above) — show the wizard.
   const showWizard =
+    !signedOut &&
     !onboarding.membershipsError &&
     (onboarding.status === 'not-onboarded' ||
       (onboarding.status === 'onboarded' && wizardEngaged) ||
@@ -88,8 +100,8 @@ export default function OnboardingLayout() {
     );
   }
 
-  // loading (before first paint), onboarded-and-not-engaged (redirect in
-  // flight), or membershipsError — never paint RoleScreen. Index owns the
+  // signed out (welcome redirect in flight), loading (before first paint),
+  // onboarded-and-not-engaged (redirect in flight), or membershipsError — never paint RoleScreen. Index owns the
   // network ErrorState for membershipsError when the user is still on `/`;
   // here we just wait / bounce.
   return (

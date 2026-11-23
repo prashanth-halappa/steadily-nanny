@@ -436,12 +436,12 @@ describe('CodeEntryScreen — trapped-nanny escape hatches (W1-E fix 2)', () => 
     expect(mockSignOut).toHaveBeenCalledTimes(1);
   });
 
-  it('routes to /welcome after sign-out (onboarding has no signed-out redirect)', async () => {
+  it('does not navigate itself — the onboarding layout guard owns /welcome', () => {
     const screen = renderWithProviders(<CodeEntryScreen />);
 
     fireEvent.press(screen.getByTestId('code-screen-sign-out'));
 
-    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/welcome'));
+    expect(mockReplace).not.toHaveBeenCalledWith('/welcome');
   });
 });
 

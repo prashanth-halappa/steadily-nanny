@@ -83,10 +83,10 @@ import {
   TimesheetAdjustmentNotAllowedError,
   TimesheetGrossTooLargeError,
   TimesheetNotActionableError,
+  TimesheetNotPriceableError,
 } from '../errors/timesheetErrors';
 import { TimeEntryRepository } from '../repositories/timeEntryRepository';
 import {
-  CLEARED_EARNINGS_SNAPSHOT,
   type TimesheetEarningsSnapshot,
   TimesheetRepository,
   type TimesheetRow,
@@ -2102,24 +2102,20 @@ export class TimesheetCommandService {
   /**
    * The four snapshot columns for a week about to be approved.
    *
-   * A carer-less week (`carer_id` NULL after account deletion — 033) gets an
-   * EMPTY snapshot rather than a computed one: there is nobody to resolve an
-   * arrangement against, and the read path renders it hours-only anyway. The
-   * approval of the HOURS still stands; only the money is absent.
-   *
-   * A non-`ok` engine arm (`no_arrangement`, `currency_change`) freezes its
-   * jsonb but leaves `gross_minor`/`currency` NULL. Migration 042's header
-   * describes the four columns as populated "together"; that prose assumes a
-   * priceable week. Writing `0` here to satisfy it would be exactly the
-   * silently-wrong zero `docs/11-MONEY.md` §4 forbids, so the jsonb carries
-   * the honest reason and the amount columns stay empty.
+   * AN UNPRICEABLE WEEK IS REFUSED (`TimesheetNotPriceableError`, 409): a
+   * carer-less week (`carer_id` NULL after account deletion — 033) or a
+   * non-`ok` engine arm (`no_arrangement`, `currency_change`). An approved row
+   * must carry all four columns (`timesheets_approved_has_snapshot`), and
+   * writing `0` to satisfy it would be exactly the silently-wrong zero
+   * `docs/11-MONEY.md` §4 forbids. Refusing here, before the CAS, keeps the
+   * week `submitted` instead of dying on the CHECK as a raw 500.
    *
    * THE ADJUSTMENT'S VALIDATION ORDER IS THE DESIGN, not an accident of where
    * the code was easiest to insert:
    *
    * 1. An unpriceable week (no carer, no arrangement, a currency change)
    *    refuses an adjustment outright — no base, no number (§4). Without an
-   *    adjustment every one of those paths is byte-identical to before.
+   *    adjustment the same week is refused as `TimesheetNotPriceableError`.
    * 2. The existing computed-gross > MAX check stays FIRST, ahead of the
    *    fold. An oversized `hours x rate` is a problem with the RATE and must
    *    be reported as one; letting a negative adjustment pull it back under
@@ -2152,7 +2148,7 @@ export class TimesheetCommandService {
           'carer_removed'
         );
       }
-      return CLEARED_EARNINGS_SNAPSHOT;
+      throw new TimesheetNotPriceableError(timesheet.id, 'carer_removed');
     }
     const earnings: WeekEarnings = await this.earnings.computeForWeek(
       timesheet.household_id,
@@ -2166,12 +2162,7 @@ export class TimesheetCommandService {
           earnings.status
         );
       }
-      return {
-        gross_minor: null,
-        currency: null,
-        earnings: { ...earnings, v: 1 },
-        earnings_computed_at: computedAt,
-      };
+      throw new TimesheetNotPriceableError(timesheet.id, earnings.status);
     }
     // INDIVIDUALLY-CAPPED INPUTS MULTIPLY INTO UNBOUNDED COMPUTED MONEY — the
     // DB CHECK is the backstop, this guard is the clean failure.

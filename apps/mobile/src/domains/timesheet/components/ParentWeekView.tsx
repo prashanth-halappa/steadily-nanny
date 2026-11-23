@@ -614,6 +614,17 @@ export function ParentWeekView({
   // Narrowed via a fresh binding, not a separately-named boolean — TS only
   // narrows `earnings` itself from a check performed directly on it.
   const earningsOk = earnings && earnings.status === 'ok' ? earnings : null;
+  // The API refuses to approve a week it can't price (an approved row must
+  // freeze a gross — TimesheetNotPriceableError), so Approve is withheld here
+  // with the reason instead of shown-and-refused.
+  const approveBlockedNote =
+    isActionable && earnings && !earningsOk
+      ? earnings.status === 'no_arrangement'
+        ? t('approveNeedsPayRate')
+        : earnings.status === 'currency_change'
+          ? t('approveNeedsOneCurrency')
+          : t('approveNeedsPayFigure')
+      : null;
   const approvedDateLabel =
     isApproved && timesheet?.approved_at
       ? formatEarningsLongDate(
@@ -1125,7 +1136,10 @@ export function ParentWeekView({
                   : {
                       testID: 'hours-approve-button',
                       label: isApproved ? t('approved') : t('approveWeek'),
-                      disabled: !isActionable || approveTimesheet.isPending,
+                      disabled:
+                        !isActionable ||
+                        !!approveBlockedNote ||
+                        approveTimesheet.isPending,
                       onPress: () => setIsApproveDialogOpen(true),
                       // C — the highest-stakes button in the app and it used
                       // to say nothing about who hears it.
@@ -1173,21 +1187,23 @@ export function ParentWeekView({
                     // couldn't load this".
                     timesheetQuery.isError
                     ? t('couldntLoadHours')
-                    : isActionable || isApproved
-                      ? null
-                      : isQueried
-                        ? // A null carerName interpolated into a name slot
-                          // renders a sentence with a hole in it — "Approve
-                          // unlocks once  has logged hours this week." The
-                          // lead line above already forks for exactly this
-                          // (`lead.parent` / `lead.parentNoCarer`); these two
-                          // did not.
-                          carerName
-                          ? t('waitingAfterQuery', { name: carerName })
-                          : t('waitingAfterQueryNoCarer')
-                        : carerName
-                          ? t('waitingForHours', { name: carerName })
-                          : t('waitingForHoursNoCarer')
+                    : approveBlockedNote
+                      ? approveBlockedNote
+                      : isActionable || isApproved
+                        ? null
+                        : isQueried
+                          ? // A null carerName interpolated into a name slot
+                            // renders a sentence with a hole in it — "Approve
+                            // unlocks once  has logged hours this week." The
+                            // lead line above already forks for exactly this
+                            // (`lead.parent` / `lead.parentNoCarer`); these two
+                            // did not.
+                            carerName
+                            ? t('waitingAfterQuery', { name: carerName })
+                            : t('waitingAfterQueryNoCarer')
+                          : carerName
+                            ? t('waitingForHours', { name: carerName })
+                            : t('waitingForHoursNoCarer')
               }
             />
             {/* §7 fixed order item 4 — gross, breakdown link, staged

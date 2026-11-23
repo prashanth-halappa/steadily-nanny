@@ -1,4 +1,4 @@
-import { type Href, Stack, useRouter } from 'expo-router';
+import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Platform, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -9,26 +9,24 @@ import {
   SoftUpdateBanner,
 } from '@/src/components/custom';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
+import { useSignedOutRedirect } from '@/src/hooks/useSignedOutRedirect';
 import { useAuthStore } from '@/src/store/auth';
 import { useNotificationStore } from '@/src/store/notificationStore';
 
 /**
- * Auth-gated subtree. Redirects to /welcome when there is no session.
+ * Auth-gated subtree. Redirects to /welcome when there is no session
+ * (`useSignedOutRedirect`, shared with `app/onboarding/_layout.tsx`).
  *
  * `isOnboarded` for THIS gate is a session check only; the entry router
  * (app/index.tsx) sends un-onboarded users into the onboarding flow. Swap in a
  * different predicate (e.g. useIsOnboarded) if you want to gate here too.
  */
 export default function PrivateLayout() {
-  const router = useRouter();
+  useSignedOutRedirect();
   const isInitialized = useAuthStore(s => s.isInitialized);
   const session = useAuthStore(s => s.session);
   const canPrompt = useNotificationStore(s => s.canPrompt);
   const [showSoftAsk, setShowSoftAsk] = useState(false);
-
-  useEffect(() => {
-    if (isInitialized && !session) router.replace('/welcome' as Href);
-  }, [isInitialized, session, router]);
 
   // iOS soft-ask primer: iOS only, once the primer cadence allows.
   useEffect(() => {

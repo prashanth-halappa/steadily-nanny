@@ -78,6 +78,26 @@ beforeEach(() => {
 });
 
 describe('useIsOnboarded', () => {
+  it('reports a definite not-onboarded when signed out, never loading forever', () => {
+    // The memberships query is disabled without a session, so `isPending`
+    // never clears — this used to spin the onboarding layout indefinitely.
+    useAuthStore.setState({ session: null, isInitialized: true });
+
+    const { result } = renderHookWithProviders(() => useIsOnboarded());
+
+    expect(result.current.status).toBe('not-onboarded');
+    expect(result.current.membershipsError).toBe(false);
+    expect(membershipsListMock).not.toHaveBeenCalled();
+  });
+
+  it('still waits while auth is initialising', () => {
+    useAuthStore.setState({ session: null, isInitialized: false });
+
+    const { result } = renderHookWithProviders(() => useIsOnboarded());
+
+    expect(result.current.status).toBe('loading');
+  });
+
   it('is loading while memberships are in flight — never a bare false', () => {
     membershipsListMock.mockImplementation(() => new Promise(() => {}));
     householdsListMock.mockResolvedValue([householdRow()]);

@@ -8,6 +8,7 @@ import {
 } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { useCallback } from 'react';
 import { SETUP_ROLES, type SetupRole } from '@/src/domains/setup/types';
+import { useAuthStore } from '@/src/store/auth';
 import { useActiveHousehold } from './useActiveHousehold';
 import { useChildren } from './useChildren';
 import { useMyMemberships } from './useMyMemberships';
@@ -199,6 +200,7 @@ function isOnboardedForMembership(
  */
 export function useIsOnboarded(): OnboardingState {
   const membershipsQuery = useMyMemberships();
+  const signedOut = useAuthStore(s => s.isInitialized && !s.session);
   const activeHousehold = useActiveHousehold();
 
   const retryMemberships = useCallback(() => {
@@ -255,6 +257,24 @@ export function useIsOnboarded(): OnboardingState {
   const children = useChildren(
     needsChildCount ? resolvedHouseholdId : undefined
   );
+
+  // Signed out is a DEFINITE answer, not 'loading': the memberships query is
+  // disabled without a session, so `isPending` would hold forever and every
+  // "wait while loading" caller would spin forever with it (the onboarding
+  // layout did, after a mid-wizard sign-out). Nobody is set up here.
+  if (signedOut) {
+    return {
+      status: 'not-onboarded',
+      role: null,
+      membershipRole: null,
+      householdId: null,
+      householdState: null,
+      isPastMember: false,
+      endedReason: null,
+      membershipsError: false,
+      retryMemberships,
+    };
+  }
 
   // BEFORE the loading check, and long before the not-onboarded check: an
   // errored query must never fall through to `!membership` below, which cannot

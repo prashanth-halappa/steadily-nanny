@@ -26,7 +26,9 @@
  * "wizard actively engaged" describe block below.
  */
 import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
-import { render } from '@testing-library/react-native';
+import { act, render } from '@testing-library/react-native';
+import type { AuthSession } from '@/src/lib/authClient';
+import { useAuthStore } from '@/src/store/auth';
 import { useSetupProgressStore } from '@/src/store/setupProgress';
 
 type SetupRoleValue = 'parent' | 'nanny' | 'helper';
@@ -87,6 +89,10 @@ beforeEach(() => {
   mockReplace.mockClear();
   mockRetryMemberships.mockClear();
   useSetupProgressStore.getState().reset();
+  useAuthStore.setState({
+    session: { user: { id: 'user-1' } } as unknown as AuthSession,
+    isInitialized: true,
+  });
 });
 
 describe('OnboardingLayout — already-onboarded bounce', () => {
@@ -276,5 +282,56 @@ describe('OnboardingLayout — mid-wizard loading latch (R7)', () => {
 
     expect(getByTestId('onboarding-layout-loading')).toBeTruthy();
     expect(queryByTestId('onboarding-stack-mock')).toBeNull();
+  });
+});
+
+describe('OnboardingLayout — signed-out guard', () => {
+  // A sign-out (or dead session) mid-wizard used to strand the app on
+  // `onboarding-layout-loading`: this group sits outside `(private)`, whose
+  // layout held the only signed-out -> /welcome redirect.
+  it('redirects to /welcome and never paints the wizard once signed out', () => {
+    useAuthStore.setState({ session: null, isInitialized: true });
+    useSetupProgressStore.setState({ role: 'nanny' });
+    onboardingState = {
+      status: 'not-onboarded',
+      role: null,
+      householdId: null,
+      membershipsError: false,
+    };
+
+    const { getByTestId, queryByTestId } = render(<OnboardingLayout />);
+
+    expect(mockReplace).toHaveBeenCalledWith('/welcome');
+    expect(mockReplace).not.toHaveBeenCalledWith('/(private)/(tabs)/home');
+    expect(getByTestId('onboarding-layout-loading')).toBeTruthy();
+    expect(queryByTestId('onboarding-stack-mock')).toBeNull();
+  });
+
+  it('redirects when the session ends while the wizard is on screen', () => {
+    onboardingState = {
+      status: 'not-onboarded',
+      role: null,
+      householdId: null,
+      membershipsError: false,
+    };
+    const { getByTestId, queryByTestId, rerender } = render(
+      <OnboardingLayout />
+    );
+    expect(getByTestId('onboarding-stack-mock')).toBeTruthy();
+    expect(mockReplace).not.toHaveBeenCalled();
+
+    act(() => useAuthStore.setState({ session: null }));
+    rerender(<OnboardingLayout />);
+
+    expect(mockReplace).toHaveBeenCalledWith('/welcome');
+    expect(queryByTestId('onboarding-stack-mock')).toBeNull();
+  });
+
+  it('does not redirect before auth has initialised', () => {
+    useAuthStore.setState({ session: null, isInitialized: false });
+
+    render(<OnboardingLayout />);
+
+    expect(mockReplace).not.toHaveBeenCalledWith('/welcome');
   });
 });

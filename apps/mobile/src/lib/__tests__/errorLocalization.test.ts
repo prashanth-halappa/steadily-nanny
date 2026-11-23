@@ -129,6 +129,20 @@ describe('getLocalizedErrorMessage', () => {
       );
     });
 
+    it.each([
+      ['PAY_NOT_SET_UP', 'errors:payNotSetUp'],
+      ['PAY_CURRENCY_CHANGED', 'errors:payCurrencyChanged'],
+      ['TIMESHEET_CARER_REMOVED', 'errors:timesheetCarerRemoved'],
+    ])('maps an unpriceable-approve %s reason to %s', (reason, key) => {
+      const error = {
+        response: {
+          status: 409,
+          data: { error: { code: 'CONFLICT', metadata: { reason } } },
+        },
+      };
+      expect(getLocalizedErrorMessage(error, t)).toBe(key);
+    });
+
     it('maps INTERNAL_ERROR to errors:server', () => {
       expect(
         getLocalizedErrorMessage(envelopeError(ERROR_CODES.INTERNAL_ERROR), t)
