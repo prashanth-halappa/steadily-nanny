@@ -112,8 +112,21 @@ tags:
     timeout: 20000
 # The receipt ("Clocked out at …") renders in the OFF-clock branch of
 # ClockInCard, for the most recent completed entry — not while running.
-- assertVisible:
-    id: 'today-clock-receipt'
+# TIME-OF-DAY GUARD: ClockInCard deliberately hides the receipt while a
+# shift that already ENDED today has no overlapping entry (`!missedShift` —
+# "a missed shift outranks a receipt"). The reused PHASE4_TODAY_SHIFT_ID is
+# 08:00-17:00 Europe/London, so any run after 17:00 London (09:00 Pacific)
+# shows `today-off-clock-missed` instead — correct app behaviour, not a
+# regression. Assert the receipt only while no missed row is showing; the
+# missed card renders directly under the clock card, which centerElement
+# above keeps on screen.
+- runFlow:
+    when:
+      notVisible:
+        id: 'today-off-clock-missed'
+    commands:
+      - assertVisible:
+          id: 'today-clock-receipt'
 - takeScreenshot: ${OUT}/s5-37-b-first-session-clocked-out
 
 # --- Nanny: SECOND session — start it now, before approval ----------------
