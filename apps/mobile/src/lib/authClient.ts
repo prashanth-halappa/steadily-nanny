@@ -5,6 +5,7 @@ import { createAuthClient } from 'better-auth/react';
 import * as SecureStore from 'expo-secure-store';
 import { API_URL } from '@/src/api/client';
 import { appIdentity } from '@/src/config/appIdentity';
+import { fetchRetryingLostConnection } from '@/src/lib/retryLostConnection';
 
 /**
  * Better Auth client. The API mounts Better Auth at `<api origin>/api/auth`,
@@ -16,6 +17,7 @@ import { appIdentity } from '@/src/config/appIdentity';
  */
 export const authClient = createAuthClient({
   baseURL: `${new URL(API_URL ?? '').origin}/api/auth`,
+  fetchOptions: { customFetchImpl: fetchRetryingLostConnection },
   plugins: [
     expoClient({
       scheme: appIdentity.scheme,
