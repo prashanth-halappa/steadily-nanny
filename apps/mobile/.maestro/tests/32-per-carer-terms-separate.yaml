@@ -18,7 +18,9 @@
 # FIXTURES, in order:
 #   - tests/31-second-nanny-joins.yaml must have run (nanny2 is an active member)
 #   - scripts/seed-s3-second-carer.ts must have run (nanny2's £22.50 arrangement)
-#   - tests/07-terms-setup-and-ca-ot-week.yaml gives nanny 1 their £15.00
+#   - tests/07-terms-setup-and-ca-ot-week.yaml gives nanny 1 their £15.00, or
+#     scripts/seed-carer1-terms.ts does (seed-phase4-fixtures.ts deletes it)
+#   Against the Worker, run both seeders with D1_REMOTE=1 (both idempotent).
 # The seed script REFUSES if flow 31 has not run, rather than inventing the
 # membership — otherwise flow 31 would be untested and still look green.
 appId: com.jetto.steadily.nanny
@@ -85,7 +87,25 @@ tags:
     visible:
       id: 'my-pay-screen'
     timeout: 15000
-- assertVisible: '.*15\.00.*'
+# nanny@ belongs to several seeded households (Usual Week, PHASE4 Sunday, …),
+# and PHASE4 Sunday is ALSO £15.00 — a bare '.*15\.00.*' passes off that card
+# without ever reading the shared household's. Scroll to the shared
+# household's own card and match the rate INSIDE it. iOS flattens the card's
+# subtree in the a11y hierarchy (`childOf` never matches), so bound it by
+# position instead: below that household's header, above its history toggle.
+- scrollUntilVisible:
+    element:
+      id: 'my-pay-history-toggle-${PHASE4_HOUSEHOLD_ID}'
+    direction: DOWN
+    # no centerElement: this card is last in the list and can never be
+    # centred, so centring retries until the timeout (same note as flow 12).
+    timeout: 20000
+- assertVisible:
+    text: '.*15\.00.*'
+    below:
+      id: 'my-pay-household-${PHASE4_HOUSEHOLD_ID}-header'
+    above:
+      id: 'my-pay-history-toggle-${PHASE4_HOUSEHOLD_ID}'
 # THE LEAK ASSERTION. MyPayScreen is keyed by household, never by another
 # carer, so nanny 2's rate has no route onto this screen. If it ever appears,
 # the anonymity between carers is broken and this screenshot proves it.

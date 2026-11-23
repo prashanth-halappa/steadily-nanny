@@ -277,6 +277,21 @@ export function mergeDayBlocks(ranges: DayBlock[]): DayBlock[] {
   return merged;
 }
 
+/**
+ * The blocks a day ACTUALLY has in the week being built. Deselecting a day on
+ * the days step only drops it from `selectedDays`; its `dayBlocks` entry is
+ * kept (so re-selecting restores the hours). The editor must still render a
+ * deselected day as "day off" — otherwise a care-hours prefill of Mon-Fri,
+ * narrowed to Tue/Thu, shows five days of hours while only two get sent.
+ */
+export function blocksForDay<B>(
+  selectedDays: number[],
+  dayBlocks: Record<number, B[]>,
+  day: number
+): B[] {
+  return selectedDays.includes(day) ? (dayBlocks[day] ?? []) : [];
+}
+
 export function hasOverlappingBlocks(
   blocks: { start: string; end: string }[]
 ): boolean {

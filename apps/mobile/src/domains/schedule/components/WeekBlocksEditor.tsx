@@ -8,6 +8,7 @@ import { TimeRangePicker } from '@/src/components/ui/time-range-picker';
 import { Body, Caption } from '@/src/components/ui/typography';
 import {
   type AvailabilityRow,
+  blocksForDay,
   type DayBlock,
   hasOverlappingBlocks,
   isOutsideAvailability,
@@ -44,7 +45,7 @@ export function WeekBlocksEditor({
     day: number,
     updater: (blocks: DayBlock[]) => DayBlock[]
   ) => {
-    const currentBlocks = dayBlocks[day] || [];
+    const currentBlocks = blocksForDay(selectedDays, dayBlocks, day);
     const newBlocks = updater(currentBlocks).sort(
       (a, b) => (timeToMinutes(a.start) ?? 0) - (timeToMinutes(b.start) ?? 0)
     );
@@ -136,7 +137,7 @@ export function WeekBlocksEditor({
   return (
     <View className="gap-8">
       {displayOrder.map(day => {
-        const blocks = dayBlocks[day] || [];
+        const blocks = blocksForDay(selectedDays, dayBlocks, day);
         const isDayOff = blocks.length === 0;
         const isOverlapping = hasOverlappingBlocks(blocks);
 

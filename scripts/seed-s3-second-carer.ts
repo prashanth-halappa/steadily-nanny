@@ -39,14 +39,16 @@
  * refuses rather than inventing the membership, because a membership conjured
  * here would make flow 31 untested and still look green.
  *
- * Idempotent. Run AFTER tests/31-second-nanny-joins.yaml.
+ * Idempotent, and resets nanny 2's schedule_patterns (plus their shifts) so
+ * flow 33 can be re-run after this script. Run AFTER
+ * tests/31-second-nanny-joins.yaml.
  *
  * Usage: bun run scripts/seed-s3-second-carer.ts
  *
  * @module scripts/seed-s3-second-carer
  */
 
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { Db } from '../apps/api/src/db/client';
 import {
   householdMembers,
@@ -54,6 +56,7 @@ import {
   payArrangements,
   schedulePatternDays,
   schedulePatterns,
+  shifts,
   user,
 } from '../apps/api/src/db/schema';
 import { getLocalDb } from './lib/localDb';
@@ -179,6 +182,28 @@ async function main(db: Db): Promise<void> {
     console.log(
       `[created] nanny2 arrangement -> ${created?.id} (${NANNY2_RATE_MINOR} minor ${currency})`
     );
+  }
+
+  // --- reset nanny 2's usual weeks (flow 33 builds hers live) ------------
+  // Every flow 33 pass sends nanny 2 a new pattern; a pass that dies between
+  // send and accept leaves a PENDING one behind, and the next pass then has
+  // two pending weeks for her (Today shows one card, "Your usual week" shows
+  // the other). Clear them, and the shifts her accepted ones materialised,
+  // so a fresh seed always starts flow 33 with nanny 2 holding no week.
+  const nanny2Patterns = await db
+    .select({ id: schedulePatterns.id })
+    .from(schedulePatterns)
+    .where(
+      and(
+        eq(schedulePatterns.household_id, householdId),
+        eq(schedulePatterns.carer_id, nanny2Id)
+      )
+    );
+  if (nanny2Patterns.length > 0) {
+    const ids = nanny2Patterns.map(p => p.id);
+    await db.delete(shifts).where(inArray(shifts.source_pattern_id, ids));
+    await db.delete(schedulePatterns).where(inArray(schedulePatterns.id, ids));
+    console.log(`[reset]   deleted ${ids.length} nanny2 schedule_pattern(s)`);
   }
 
   // --- nanny 1's accepted usual week (flow 33's coexistence fixture) ------

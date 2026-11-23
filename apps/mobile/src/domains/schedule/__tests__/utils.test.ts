@@ -988,3 +988,14 @@ describe('hydrateFromCommitments', () => {
     expect(totalHours).toBe(34);
   });
 });
+
+describe('blocksForDay', () => {
+  it('treats a deselected day as a day off even when it still has blocks', async () => {
+    const { blocksForDay } = await import('../utils');
+    const block = { start: '09:00', end: '17:00', children: [] };
+    const dayBlocks = { 1: [block], 2: [block] };
+    expect(blocksForDay([2, 4], dayBlocks, 1)).toEqual([]);
+    expect(blocksForDay([2, 4], dayBlocks, 2)).toEqual([block]);
+    expect(blocksForDay([2, 4], dayBlocks, 4)).toEqual([]);
+  });
+});

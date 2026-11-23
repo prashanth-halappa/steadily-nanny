@@ -25,8 +25,12 @@
 #
 # FIXTURE: none needed beyond the standard preflight. Both shifts this flow
 # tests against are created LIVE, in-flow, through `ExtraShiftScreen` itself
-# — on a fixed date (2026-09-15, months past every other seed's date range,
-# so this flow can never collide with another flow's fixture) that
+# — on a per-run random date 400-700 days ahead (computed by the evalScript
+# below). It must be in the FUTURE: a past start now raises
+# `shifts.extraPastTitle`, which outranks the household-overlap warning. It
+# is far past the 84-day pattern materialisation horizon, so no seeded or
+# pattern shift can collide, and it is fresh per run, so the shifts earlier
+# runs left behind never trip arm A's same-carer check (RE-RUNNABLE). That
 # `ExtraShiftScreen` accepts as `?date=`/`?start=`/`?end=`/`?carerId=` query
 # params (see its own module header — a route wrapper for AgendaView's
 # uncovered-slot prefill), which sidesteps the DateTimeField/TimeRangePicker
@@ -47,9 +51,10 @@ appId: com.jetto.steadily.nanny
 tags:
   - schedule
 ---
-# ---------- A. nanny 1 gets a real shift, 2026-09-15 10:00-14:00 ----------
+# ---------- A. nanny 1 gets a real shift, <day> 10:00-14:00 ----------
 - runFlow: ../flows/login.yaml
-- openLink: steadilynanny:///(private)/schedule/shifts/extra?date=2026-09-15&start=10:00&end=14:00&carerId=${PHASE4_NANNY_ID}
+- evalScript: ${output.day = new Date(Date.now() + (400 + Math.floor(Math.random() * 300)) * 86400000).toISOString().slice(0, 10)}
+- openLink: steadilynanny:///(private)/schedule/shifts/extra?date=${output.day}&start=10:00&end=14:00&carerId=${PHASE4_NANNY_ID}
 - runFlow: cx-dismiss-open-alert.yaml
 - extendedWaitUntil:
     visible:
@@ -82,7 +87,7 @@ tags:
     id: 'schedule-shifts-screen'
 
 # ---------- B. nanny 2 over the same window: ADVISORY, not a refusal ------
-- openLink: steadilynanny:///(private)/schedule/shifts/extra?date=2026-09-15&start=11:00&end=13:00&carerId=${NANNY2_ID}
+- openLink: steadilynanny:///(private)/schedule/shifts/extra?date=${output.day}&start=11:00&end=13:00&carerId=${NANNY2_ID}
 - runFlow: cx-dismiss-open-alert.yaml
 - extendedWaitUntil:
     visible:
@@ -137,7 +142,7 @@ tags:
 - takeScreenshot: ${OUT}/s3-34-d-overlap-created-anyway
 
 # ---------- C. contrast: the SAME carer double-booked IS a hard block -----
-- openLink: steadilynanny:///(private)/schedule/shifts/extra?date=2026-09-15&start=11:00&end=12:00&carerId=${PHASE4_NANNY_ID}
+- openLink: steadilynanny:///(private)/schedule/shifts/extra?date=${output.day}&start=11:00&end=12:00&carerId=${PHASE4_NANNY_ID}
 - runFlow: cx-dismiss-open-alert.yaml
 - extendedWaitUntil:
     visible:
