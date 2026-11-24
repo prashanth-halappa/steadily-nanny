@@ -14,16 +14,21 @@
 # (it resets schedule_patterns/shifts back to empty every time).
 #
 # Run: `-e PARENT_EMAIL=... -e PARENT_PASSWORD=... -e NANNY_EMAIL=...
-#       -e NANNY_PASSWORD=... -e PHASE4_HOUSEHOLD_ID=<USUAL_WEEK_HOUSEHOLD_ID>`
-# (login.yaml/login-nanny.yaml both select `${PHASE4_HOUSEHOLD_ID}` — same
-# var name, reused rather than forked).
+#       -e NANNY_PASSWORD=... -e USUAL_WEEK_HOUSEHOLD_ID=...` (all in
+# .env.maestro). Every login below overrides login.yaml/login-nanny.yaml's
+# `PHASE4_HOUSEHOLD_ID` with USUAL_WEEK_HOUSEHOLD_ID: without that the flow
+# runs in the Phase4 household, whose nanny has clocked hours and an approved
+# week, so the no-week-yet card correctly never shows (2026-11-23).
 appId: com.jetto.steadily.nanny
 tags:
   - schedule
   - today
 ---
 # === A: parent, terms agreed, no schedule ==================================
-- runFlow: ../flows/login.yaml
+- runFlow:
+    file: ../flows/login.yaml
+    env:
+      PHASE4_HOUSEHOLD_ID: ${USUAL_WEEK_HOUSEHOLD_ID}
 - tapOn:
     id: 'tab-today'
 - waitForAnimationToEnd
@@ -32,7 +37,9 @@ tags:
     element:
       id: 'today-weekly-hours-not-set-card'
     direction: DOWN
-    timeout: 10000
+    timeout: 20000
+    speed: 10
+    centerElement: true
 - assertVisible:
     id: 'today-weekly-hours-not-set-card'
 - assertVisible:
@@ -92,7 +99,10 @@ tags:
 - takeScreenshot: 21-e-agenda-uncovered-rows
 
 # === D: nanny, no pattern and no shifts in the next 14 days ================
-- runFlow: ../flows/login-nanny.yaml
+- runFlow:
+    file: ../flows/login-nanny.yaml
+    env:
+      PHASE4_HOUSEHOLD_ID: ${USUAL_WEEK_HOUSEHOLD_ID}
 - tapOn:
     id: 'tab-today'
 - waitForAnimationToEnd
@@ -101,7 +111,14 @@ tags:
     element:
       id: 'today-no-week-yet-card'
     direction: DOWN
-    timeout: 10000
+    timeout: 20000
+    # This ~300pt card lands late, below the fold. At speed 40 one swipe
+    # flings it from the bottom edge to under the sticky cross-family strip,
+    # so it is never 100% visible; and left at the bottom edge its "Hide
+    # this" sits under the tab bar. A slow (no-fling) swipe + centering puts
+    # it mid-screen (2026-11-23).
+    speed: 10
+    centerElement: true
 - assertVisible:
     id: 'today-no-week-yet-card'
 - assertVisible:
@@ -146,7 +163,10 @@ tags:
 # === B: the two-tap promise — banner action opens the builder, prefilled, ==
 # lands directly on Review (one nanny + usable care hours, see
 # ScheduleBuildScreen's step-advance effect) ================================
-- runFlow: ../flows/login.yaml
+- runFlow:
+    file: ../flows/login.yaml
+    env:
+      PHASE4_HOUSEHOLD_ID: ${USUAL_WEEK_HOUSEHOLD_ID}
 - tapOn:
     id: 'tab-schedule'
 - waitForAnimationToEnd
@@ -192,7 +212,10 @@ tags:
 
 # === C: nanny sees the pending week, and the two "nothing scheduled" cards =
 # are mutually exclusive ====================================================
-- runFlow: ../flows/login-nanny.yaml
+- runFlow:
+    file: ../flows/login-nanny.yaml
+    env:
+      PHASE4_HOUSEHOLD_ID: ${USUAL_WEEK_HOUSEHOLD_ID}
 - tapOn:
     id: 'tab-today'
 - waitForAnimationToEnd
@@ -201,7 +224,9 @@ tags:
     element:
       id: 'today-pending-schedule-card-.*'
     direction: DOWN
-    timeout: 10000
+    timeout: 20000
+    speed: 10
+    centerElement: true
 - assertVisible:
     id: 'today-pending-schedule-card-.*'
 - assertNotVisible:
