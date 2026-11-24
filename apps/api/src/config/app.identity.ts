@@ -10,7 +10,7 @@ export const APP_IDENTITY = {
   /** Display name used in copy and the root endpoint. */
   name: 'Steadily Nanny',
   /** Support/contact email (also the default email reply-to). */
-  supportEmail: 'support@nanny.getsteadily.app',
+  supportEmail: 'ops@jettohq.com',
   /** Public marketing/base URL. */
   webUrl: 'https://nanny.getsteadily.app',
   /** Public API base URL (used by cron, deep links, email links). */

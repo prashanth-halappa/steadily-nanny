@@ -74,7 +74,7 @@ import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
 // SETUP: point these at your real hosted legal pages.
 const PRIVACY_URL = `https://${appIdentity.associatedDomain}/privacy`;
 const TERMS_URL = `https://${appIdentity.associatedDomain}/terms`;
-const HELP_URL = `mailto:help@${appIdentity.associatedDomain}`;
+const HELP_URL = 'mailto:ops@jettohq.com';
 
 // Row height: 52, not the 44 touch minimum — a 14-row screen at the bare
 // minimum reads as cramped (docs/design/01-LAWS.md).
