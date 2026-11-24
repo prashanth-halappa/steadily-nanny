@@ -18,7 +18,7 @@
     "db:migrate:remote": "wrangler d1 migrations apply steadily-nanny --remote",
     "qa:smoke": "bun scripts/qa-smoke.ts",
     "clean": "rm -rf dist node_modules",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler d1 migrations apply steadily-nanny --remote && wrangler deploy"
   },
   "dependencies": {
     "@better-auth/expo": "1.7.27",

@@ -138,15 +138,38 @@ Create **two separate projects** — one for the API (Cloudflare Workers), one f
 
 The API is a Cloudflare Worker (`apps/api/wrangler.jsonc`, entry `src/worker.ts`: Express under `nodejs_compat` via `httpServerHandler`). There is no container, Cloud Run service, or gateway proxy.
 
-### 8.1 Deploy
+### 8.1 Deploy a new version
+
+Prerequisites (once per machine): `bunx wrangler login`, and `bun run qc` green on the commit you're shipping.
 
 ```bash
 cd apps/api
-bunx wrangler d1 migrations apply steadily-nanny --remote   # always first
-bunx wrangler deploy
+bun run deploy   # = wrangler d1 migrations apply steadily-nanny --remote && wrangler deploy
 ```
 
-Set secrets first (§1 step 4); `NODE_ENV=production` makes the Worker refuse to boot without `JOB_API_KEY` and `RESEND_API_KEY`.
+That's the whole release. Migrations always go first, because an older Worker must tolerate a newer schema but a newer Worker can't run on an older one (`docs/ROLLBACK-RUNBOOK.md`). `wrangler deploy` uploads the bundle, keeps the custom domain and the cron trigger from `wrangler.jsonc`, and prints a **Version ID**: note it down.
+
+Check it straight after:
+
+```bash
+curl -s https://api.nanny.getsteadily.app/health                        # {"status":"OK",...}
+curl -s -o /dev/null -w '%{http_code}\n' https://api.nanny.getsteadily.app/api/v1/households   # 401
+bunx wrangler tail steadily-nanny-api --format pretty                   # live requests, errors, cron runs
+```
+
+Roll back the code (not the schema) to the previous version in seconds:
+
+```bash
+bunx wrangler deployments list          # find the last good Version ID
+bunx wrangler rollback <version-id>
+```
+
+Notes:
+- **Secrets** (`wrangler secret put NAME`) apply to the next deploy and survive later deploys. Set them before the first deploy (§1 step 4). `NODE_ENV=production` makes the Worker refuse to boot without `JOB_API_KEY` and `RESEND_API_KEY`. `bunx wrangler secret list` shows what's set.
+- **Deploy from a clean checkout of `main`**, never from a branch with uncommitted work: the bundle is built from your working tree.
+- **`NODE_ENV` is a `vars` entry**, not your shell's: `wrangler.jsonc`'s `define` stops wrangler baking the deploying shell's value into the bundle. Never read `process.env.NODE_ENV` directly in `apps/api` (see CLAUDE.md).
+- **workers.dev is off**: with a custom domain and no `workers_dev`, the `*.workers.dev` URL is disabled. To test a build without touching production, deploy a copy of `wrangler.jsonc` with `"routes"` swapped for `"workers_dev": true, "preview_urls": false` and `BETTER_AUTH_URL` set to the workers.dev origin, under a different `name`, so you don't overwrite the production Worker.
+- **CI does not deploy.** `.github/workflows/ci.yml` only runs the checks; releases are manual.
 
 ### 8.2 Public hostname
 
@@ -154,7 +177,7 @@ Serve the Worker on `api.nanny.getsteadily.app` as a **Workers Custom Domain** (
 
 ### 8.3 Local dev
 
-`bun run dev` (in `apps/api`) runs `wrangler dev --test-scheduled` on `http://localhost:8787` with a local D1 and `.dev.vars` secrets. Use `--remote` only deliberately, since that talks to the production database.
+`bun run dev` (in `apps/api`) runs `wrangler dev --test-scheduled` on `http://localhost:8080` with a local D1 and `.dev.vars` secrets. Use `--remote` only deliberately, since that talks to the production database.
 
 **Verify:** `curl https://api.nanny.getsteadily.app/health` returns `{"status":"OK",...}`; `curl -i .../api/v1/households` returns 401, not 404; `bunx wrangler triggers`/the dashboard lists the 10 cron triggers.
 

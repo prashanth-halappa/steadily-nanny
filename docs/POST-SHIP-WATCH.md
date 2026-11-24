@@ -18,8 +18,13 @@ Run the whole file at **+24h, +48h, +72h**. It is short on purpose — each
 check has a stated "what bad looks like", because a number with no threshold
 is not a check.
 
-Project ref: `dylhrlvfkibipdkguptz` · Cloud Run: `nanny-api` in
-`northamerica-northeast1`, project `steadily-nanny`.
+> **Stale since the 2026-11-23 Cloudflare cutover.** The API is now the Worker
+> `steadily-nanny-api` over D1. Every `gcloud logging read` below maps to
+> `cd apps/api && bunx wrangler tail steadily-nanny-api --format json` (live) or
+> Workers Logs in the dashboard, and the Postgres SQL to
+> `bunx wrangler d1 execute steadily-nanny --remote --command "…"` (SQLite; no jsonb `?`).
+
+Worker: `steadily-nanny-api` on `api.nanny.getsteadily.app` · D1: `steadily-nanny`.
 
 ---
 

@@ -99,11 +99,11 @@ USUALWEEK_KV=$(sed -n '/^# --- eval me/,$p' "$OUT" | grep -E '^USUAL_WEEK_[A-Z0-
 
 # The one value no seeder can derive: it must match what `wrangler dev` loads
 # (apps/api/.dev.vars, else apps/api/.env) or the cover-ask-expiry curl 401s
-# and flow 13b passes against an unexpired ask. Remote: the deployed secret was
-# set from apps/api/.env.cloudrun.yaml.
+# and flow 13b passes against an unexpired ask. Remote: the deployed Worker's
+# JOB_API_KEY secret matches apps/api/.env (verified 2026-11-23).
 if [ "$D1_TARGET" = "--remote" ]; then
-  JOB_API_KEY=$(grep -E '^JOB_API_KEY:' apps/api/.env.cloudrun.yaml 2>/dev/null \
-    | head -1 | cut -d: -f2- | tr -d " \"'" || true)
+  JOB_API_KEY=$(grep -E '^JOB_API_KEY=' apps/api/.env 2>/dev/null \
+    | head -1 | cut -d= -f2- | tr -d '"'"'"'' || true)
 else
   JOB_API_KEY=$(grep -hE '^JOB_API_KEY=' apps/api/.dev.vars apps/api/.env 2>/dev/null \
     | head -1 | cut -d= -f2- | tr -d '"'"'"'' || true)

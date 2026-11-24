@@ -21,8 +21,9 @@ import jobRoutes from './routes/jobRoutes';
 
 const app = express();
 
-// Trust exactly one proxy hop (e.g. Cloud Run's front-end) so req.ip resolves to
-// the real client without trusting a fully client-spoofable X-Forwarded-For chain.
+// Trust exactly one proxy hop (Cloudflare's edge in front of the Worker) so req.ip
+// resolves to the real client without trusting a client-spoofable X-Forwarded-For
+// chain. Better Auth keys its rate limit on cf-connecting-ip instead (auth.ts).
 app.set('trust proxy', 1);
 
 // Security headers first.
