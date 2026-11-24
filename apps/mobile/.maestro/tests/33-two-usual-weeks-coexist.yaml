@@ -246,7 +246,11 @@ tags:
     element:
       id: 'today-pending-schedule-card-.*'
     direction: DOWN
-    timeout: 10000
+    timeout: 20000
+    # Late-loading card: slow swipe + centering so a fling never parks it
+    # under a sticky header (see flow 21/22).
+    speed: 10
+    centerElement: true
 - assertVisible:
     id: 'today-pending-schedule-card-.*'
 - takeScreenshot: ${OUT}/s3-33-e-nanny2-pending-card

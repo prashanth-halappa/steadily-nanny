@@ -89,7 +89,14 @@ tags:
     element:
       id: 'today-pending-schedule-card-${TWO_FAMILY_PATTERN_ID}'
     direction: DOWN
-    timeout: 10000
+    timeout: 20000
+    # The card lands late (inbox fan-out + per-pattern detail), below the
+    # fold, under a sticky cross-family strip. At speed 40 only two fling
+    # swipes fit in 10s and the hierarchy is read mid-momentum, so the card
+    # was never seen 100% visible (2026-11-23: failure screenshot shows it
+    # on screen). Slow no-fling swipe + centering, as in flow 21.
+    speed: 10
+    centerElement: true
 - assertVisible:
     id: 'today-pending-schedule-card-${TWO_FAMILY_PATTERN_ID}'
 - takeScreenshot: 22-a5-pending-schedule-other-family
