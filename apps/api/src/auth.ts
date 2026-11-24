@@ -44,8 +44,14 @@ export const auth = betterAuth({
   basePath: '/api/auth',
   secret: env.BETTER_AUTH_SECRET,
   database: drizzleAdapter(db, { provider: 'sqlite', schema }),
-  // App tables validate user ids as uuids (shared-types `z.uuid()`).
-  advanced: { database: { generateId: 'uuid' } },
+  advanced: {
+    // App tables validate user ids as uuids (shared-types `z.uuid()`).
+    database: { generateId: 'uuid' },
+    // Rate-limit key. Workers have no socket address, and the default
+    // x-forwarded-for is client-settable; Cloudflare overwrites this one.
+    // (Needs zod >= 4.5.4: Better Auth's IP check calls z.validate.)
+    ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] },
+  },
   // The app scheme (expo plugin adds `exp://` itself in development) and the
   // site that hosts the reset link, so `redirectTo` passes the origin check.
   // appleid.apple.com: Apple's web flow (Android) POSTs the callback from there.
