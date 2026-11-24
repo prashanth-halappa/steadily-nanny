@@ -28,7 +28,6 @@
       "bun": "1.4.5",
       "env": {
         "EXPO_PUBLIC_API_URL": "https://api.nanny.getsteadily.app/api",
-        "EXPO_PUBLIC_SENTRY_DSN": "TODO-SET-BEFORE-BUILD",
         "EXPO_PUBLIC_POSTHOG_API_KEY": "phc_DkX8b6wGdmYnD8BQZgtnXUAtMhgs8yvGTxbQgrGwLVAN",
         "EXPO_PUBLIC_POSTHOG_HOST": "https://us.i.posthog.com",
         "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "662649119218-v5l4a8lai731tbme9mjmimke6dil5qrg.apps.googleusercontent.com",
@@ -43,6 +42,9 @@
       "android": {
         "serviceAccountKeyPath": "./SETUP-play-service-account.json",
         "releaseStatus": "draft"
+      },
+      "ios": {
+        "ascAppId": "6797051839"
       }
     }
   }
