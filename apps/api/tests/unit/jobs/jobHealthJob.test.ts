@@ -176,8 +176,8 @@ beforeAll(async () => {
 
 beforeEach(() => {
   EmailService.sendEmail.mockClear?.();
-  process.env.OPS_ALERT_EMAILS = undefined;
-  process.env.OPS_ALERT_USER_IDS = undefined;
+  delete process.env.OPS_ALERT_EMAILS;
+  delete process.env.OPS_ALERT_USER_IDS;
 });
 
 function healthyFixtures(now: Date) {

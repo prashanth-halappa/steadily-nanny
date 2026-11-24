@@ -30,7 +30,7 @@ function buildReq(headers: Record<string, unknown> = {}): Request {
 
 afterEach(() => {
   if (ORIGINAL_KEY === undefined) {
-    process.env.JOB_API_KEY = undefined;
+    delete process.env.JOB_API_KEY;
   } else {
     process.env.JOB_API_KEY = ORIGINAL_KEY;
   }
@@ -75,7 +75,7 @@ describe('validateJobApiKey', () => {
   });
 
   it('500s when JOB_API_KEY is not configured server-side, even with a header present', () => {
-    process.env.JOB_API_KEY = undefined;
+    delete process.env.JOB_API_KEY;
     const req = buildReq({ 'x-job-api-key': 'anything' });
     const res = buildRes();
     const next = mock(() => undefined) as unknown as NextFunction;
