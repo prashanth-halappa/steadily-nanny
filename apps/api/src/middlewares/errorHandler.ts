@@ -14,12 +14,17 @@ interface BodyParserErrorInfo {
 }
 
 /**
- * body-parser raises plain Errors (not BaseError/ZodError) tagged via `.type`.
- * Left unhandled they fall into the generic 500 branch and get reported to
- * Sentry as bugs. Map the two client-mistake cases to a 4xx.
+ * body-parser/express raise http-errors (not BaseError/ZodError) tagged via
+ * `.type` and carrying `status` + `expose`. Left unhandled they fall into the
+ * generic 500 branch and get reported to Sentry as bugs. Map them to their 4xx.
  */
 function getBodyParserErrorStatus(
-  error: Error & { type?: string; status?: number; statusCode?: number }
+  error: Error & {
+    type?: string;
+    status?: number;
+    statusCode?: number;
+    expose?: boolean;
+  }
 ): BodyParserErrorInfo | null {
   if (error.type === 'entity.too.large') {
     return {
@@ -35,6 +40,23 @@ function getBodyParserErrorStatus(
       name: 'SyntaxError',
       code: ERROR_CODES.VALIDATION_ERROR,
       message: 'Request body contains malformed JSON',
+    };
+  }
+  // Any other http-error the library marked safe to show (e.g. 415
+  // charset.unsupported). Only exposed 4xx — a 5xx or unexposed error keeps
+  // its message private and falls through to the generic 500.
+  const status = error.status ?? error.statusCode;
+  if (
+    error.expose === true &&
+    typeof status === 'number' &&
+    status >= 400 &&
+    status < 500
+  ) {
+    return {
+      statusCode: status,
+      name: error.name,
+      code: ERROR_CODES.VALIDATION_ERROR,
+      message: error.message,
     };
   }
   return null;
