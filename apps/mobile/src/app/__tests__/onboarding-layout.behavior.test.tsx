@@ -68,6 +68,20 @@ beforeAll(async () => {
     }),
   }));
 
+  mock.module('@/src/hooks/queries/useLegalStatus', () => ({
+    useLegalStatus: () => ({
+      isPending: false,
+      isError: false,
+      data: {
+        currentVersion: '2026-11-24',
+        acceptedVersion: '2026-11-24',
+        acceptedAt: '2026-11-24T00:00:00.000Z',
+        needsAcceptance: false,
+      },
+      refetch: mock(),
+    }),
+  }));
+
   mock.module('@/src/components/ui/loading-indicator', () => {
     const React = require('react');
     return {

@@ -116,13 +116,13 @@ beforeEach(() => {
 });
 
 describe('baseline', () => {
-  test('loads all 42 tables (email_log dropped in 0002)', () => {
+  test('loads all 43 tables (email_log dropped in 0002, legal_acceptances added in 0003)', () => {
     const rows = db
       .query(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__drizzle%'"
       )
       .all();
-    expect(rows.length).toBe(42);
+    expect(rows.length).toBe(43);
   });
 
   test('NOW default matches toISOString() shape', () => {

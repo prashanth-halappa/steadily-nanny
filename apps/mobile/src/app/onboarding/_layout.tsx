@@ -53,6 +53,7 @@ import { useEffect, useRef } from 'react';
 import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
+import { LegalGateOverlay } from '@/src/domains/legal/components/LegalGateOverlay';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useSignedOutRedirect } from '@/src/hooks/useSignedOutRedirect';
 import { useSetupProgressStore } from '@/src/store/setupProgress';
@@ -96,6 +97,7 @@ export default function OnboardingLayout() {
     return (
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
         <Stack screenOptions={{ headerShown: false }} />
+        <LegalGateOverlay />
       </SafeAreaView>
     );
   }

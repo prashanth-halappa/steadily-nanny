@@ -20,6 +20,7 @@ import {
 import childRoutes from '../domains/child/routes/childRoutes';
 import { handoffRoutes, householdHandoffRoutes } from '../domains/handoff';
 import householdRoutes from '../domains/household/routes/householdRoutes';
+import { legalRoutes } from '../domains/legal';
 import { meRoutes } from '../domains/me';
 import notificationsRoutes from '../domains/notification/routes/notificationsRoutes';
 import {
@@ -54,6 +55,7 @@ import usersRoutes from './usersRoutes';
 const router = Router();
 
 router.use('/users', usersRoutes);
+router.use('/legal', legalRoutes);
 router.use('/me', meRoutes);
 router.use('/notifications', notificationsRoutes);
 router.use('/households', householdRoutes);

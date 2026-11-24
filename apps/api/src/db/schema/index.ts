@@ -11,6 +11,7 @@ export * from './auth';
 export * from './availability';
 export * from './child';
 export * from './household';
+export * from './legal';
 export * from './pay';
 export * from './platform';
 export * from './schedule';

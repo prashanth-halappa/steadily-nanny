@@ -28,6 +28,7 @@ export * from './schemas/handoff.schema';
 // Zod wire schemas — household, child, availability, schedule, shift domains
 export * from './schemas/household.schema';
 export * from './schemas/householdHoliday.schema';
+export * from './schemas/legal.schema';
 export * from './schemas/me.schema';
 export * from './schemas/notification.schema';
 export * from './schemas/notificationPrefs.schema';

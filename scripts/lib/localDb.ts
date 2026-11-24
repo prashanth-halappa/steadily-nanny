@@ -12,6 +12,7 @@
  * email/password sign-in, so seeded email users are useless there.
  */
 import { join } from 'node:path';
+import { CURRENT_LEGAL_VERSION } from '@steadily-nanny/shared-types';
 import { hashPassword } from 'better-auth/crypto';
 import { eq } from 'drizzle-orm';
 import { type AnyD1Database, drizzle } from 'drizzle-orm/d1';
@@ -43,7 +44,41 @@ export async function getLocalDb(): Promise<{
  * Returns the user id. Idempotent on email; an existing user's password is
  * left alone.
  */
+/**
+ * Seeded accounts also accept the current Terms + Privacy version, so Maestro
+ * flows land past the legal gate (docs/LEGAL-ACCEPTANCE-PLAN.md). Pass
+ * `acceptLegal: false` for an account that should meet the gate.
+ */
 export async function ensureUser(
+  db: Db,
+  input: {
+    email: string;
+    password: string;
+    name: string;
+    acceptLegal?: boolean;
+  }
+): Promise<{ id: string; created: boolean }> {
+  const result = await ensureAuthUser(db, input);
+  if (input.acceptLegal !== false) {
+    await db
+      .insert(schema.legalAcceptances)
+      .values({
+        user_id: result.id,
+        version: CURRENT_LEGAL_VERSION,
+        accepted_at: new Date().toISOString(),
+        platform: 'web',
+      })
+      .onConflictDoNothing({
+        target: [
+          schema.legalAcceptances.user_id,
+          schema.legalAcceptances.version,
+        ],
+      });
+  }
+  return result;
+}
+
+async function ensureAuthUser(
   db: Db,
   input: { email: string; password: string; name: string }
 ): Promise<{ id: string; created: boolean }> {

@@ -34,6 +34,12 @@ export const queryKeys = {
     status: () => [...queryKeys.appConfig.all, 'status'] as const,
   },
 
+  // Legal acceptance (Terms of Service + Privacy Policy version status)
+  legal: {
+    all: ['legal'] as const,
+    status: () => [...queryKeys.legal.all, 'status'] as const,
+  },
+
   // Push device registrations + per-user prefs (opt-outs / quiet hours)
   notifications: {
     all: ['notifications'] as const,

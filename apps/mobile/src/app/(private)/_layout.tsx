@@ -9,6 +9,7 @@ import {
   SoftUpdateBanner,
 } from '@/src/components/custom';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
+import { LegalGateOverlay } from '@/src/domains/legal/components/LegalGateOverlay';
 import { useSignedOutRedirect } from '@/src/hooks/useSignedOutRedirect';
 import { useAuthStore } from '@/src/store/auth';
 import { useNotificationStore } from '@/src/store/notificationStore';
@@ -57,9 +58,7 @@ export default function PrivateLayout() {
         <Stack.Screen name="(tabs)" />
       </Stack>
 
-      {/* RE-CONSENT GATE EXTENSION POINT — v1 slim omits the legal re-consent
-          gate. PORTING: gate on a route-INDEPENDENT `enabled`, and keep <Stack>
-          mounted under a loading overlay (never unmount it mid-load). */}
+      <LegalGateOverlay />
 
       <AnnouncementModal />
       <NotificationSoftAskSheet
