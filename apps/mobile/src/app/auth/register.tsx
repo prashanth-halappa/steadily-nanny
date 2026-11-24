@@ -32,7 +32,7 @@ export default function Register() {
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
-  const passwordRef = useRef<TextInput>(null);
+  const passwordRef = useRef<React.ComponentRef<typeof TextInput>>(null);
   const signUp = useAuthStore(s => s.signUp);
   const clearError = useAuthStore(s => s.clearError);
   const error = useAuthStore(s => s.error);

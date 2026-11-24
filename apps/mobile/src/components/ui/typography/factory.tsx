@@ -60,10 +60,8 @@ export function tokenToStyle(
     fontWeight: token.weight,
     fontFamily: token.fontFamily ?? FONT_FAMILY,
     letterSpacing: token.letterSpacing,
+    ...(token.fontStyle ? { fontStyle: token.fontStyle } : null),
   };
-  if (token.fontStyle) {
-    style.fontStyle = token.fontStyle;
-  }
   if (options?.tabular) {
     Object.assign(style, tabularStyle);
   }

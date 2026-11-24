@@ -1,6 +1,6 @@
 # Monorepo Template
 
-A Bun monorepo starter for shipping a mobile app with a real backend fast: **Expo SDK 57 (React Native) + Express 5 on Cloudflare Workers + D1**, with the cross-cutting mechanisms a production app needs already wired in — auth, layered API architecture, monetization (RevenueCat), push notifications, remote-config/kill-switch, a store-rating prompt, and i18n. It ships with one compiling example feature (the "widget" domain) end-to-end so none of this is theoretical — clone it, run it, and it boots.
+A Bun monorepo starter for shipping a mobile app with a real backend fast: **Expo SDK 58 (React Native) + Express 5 on Cloudflare Workers + D1**, with the cross-cutting mechanisms a production app needs already wired in — auth, layered API architecture, monetization (RevenueCat), push notifications, remote-config/kill-switch, a store-rating prompt, and i18n. It ships with one compiling example feature (the "widget" domain) end-to-end so none of this is theoretical — clone it, run it, and it boots.
 
 This is a **template**, not a shared runtime library. You copy it once per app and diverge freely from there.
 
@@ -16,7 +16,7 @@ An AI agent (or a human) with nothing but this repo should be able to do either 
 ## How it fits together
 
 ```
-apps/mobile (Expo SDK 57, expo-router, NativeWind, TanStack Query, Zustand+MMKV)
+apps/mobile (Expo SDK 58, expo-router, NativeWind, TanStack Query, Zustand+MMKV)
    │  axios + Better Auth session cookie (expo plugin, SecureStore)
    ▼
 apps/api (Express 5 on a Cloudflare Worker; Better Auth at /api/auth/*; /api/v1/* behind session auth; /api/jobs/* behind an API key; cron triggers in scheduled.ts)
@@ -38,7 +38,7 @@ This template is deliberately slim. Legal/consent publishing, translation toolin
 ```
 apps/
   api/      Express 5 + Cloudflare Workers + D1 (Drizzle) + Better Auth — see docs/04, docs/05
-  mobile/   Expo SDK 57 + expo-router + NativeWind — see docs/06, docs/07
+  mobile/   Expo SDK 58 + expo-router + NativeWind — see docs/06, docs/07
 packages/
   shared-types/   Zod schemas, DTOs, error codes, app-config shape — see docs/03
   api/migrations/ D1 SQL migrations (drizzle-kit generate + hand-written triggers); schema in apps/api/src/db/schema/

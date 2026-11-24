@@ -51,22 +51,22 @@ Dev/test: `bun:test`, `supertest`, `bun-types`, `@types/*`. Removed with the Sup
 
 | Library | Version | Role | Install note |
 |---|---|---|---|
-| Expo | `^57.0.0` (SDK 57) | Managed RN framework + tooling. | `bun expo install` for all `expo-*` |
-| React Native | `0.86.0` | Native runtime. Patched via `patchedDependencies`. | tracks Expo SDK |
+| Expo | `58.0.26` (SDK 58) | Managed RN framework + tooling. | `bun expo install` for all `expo-*` |
+| React Native | `0.88.1` | Native runtime. Patched via `patchedDependencies`. | tracks Expo SDK |
 | React / React DOM | `19.2.3` | UI library (React **19**). | |
-| `expo-router` | `~57.0.2` | File-based navigation (`main: "expo-router/entry"`). | `bun expo install` |
+| `expo-router` | `58.0.32` | File-based navigation (`main: "expo-router/entry"`). | `bun expo install` |
 | `@tanstack/react-query` | `5.90.12` | Server-state cache. All API calls go through query/mutation hooks. | |
 | `zustand` | `^5.0.8` | Client/UI state only (MMKV-persisted). | |
-| `react-native-mmkv` | `4.1.0` | Fast synchronous KV storage (token + Zustand persistence). | needs `react-native-nitro-modules` |
+| `react-native-mmkv` | `4.3.2` | Fast synchronous KV storage (token + Zustand persistence). | needs `react-native-nitro-modules` |
 | `nativewind` | `^4.2.1` | Tailwind for RN (`+ tailwindcss ^3.4.18`, `react-native-css-interop`). | |
 | `react-native-reanimated` | `4.3.1` | Animations (`+ react-native-worklets 0.8.3`). | `bun expo install` |
-| `react-native-gesture-handler` | `~2.31.1` | Gestures. | `bun expo install` |
+| `react-native-gesture-handler` | `3.3.0` | Gestures. | `bun expo install` |
 | `react-native-screens` / `safe-area-context` | `4.25.2` / `~5.7.0` | Native navigation primitives. | `bun expo install` |
 | `better-auth` + `@better-auth/expo` | `1.7.27` | Auth client (`src/lib/authClient.ts`); the session cookie is kept in `expo-secure-store`. | same pin as API |
-| `expo-apple-authentication` / `@react-native-google-signin/google-signin` | `~57.0.0` / `^16.0.0` | Native Apple / Google sign-in, exchanged for a Better Auth session via id token. | |
+| `expo-apple-authentication` / `@react-native-google-signin/google-signin` | `58.0.3` / `^16.0.0` | Native Apple / Google sign-in, exchanged for a Better Auth session via id token. | |
 | `axios` | `^1.18.0` | HTTP client (replays the Better Auth cookie, single-flight 401 handling). | |
-| `i18next` + `react-i18next` | `25.7.3` / `16.5.0` | Localization (`+ expo-localization`). | |
-| `@sentry/react-native` | `~7.11.0` | Error tracking. | `bun expo install` |
+| `i18next` + `react-i18next` | `25.7.3` / `16.5.0` | Localization (`+ expo-localization`). | Held: i18next 27 / react-i18next 18 need a `TFunction` typing migration (~54 sites) and drop `compatibilityJSON`; API i18next stays on 26 so the hoisted copy stays type-compatible with mobile. |
+| `@sentry/react-native` | `8.28.1` | Error tracking. | `bun expo install` |
 | `posthog-react-native` | `^4.49.3` | Product analytics. | |
 | `react-native-purchases` (+ `-ui`) | `9.14.0` | RevenueCat in-app purchases / paywalls. | |
 | `@shopify/react-native-skia` | `2.6.2` | Canvas/graphics. | `trustedDependencies` |
@@ -86,7 +86,7 @@ Dev/test: `@testing-library/react-native`, `react-test-renderer`, `babel-preset-
 | Library | Version | Role |
 |---|---|---|
 | `zod` | `4.3.6` | Pinned identically across API, mobile, and `shared-types` via root `overrides`. Keeping one Zod major across the workspace is what lets schemas defined in `shared-types` be imported by both apps without type drift. |
-| `react-native-nitro-modules` | `0.31.7` | Pinned via root `overrides` (transitive dep of MMKV). |
+| `react-native-nitro-modules` | `0.37.3-nightly.132.ge199d0eb6bc4` | Exact pin in `apps/mobile/package.json` (MMKV runtime). **Nightly on purpose:** stable 0.37.2 fails to compile on RN 0.88 with `use_frameworks! static` (`jserrorhandler/ErrorUtils.h` not found — margelo/nitro#2052, fixed by #2046); 0.31.x builds but throws "installJSIBindingsWithRuntime was not called" at runtime. Move to stable 0.37.3+ once published. |
 
 ---
 

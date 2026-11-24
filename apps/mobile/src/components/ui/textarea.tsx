@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 
 interface TextareaProps extends Omit<TextInputProps, 'accessibilityLabel'> {
   accessibilityLabel: string;
-  ref?: React.RefObject<TextInput>;
+  ref?: React.Ref<React.ComponentRef<typeof TextInput>>;
   placeholderClassName?: string;
   multiline?: boolean;
   numberOfLines?: number;

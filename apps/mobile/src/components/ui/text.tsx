@@ -11,7 +11,7 @@ function Text({
   asChild = false,
   ...props
 }: React.ComponentProps<typeof RNText> & {
-  ref?: React.RefObject<RNText>;
+  ref?: React.Ref<React.ComponentRef<typeof RNText>>;
   asChild?: boolean;
 }) {
   const textClass = React.useContext(TextClassContext);

@@ -17,7 +17,7 @@ export type TypographyWeight =
   | 'extrabold';
 
 export type TypographyProps = React.ComponentProps<typeof RNText> & {
-  ref?: React.RefObject<RNText>;
+  ref?: React.Ref<React.ComponentRef<typeof RNText>>;
   asChild?: boolean;
   /** Align digits in columns (RN fontVariant — not expressible as NativeWind). */
   tabular?: boolean;

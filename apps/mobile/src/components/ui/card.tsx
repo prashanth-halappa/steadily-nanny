@@ -55,7 +55,7 @@ function Card({
   children,
   ...props
 }: ViewProps & {
-  ref?: React.RefObject<View>;
+  ref?: React.Ref<React.ComponentRef<typeof View>>;
   /** @deprecated use `tone="live"` instead. Ignored when `tone` is set. */
   live?: boolean;
   tone?: CardTone;
@@ -107,7 +107,7 @@ function CardHeader({
   className,
   ...props
 }: ViewProps & {
-  ref?: React.RefObject<View>;
+  ref?: React.Ref<React.ComponentRef<typeof View>>;
 }) {
   return (
     <View
@@ -121,7 +121,7 @@ function CardTitle({
   className,
   ...props
 }: TextProps & {
-  ref?: React.RefObject<RNText>;
+  ref?: React.Ref<React.ComponentRef<typeof RNText>>;
 }) {
   return (
     <H4
@@ -137,7 +137,7 @@ function CardDescription({
   className,
   ...props
 }: TextProps & {
-  ref?: React.RefObject<RNText>;
+  ref?: React.Ref<React.ComponentRef<typeof RNText>>;
 }) {
   return <Small className={cn('text-muted-strong', className)} {...props} />;
 }
@@ -146,7 +146,7 @@ function CardContent({
   className,
   ...props
 }: ViewProps & {
-  ref?: React.RefObject<View>;
+  ref?: React.Ref<React.ComponentRef<typeof View>>;
 }) {
   return (
     <TextClassContext.Provider value="text-card-foreground">
@@ -159,7 +159,7 @@ function CardFooter({
   className,
   ...props
 }: ViewProps & {
-  ref?: React.RefObject<View>;
+  ref?: React.Ref<React.ComponentRef<typeof View>>;
 }) {
   return (
     <View

@@ -24,7 +24,7 @@ export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
-  const passwordRef = useRef<TextInput>(null);
+  const passwordRef = useRef<React.ComponentRef<typeof TextInput>>(null);
   const signIn = useAuthStore(s => s.signIn);
   const clearError = useAuthStore(s => s.clearError);
   const error = useAuthStore(s => s.error);

@@ -198,7 +198,8 @@ function TodaysCoverWidgetView(
 
   const ageMs = Math.max(
     0,
-    env.date.getTime() - new Date(props.generatedAtIso).getTime()
+    (env.date ?? new Date()).getTime() -
+      new Date(props.generatedAtIso).getTime()
   );
   // `SNAPSHOT_DEGRADE_MS` / `SNAPSHOT_AS_OF_MS` from
   // `lib/widgetSnapshot.types.ts`, inlined: this body is serialized to source

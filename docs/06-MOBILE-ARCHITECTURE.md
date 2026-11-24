@@ -4,7 +4,7 @@ Purpose: the reusable Expo / React Native app skeleton — folder layout, expo-r
 
 Real excerpts below are labeled "Example: `path`". When you build a new app, swap product/domain names but keep the shapes.
 
-Stack: Expo SDK 57 / React Native 0.86 / React 19, expo-router (file-based), TanStack Query (server state), Zustand + MMKV (client state), NativeWind 4, Better Auth (cookie session), axios, i18next, Sentry + PostHog.
+Stack: Expo SDK 58 / React Native 0.88 / React 19.3, expo-router (file-based), TanStack Query (server state), Zustand + MMKV (client state), NativeWind 4, Better Auth (cookie session), axios, i18next, Sentry + PostHog.
 
 ---
 

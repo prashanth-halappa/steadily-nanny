@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 
 interface InputProps extends Omit<TextInputProps, 'accessibilityLabel'> {
   accessibilityLabel: string;
-  ref?: Ref<TextInput>;
+  ref?: Ref<React.ComponentRef<typeof TextInput>>;
   placeholderClassName?: string;
   /** When true, apply Daylight error-inline border (destructive). */
   error?: boolean;

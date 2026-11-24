@@ -14,7 +14,7 @@ A product-agnostic blueprint for building **mobile (Expo/React Native)** and **A
 monorepo (Bun workspaces + Turborepo)
 ├── apps/
 │   ├── api/      Express 5 on Workers + D1/Drizzle + Better Auth ── doc 04, 05
-│   └── mobile/   Expo SDK 57 + expo-router + NativeWind  ── doc 06, 07
+│   └── mobile/   Expo SDK 58 + expo-router + NativeWind  ── doc 06, 07
 └── packages/
     └── shared-types/   types · const-maps · DTOs · Zod   ── doc 03
         (consumed by both apps via tsconfig path alias, no build step)
