@@ -32,6 +32,7 @@
     var form = box.querySelector('form');
     var input = box.querySelector('input[type=email]');
     var btn = box.querySelector('button[type=submit]');
+    var idleLabel = btn.textContent;
     var err = box.querySelector('.wl-error');
 
     function fail(msg) {
@@ -69,12 +70,12 @@
                 );
               }
               box.innerHTML =
-                '<p class="wl-success" role="status">You’re on the list. We’ll be in touch when Steadily Nanny is ready.</p>';
+                '<p class="wl-success" role="status">You’re on the beta list. We’ll email you when a spot opens.</p>';
             });
         })
         .catch(function (ex) {
           btn.disabled = false;
-          btn.textContent = 'Join the waitlist';
+          btn.textContent = idleLabel;
           fail(
             ex?.message
               ? ex.message

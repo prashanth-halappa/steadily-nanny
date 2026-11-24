@@ -100,6 +100,19 @@ img {
   height: 28px;
   border-radius: 8px;
 }
+.beta-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-attention);
+  color: var(--warn-ink);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.5;
+}
 .nav-links {
   display: flex;
   gap: 26px;
