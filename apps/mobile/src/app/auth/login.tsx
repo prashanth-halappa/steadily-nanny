@@ -15,7 +15,7 @@ import { InlineError } from '@/src/components/ui/inline-error';
 import { Input } from '@/src/components/ui/input';
 import { LoadingButton } from '@/src/components/ui/loading-button';
 import { Text } from '@/src/components/ui/text';
-import { Body, H1, Small } from '@/src/components/ui/typography';
+import { H1, Small } from '@/src/components/ui/typography';
 import { useAuthStore } from '@/src/store/auth';
 
 export default function Login() {
@@ -99,20 +99,6 @@ export default function Login() {
             </Pressable>
           </View>
           {error ? <InlineError testID="login-error" message={error} /> : null}
-          <Pressable
-            testID="login-forgot-password"
-            accessibilityRole="button"
-            accessibilityLabel={t('forgotPassword')}
-            onPress={() => {
-              clearError();
-              router.push('/auth/forgot-password' as Href);
-            }}
-            hitSlop={12}
-            style={{ minHeight: 44, justifyContent: 'center' }}
-            className="self-start"
-          >
-            <Body className="text-primary">{t('forgotPassword')}</Body>
-          </Pressable>
           <LoadingButton
             testID="login-submit"
             label={t('signIn')}

@@ -7,10 +7,6 @@ import { join } from 'node:path';
 
 const LOGIN = readFileSync(join(import.meta.dir, '../login.tsx'), 'utf8');
 const REGISTER = readFileSync(join(import.meta.dir, '../register.tsx'), 'utf8');
-const FORGOT = readFileSync(
-  join(import.meta.dir, '../forgot-password.tsx'),
-  'utf8'
-);
 const LAYOUT = readFileSync(join(import.meta.dir, '../_layout.tsx'), 'utf8');
 
 describe('Login/Register affordances (Pattern A)', () => {
@@ -38,7 +34,7 @@ describe('Login/Register affordances (Pattern A)', () => {
   });
 
   it('wires the Input error border to the auth error on every form', () => {
-    for (const source of [LOGIN, REGISTER, FORGOT]) {
+    for (const source of [LOGIN, REGISTER]) {
       expect(source).toContain('error={Boolean(error)}');
     }
   });
@@ -53,7 +49,11 @@ describe('Login/Register affordances (Pattern A)', () => {
   it('hides the native header and keeps an in-content way back', () => {
     expect(LAYOUT).toContain('headerShown: false');
     expect(REGISTER).toContain('backToSignIn');
-    expect(FORGOT).toContain('backToSignIn');
+  });
+
+  // No email is sent any more, so there is no reset flow to link to.
+  it('has no forgot-password link', () => {
+    expect(LOGIN).not.toContain('forgot');
   });
 
   it('gives login a password visibility toggle', () => {

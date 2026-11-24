@@ -37,8 +37,6 @@ mock.module('@/src/lib/authClient', () => ({
     signIn: { email: signInEmailMock, social: signInSocialMock },
     signUp: { email: signUpEmailMock },
     updateUser: updateUserMock,
-    requestPasswordReset: mock(() => ok()),
-    resetPassword: mock(() => ok()),
   },
 }));
 

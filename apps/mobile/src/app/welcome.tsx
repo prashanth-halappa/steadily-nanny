@@ -70,7 +70,7 @@ export default function Welcome() {
 
           {/* Apple sign-in is iOS-only: Android would need the Apple web
               redirect flow (Services ID + rotating client secret), which we
-              don't ship. Android users sign in with Google or email. */}
+              don't ship. Android users sign in with Google. */}
           {Platform.OS === 'ios' ? (
             <AppleAuthentication.AppleAuthenticationButton
               testID="welcome-sign-in-apple"
@@ -95,14 +95,18 @@ export default function Welcome() {
             disabled={isLoading}
             onPress={() => void signInWithGoogle()}
           />
-          <Button
-            testID="welcome-sign-in-email"
-            variant="ghost"
-            disabled={isLoading}
-            onPress={() => router.push('/auth/login' as Href)}
-          >
-            <Text>{t('auth:signInWithEmail')}</Text>
-          </Button>
+          {/* Email/password is for the dev client only (Maestro, local
+              testing); production auth has it disabled. */}
+          {__DEV__ ? (
+            <Button
+              testID="welcome-sign-in-email"
+              variant="ghost"
+              disabled={isLoading}
+              onPress={() => router.push('/auth/login' as Href)}
+            >
+              <Text>{t('auth:signInWithEmail')}</Text>
+            </Button>
+          ) : null}
 
           <Small testID="welcome-legal" className="text-muted-foreground">
             {t('auth:legalPrefix')}{' '}

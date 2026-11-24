@@ -30,6 +30,14 @@ describe('Welcome (Pattern A)', () => {
     expect(SRC).not.toContain("t('auth:signInWithApple')");
   });
 
+  // Email/password is dev-client-only; production shows Apple (iOS) + Google.
+  it('gates the email entry on __DEV__', () => {
+    expect(SRC).toMatch(
+      /\{__DEV__ \? \(\s*<Button\s+testID="welcome-sign-in-email"/
+    );
+    expect(SRC.match(/welcome-sign-in-email/g)?.length).toBe(1);
+  });
+
   it('renders terms/privacy consent on the account-creating path', () => {
     expect(SRC).toContain('welcome-legal');
     expect(SRC).toContain('legalPrefix');

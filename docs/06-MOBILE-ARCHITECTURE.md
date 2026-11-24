@@ -405,7 +405,7 @@ export function createV1Migrate<T>(getInitial: () => Partial<T> = () => ({})) {
 Rules it follows:
 - the cookie is set on the API client **before** `isInitialized: true`, so queries never fire tokenless;
 - signing in as a different account clears user-scoped client state (React Query cache + child selection) so a new login can't see a previous user's data;
-- Apple/Google sign-in exchange the native id token via `authClient.signIn.social({ provider, idToken })`; email/password use `signIn.email` / `signUp.email`; password reset emails link to `https://nanny.getsteadily.app/auth/reset` (route `src/app/auth/reset.tsx`);
+- Apple/Google sign-in exchange the native id token via `authClient.signIn.social({ provider, idToken })`; email/password (`signIn.email` / `signUp.email`) is dev-client-only: the welcome screen shows the email entry only when `__DEV__`, and `src/app/auth/_layout.tsx` redirects every `/auth/*` route to `/welcome` in release builds, so production is Apple + Google on iOS and Google on Android. There is no password reset (the API sends no email);
 - sign-out clears the cookie and nulls the session.
 
 The subscription is stored in a module variable and torn down in `cleanupAuth()`.

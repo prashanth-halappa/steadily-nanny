@@ -178,8 +178,6 @@ const AUTH_ERROR_CODE_TO_I18N_KEY: Record<string, string> = {
   USER_ALREADY_EXISTS: 'auth:errors.emailTaken',
   USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL: 'auth:errors.emailTaken',
   EMAIL_NOT_VERIFIED: 'auth:errors.emailNotConfirmed',
-  // The reset link's token is spent or expired.
-  INVALID_TOKEN: 'auth:errors.resetLinkInvalid',
 };
 
 /** Map a Better Auth client error (`{ code, message, status }`) to localized auth copy. */

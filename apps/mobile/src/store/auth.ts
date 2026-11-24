@@ -9,7 +9,6 @@ import {
   updateAuthToken,
 } from '../api/client';
 import { queryClient } from '../api/queryClient';
-import { appIdentity } from '../config/appIdentity';
 import { env } from '../config/env';
 import i18n from '../i18n';
 import { type AuthSession, type AuthUser, authClient } from '../lib/authClient';
@@ -68,10 +67,6 @@ interface AuthState {
     email: string,
     password: string
   ) => Promise<'signed-in' | 'confirm-email' | 'failed'>;
-  /** Sends a password-reset email. Resolves on success; sets `error` on failure. */
-  resetPasswordForEmail: (email: string) => Promise<void>;
-  /** Sets a new password from the reset-link token. Resolves on success; sets `error` and throws on failure. */
-  resetPassword: (token: string, newPassword: string) => Promise<void>;
   signOut: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
@@ -171,38 +166,6 @@ export const useAuthStore = createPersistedStore<AuthState>(
         } catch (error) {
           set({ error: authErrorMessage(error) });
           return 'failed';
-        } finally {
-          set({ isLoading: false });
-        }
-      },
-
-      resetPasswordForEmail: async email => {
-        set({ isLoading: true, error: null });
-        try {
-          const { error } = await authClient.requestPasswordReset({
-            email,
-            redirectTo: `https://${appIdentity.associatedDomain}/auth/reset`,
-          });
-          throwIfError(error);
-        } catch (error) {
-          set({ error: authErrorMessage(error) });
-          throw error;
-        } finally {
-          set({ isLoading: false });
-        }
-      },
-
-      resetPassword: async (token, newPassword) => {
-        set({ isLoading: true, error: null });
-        try {
-          const { error } = await authClient.resetPassword({
-            newPassword,
-            token,
-          });
-          throwIfError(error);
-        } catch (error) {
-          set({ error: authErrorMessage(error) });
-          throw error;
         } finally {
           set({ isLoading: false });
         }

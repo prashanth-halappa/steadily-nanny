@@ -31,12 +31,6 @@ describe('getLocalizedAuthErrorMessage (Better Auth codes)', () => {
     );
   });
 
-  it('maps a spent reset token', () => {
-    expect(map({ code: 'INVALID_TOKEN', status: 400 })).toBe(
-      't:auth:errors.resetLinkInvalid'
-    );
-  });
-
   it('maps a 429 to rate limited', () => {
     expect(map({ status: 429, message: 'Too many requests' })).toBe(
       't:auth:errors.rateLimited'
