@@ -257,13 +257,13 @@ describe('account switch state clearing', () => {
 });
 
 describe('signUp outcome', () => {
-  it('reports confirm-email when the server withholds a session', async () => {
+  it('reports failed, with an error shown, when the server withholds a session', async () => {
     getSessionMock.mockImplementation(() => ok(null));
     const outcome = await useAuthStore
       .getState()
       .signUp('a@b.test', 'pw123456');
-    expect(outcome).toBe('confirm-email');
-    expect(useAuthStore.getState().error).toBeNull();
+    expect(outcome).toBe('failed');
+    expect(useAuthStore.getState().error).not.toBeNull();
     expect(useAuthStore.getState().isLoading).toBe(false);
   });
 

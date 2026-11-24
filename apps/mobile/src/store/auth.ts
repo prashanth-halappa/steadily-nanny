@@ -56,17 +56,9 @@ interface AuthState {
   isPlayServicesUnavailable: boolean;
 
   signIn: (email: string, password: string) => Promise<void>;
-  /**
-   * Resolves to what actually happened, because the two success shapes need
-   * different screens. A sign-up on a server that requires email verification
-   * succeeds WITHOUT a session — no error, nothing to navigate on. Callers
-   * MUST branch on this, or a verification-enabled server strands every new
-   * user on the form with the spinner switched off and no message.
-   */
-  signUp: (
-    email: string,
-    password: string
-  ) => Promise<'signed-in' | 'confirm-email' | 'failed'>;
+  /** Dev/test builds only (email auth is off in production). The server
+   *  requires no email verification, so success always comes with a session. */
+  signUp: (email: string, password: string) => Promise<'signed-in' | 'failed'>;
   signOut: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
@@ -161,8 +153,8 @@ export const useAuthStore = createPersistedStore<AuthState>(
             name: '',
           });
           throwIfError(error);
-          // No session after a successful sign-up = verification is required.
-          return (await completeSignIn()) ? 'signed-in' : 'confirm-email';
+          if (await completeSignIn()) return 'signed-in';
+          throw new Error('Sign-up returned no session');
         } catch (error) {
           set({ error: authErrorMessage(error) });
           return 'failed';
