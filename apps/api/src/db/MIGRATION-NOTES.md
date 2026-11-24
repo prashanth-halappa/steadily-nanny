@@ -555,3 +555,11 @@ ported**; see §4.
   `getAuthTables` for email/password plus the expo plugin, which adds no
   tables. If you enable `rateLimit.storage: 'database'`, add the `rateLimit`
   table.
+- **Better Auth's zod range is load-bearing.** The root `overrides.zod` pin
+  must satisfy better-auth's own `zod` range (1.7.27 requires `^4.5.4`).
+  Below that, its IP check calls a missing `z.validate`, and every auth
+  request that carries an IP header returns 500. tsc does not catch this, and
+  unit tests only catch it if a test sends the header
+  (`tests/unit/auth/rateLimitIp.test.ts` does). The rate-limit key comes from
+  `cf-connecting-ip` (`advanced.ipAddress`), never `x-forwarded-for`, which
+  the client controls.
