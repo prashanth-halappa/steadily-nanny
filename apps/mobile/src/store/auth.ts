@@ -322,15 +322,8 @@ export const useAuthStore = createPersistedStore<AuthState>(
             }
             // After updateUser, so the stored user already carries the name.
             await completeSignIn();
-          } else {
-            // Android: browser OAuth, handed back to the app via the scheme.
-            const { error } = await authClient.signIn.social({
-              provider: 'apple',
-              callbackURL: '/',
-            });
-            throwIfError(error);
-            await completeSignIn();
           }
+          // No else: Apple sign-in is iOS-only; welcome.tsx hides it elsewhere.
         } catch (error) {
           const errorCode =
             error && typeof error === 'object' && 'code' in error

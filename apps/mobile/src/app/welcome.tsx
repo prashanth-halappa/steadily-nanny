@@ -68,6 +68,9 @@ export default function Welcome() {
             <InlineError testID="welcome-error" message={error} />
           ) : null}
 
+          {/* Apple sign-in is iOS-only: Android would need the Apple web
+              redirect flow (Services ID + rotating client secret), which we
+              don't ship. Android users sign in with Google or email. */}
           {Platform.OS === 'ios' ? (
             <AppleAuthentication.AppleAuthenticationButton
               testID="welcome-sign-in-apple"
@@ -83,15 +86,7 @@ export default function Welcome() {
                 if (!isLoading) void signInWithApple();
               }}
             />
-          ) : (
-            <LoadingButton
-              testID="welcome-sign-in-apple"
-              label={t('auth:signInWithApple')}
-              isLoading={isLoading}
-              disabled={isLoading}
-              onPress={() => void signInWithApple()}
-            />
-          )}
+          ) : null}
           <LoadingButton
             testID="welcome-sign-in-google"
             label={t('auth:signInWithGoogle')}

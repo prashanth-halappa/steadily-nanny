@@ -335,4 +335,17 @@ describe('Apple sign-in', () => {
     expect(updateUserMock).toHaveBeenCalledWith({ name: 'Ana Ruiz' });
     expect(useAuthStore.getState().error).toBeNull();
   });
+
+  it('is a no-op off iOS: no Apple web redirect flow on Android', async () => {
+    const rn = await import('react-native');
+    const prevOS = rn.Platform.OS;
+    rn.Platform.OS = 'android';
+    signInSocialMock.mockClear();
+
+    await useAuthStore.getState().signInWithApple();
+    rn.Platform.OS = prevOS;
+
+    expect(signInSocialMock).not.toHaveBeenCalled();
+    expect(useAuthStore.getState().isLoading).toBe(false);
+  });
 });

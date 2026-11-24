@@ -32,7 +32,7 @@ Each section ends with **Verify:** — an observable check that the step actuall
 
    Non-secret vars (`NODE_ENV`, `LOG_LEVEL`, `EMAIL_FROM`, `BETTER_AUTH_URL`) live in `wrangler.jsonc` `vars`. Set `BETTER_AUTH_URL` to the API's public origin.
 5. **Apple + Google sign-in** use the native **id-token flow** through Better Auth (`apps/api/src/auth.ts`). A provider is on only when its client id secret is set:
-   - **Apple:** `APPLE_APP_BUNDLE_IDENTIFIER` = your bundle id (the native id-token audience). `APPLE_CLIENT_ID` (a Services ID) and `APPLE_CLIENT_SECRET` (a `.p8`-signed JWT, expires within 6 months) are only needed for the Android/web redirect flow (see §2 step 4).
+   - **Apple:** `APPLE_APP_BUNDLE_IDENTIFIER` = your bundle id (the native id-token audience). Apple sign-in is iOS-only (the Android app hides it), so the redirect-flow `APPLE_CLIENT_SECRET` is not needed.
    - **Google:** `GOOGLE_CLIENT_ID` (web client id, also Android's `serverClientId`) and `GOOGLE_IOS_CLIENT_ID`; both are accepted as the id-token audience (see §3). The client secret is not used by id-token sign-in.
 6. **Password reset email** is sent via Resend and links to `https://nanny.getsteadily.app/auth/reset`, which hands off to the app screen `apps/mobile/src/app/auth/reset.tsx`. Verify the sending domain in Resend and set `EMAIL_FROM`.
 7. **Scheduled jobs** are Workers cron triggers (`wrangler.jsonc` `triggers.crons`, handled by `src/scheduled.ts`). No cron secret or Vault setup is needed; `JOB_API_KEY` only guards manual `POST /api/jobs/*`.

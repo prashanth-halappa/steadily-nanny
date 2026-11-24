@@ -22,9 +22,12 @@ describe('Welcome (Pattern A)', () => {
     expect(SRC).toContain('InlineError');
   });
 
-  it('uses AppleAuthenticationButton on iOS', () => {
+  it('uses AppleAuthenticationButton on iOS and shows no Apple option elsewhere', () => {
     expect(SRC).toContain('AppleAuthenticationButton');
     expect(SRC).toContain("Platform.OS === 'ios'");
+    // Android has no Apple fallback button (the web redirect flow isn't shipped).
+    expect(SRC.match(/welcome-sign-in-apple/g)?.length).toBe(1);
+    expect(SRC).not.toContain("t('auth:signInWithApple')");
   });
 
   it('renders terms/privacy consent on the account-creating path', () => {
