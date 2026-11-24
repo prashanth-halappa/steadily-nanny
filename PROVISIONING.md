@@ -25,16 +25,17 @@ Each section ends with **Verify:** — an observable check that the step actuall
    Always run this **before** `wrangler deploy` (see `docs/ROLLBACK-RUNBOOK.md`). Add a migration with `drizzle-kit generate` after editing `src/db/schema/*`.
 4. **Secrets.** Set each with `bunx wrangler secret put <NAME>` (local dev reads `apps/api/.dev.vars` instead; the list is in the comment block of `wrangler.jsonc` and `apps/api/.env.example`):
    - `BETTER_AUTH_SECRET` (required, >= 32 chars; `openssl rand -base64 32`; rotating it signs everyone out)
-   - `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `JOB_API_KEY` (production-required)
+   - `JOB_API_KEY` (production-required)
    - `APPLE_CLIENT_ID`, `APPLE_APP_BUNDLE_IDENTIFIER`, `APPLE_CLIENT_SECRET` (optional, see below)
    - `GOOGLE_CLIENT_ID`, `GOOGLE_IOS_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (secret optional)
-   - `SENTRY_DSN`, `OPS_ALERT_EMAILS`, `OPS_ALERT_USER_IDS` (optional)
+   - `SENTRY_DSN`, `OPS_ALERT_USER_IDS` (optional)
+   - **Never** `EMAIL_AUTH_ENABLED`: email/password sign-in is dev/test only (`.dev.vars` sets it `true`; unset means off)
 
-   Non-secret vars (`NODE_ENV`, `LOG_LEVEL`, `EMAIL_FROM`, `BETTER_AUTH_URL`) live in `wrangler.jsonc` `vars`. Set `BETTER_AUTH_URL` to the API's public origin.
+   Non-secret vars (`NODE_ENV`, `LOG_LEVEL`, `BETTER_AUTH_URL`) live in `wrangler.jsonc` `vars`. Set `BETTER_AUTH_URL` to the API's public origin.
 5. **Apple + Google sign-in** use the native **id-token flow** through Better Auth (`apps/api/src/auth.ts`). A provider is on only when its client id secret is set:
    - **Apple:** `APPLE_APP_BUNDLE_IDENTIFIER` = your bundle id (the native id-token audience). Apple sign-in is iOS-only (the Android app hides it), so the redirect-flow `APPLE_CLIENT_SECRET` is not needed.
    - **Google:** `GOOGLE_CLIENT_ID` (web client id, also Android's `serverClientId`) and `GOOGLE_IOS_CLIENT_ID`; both are accepted as the id-token audience (see §3). The client secret is not used by id-token sign-in.
-6. **Password reset email** is sent via Resend and links to `https://nanny.getsteadily.app/auth/reset`, which hands off to the app screen `apps/mobile/src/app/auth/reset.tsx`. Verify the sending domain in Resend and set `EMAIL_FROM`.
+6. **No email.** Production sign-in is Apple/Google only; there is no password reset and the API sends no email.
 7. **Scheduled jobs** are Workers cron triggers (`wrangler.jsonc` `triggers.crons`, handled by `src/scheduled.ts`). No cron secret or Vault setup is needed; `JOB_API_KEY` only guards manual `POST /api/jobs/*`.
 
 **Verify:** `bunx wrangler d1 migrations list steadily-nanny --remote` shows nothing pending; `bunx wrangler d1 execute steadily-nanny --remote --command "select count(*) from user_profiles"` succeeds.
@@ -165,7 +166,7 @@ bunx wrangler rollback <version-id>
 ```
 
 Notes:
-- **Secrets** (`wrangler secret put NAME`) apply to the next deploy and survive later deploys. Set them before the first deploy (§1 step 4). `NODE_ENV=production` makes the Worker refuse to boot without `JOB_API_KEY` and `RESEND_API_KEY`. `bunx wrangler secret list` shows what's set.
+- **Secrets** (`wrangler secret put NAME`) apply to the next deploy and survive later deploys. Set them before the first deploy (§1 step 4). `NODE_ENV=production` makes the Worker refuse to boot without `JOB_API_KEY`. `bunx wrangler secret list` shows what's set.
 - **Deploy from a clean checkout of `main`**, never from a branch with uncommitted work: the bundle is built from your working tree.
 - **`NODE_ENV` is a `vars` entry**, not your shell's: `wrangler.jsonc`'s `define` stops wrangler baking the deploying shell's value into the bundle. Never read `process.env.NODE_ENV` directly in `apps/api` (see CLAUDE.md).
 - **workers.dev is off**: with a custom domain and no `workers_dev`, the `*.workers.dev` URL is disabled. To test a build without touching production, deploy a copy of `wrangler.jsonc` with `"routes"` swapped for `"workers_dev": true, "preview_urls": false` and `BETTER_AUTH_URL` set to the workers.dev origin, under a different `name`, so you don't overwrite the production Worker.

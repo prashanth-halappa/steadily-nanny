@@ -143,24 +143,3 @@ export const userBetaOverrides = sqliteTable(
     ),
   ]
 );
-
-export const emailLog = sqliteTable(
-  'email_log',
-  {
-    id: text()
-      .primaryKey()
-      .$defaultFn(() => crypto.randomUUID()),
-    user_id: text().references(() => user.id, { onDelete: 'cascade' }),
-    email_type: text().notNull(),
-    recipient: text().notNull(),
-    status: text().default('sent').notNull(),
-    dedupe_key: text(),
-    metadata: text({ mode: 'json' }).$type<Record<string, unknown>>(),
-    sent_at: text().default(NOW).notNull(),
-  },
-  t => [
-    uniqueIndex('email_log_dedupe_key_uidx')
-      .on(t.dedupe_key)
-      .where(sql`dedupe_key IS NOT NULL`),
-  ]
-);

@@ -15,7 +15,7 @@
  * ordinary clock, not the terms gate). Prints, for `-e`:
  *   LEAVE_NANNY_EMAIL, LEAVE_HOUSEHOLD_ID   (password: SteadilyTest!2026)
  *
- * Usage: D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=… bun run scripts/seed-leave-household.ts
+ * Usage: bun run scripts/seed-leave-household.ts
  *
  * @module scripts/seed-leave-household
  */

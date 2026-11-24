@@ -15,6 +15,13 @@
       "when": 1795367793560,
       "tag": "0001_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1795496977338,
+      "tag": "0002_drop_email_log",
+      "breakpoints": true
     }
   ]
 }

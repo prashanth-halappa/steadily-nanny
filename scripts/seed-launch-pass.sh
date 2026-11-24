@@ -16,23 +16,16 @@
 # Usage:
 #   scripts/seed-launch-pass.sh            # full: db reset + whole chain
 #   scripts/seed-launch-pass.sh --no-reset # re-seed fixtures, keep the DB
-#   D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=… scripts/seed-launch-pass.sh --no-reset
-#                                          # REMOTE (production) D1 — only when
-#                                          # explicitly authorized; no reset
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-# LOCAL unless D1_REMOTE=1: the seeders go through scripts/lib/localDb.ts (which
-# honours the same switch) and the lookups below pass --local / --remote.
-D1_TARGET=--local
+# LOCAL only. Production refuses email/password sign-in, so remote seeding
+# of email users can't work (scripts/lib/localDb.ts refuses it too).
 if [ "${D1_REMOTE:-}" = "1" ]; then
-  D1_TARGET=--remote
-  if [ "${1:-}" != "--no-reset" ]; then
-    echo "refusing: D1_REMOTE=1 never resets — pass --no-reset" >&2
-    exit 1
-  fi
-  echo "!!! D1_REMOTE=1 — seeding the REMOTE (production) D1 database !!!" >&2
+  echo "refusing: D1_REMOTE=1 is no longer supported: production refuses email/password sign-in, so seeded email users could never log in there. Seed LOCAL D1 and run the tests against wrangler dev (apps/api, with EMAIL_AUTH_ENABLED=true in .dev.vars)." >&2
+  exit 1
 fi
+D1_TARGET=--local
 
 # One scalar from the D1: first column of the first row, or empty.
 d1_scalar() {
@@ -99,15 +92,9 @@ USUALWEEK_KV=$(sed -n '/^# --- eval me/,$p' "$OUT" | grep -E '^USUAL_WEEK_[A-Z0-
 
 # The one value no seeder can derive: it must match what `wrangler dev` loads
 # (apps/api/.dev.vars, else apps/api/.env) or the cover-ask-expiry curl 401s
-# and flow 13b passes against an unexpired ask. Remote: the deployed Worker's
-# JOB_API_KEY secret matches apps/api/.env (verified 2026-11-23).
-if [ "$D1_TARGET" = "--remote" ]; then
-  JOB_API_KEY=$(grep -E '^JOB_API_KEY=' apps/api/.env 2>/dev/null \
-    | head -1 | cut -d= -f2- | tr -d '"'"'"'' || true)
-else
-  JOB_API_KEY=$(grep -hE '^JOB_API_KEY=' apps/api/.dev.vars apps/api/.env 2>/dev/null \
-    | head -1 | cut -d= -f2- | tr -d '"'"'"'' || true)
-fi
+# and flow 13b passes against an unexpired ask.
+JOB_API_KEY=$(grep -hE '^JOB_API_KEY=' apps/api/.dev.vars apps/api/.env 2>/dev/null \
+  | head -1 | cut -d= -f2- | tr -d '"'"'"'' || true)
 : "${JOB_API_KEY:?JOB_API_KEY not found}"
 
 # The bootstrap's PHASE4_HOUSEHOLD_ID and the phase4 seeder's must agree — they

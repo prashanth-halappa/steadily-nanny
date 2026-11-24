@@ -4,8 +4,8 @@
  * are Better Auth's camelCase field names; the SQL columns are snake_case.
  * Dates are `timestamp_ms` integers, as `@better-auth/cli generate` emits them.
  *
- * `user.id` is the identity every app table hangs off: `user_profiles.user_id`,
- * `user_beta_overrides.user_id` and `email_log.user_id` reference it with
+ * `user.id` is the identity every app table hangs off: `user_profiles.user_id`
+ * and `user_beta_overrides.user_id` reference it with
  * `on delete cascade`, replacing the old `auth.users` FKs.
  *
  * @module db/schema/auth

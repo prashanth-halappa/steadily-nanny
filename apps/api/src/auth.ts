@@ -1,5 +1,6 @@
 /**
- * Better Auth: email/password plus Apple and Google id-token sign-in, over the
+ * Better Auth: Apple and Google id-token sign-in (plus email/password in
+ * dev/test only, `EMAIL_AUTH_ENABLED`), over the
  * D1 `user`/`session`/`account`/`verification` tables (`db/schema/auth.ts`).
  *
  * Mounted at `/api/auth/*` in `app.ts`. The mobile client (`@better-auth/expo`)
@@ -16,15 +17,6 @@ import { APP_IDENTITY } from './config/app.identity';
 import { env } from './config/env';
 import { db } from './db/client';
 import * as schema from './db/schema';
-import { EmailService } from './domains/email/services/emailService';
-import { renderResetPasswordEmail } from './domains/email/templates/resetPassword';
-
-/** The app screen a reset email opens (universal link, AASA in infra/nanny-site). */
-export const RESET_PASSWORD_PATH = '/auth/reset';
-
-/** The link in the reset email: the app's reset route, carrying the token. */
-export const resetPasswordUrl = (token: string): string =>
-  `${APP_IDENTITY.webUrl}${RESET_PASSWORD_PATH}?token=${encodeURIComponent(token)}`;
 
 const present = (values: (string | undefined)[]): string[] =>
   values.filter((v): v is string => Boolean(v));
@@ -53,31 +45,19 @@ export const auth = betterAuth({
     ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] },
   },
   // The app scheme (expo plugin adds `exp://` itself in development) and the
-  // site that hosts the reset link, so `redirectTo` passes the origin check.
+  // app's web origin, so `redirectTo` passes the origin check.
   // appleid.apple.com: Apple's web flow (Android) POSTs the callback from there.
   trustedOrigins: [
     'steadilynanny://',
     APP_IDENTITY.webUrl,
     'https://appleid.apple.com',
   ],
+  // Dev/test only (seeders, Maestro). Production signs in with Apple/Google;
+  // no password reset, so nothing here sends email.
   emailAndPassword: {
-    enabled: true,
+    enabled: env.EMAIL_AUTH_ENABLED,
     minPasswordLength: 6,
     requireEmailVerification: false,
-    // Better Auth's own `url` routes through its /reset-password endpoint; the
-    // app opens the token directly instead, then calls resetPassword({ token }).
-    sendResetPassword: async ({ user, token }) => {
-      const { subject, html } = renderResetPasswordEmail({
-        resetUrl: resetPasswordUrl(token),
-      });
-      await EmailService.sendEmail({
-        userId: user.id,
-        to: user.email,
-        emailType: 'reset_password',
-        subject,
-        html,
-      });
-    },
   },
   socialProviders: {
     ...(env.APPLE_CLIENT_ID && {

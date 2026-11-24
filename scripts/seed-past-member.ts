@@ -14,7 +14,7 @@
  *   PAST_MEMBER_NANNY_EMAIL, ACTIVE_HOUSEHOLD_ID, PAST_HOUSEHOLD_ID
  *   (password: SteadilyTest!2026)
  *
- * Usage: D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=… bun run scripts/seed-past-member.ts
+ * Usage: bun run scripts/seed-past-member.ts
  *
  * @module scripts/seed-past-member
  */

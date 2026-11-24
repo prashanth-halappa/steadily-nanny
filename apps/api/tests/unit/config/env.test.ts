@@ -46,9 +46,19 @@ describe('env.core schema', () => {
     }
   });
 
-  test('production-required keys include jobs + email secrets', () => {
+  test('production-required keys include the jobs secret', () => {
     expect(productionRequiredCoreKeys).toContain('JOB_API_KEY');
-    expect(productionRequiredCoreKeys).toContain('RESEND_API_KEY');
+  });
+
+  test('EMAIL_AUTH_ENABLED fails closed: on only for exactly "true"', () => {
+    const parse = (v?: string) =>
+      coreEnvSchema.parse({ BETTER_AUTH_SECRET: SECRET, EMAIL_AUTH_ENABLED: v })
+        .EMAIL_AUTH_ENABLED;
+    expect(parse(undefined)).toBe(false);
+    expect(parse('')).toBe(false);
+    expect(parse('TRUE')).toBe(false);
+    expect(parse('1')).toBe(false);
+    expect(parse('true')).toBe(true);
   });
 });
 

@@ -16,7 +16,7 @@
  * Flows 32+ (seed-s3-second-carer.ts) need nanny2's membership: run 31b (or
  * 31) to completion after this, before them — the flow re-creates it.
  *
- * Usage: D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=… bun run scripts/seed-s3-invite.ts
+ * Usage: bun run scripts/seed-s3-invite.ts
  *
  * @module scripts/seed-s3-invite
  */

@@ -6,7 +6,7 @@
  * past, the deployed Worker's own cron (every 5 min) cancelled it before flow
  * 13a could see it pending. Run this immediately before the job curl.
  *
- *   [D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=…] bun run scripts/expire-cover-ask.ts <shiftId>
+ *   bun run scripts/expire-cover-ask.ts <shiftId>
  */
 import { and, eq } from 'drizzle-orm';
 import { shifts } from '../apps/api/src/db/schema';

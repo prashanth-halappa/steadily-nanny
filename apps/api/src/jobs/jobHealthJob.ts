@@ -22,9 +22,8 @@
  *
  * `evaluateJobHealth` is the pure decision function — no I/O, fixtures in,
  * an issue list out. `runJobHealthJob` is the thin wrapper that fetches the
- * two signals, evaluates, and — only when unhealthy — sends ONE email to
- * `OPS_ALERT_EMAILS` and one push per id in `OPS_ALERT_USER_IDS` (both new,
- * optional env vars; see `.env.example`). Unconfigured is not an error: it
+ * two signals, evaluates, and — only when unhealthy — sends one push per id
+ * in `OPS_ALERT_USER_IDS` (optional; see `.env.example`). Unconfigured is not an error: it
  * is logged once and the health summary is still recorded on the `job_runs`
  * row, same as every other job.
  *
@@ -33,7 +32,6 @@
  * @module jobs/jobHealthJob
  */
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
-import { EmailService } from '../domains/email/services/emailService';
 import {
   type JobRunCount,
   JobRunRepository,
@@ -168,7 +166,7 @@ export interface JobHealthJobResult {
   issueCount: number;
   errorCount: number;
   issues: JobHealthIssue[];
-  /** Whether an email or push actually went out (false if unconfigured). */
+  /** Whether a push actually went out (false if unconfigured). */
   alerted: boolean;
   message: string;
 }
@@ -181,7 +179,6 @@ export type JobHealthRunRepository = Pick<
 
 export interface JobHealthJobDeps {
   jobRuns?: JobHealthRunRepository;
-  sendEmail?: typeof EmailService.sendEmail;
   notify?: typeof notifyUser;
   clock?: { now: () => Date };
 }
@@ -191,16 +188,6 @@ function parseCsvEnv(value: string | undefined): string[] {
     .split(',')
     .map(entry => entry.trim())
     .filter(Boolean);
-}
-
-function buildAlertHtml(issues: readonly JobHealthIssue[]): string {
-  const rows = issues
-    .map(
-      issue =>
-        `<li><strong>${issue.jobName}</strong> (${issue.kind}): ${issue.detail}</li>`
-    )
-    .join('');
-  return `<p>${issues.length} job-health issue(s) detected:</p><ul>${rows}</ul>`;
 }
 
 function buildAlertPushPayload(issues: readonly JobHealthIssue[]): PushPayload {
@@ -216,7 +203,7 @@ function buildAlertPushPayload(issues: readonly JobHealthIssue[]): PushPayload {
 
 /**
  * Sends the alert once the run is known to be unhealthy. Returns whether
- * anything actually went out — `false` when neither env var is configured,
+ * anything actually went out — `false` when OPS_ALERT_USER_IDS is unset,
  * which is a configuration gap, not a job failure (still logged as a
  * warning by the caller).
  */
@@ -224,40 +211,13 @@ async function sendAlerts(
   issues: readonly JobHealthIssue[],
   deps: JobHealthJobDeps
 ): Promise<boolean> {
-  const sendEmail = deps.sendEmail ?? EmailService.sendEmail;
   const notify = deps.notify ?? notifyUser;
-  const emails = parseCsvEnv(process.env.OPS_ALERT_EMAILS);
   const userIds = parseCsvEnv(process.env.OPS_ALERT_USER_IDS);
-
-  if (emails.length === 0 && userIds.length === 0) {
-    return false;
-  }
-
-  const subject = `Steadily job health: ${issues.length} issue(s)`;
-  const html = buildAlertHtml(issues);
-  let alerted = false;
-
-  for (const email of emails) {
-    try {
-      const result = await sendEmail({
-        to: email,
-        emailType: 'ops_job_health',
-        subject,
-        html,
-      });
-      alerted = alerted || result.sent;
-    } catch (error) {
-      logger.error('Job health: alert email failed', { email, error });
-    }
-  }
-
   const payload = buildAlertPushPayload(issues);
   for (const userId of userIds) {
     notify(userId, payload);
-    alerted = true;
   }
-
-  return alerted;
+  return userIds.length > 0;
 }
 
 export async function runJobHealthJob(
@@ -266,12 +226,9 @@ export async function runJobHealthJob(
   const jobRuns = deps.jobRuns ?? new JobRunRepository();
   const now = (deps.clock ?? { now: () => new Date() }).now();
 
-  if (
-    parseCsvEnv(process.env.OPS_ALERT_EMAILS).length === 0 &&
-    parseCsvEnv(process.env.OPS_ALERT_USER_IDS).length === 0
-  ) {
+  if (parseCsvEnv(process.env.OPS_ALERT_USER_IDS).length === 0) {
     logger.warn(
-      'Job health: neither OPS_ALERT_EMAILS nor OPS_ALERT_USER_IDS is configured — issues will be recorded but nobody will be alerted'
+      'Job health: OPS_ALERT_USER_IDS is not configured — issues will be recorded but nobody will be alerted'
     );
   }
 

@@ -13,9 +13,10 @@ Files: `src/db/schema/*.ts` (Drizzle), `migrations/0000_baseline.sql`
 
 ## 1. Schema conventions
 
-- **43 tables**: 39 app tables plus Better Auth `user`, `session`, `account` and
-  `verification`. `user_profiles.user_id`, `user_beta_overrides.user_id` and
-  `email_log.user_id` reference `user.id` with `ON DELETE CASCADE`.
+- **42 tables**: 38 app tables plus Better Auth `user`, `session`, `account` and
+  `verification` (`email_log` was dropped in 0002 with the email domain).
+  `user_profiles.user_id` and `user_beta_overrides.user_id` reference
+  `user.id` with `ON DELETE CASCADE`.
   Everything else hangs off `user_profiles`, as before. Deleting a `user` row
   therefore replaces `auth.admin.deleteUser`, and the cascades are tested.
 - **JS keys = snake_case column names** on app tables, so Drizzle rows have the

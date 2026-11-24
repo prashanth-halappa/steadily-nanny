@@ -161,22 +161,13 @@ describe('evaluateJobHealth', () => {
 });
 
 let runJobHealthJob: typeof import('../../../src/jobs/jobHealthJob').runJobHealthJob;
-let EmailService: { sendEmail: ReturnType<typeof mock> };
 
 beforeAll(async () => {
-  mock.module('../../../src/domains/email/services/emailService', () => ({
-    EmailService: { sendEmail: mock(async () => ({ sent: true })) },
-  }));
   const mod = await import('../../../src/jobs/jobHealthJob');
   runJobHealthJob = mod.runJobHealthJob;
-  EmailService = (
-    await import('../../../src/domains/email/services/emailService')
-  ).EmailService as unknown as { sendEmail: ReturnType<typeof mock> };
 });
 
 beforeEach(() => {
-  EmailService.sendEmail.mockClear?.();
-  delete process.env.OPS_ALERT_EMAILS;
   delete process.env.OPS_ALERT_USER_IDS;
 });
 
@@ -195,31 +186,17 @@ describe('runJobHealthJob — I/O wrapper', () => {
       countByStatusSince: mock(async () => []),
       countRunsSince: mock(async () => []),
     };
+    process.env.OPS_ALERT_USER_IDS = 'user-1';
+    const notify = mock(() => undefined);
     const result = await runJobHealthJob({
       jobRuns,
       clock: { now: () => NOW },
+      notify,
     });
 
     expect(result.healthy).toBe(true);
     expect(result.errorCount).toBe(0);
-    expect(EmailService.sendEmail).not.toHaveBeenCalled();
-  });
-
-  it('sends one alert email per configured OPS_ALERT_EMAILS address when unhealthy', async () => {
-    process.env.OPS_ALERT_EMAILS = 'ops1@steadily.app, ops2@steadily.app';
-    const jobRuns = {
-      latestPerJob: mock(async () => []),
-      countByStatusSince: mock(async () => []),
-      countRunsSince: mock(async () => []),
-    };
-    const result = await runJobHealthJob({
-      jobRuns,
-      clock: { now: () => NOW },
-    });
-
-    expect(result.healthy).toBe(false);
-    expect(EmailService.sendEmail).toHaveBeenCalledTimes(2);
-    expect(result.alerted).toBe(true);
+    expect(notify).not.toHaveBeenCalled();
   });
 
   it('pushes to every configured OPS_ALERT_USER_IDS id when unhealthy', async () => {
@@ -246,15 +223,17 @@ describe('runJobHealthJob — I/O wrapper', () => {
       countByStatusSince: mock(async () => []),
       countRunsSince: mock(async () => []),
     };
+    const notify = mock(() => undefined);
     const result = await runJobHealthJob({
       jobRuns,
       clock: { now: () => NOW },
+      notify,
     });
 
     expect(result.healthy).toBe(false);
     expect(result.alerted).toBe(false);
     expect(result.issues.length).toBeGreaterThan(0);
-    expect(EmailService.sendEmail).not.toHaveBeenCalled();
+    expect(notify).not.toHaveBeenCalled();
   });
 
   it('counts a failed dependency query into errorCount rather than throwing', async () => {

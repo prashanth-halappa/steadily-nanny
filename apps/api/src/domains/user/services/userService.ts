@@ -262,7 +262,7 @@ export class UserService {
       }
 
       // The Better Auth user row. Cascades its sessions and accounts (signing
-      // every device out), user_beta_overrides and email_log; user_profiles
+      // every device out), user_beta_overrides; user_profiles
       // would cascade too but is already gone above.
       try {
         await db.delete(authUser).where(eq(authUser.id, userId));

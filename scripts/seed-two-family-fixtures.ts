@@ -19,7 +19,6 @@
  * Usage:
  *   bun run scripts/seed-two-family-fixtures.ts          # seed, print ids
  *   bun run scripts/seed-two-family-fixtures.ts --clean  # remove fixtures
- * Prefix D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=… for the remote D1.
  */
 
 import { and, eq } from 'drizzle-orm';

@@ -3,7 +3,7 @@
  *
  * These are the variables the reusable API core needs regardless of product:
  * server config, auth (Better Auth), monitoring,
- * jobs, and email.
+ * and jobs.
  *
  * App-specific variables live in `app.env.ts` (the extension point). Both are
  * merged and validated once, fail-fast, in `env.ts`.
@@ -51,6 +51,14 @@ export const coreEnvSchema = z.object({
   GOOGLE_IOS_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
 
+  // ── Email/password auth (dev/test only — never set in production) ───────────
+  // Fails closed: on only when exactly 'true'. Production signs in with
+  // Apple/Google; seeders and Maestro use email users against `wrangler dev`.
+  EMAIL_AUTH_ENABLED: z
+    .string()
+    .optional()
+    .transform(val => val === 'true'),
+
   // ── Monitoring (optional; production-recommended) ────────────────────────────
   // `.env.example` ships `SENTRY_DSN=` (empty) — bun loads that as "", which
   // z.string().url() rejects outright. Treat empty as unset so a verbatim
@@ -64,11 +72,6 @@ export const coreEnvSchema = z.object({
   // ── Background jobs (optional; production-required) ──────────────────────────
   // Shared secret for the X-Job-Api-Key header on /api/jobs/* routes.
   JOB_API_KEY: z.string().optional(),
-
-  // ── Email via Resend (optional; production-required) ─────────────────────────
-  RESEND_API_KEY: z.string().optional(),
-  RESEND_WEBHOOK_SECRET: z.string().optional(),
-  EMAIL_FROM: z.string().default('steadilynanny <hello@nanny.getsteadily.app>'),
 });
 
 /** Core env variables inferred from the schema. */
@@ -80,7 +83,6 @@ export type CoreEnv = z.infer<typeof coreEnvSchema>;
  */
 export const productionRequiredCoreKeys = [
   'JOB_API_KEY',
-  'RESEND_API_KEY',
 ] as const satisfies readonly (keyof CoreEnv)[];
 
 /**
@@ -94,7 +96,6 @@ export const coreTestEnv: CoreEnv = {
   BETTER_AUTH_URL: 'http://localhost:8080',
   LOG_LEVEL: 'info',
   JOB_API_KEY: 'test-job-api-key',
-  RESEND_API_KEY: 'test-resend-key',
-  RESEND_WEBHOOK_SECRET: 'test-resend-webhook-secret',
-  EMAIL_FROM: 'steadilynanny <hello@nanny.getsteadily.app>',
+  // Unit tests sign users up over HTTP.
+  EMAIL_AUTH_ENABLED: true,
 };

@@ -3,10 +3,8 @@
  *
  * The uncovered-care digest's Spanish strings used to live only in a module
  * comment in `uncoveredDigestJob.ts` — unreachable by any code path. This
- * wires them into a real catalog. Mirrors `domains/email/i18n/index.ts`'s
- * shape (auto-discovered `<locale>.json` catalogs, `en` as fallback,
- * i18next nested keys + `{{var}}` interpolation) — see that module for the
- * full design rationale.
+ * wires them into a real catalog: auto-discovered `<locale>.json` catalogs,
+ * `en` as fallback, i18next nested keys + `{{var}}` interpolation.
  *
  * Every OTHER push emitter in this repo stays hardcoded English by
  * deliberate, documented convention (push i18n is a deferred, repo-wide

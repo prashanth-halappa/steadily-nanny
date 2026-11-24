@@ -8,7 +8,7 @@
 # put <NAME>` instead. Full per-var notes: apps/api/.env.example.
 
 # Override the production `vars` in wrangler.jsonc. NODE_ENV=production would
-# make JOB_API_KEY / RESEND_API_KEY mandatory; BETTER_AUTH_URL must be the
+# make JOB_API_KEY mandatory; BETTER_AUTH_URL must be the
 # origin you serve on: wrangler.jsonc pins `wrangler dev` to :8080 (what
 # mobile and Maestro expect).
 NODE_ENV=development
@@ -30,11 +30,10 @@ GOOGLE_CLIENT_ID=
 GOOGLE_IOS_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 
-# Optional in dev: unset, Resend is off and emails are not sent (warning logged).
-RESEND_API_KEY=
-RESEND_WEBHOOK_SECRET=
+# Email/password sign-in (seeders, Maestro). Dev/test only — never set in
+# production; anything but exactly 'true' leaves it off.
+EMAIL_AUTH_ENABLED=true
 
 # Optional monitoring / alerting.
 SENTRY_DSN=
-OPS_ALERT_EMAILS=
 OPS_ALERT_USER_IDS=

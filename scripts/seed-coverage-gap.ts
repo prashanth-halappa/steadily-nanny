@@ -26,7 +26,7 @@
  * care commitment, so the household has NO care hours and the flow's own
  * commitment-form add is the only thing that can create an uncovered row.
  *
- * Usage: D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=… bun run scripts/seed-coverage-gap.ts [--no-commitment]
+ * Usage: bun run scripts/seed-coverage-gap.ts [--no-commitment]
  *
  * @module scripts/seed-coverage-gap
  */

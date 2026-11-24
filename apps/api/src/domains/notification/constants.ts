@@ -99,10 +99,7 @@ export function isQuietHoursExempt(
  * constant (via `.in('notification_permission', DELIVERABLE_NOTIFICATION_PERMISSIONS)`)
  * for ANY query selecting devices/tokens to send a push to.
  *
- * NOTE: This set governs PUSH deliverability only. Email deliverability is a
- * separate concern — the email domain gates on `email_log` (dedupe + daily cap)
- * and, if you add one, a preference row. Do NOT reuse this push-permission set
- * to decide whether an email may be sent.
+ * NOTE: This set governs PUSH deliverability only.
  */
 export const DELIVERABLE_NOTIFICATION_PERMISSIONS = [
   'granted',

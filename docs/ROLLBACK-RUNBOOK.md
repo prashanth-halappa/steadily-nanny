@@ -74,7 +74,7 @@ waiting for its schedule.
 | `cover-ask-expiry` | D-22/D-47. Expires unanswered cover asks by writing `status='cancelled'`, `cancelled_by=null`. A bug here **mass-cancels shifts**. Highest-blast-radius job. | Remove its `3-58/5 * * * *` entry from `CRON_JOBS`, deploy. |
 | `shift-completion` | D-24/S2. Batch-writes `completed` on past confirmed shifts. Wrong window = wrong statuses at scale. | Remove `40 3 * * *`, deploy. |
 | `no-show-digest` | D-26/A1. Morning digest (window `[07:00,10:00)`). Worst case is push noise. | Remove `50 * * * *`, deploy. |
-| `job-health` | J1-b/S2. Read-only: reads `job_runs`, writes nothing. Worst case is a noisy or missing alert. **Softest switch first:** unset `OPS_ALERT_EMAILS` and `OPS_ALERT_USER_IDS` (`wrangler secret delete`) to silence alerting while the job keeps recording findings in `job_runs.summary`. The old pg_net failure probe (`job_http_failures`) no longer exists, so it cannot be the expensive part. | Remove `15 6 * * *`, deploy. |
+| `job-health` | J1-b/S2. Read-only: reads `job_runs`, writes nothing. Worst case is a noisy or missing alert. **Softest switch first:** unset `OPS_ALERT_USER_IDS` (`wrangler secret delete`) to silence alerting while the job keeps recording findings in `job_runs.summary`. The old pg_net failure probe (`job_http_failures`) no longer exists, so it cannot be the expensive part. | Remove `15 6 * * *`, deploy. |
 
 Verify what is actually live (not what the file says): the Cloudflare
 dashboard Workers > steadily-nanny-api > Settings > Triggers, or `job_runs`

@@ -34,11 +34,11 @@
   ],
 
   // Non-secret config. NODE_ENV=production switches on the production-required
-  // checks in env.ts (JOB_API_KEY, RESEND_API_KEY must be set as secrets).
+  // checks in env.ts (JOB_API_KEY must be set as a secret). Never add
+  // EMAIL_AUTH_ENABLED here: email/password sign-in is dev/test only.
   "vars": {
     "NODE_ENV": "production",
     "LOG_LEVEL": "info",
-    "EMAIL_FROM": "steadilynanny <hello@nanny.getsteadily.app>",
     "BETTER_AUTH_URL": "https://api.nanny.getsteadily.app"
   },
 
@@ -49,10 +49,9 @@
   //                           a .p8-signed JWT that expires within 6 months)
   //   GOOGLE_CLIENT_ID, GOOGLE_IOS_CLIENT_ID          (Google on when CLIENT_ID set)
   //   GOOGLE_CLIENT_SECRET   (optional: id-token sign-in does not use it)
-  //   RESEND_API_KEY, RESEND_WEBHOOK_SECRET
   //   JOB_API_KEY            (only for manual POST /api/jobs/*; cron needs no key)
   //   SENTRY_DSN
-  //   OPS_ALERT_EMAILS, OPS_ALERT_USER_IDS   (optional, job-health alerting)
+  //   OPS_ALERT_USER_IDS     (optional, job-health push alerts)
   //   POSTHOG_API_KEY                         (optional)
 
   // ONE every-minute trigger (free plan allows 5). Each job's own schedule

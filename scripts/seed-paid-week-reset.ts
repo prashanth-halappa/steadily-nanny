@@ -11,7 +11,7 @@
  * current week whatever `week_starts_on` is). The seed weeks (2026-01) are
  * never touched.
  *
- * Usage: D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=… bun run scripts/seed-paid-week-reset.ts
+ * Usage: bun run scripts/seed-paid-week-reset.ts
  *
  * @module scripts/seed-paid-week-reset
  */

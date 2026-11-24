@@ -1,9 +1,9 @@
 /**
  * Better Auth end to end over a real D1 (testDb), through the real Express
  * app: sign-up → sign-in → the session cookie authenticates /api/v1 via
- * `validateSession`; no cookie is the same 401 as before; password reset
- * emails a link to the app's reset screen; /api/app/status resolves the
- * optional session.
+ * `validateSession`; no cookie is the same 401 as before; /api/app/status
+ * resolves the optional session. (Email auth is on under NODE_ENV=test via
+ * `coreTestEnv.EMAIL_AUTH_ENABLED`; `emailAuthDisabled.test.ts` covers off.)
  */
 import { afterAll, beforeAll, describe, expect, it, mock } from 'bun:test';
 import type { Server } from 'node:http';
@@ -13,22 +13,11 @@ import { createTestDb, type TestDb } from '../../helpers/testDb';
 let t: TestDb;
 let server: Server;
 let base: string;
-const sentEmails: { to: string; emailType: string; html: string }[] = [];
 const statusCalls: unknown[][] = [];
 
 beforeAll(async () => {
   t = await createTestDb();
   mock.module('../../../src/db/client', () => ({ db: t.db }));
-  mock.module('../../../src/domains/email/services/emailService', () => ({
-    EmailService: {
-      sendEmail: mock(
-        async (p: { to: string; emailType: string; html: string }) => {
-          sentEmails.push(p);
-          return { sent: true };
-        }
-      ),
-    },
-  }));
   mock.module('../../../src/domains/app/services/appStatusService', () => ({
     getAppStatus: mock(async (...args: unknown[]) => {
       statusCalls.push(args);
@@ -123,36 +112,10 @@ describe('Better Auth over D1', () => {
     }
   });
 
-  it('emails a reset link to the app reset screen, carrying the token', async () => {
-    const res = await fetch(
-      `${base}/api/auth/request-password-reset`,
-      json({ email, redirectTo: 'https://nanny.getsteadily.app/auth/reset' })
-    );
-    expect(res.status).toBe(200);
-    const sent = sentEmails.find(e => e.emailType === 'reset_password');
-    expect(sent?.to).toBe(email);
-    const match = sent?.html.match(
-      /https:\/\/nanny\.getsteadily\.app\/auth\/reset\?token=([\w-]+)/
-    );
-    expect(match).not.toBeNull();
-
-    // The token from the link resets the password.
-    const reset = await fetch(
-      `${base}/api/auth/reset-password`,
-      json({ newPassword: 'newsecret', token: match?.[1] })
-    );
-    expect(reset.status).toBe(200);
-    const signIn = await fetch(
-      `${base}/api/auth/sign-in/email`,
-      json({ email, password: 'newsecret' })
-    );
-    expect(signIn.status).toBe(200);
-  });
-
   it('/api/app/status passes the session user through, and stays anonymous without one', async () => {
     const signIn = await fetch(
       `${base}/api/auth/sign-in/email`,
-      json({ email, password: 'newsecret' })
+      json({ email, password })
     );
     const cookie = cookieFrom(signIn);
 
