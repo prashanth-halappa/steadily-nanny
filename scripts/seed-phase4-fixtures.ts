@@ -520,6 +520,24 @@ async function main(db: Db): Promise<void> {
     `[reset]   deleted ${clearedProposals.length} terms_proposals ` +
       '(PaySetupScreen shows the sent-receipt while one is open)'
   );
+  // Her inbox is GLOBAL across households, and flow 07 taps the FIRST
+  // `inbox-item-terms_proposal-.*`. An open round another flow left in one of
+  // her other households (seen: LEAKCANARY the Cole household) sorts ahead of
+  // ours, so she accepts THAT one and this household never gets an
+  // arrangement. Clear her open rounds everywhere.
+  const clearedForeignRounds = await db
+    .delete(termsProposals)
+    .where(
+      and(
+        eq(termsProposals.carer_id, nannyId),
+        eq(termsProposals.status, 'proposed')
+      )
+    )
+    .returning({ id: termsProposals.id });
+  console.log(
+    `[reset]   deleted ${clearedForeignRounds.length} open terms_proposals ` +
+      'in her other households (her inbox is global)'
+  );
 
   // --- 2. Overtime week ----------------------------------------------------
   await reseedWorkedWeek(db, {

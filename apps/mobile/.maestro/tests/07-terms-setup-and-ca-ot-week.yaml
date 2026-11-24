@@ -209,6 +209,18 @@ tags:
 - assertVisible:
     id: 'pay-setup-overtime-multiplier-input'
     text: '1.5'
+# Dismiss the decimal pad BEFORE the next field. Measured 2026-11-23 ("Tapping
+# on element"): with the pad still up, the daily-threshold tap resolved at
+# [39,626][401,672] (centerElement accepted it without scrolling), i.e. on a
+# key, so "8" went into the still-focused weekly multiplier (the round was
+# sent with overtime_multiplier 8). The per-field asserts could not see it:
+# the preset already put 8/12/2 in the later fields. `overtime-hint` is a
+# non-interactive `<Small>` directly under the weekly row we just tapped, so
+# it is above the pad, and its tap falls through to the ScrollView, which
+# dismisses the keyboard.
+- tapOn:
+    id: 'pay-setup-overtime-hint'
+- waitForAnimationToEnd
 - scrollUntilVisible:
     element:
       id: 'pay-setup-daily-overtime-threshold-input'
@@ -222,6 +234,11 @@ tags:
 - assertVisible:
     id: 'pay-setup-daily-overtime-threshold-input'
     text: '8'
+# Same dismissal before the double-time row (the hint now sits above the
+# centred daily field, so still clear of the pad).
+- tapOn:
+    id: 'pay-setup-overtime-hint'
+- waitForAnimationToEnd
 - scrollUntilVisible:
     element:
       id: 'pay-setup-doubletime-threshold-input'
@@ -248,6 +265,22 @@ tags:
 - assertVisible:
     id: 'pay-setup-doubletime-multiplier-input'
     text: '2'
+# Re-read every tier AFTER all typing: a later swallowed tap types into the
+# previously focused field, which only shows up as that field's value changing.
+- assertVisible:
+    id: 'pay-setup-doubletime-threshold-input'
+    text: '12'
+- scrollUntilVisible:
+    element:
+      id: 'pay-setup-overtime-multiplier-input'
+    direction: UP
+    timeout: 10000
+- assertVisible:
+    id: 'pay-setup-overtime-multiplier-input'
+    text: '1.5'
+- assertVisible:
+    id: 'pay-setup-daily-overtime-threshold-input'
+    text: '8'
 - takeScreenshot: pay-setup-ca-overtime
 # The hideKeyboard calls above are no-ops on this screen (WARNED), so the
 # decimal pad from the double-time multiplier is still up (top edge ~y638)
