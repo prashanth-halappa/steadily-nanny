@@ -43,7 +43,11 @@ config.resolver.extraNodeModules = {
 const upstreamResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (moduleName === 'expo-network') return { type: 'empty' };
-  return (upstreamResolveRequest ?? context.resolveRequest)(context, moduleName, platform);
+  return (upstreamResolveRequest ?? context.resolveRequest)(
+    context,
+    moduleName,
+    platform
+  );
 };
 
 module.exports = withNativeWind(config, { input: './global.css' });
