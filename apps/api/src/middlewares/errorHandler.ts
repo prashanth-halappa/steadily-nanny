@@ -138,11 +138,20 @@ export const errorHandler = (
     return;
   }
 
+  // Fail closed: only an EXPLICIT development/test env echoes internals.
+  // Destructured at call time on purpose — wrangler's esbuild `define` inlines
+  // the dotted process-env NODE_ENV expression from the DEPLOYING shell
+  // (bunx loads .env → "development"), ignoring the Worker's runtime var; and
+  // the validated `env.NODE_ENV` defaults unset to 'development'.
+  const { NODE_ENV: runtimeNodeEnv } = process.env;
+  const exposeInternals =
+    runtimeNodeEnv === 'development' || runtimeNodeEnv === 'test';
+
   const internalError = {
     name: 'InternalServerError',
     code: ERROR_CODES.INTERNAL_ERROR,
     message: 'An unexpected error occurred',
-    ...(process.env.NODE_ENV === 'development' && {
+    ...(exposeInternals && {
       details: error.message,
       stack: error.stack,
     }),
