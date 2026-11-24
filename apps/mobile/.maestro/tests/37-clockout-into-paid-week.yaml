@@ -25,18 +25,22 @@
 # flagged, so run `D1_REMOTE=1 CLOUDFLARE_ACCOUNT_ID=… bun run
 # scripts/seed-paid-week-reset.ts` before every re-run (it deletes nanny@'s
 # time entries, timesheets and payments in "Our household" from the last 7
-# days; the 2026-01 seed weeks are untouched). Also clears a RUNNING entry
-# left by an aborted run, which would otherwise pin the clock-out card.
+# days; the 2026-01 seed weeks are untouched). Also clears her RUNNING entry
+# in ANY household (an aborted run, or flow 22's seeded Cole-household
+# session): the running query is cross-household, so either one pins the
+# clock-out card and leaves no `today-clock-in` to tap.
 #
 # FIXTURES: none beyond the standard cast. Reuses
 # `PHASE4_TODAY_SHIFT_ID` (a confirmed shift for TODAY, reseeded fresh every
 # `seed-phase4-fixtures.ts` run) purely as a plausible clock-in target; the
-# assertions do not depend on shift association. REQUIRES flow
-# `07-terms-setup-and-ca-ot-week.yaml` to have already run in this batch (or
-# an equivalent already-existing arrangement) — the current week needs a
-# priced `pay_arrangement` valid through today or `hours-approve-button`
-# has nothing to approve against. `PHASE4_ARRANGEMENT_VALID_FROM` is
-# 2026-01-01 with no end date, so a prior 07 run covers today too.
+# assertions do not depend on shift association. REQUIRES a priced
+# `pay_arrangement` for nanny@ in this household, valid through today: without
+# one the terms gate replaces the clock card with
+# `today-clock-in-blocked-card` (no `today-clock-in` at all) and
+# `hours-approve-button` has nothing to approve against. A prior
+# `07-terms-setup-and-ca-ot-week.yaml` run leaves one (valid from 2026-01-01,
+# no end); when 07 did not run first, pre-seed `scripts/seed-carer1-terms.ts`
+# (idempotent — it skips when 07's arrangement already exists).
 #
 # TIMING NOTE — `computeWorkedMinutesFromInstants` rounds elapsed minutes
 # (`apps/mobile/src/domains/timesheet/utils/entryMinutes.ts`:

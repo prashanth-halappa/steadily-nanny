@@ -84,8 +84,18 @@ try {
       )
     )
     .returning({ id: timeEntries.id });
+  // A running entry in ANY of her households pins Today's clock card to its
+  // clock-out state (`useRunningTimeEntry` is cross-household), so there is
+  // no `today-clock-in` to tap. Flow 22's seeder leaves one running in the
+  // Cole household on purpose; clear it the way that seeder clears ours.
+  const running = await db
+    .delete(timeEntries)
+    .where(
+      and(eq(timeEntries.carer_id, nanny.id), eq(timeEntries.status, 'running'))
+    )
+    .returning({ id: timeEntries.id });
   console.log(
-    `[reset] household ${hh.id}: ${sheetIds.length} timesheet(s) + payments, ${entries.length} time entr(ies) since ${since}`
+    `[reset] household ${hh.id}: ${sheetIds.length} timesheet(s) + payments, ${entries.length} time entr(ies) since ${since}; ${running.length} running entr(ies) cleared in any household`
   );
 } catch (err) {
   console.error(err);
