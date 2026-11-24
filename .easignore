@@ -8,3 +8,25 @@
 # builds: RN 0.86's "[Hermes] Replace Hermes" phase wipes Pods/hermes-engine
 # and fails to re-extract the missing release tarball.
 apps/mobile/ios/Pods/
+
+# EAS reads ONLY this root file in the monorepo (apps/mobile/.easignore is not
+# consulted), and a .easignore replaces .gitignore entirely. Keep these out:
+# local build output, installed deps (EAS installs its own), logs and caches.
+node_modules/
+**/node_modules/
+apps/mobile/ios/build/
+apps/mobile/android/build/
+apps/mobile/android/app/build/
+apps/mobile/android/.gradle/
+apps/mobile/.expo/
+apps/mobile/assets/_staging/
+apps/mobile/.maestro/**/*.png
+apps/mobile/.maestro/screenshots/
+**/logs/
+*.log
+.turbo/
+**/.turbo/
+apps/api/
+.playwright-mcp/
+coverage/
+**/coverage/
