@@ -38,9 +38,28 @@ const productionRequiredKeys = [
   ...productionRequiredAppKeys,
 ] as const;
 
+/**
+ * The ONLY place in apps/api allowed to read NODE_ENV from `process.env`.
+ *
+ * wrangler's esbuild `define` replaces the dotted process-env NODE_ENV
+ * expression at BUILD time with the deploying shell's value (`bunx wrangler
+ * deploy` loads .env, so "development"), ignoring the Worker's runtime var.
+ * Destructuring is not rewritten, so this reads the real runtime value.
+ *
+ * Fails closed: anything but an explicit 'development' or 'test' (including
+ * unset) is 'production'. `tests/unit/config/nodeEnvGuard.test.ts` fails the
+ * build on any other read.
+ */
+export function runtimeNodeEnv(): 'production' | 'development' | 'test' {
+  const { NODE_ENV } = process.env;
+  return NODE_ENV === 'development' || NODE_ENV === 'test'
+    ? NODE_ENV
+    : 'production';
+}
+
 function validateEnv(): Env {
   // Skip validation in test to allow mocking / hermetic unit tests.
-  if (process.env.NODE_ENV === 'test') {
+  if (runtimeNodeEnv() === 'test') {
     return { ...coreTestEnv, ...appTestEnv } as Env;
   }
 

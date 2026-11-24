@@ -91,6 +91,7 @@ The API runs as a Cloudflare Worker over D1 (SQLite) via Drizzle; there is no Po
 - **D1 caps a statement at 100 bound parameters.** Chunk large `IN (…)` / multi-row inserts with `apps/api/src/db/chunk.ts`.
 - **Write instants with `toISOString()`**, set `local_date` in the service (no trigger does it), and match errors with `mapDbError(err)` (`src/db/errors.ts`), never raw SQLSTATE or `err.message`.
 - **Local vs remote:** `wrangler dev` uses local D1 by default; `--remote` talks to the real database. Never point a dev server at remote (GOLDEN-FIXES #26).
+- **Never read `process.env.NODE_ENV` directly in `apps/api`** — wrangler's esbuild `define` inlines it at bundle time from the deploying shell (bunx loads `.env` → `development`). Use `runtimeNodeEnv()` (`apps/api/src/config/env.ts`, fails closed to `production`); `tests/unit/config/nodeEnvGuard.test.ts` enforces it, and `define` in `wrangler.jsonc` maps dependencies' reads (express) to the runtime var.
 - **Kill switch:** a scheduled job is stopped by removing its entry from `triggers.crons` in `apps/api/wrangler.jsonc` and redeploying. Deploy order: `wrangler d1 migrations apply --remote` *before* `wrangler deploy` (`docs/ROLLBACK-RUNBOOK.md`).
 
 ## Dev-log locations

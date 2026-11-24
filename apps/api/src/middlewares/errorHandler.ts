@@ -1,6 +1,7 @@
 import { ERROR_CODES } from '@steadily-nanny/shared-types';
 import type { NextFunction, Request, Response } from 'express';
 import { ZodError } from 'zod';
+import { runtimeNodeEnv } from '../config/env';
 import Sentry, { getFeatureAreaFromPath } from '../config/sentry';
 import { BaseError, isExpectedClientError, ValidationError } from '../errors';
 import { logError } from './logger';
@@ -139,13 +140,9 @@ export const errorHandler = (
   }
 
   // Fail closed: only an EXPLICIT development/test env echoes internals.
-  // Destructured at call time on purpose — wrangler's esbuild `define` inlines
-  // the dotted process-env NODE_ENV expression from the DEPLOYING shell
-  // (bunx loads .env → "development"), ignoring the Worker's runtime var; and
-  // the validated `env.NODE_ENV` defaults unset to 'development'.
-  const { NODE_ENV: runtimeNodeEnv } = process.env;
-  const exposeInternals =
-    runtimeNodeEnv === 'development' || runtimeNodeEnv === 'test';
+  // runtimeNodeEnv() (not the validated `env.NODE_ENV`, which defaults unset
+  // to 'development') — see its doc for the wrangler build-time inlining trap.
+  const exposeInternals = runtimeNodeEnv() !== 'production';
 
   const internalError = {
     name: 'InternalServerError',

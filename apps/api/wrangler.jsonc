@@ -10,6 +10,17 @@
   // Local dev always on :8080 (mobile .env, Maestro and BETTER_AUTH_URL expect it).
   "dev": { "port": 8080 },
   "observability": { "enabled": true },
+  // Stop wrangler inlining the DEPLOYING shell's NODE_ENV (bunx loads .env →
+  // "development") into the bundle — incl. dependencies like express, whose
+  // app env would otherwise be "development" in production. Mapping the
+  // expressions to the runtime global makes every read see the Worker's var
+  // (`vars` below in prod, .dev.vars under `wrangler dev`). Our own code reads
+  // NODE_ENV only via runtimeNodeEnv() in src/config/env.ts.
+  "define": {
+    "process.env.NODE_ENV": "globalThis.process.env.NODE_ENV",
+    "global.process.env.NODE_ENV": "globalThis.process.env.NODE_ENV",
+    "globalThis.process.env.NODE_ENV": "globalThis.process.env.NODE_ENV"
+  },
   "routes": [{ "pattern": "api.nanny.getsteadily.app", "custom_domain": true }],
 
   "d1_databases": [

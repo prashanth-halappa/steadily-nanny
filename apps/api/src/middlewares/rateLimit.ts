@@ -10,6 +10,7 @@
  */
 import type { Request } from 'express';
 import rateLimit from 'express-rate-limit';
+import { runtimeNodeEnv } from '../config/env';
 import { LazyMemoryStore } from './lazyMemoryStore';
 
 export const userRateLimiter = rateLimit({
@@ -27,7 +28,7 @@ export const userRateLimiter = rateLimit({
   legacyHeaders: false,
 
   // Skip in tests to avoid interference.
-  skip: () => process.env.NODE_ENV === 'test',
+  skip: () => runtimeNodeEnv() === 'test',
 
   // We key on user ID for authenticated requests; the IP fallback is edge-case.
   validate: { xForwardedForHeader: false, keyGeneratorIpFallback: false },
@@ -79,7 +80,7 @@ export const publicInviteRateLimiter = rateLimit({
 
   // Same test escape hatch as above, and the route test flips NODE_ENV to
   // exercise the limit deliberately.
-  skip: () => process.env.NODE_ENV === 'test',
+  skip: () => runtimeNodeEnv() === 'test',
 });
 
 /** Requests per IP per window on the job routes. Exported for the route test. */
@@ -114,5 +115,5 @@ export const jobRateLimiter = rateLimit({
   legacyHeaders: false,
 
   // Same test escape hatch as above.
-  skip: () => process.env.NODE_ENV === 'test',
+  skip: () => runtimeNodeEnv() === 'test',
 });
