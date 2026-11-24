@@ -32,8 +32,9 @@
  *    payments, its thread events, and clears the approval columns. Flows 11
  *    and 12 consume that week (11 approves it, 12 pays and corrects it), so
  *    without this reset the batch is a one-shot and flow 04 breaks too.
- * 6. Two cover-ask shifts TOMORROW: one already past its
- *    `cover_ask_expires_at` (flow 13a/13b, expired via the job), one with a
+ * 6. Two cover-ask shifts TOMORROW: one the driver backdates past its
+ *    `cover_ask_expires_at` (scripts/expire-cover-ask.ts) before the job
+ *    expires it (flow 13a/13b), one with a
  *    live deadline for the nanny to decline (flow 13c). `cover_ask_expires_at`
  *    is computed server-side at ask time and cannot be backdated through the
  *    API.
@@ -762,9 +763,11 @@ async function main(db: Db): Promise<void> {
       )
     );
 
-  // Expired ask: `cover_ask_expires_at` in the past while still `pending`, so
-  // the nanny sees the M21 deadline before the job runs and the expired state
-  // after it. The API computes this column at ask time and never backdates it.
+  // To-be-expired ask: seeded with a FUTURE deadline (6h, before the decline
+  // ask's 12h) so it stays `pending` for flow 13a. A past deadline here was
+  // cancelled by the deployed Worker's own 5-minute cron long before 13a ran.
+  // The driver backdates it with scripts/expire-cover-ask.ts right before the
+  // job curl, so 13b sees it expired. The API never backdates this column.
   const [expiredAsk] = await db
     .insert(shifts)
     .values({
@@ -778,7 +781,9 @@ async function main(db: Db): Promise<void> {
       status: 'pending',
       origin: 'parent_proposed',
       sequence: 0,
-      cover_ask_expires_at: new Date(Date.now() - 60 * 60_000).toISOString(),
+      cover_ask_expires_at: new Date(
+        Date.now() + 6 * 60 * 60_000
+      ).toISOString(),
       created_by: parentId,
     })
     .returning({ id: shifts.id });

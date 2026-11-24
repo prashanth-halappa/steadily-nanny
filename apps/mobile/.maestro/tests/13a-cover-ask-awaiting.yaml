@@ -7,19 +7,20 @@
 # thing under test as much as the screen is.
 #
 # Prerequisites: scripts/seed-phase4-fixtures.ts seeds two `pending`
-# `kind: 'cover'` shifts for TOMORROW —
-#   PHASE4_EXPIRED_ASK_SHIFT_ID  `cover_ask_expires_at` one hour in the PAST
+# `kind: 'cover'` shifts for TOMORROW, both with FUTURE deadlines —
+#   PHASE4_EXPIRED_ASK_SHIFT_ID  `cover_ask_expires_at` 6 hours out; the driver
+#                                backdates it (scripts/expire-cover-ask.ts)
+#                                right before the expiry curl, so 13b sees it
+#                                expired
 #   PHASE4_DECLINE_ASK_SHIFT_ID  deadline 12 hours out, so the job leaves it
 #                                alone and 13b can decline it
 # The column is computed server-side at ask time (`min(created_at + 48h,
 # starts_at - 4h)`, migration 088) and cannot be backdated through the API, so
 # a past deadline is only reachable SQL-side.
 #
-# TIMING (deployed Worker): the Worker's own cron runs cover-ask-expiry at
-# minutes 3-58/5 (apps/api/src/scheduled.ts), so the past-deadline ask is
-# expired by the NEXT tick after seeding. Against the Worker, re-seed just after
-# a tick (minute % 5 == 3, ~:15s) and start this flow at once; it takes ~3.5 min.
-# A stale seed fails at `shift-detail-status-pending` (the shift is cancelled).
+# TIMING: seeding the first ask with a PAST deadline let the deployed Worker's
+# own 5-minute cron cancel it before this flow ran. With a future deadline the
+# seed holds at any hour until the driver backdates it.
 #
 # ROLE NOTE — this is the NANNY's screen, not the parent's. Every cover-ask
 # state on ShiftDetailScreen (`shift-detail-answer-by`, `-ask-expired`,

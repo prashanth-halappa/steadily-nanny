@@ -212,6 +212,9 @@ run_flow 12-payment-record-correct-export.yaml "${COMMON[@]}"
 run_flow 13a-cover-ask-awaiting.yaml "${COMMON[@]}"
 
 print "\n==> expiring cover asks (POST ${API_BASE}/api/jobs/cover-ask-expiry)"
+# The seeder gives this ask a FUTURE deadline (so the cron leaves it pending
+# for 13a); backdate it now so the job below expires it.
+bun run "${REPO_ROOT}/scripts/expire-cover-ask.ts" "${PHASE4_EXPIRED_ASK_SHIFT_ID}"
 # `jobHandler` fire-and-forgets, so a 2xx is an ACK that the job STARTED, not
 # that it finished. `-f` turns a 401 (wrong JOB_API_KEY) into a non-zero exit
 # instead of a green run against an unexpired shift.
