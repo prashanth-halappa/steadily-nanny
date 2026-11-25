@@ -58,7 +58,10 @@ import {
   totalCoveringMinutes,
 } from '@/src/domains/schedule/utils/shiftGrouping';
 import { timeOffCoversLocalDate } from '@/src/domains/schedule/utils/timeOffOverlap';
-import { withCauses } from '@/src/domains/schedule/utils/uncoveredDisplay';
+import {
+  splitAwaiting,
+  withCauses,
+} from '@/src/domains/schedule/utils/uncoveredDisplay';
 import { computeUncoveredWeek } from '@/src/domains/schedule/utils/uncoveredWeek';
 import {
   canViewParentSchedule,
@@ -79,6 +82,7 @@ import { useHouseholdClosures } from '@/src/hooks/queries/useHouseholdClosures';
 import { useHouseholdCommitments } from '@/src/hooks/queries/useHouseholdCommitments';
 import { useHouseholdTimeOff } from '@/src/hooks/queries/useHouseholdTimeOff';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { useSchedulePattern } from '@/src/hooks/queries/useSchedulePattern';
 import {
   isShiftsRouteUnavailable,
   useShiftsRange,
@@ -209,6 +213,11 @@ export function ScheduleShiftsScreen({
   const commitmentsQuery = useHouseholdCommitments(activeHousehold.householdId);
   const closuresQuery = useHouseholdClosures(activeHousehold.householdId);
   const carersQuery = useHouseholdCarers(activeHousehold.householdId);
+  // A pending weekly ask materialises no shifts until accepted, so its days
+  // are the only way to tell "asked, waiting" from "nobody asked".
+  const pendingPatternQuery = useSchedulePattern(
+    canViewCover && pattern?.status === 'pending' ? pattern.id : null
+  );
   // P11: apricot means "on the clock", so the rows need the clock, not just
   // the calendar. One query for the whole screen — the CURRENT week, since
   // that's the only week a running entry can live in, regardless of which
@@ -241,7 +250,8 @@ export function ScheduleShiftsScreen({
     (canViewCover &&
       (commitmentsQuery.isLoading ||
         closuresQuery.isLoading ||
-        patternLoading));
+        patternLoading ||
+        pendingPatternQuery.isLoading));
   // Pattern B: the same reads, FAILED. `?? []` turns a failed cover input
   // into "zero uncovered windows / nobody away", which `showEmpty` then
   // reports as "no shifts yet, you're set up". We do not know that. Withhold
@@ -251,7 +261,10 @@ export function ScheduleShiftsScreen({
   // the week. It IS refetched by the retry below, since that is free.
   const coverInputsFailed =
     timeOffQuery.isError ||
-    (canViewCover && (commitmentsQuery.isError || closuresQuery.isError));
+    (canViewCover &&
+      (commitmentsQuery.isError ||
+        closuresQuery.isError ||
+        pendingPatternQuery.isError));
   // 404 "route not built yet" stays a calm empty — every other query error
   // must offer retry (network blip ≠ "check back soon").
   const routeUnavailable =
@@ -299,9 +312,21 @@ export function ScheduleShiftsScreen({
         : null,
     [carerList, coveringShifts, t]
   );
+  const pendingPattern = pendingPatternQuery.data ?? null;
+  // `byDay`/`totalCount` are the UNBOOKED pieces only — the summary count,
+  // first-gap jump and empty-state fold all speak about those. The slices a
+  // pending ask covers drop out (a partial ask leaves its edges unbooked);
+  // pending-PATTERN slices go to `awaitingByDay` and render as Pending, while
+  // a pending SHIFT's slice is shown by the shift itself. Display only: the
+  // server alarm still counts the whole window (S1).
   const uncoveredWeek = useMemo(() => {
     if (!canViewCover) {
-      return { byDay: {} as Record<string, never[]>, totalCount: 0 };
+      return {
+        byDay: {} as Record<string, never[]>,
+        awaitingByDay: {} as Record<string, never[]>,
+        totalCount: 0,
+        awaitingCount: 0,
+      };
     }
     const raw = computeUncoveredWeek({
       weekDates,
@@ -311,10 +336,25 @@ export function ScheduleShiftsScreen({
       closures: closuresQuery.data ?? [],
     });
     const byDay: Record<string, ReturnType<typeof withCauses>> = {};
+    const awaitingByDay: Record<string, ReturnType<typeof withCauses>> = {};
+    let totalCount = 0;
+    let awaitingCount = 0;
     for (const [date, windows] of Object.entries(raw.byDay)) {
-      byDay[date] = withCauses(windows, shifts);
+      const { unbooked, awaiting } = splitAwaiting({
+        windows,
+        localDate: date,
+        timezone: timeZone,
+        commitments: commitmentsQuery.data ?? [],
+        shifts: shifts.filter(shift => shift.local_date === date),
+        closures: closuresQuery.data ?? [],
+        pendingPattern,
+      });
+      byDay[date] = withCauses(unbooked, shifts);
+      awaitingByDay[date] = withCauses(awaiting, shifts);
+      totalCount += unbooked.length;
+      awaitingCount += awaiting.length;
     }
-    return { byDay, totalCount: raw.totalCount };
+    return { byDay, awaitingByDay, totalCount, awaitingCount };
   }, [
     canViewCover,
     weekDates,
@@ -322,6 +362,7 @@ export function ScheduleShiftsScreen({
     commitmentsQuery.data,
     shifts,
     closuresQuery.data,
+    pendingPattern,
   ]);
 
   const focusUncoveredKey = useMemo(() => {
@@ -402,6 +443,9 @@ export function ScheduleShiftsScreen({
   // yet" right below it. Fold uncovered-for-this-viewer into showContent
   // and out of showEmpty so the two lines can't disagree.
   const hasUncoveredForViewer = canViewCover && uncoveredWeek.totalCount > 0;
+  // Awaiting windows are not counted, but they still need the agenda mounted
+  // to show their Pending rows — same P0 contradiction otherwise.
+  const hasAwaitingForViewer = canViewCover && uncoveredWeek.awaitingCount > 0;
 
   /**
    * This week's uncovered count, as a node the pattern banner can fold into
@@ -438,12 +482,16 @@ export function ScheduleShiftsScreen({
     !coverInputsFailed &&
     shifts.length === 0 &&
     !weekHasAway &&
-    !hasUncoveredForViewer;
+    !hasUncoveredForViewer &&
+    !hasAwaitingForViewer;
   const showContent =
     !isLoading &&
     !showUnavailable &&
     !showQueryError &&
-    (shifts.length > 0 || weekHasAway || hasUncoveredForViewer);
+    (shifts.length > 0 ||
+      weekHasAway ||
+      hasUncoveredForViewer ||
+      hasAwaitingForViewer);
   // S12: "Schedule" means "my shifts this week" to a nanny and "the
   // household's weekly pattern" to a parent — the tab label stays uniform
   // (direction doc §11a) but the voice forks here, inside the screen. A
@@ -612,6 +660,7 @@ export function ScheduleShiftsScreen({
           onRetry={() => {
             void commitmentsQuery.refetch();
             void closuresQuery.refetch();
+            void pendingPatternQuery.refetch();
             void timeOffQuery.refetch();
             void carersQuery.refetch();
           }}
@@ -760,9 +809,9 @@ export function ScheduleShiftsScreen({
           weekDates={weekDates}
           householdId={activeHousehold.householdId}
           uncoveredByDay={canViewCover ? uncoveredWeek.byDay : undefined}
+          awaitingByDay={canViewCover ? uncoveredWeek.awaitingByDay : undefined}
           showUncoveredActions={canEditCover}
           focusUncoveredKey={scrollToUncoveredKey ?? focusUncoveredKey}
-          commitments={commitmentsQuery.data ?? []}
           listHeader={header}
           runningShiftIds={runningShiftIds}
         />
@@ -777,6 +826,7 @@ export function ScheduleShiftsScreen({
           householdTimeZone={timeZone}
           weekDates={weekDates}
           uncoveredByDay={canViewCover ? uncoveredWeek.byDay : undefined}
+          awaitingByDay={canViewCover ? uncoveredWeek.awaitingByDay : undefined}
           listHeader={gutterlessHeader}
         />
       ) : null}

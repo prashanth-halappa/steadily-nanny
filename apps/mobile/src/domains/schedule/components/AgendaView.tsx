@@ -5,7 +5,6 @@
  */
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import type { CarerTimeOff } from '@steadily-nanny/shared-types/schemas/availability.schema';
-import type { ChildCommitment } from '@steadily-nanny/shared-types/schemas/child.schema';
 import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/household.schema';
 import {
   SHIFT_KINDS,
@@ -43,10 +42,9 @@ import {
 import {
   describeUncoveredCause,
   inferUncoveredCauseDetail,
-  isFullDayUncovered,
+  overlappingShifts,
   type UncoveredWindowDisplay,
 } from '@/src/domains/schedule/utils/uncoveredDisplay';
-import { commitmentBoundsOnLocalDate } from '@/src/domains/schedule/utils/uncoveredWeek';
 import { formatDuration } from '@/src/domains/timesheet/utils/duration';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { useCreateParentCover } from '@/src/hooks/mutations/useCreateParentCover';
@@ -70,9 +68,12 @@ interface AgendaViewProps {
   /** Used to resolve carer first names once the household has 2+ carers. */
   householdId?: string | null;
   uncoveredByDay?: Record<string, UncoveredWindowDisplay[]>;
+  /** Slices of uncovered care a pending pattern covers, clipped to its blocks
+   * — a quiet Pending row with no actions. One that also overlaps a pending
+   * shift adds no row; that shift row already says Pending. */
+  awaitingByDay?: Record<string, UncoveredWindowDisplay[]>;
   showUncoveredActions?: boolean;
   focusUncoveredKey?: string | null;
-  commitments?: readonly ChildCommitment[];
   listRef?: RefObject<FlashListRef<AgendaItem> | null>;
   /** Scrolls with the list instead of sitting frozen above it. */
   listHeader?: ReactElement;
@@ -107,6 +108,12 @@ export type AgendaItem =
        * attaches to the group, not to every item in it). */
       isPrimary: boolean;
     }
+  | {
+      type: 'awaiting';
+      key: string;
+      localDate: string;
+      window: UncoveredWindowDisplay;
+    }
   | { type: 'shift'; key: string; shift: Shift };
 
 function UncoveredRow({
@@ -118,7 +125,6 @@ function UncoveredRow({
   householdId,
   displayTimeZone,
   childName,
-  commitment,
   showActions,
   carers,
   shifts,
@@ -126,6 +132,7 @@ function UncoveredRow({
   membersByUserId,
   memberLabels,
   closedReason,
+  awaiting = false,
 }: {
   localDate: string;
   window: UncoveredWindowDisplay;
@@ -137,7 +144,6 @@ function UncoveredRow({
   householdId: string;
   displayTimeZone?: string | null;
   childName: string;
-  commitment?: ChildCommitment;
   showActions: boolean;
   carers: HouseholdMember[];
   shifts: readonly Shift[];
@@ -151,9 +157,11 @@ function UncoveredRow({
   /** From `useCanWriteHousehold`, computed once in `AgendaView` — the
    * closed-household reason, or null when the reader may still act. */
   closedReason: string | null;
+  /** Asked, not yet answered: Pending pill, no cause line, no actions (the
+   * pattern banner already carries withdraw/edit). */
+  awaiting?: boolean;
 }) {
   const { t } = useTranslation('schedule');
-  const { t: tToday } = useTranslation('today');
   const router = useRouter();
   const colors = useThemeColors();
   const elevation = useElevation();
@@ -169,19 +177,9 @@ function UncoveredRow({
 
   const formattedStart = formatShiftTime(window.startsAt, displayTimeZone);
   const formattedEnd = formatShiftTime(window.endsAt, displayTimeZone);
-  const timeLabel = (() => {
-    if (commitment && displayTimeZone) {
-      const { startUtc, endUtc } = commitmentBoundsOnLocalDate(
-        commitment,
-        localDate,
-        displayTimeZone
-      );
-      if (isFullDayUncovered(window, startUtc, endUtc)) {
-        return tToday('coverage.gap.allDay');
-      }
-    }
-    return `${formattedStart}–${formattedEnd}`;
-  })();
+  // Always the real hours: "all day" fired whenever the whole NEED window
+  // was open, so 07:00–13:00 care hours read as the whole day.
+  const timeLabel = `${formattedStart}–${formattedEnd}`;
 
   const { cause, shift: causeShift } = inferUncoveredCauseDetail(
     window,
@@ -288,7 +286,7 @@ function UncoveredRow({
 
   return (
     <View
-      testID={`schedule-uncovered-${key}`}
+      testID={`schedule-${awaiting ? 'awaiting' : 'uncovered'}-${key}`}
       className="mx-5.5 mb-2 gap-3 rounded-row p-4"
       style={[
         isLoud ? elevation.cardProminent : elevation.row,
@@ -315,15 +313,21 @@ function UncoveredRow({
           <H4 className="flex-1">
             {childName} · {timeLabel}
           </H4>
-          <StatusPill variant="uncovered" label={t('cover.rowPill')} />
+          {awaiting ? (
+            <StatusPill variant="pending" label={t('cover.rowPillPending')} />
+          ) : (
+            <StatusPill variant="uncovered" label={t('cover.rowPill')} />
+          )}
         </View>
-        <Small
-          className={isLoud ? 'text-muted-strong' : 'text-muted-foreground'}
-        >
-          {causeLabel}
-        </Small>
+        {awaiting ? null : (
+          <Small
+            className={isLoud ? 'text-muted-strong' : 'text-muted-foreground'}
+          >
+            {causeLabel}
+          </Small>
+        )}
       </View>
-      {showActions ? (
+      {showActions && !awaiting ? (
         <View className="gap-2">
           {isLoud ? (
             <>
@@ -454,9 +458,9 @@ export function AgendaView({
   weekDates = [],
   householdId,
   uncoveredByDay,
+  awaitingByDay,
   showUncoveredActions = false,
   focusUncoveredKey = null,
-  commitments = [],
   listRef,
   listHeader,
   runningShiftIds,
@@ -542,10 +546,6 @@ export function AgendaView({
     () => new Map((childrenQuery.data ?? []).map(child => [child.id, child])),
     [childrenQuery.data]
   );
-  const commitmentsById = useMemo(
-    () => new Map(commitments.map(c => [c.id, c])),
-    [commitments]
-  );
   const items = useMemo(() => {
     const byDate = new Map<string, Shift[]>();
     for (const shift of shifts) {
@@ -558,6 +558,7 @@ export function AgendaView({
       ...byDate.keys(),
       ...weekDates,
       ...(uncoveredByDay ? Object.keys(uncoveredByDay) : []),
+      ...(awaitingByDay ? Object.keys(awaitingByDay) : []),
     ]);
     dates.forEach(date => {
       if (
@@ -606,7 +607,8 @@ export function AgendaView({
             at: number;
             window: UncoveredWindowDisplay;
             highlighted: boolean;
-          };
+          }
+        | { kind: 'awaiting'; at: number; window: UncoveredWindowDisplay };
 
       const timed: TimedRow[] = dayShifts.map(shift => ({
         kind: 'shift',
@@ -621,6 +623,18 @@ export function AgendaView({
           window,
           highlighted: focusUncoveredKey === key,
         });
+      }
+      for (const window of awaitingByDay?.[localDate] ?? []) {
+        const askedByShift = overlappingShifts(window, dayShifts).some(
+          shift => shift.status === 'pending'
+        );
+        if (!askedByShift) {
+          timed.push({
+            kind: 'awaiting',
+            at: Date.parse(window.startsAt),
+            window,
+          });
+        }
       }
       timed.sort((a, b) => a.at - b.at);
 
@@ -638,6 +652,13 @@ export function AgendaView({
         }
         if (row.kind === 'shift') {
           result.push({ type: 'shift', key: row.shift.id, shift: row.shift });
+        } else if (row.kind === 'awaiting') {
+          result.push({
+            type: 'awaiting',
+            key: `awaiting-${uncoveredKey(row.window)}`,
+            localDate,
+            window: row.window,
+          });
         } else {
           const isPrimary = !primaryUncoveredAssigned;
           primaryUncoveredAssigned = true;
@@ -660,6 +681,7 @@ export function AgendaView({
     householdTimeZone,
     weekDates,
     uncoveredByDay,
+    awaitingByDay,
     focusUncoveredKey,
     todayLocalDate,
     nowMs,
@@ -738,22 +760,23 @@ export function AgendaView({
               </View>
             );
           }
-          if (item.type === 'uncovered') {
+          if (item.type === 'uncovered' || item.type === 'awaiting') {
             if (!householdId) {
               return null;
             }
             const child = childrenById.get(item.window.childId);
+            const isUncovered = item.type === 'uncovered';
             return (
               <UncoveredRow
+                awaiting={!isUncovered}
                 localDate={item.localDate}
                 window={item.window}
-                highlighted={item.highlighted}
-                isPrimary={item.isPrimary}
+                highlighted={isUncovered && item.highlighted}
+                isPrimary={isUncovered && item.isPrimary}
                 nowMs={nowMs}
                 householdId={householdId}
                 displayTimeZone={displayTimeZone}
                 childName={child?.name ?? ''}
-                commitment={commitmentsById.get(item.window.commitmentId)}
                 showActions={showUncoveredActions}
                 carers={carersQuery.data ?? []}
                 shifts={shifts}

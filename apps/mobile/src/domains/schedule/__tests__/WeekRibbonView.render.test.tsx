@@ -366,3 +366,43 @@ describe('WeekRibbonView uncovered cells', () => {
     expect(queryByText('cover.rowPill')).toBeNull();
   });
 });
+
+describe('WeekRibbonView awaiting windows', () => {
+  it('paints an awaiting window as pending, not uncovered', () => {
+    // A pending weekly pattern materialises no shifts, so the window is all
+    // there is — it must read as "asked, waiting", never as the amber gap.
+    const { getByTestId } = render(
+      <WeekRibbonView
+        shifts={[]}
+        displayTimeZone="UTC"
+        weekDates={WEEK_DATES}
+        householdTimeZone="UTC"
+        uncoveredByDay={{}}
+        awaitingByDay={{ '2026-08-03': [makeUncoveredWindow()] }}
+      />
+    );
+
+    const cell = getByTestId(`week-ribbon-cell-${MONDAY_DOW}-9`);
+    expect(cell.props.accessibilityLabel).toBe('pending');
+    const style = StyleSheet.flatten(cell.props.style);
+    expect(style.backgroundColor).toBe('#5B3E5D'); // primary
+    expect(style.opacity).toBeCloseTo(0.45, 2);
+  });
+
+  it('an uncovered window still wins over an awaiting one in the same cell', () => {
+    const { getByTestId } = render(
+      <WeekRibbonView
+        shifts={[]}
+        displayTimeZone="UTC"
+        weekDates={WEEK_DATES}
+        householdTimeZone="UTC"
+        uncoveredByDay={{ '2026-08-03': [makeUncoveredWindow()] }}
+        awaitingByDay={{ '2026-08-03': [makeUncoveredWindow()] }}
+      />
+    );
+
+    expect(
+      getByTestId(`week-ribbon-cell-${MONDAY_DOW}-9`).props.accessibilityLabel
+    ).toBe('uncovered');
+  });
+});

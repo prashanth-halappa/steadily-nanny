@@ -367,6 +367,7 @@
     "weekSummaryTitle_one": "Who's covering 1 window this week?",
     "weekSummaryTitle_other": "Who's covering {{count}} windows this week?",
     "rowPill": "Not booked yet",
+    "rowPillPending": "Pending",
     "rowMeta": "{{childName}} · {{cause}}",
     "askToCover": "Ask {{carerName}} to start at {{start}}",
     "askSomeoneToCover": "Ask a nanny to cover {{start}} – {{end}}",

@@ -14,7 +14,15 @@
  * boilerplate (mock.module must be registered before the module that
  * depends on it is imported).
  */
-import { beforeAll, beforeEach, describe, expect, it, mock } from 'bun:test';
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  mock,
+} from 'bun:test';
 import { fireEvent, render, within } from '@testing-library/react-native';
 import {
   CALENDAR_VIEWS,
@@ -158,6 +166,19 @@ let mockIsShiftsRouteUnavailable: ReturnType<typeof mock>;
 let mockUseIsOnboarded: ReturnType<typeof mock>;
 let mockUseUserProfile: ReturnType<typeof mock>;
 let mockUseHouseholdCommitments: ReturnType<typeof mock>;
+const mockUseSchedulePattern = mock(
+  (): {
+    data: unknown;
+    isLoading: boolean;
+    isError: boolean;
+    refetch?: () => Promise<unknown>;
+  } => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    refetch: () => Promise.resolve(),
+  })
+);
 
 const HOUSEHOLD_ID = '11111111-1111-4111-8111-111111111111';
 const OTHER_HOUSEHOLD_ID = '99999999-9999-4999-8999-999999999999';
@@ -238,6 +259,10 @@ beforeAll(async () => {
   }));
   mock.module('@/src/hooks/queries/useHouseholdCommitments', () => ({
     useHouseholdCommitments: mockUseHouseholdCommitments,
+  }));
+
+  mock.module('@/src/hooks/queries/useSchedulePattern', () => ({
+    useSchedulePattern: mockUseSchedulePattern,
   }));
 
   mock.module('@/src/hooks/queries/useShiftsRange', () => ({
@@ -1269,6 +1294,95 @@ describe('P0: uncovered windows join the agenda, never the contradicting empty s
 
 // 0.2: both empty states must name their cause — a shared "No shifts yet"
 // read as "you have nothing on" to a nanny when the truth was "nobody has
+// An unanswered weekly ask (pending pattern) materialises no shifts, so the
+// detector still reports its hours uncovered (S1 — the server alarm must keep
+// firing). On screen they read as Pending and stay out of the summary count.
+describe('awaiting windows (pending pattern) are not counted as unbooked', () => {
+  const PENDING_PATTERN = {
+    id: '44444444-4444-4444-8444-444444444444',
+    status: 'pending',
+  } as never;
+  const patternDetail = {
+    dtstart: '2020-01-01',
+    until: null,
+    timezone: 'America/New_York',
+    days: [1, 2, 3, 4, 5].map(weekday => ({
+      weekday,
+      start_time: '07:00:00',
+      end_time: '13:00:00',
+      children: [],
+    })),
+  };
+
+  function arrangeParentWithCareHours() {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'parent',
+      status: 'onboarded',
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+    mockUseHouseholdCommitments.mockImplementation(() => ({
+      data: [makeCommitment()],
+      isLoading: false,
+      isError: false,
+    }));
+  }
+
+  afterEach(() => {
+    mockUseSchedulePattern.mockImplementation(() => ({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      refetch: () => Promise.resolve(),
+    }));
+    mockUseHouseholdCommitments.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+    }));
+  });
+
+  it('shows the asked-for hours as Pending rows and drops them from the summary count', () => {
+    arrangeParentWithCareHours();
+    mockUseSchedulePattern.mockImplementation(() => ({
+      data: patternDetail,
+      isLoading: false,
+      isError: false,
+    }));
+
+    const { getAllByTestId, queryAllByTestId, queryByTestId } = render(
+      <ScheduleShiftsScreen pattern={PENDING_PATTERN} />
+    );
+
+    // Every window is awaiting, so the count is 0 and the summary is gone —
+    // but the agenda still mounts to show the Pending rows.
+    expect(queryByTestId('schedule-cover-week-summary')).toBeNull();
+    expect(queryByTestId('schedule-shifts-empty')).toBeNull();
+    expect(getAllByTestId(/^schedule-awaiting-/).length).toBeGreaterThan(0);
+    expect(queryAllByTestId(/^schedule-uncovered-/)).toHaveLength(0);
+  });
+
+  it('holds the loading state while the pending pattern detail is still loading', () => {
+    arrangeParentWithCareHours();
+    mockUseSchedulePattern.mockImplementation(() => ({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+    }));
+
+    const { getByTestId, queryAllByTestId } = render(
+      <ScheduleShiftsScreen pattern={PENDING_PATTERN} />
+    );
+
+    expect(getByTestId('loading-indicator-container')).toBeTruthy();
+    expect(queryAllByTestId(/^schedule-uncovered-/)).toHaveLength(0);
+  });
+});
+
 // done their part". Fork on viewer role x whether an accepted pattern
 // exists (passed down as the `pattern` prop from the tab route).
 describe('P0 0.2: empty state names its cause (viewer x pattern-accepted fork)', () => {

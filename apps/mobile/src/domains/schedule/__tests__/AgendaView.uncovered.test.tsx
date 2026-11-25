@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { uncoveredKey } from '@steadily-nanny/shared-types/uncoveredCare';
-import { render } from '@testing-library/react-native';
+import { render, within } from '@testing-library/react-native';
 import { formatShiftTime } from '@/src/domains/schedule/utils/shiftGrouping';
 import type { UncoveredWindowDisplay } from '@/src/domains/schedule/utils/uncoveredDisplay';
 
@@ -311,5 +311,22 @@ describe('AgendaView uncovered row copy', () => {
     expect(meta).toContain('A shift was cancelled');
     expect(meta).not.toContain('undefined');
     expect(meta).not.toContain('Someone');
+  });
+});
+
+describe('AgendaView uncovered row hours', () => {
+  it('names the real hours, never "all day", even when the whole need window is open', () => {
+    // A wholly-open need window (care hours with nothing booked) used to
+    // read "Mia · all day", as if care ran the whole day.
+    const { getByTestId, window, formattedStart, formattedEnd } =
+      renderUncoveredRow({ carers: [], members: [], shifts: [] });
+
+    const row = within(
+      getByTestId(`schedule-uncovered-${uncoveredKey(window)}`)
+    );
+    expect(
+      row.getByText(`Mia · ${formattedStart}–${formattedEnd}`)
+    ).toBeTruthy();
+    expect(row.queryByText(/all day/)).toBeNull();
   });
 });

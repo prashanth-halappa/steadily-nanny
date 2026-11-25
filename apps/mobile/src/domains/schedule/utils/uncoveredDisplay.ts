@@ -6,15 +6,27 @@
  * shared-types; this is presentation-only.
  */
 
+import type { HouseholdClosure } from '@steadily-nanny/shared-types/schemas/availability.schema';
+import type { ChildCommitment } from '@steadily-nanny/shared-types/schemas/child.schema';
 import type {
   Shift,
   ShiftEvent,
 } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { SHIFT_KINDS } from '@steadily-nanny/shared-types/schemas/shift.schema';
-import type { UncoveredWindow } from '@steadily-nanny/shared-types/uncoveredCare';
+import {
+  type CoveredShiftInput,
+  computeUncovered,
+  type UncoveredWindow,
+} from '@steadily-nanny/shared-types/uncoveredCare';
 import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
 import { localDateInZone } from '@/src/lib/localDate';
 import { localDateToWeekday } from './shiftGrouping';
+import {
+  closuresForLocalDate,
+  toCoveredShift,
+  toNeedWindow,
+  zonedWallTimeToUtcMillis,
+} from './uncoveredWeek';
 
 export type UncoveredCause =
   | 'cancelled'
@@ -274,15 +286,143 @@ function weekdayName(
   return t(`weekday.${localDateToWeekday(localDate)}`);
 }
 
-/** Whether the uncovered slice spans the full need window for display as "all day". */
-export function isFullDayUncovered(
-  window: UncoveredWindow,
-  needStartUtc: number,
-  needEndUtc: number
-): boolean {
-  const winStart = Date.parse(window.startsAt);
-  const winEnd = Date.parse(window.endsAt);
-  return winStart <= needStartUtc + 60_000 && winEnd >= needEndUtc - 60_000;
+// =============================================================================
+// Awaiting an answer — display-only split. `computeUncovered` deliberately
+// treats `pending` as NOT cover (S1: an unanswered ask must never silence the
+// server alarm), but on screen a window the parent has already asked about is
+// "Pending", not "Not booked yet". The server push/digest are untouched.
+// =============================================================================
+
+/** The slice of a pending `SchedulePatternWithDays` the split reads. */
+export interface AwaitingPattern {
+  dtstart: string;
+  until: string | null;
+  timezone: string;
+  days: ReadonlyArray<{
+    weekday: number;
+    start_time: string;
+    end_time: string;
+    children: ReadonlyArray<{
+      child_id: string;
+      start_time: string | null;
+      end_time: string | null;
+    }>;
+  }>;
+}
+
+/** One pending-pattern block on one date, flattened per child (null = all). */
+interface PatternBlock {
+  childId: string | null;
+  startMs: number;
+  endMs: number;
+}
+
+function patternBlocksOnDate(
+  pattern: AwaitingPattern | null,
+  localDate: string
+): PatternBlock[] {
+  if (!pattern) return [];
+  if (localDate < pattern.dtstart) return [];
+  if (pattern.until && localDate > pattern.until) return [];
+  const weekday = localDateToWeekday(localDate);
+  const at = (time: string) =>
+    zonedWallTimeToUtcMillis(localDate, time, pattern.timezone);
+  // ponytail: honours weekday + dtstart/until only, not INTERVAL/exdates/
+  // pause_ranges — an over-match just says Pending a little early on a
+  // fortnightly or paused week; mirror materialisation if that matters.
+  return pattern.days
+    .filter(day => day.weekday === weekday)
+    .flatMap((day): PatternBlock[] =>
+      day.children.length === 0
+        ? [
+            {
+              childId: null,
+              startMs: at(day.start_time),
+              endMs: at(day.end_time),
+            },
+          ]
+        : day.children.map(child => ({
+            childId: child.child_id,
+            startMs: at(child.start_time ?? day.start_time),
+            endMs: at(child.end_time ?? day.end_time),
+          }))
+    );
+}
+
+/**
+ * Splits one local day's uncovered care at the INTERVAL level:
+ * - `unbooked` — `computeUncovered` re-run with every pending shift and
+ *   pending-pattern block treated as cover, so only the never-asked-about
+ *   residual pieces remain (partial overlaps leave the edges unbooked).
+ * - `awaiting` — the S1 `windows` clipped to each pending-pattern block.
+ *   A pending SHIFT emits no awaiting piece: its own row/cell already says
+ *   Pending.
+ * `windows` are the day's S1 windows (pending is not cover); the server alarm
+ * never sees this split.
+ */
+export function splitAwaiting(args: {
+  windows: readonly UncoveredWindow[];
+  localDate: string;
+  timezone: string;
+  commitments: readonly ChildCommitment[];
+  /** That day's shifts (same `local_date` filter `computeUncoveredWeek` uses). */
+  shifts: readonly Shift[];
+  closures: readonly HouseholdClosure[];
+  pendingPattern: AwaitingPattern | null;
+}): { unbooked: UncoveredWindow[]; awaiting: UncoveredWindow[] } {
+  const blocks = patternBlocksOnDate(args.pendingPattern, args.localDate);
+  const pendingShifts = args.shifts.filter(s => s.status === 'pending');
+  if (blocks.length === 0 && pendingShifts.length === 0) {
+    return { unbooked: [...args.windows], awaiting: [] };
+  }
+
+  // Display-side copy only: pending counts as cover for THIS run.
+  const displayCover: CoveredShiftInput[] = [
+    ...args.shifts.map(shift =>
+      toCoveredShift(
+        shift.status === 'pending' ? { ...shift, status: 'confirmed' } : shift
+      )
+    ),
+    ...blocks.map((block, i) => ({
+      id: `pending-pattern-block-${i}`,
+      startsAt: new Date(block.startMs).toISOString(),
+      endsAt: new Date(block.endMs).toISOString(),
+      status: 'confirmed',
+      children: block.childId
+        ? [{ childId: block.childId, startsAt: null, endsAt: null }]
+        : [],
+    })),
+  ];
+  const unbooked = computeUncovered({
+    localDate: args.localDate,
+    timezone: args.timezone,
+    needWindows: args.commitments.map(toNeedWindow),
+    shifts: displayCover,
+    closures: closuresForLocalDate(
+      args.closures,
+      args.localDate,
+      args.timezone
+    ),
+  });
+
+  const awaiting: UncoveredWindow[] = [];
+  for (const window of args.windows) {
+    const winStart = Date.parse(window.startsAt);
+    const winEnd = Date.parse(window.endsAt);
+    for (const block of blocks) {
+      if (block.childId !== null && block.childId !== window.childId) continue;
+      const start = Math.max(winStart, block.startMs);
+      const end = Math.min(winEnd, block.endMs);
+      if (start < end) {
+        awaiting.push({
+          ...window,
+          startsAt: new Date(start).toISOString(),
+          endsAt: new Date(end).toISOString(),
+        });
+      }
+    }
+  }
+  return { unbooked, awaiting };
 }
 
 export function withCauses(

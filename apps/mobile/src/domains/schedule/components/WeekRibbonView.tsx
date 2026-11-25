@@ -39,7 +39,8 @@ const WEEK_RIBBON_HOUR_PADDING = 1;
 function computeVisibleHours(
   shifts: Shift[],
   displayTimeZone?: string | null,
-  uncoveredByDay?: Record<string, readonly UncoveredWindow[]>
+  uncoveredByDay?: Record<string, readonly UncoveredWindow[]>,
+  awaitingByDay?: Record<string, readonly UncoveredWindow[]>
 ): number[] {
   let start = WEEK_RIBBON_DEFAULT_START_HOUR;
   let end = WEEK_RIBBON_DEFAULT_END_HOUR;
@@ -58,8 +59,8 @@ function computeVisibleHours(
   for (const shift of shifts) {
     expandFor(shift.starts_at, shift.ends_at);
   }
-  if (uncoveredByDay) {
-    for (const windows of Object.values(uncoveredByDay)) {
+  for (const byDay of [uncoveredByDay, awaitingByDay]) {
+    for (const windows of Object.values(byDay ?? {})) {
       for (const window of windows) {
         expandFor(window.startsAt, window.endsAt);
       }
@@ -80,6 +81,9 @@ interface WeekRibbonViewProps {
   householdTimeZone?: string;
   weekDates?: string[];
   uncoveredByDay?: Record<string, readonly UncoveredWindow[]>;
+  /** Slices of uncovered care a pending pattern covers — drawn in the
+   * pending style; an uncovered cell still wins. */
+  awaitingByDay?: Record<string, readonly UncoveredWindow[]>;
   /** Scrolls with the grid instead of sitting frozen above it. */
   listHeader?: ReactNode;
 }
@@ -149,6 +153,28 @@ function densestShift(
   );
 }
 
+/** `${dow}-${hour}` keys of every hour cell a window touches. */
+function windowCells(
+  byDay: Record<string, readonly UncoveredWindow[]> | undefined,
+  displayTimeZone?: string | null
+): Set<string> {
+  const cells = new Set<string>();
+  if (!byDay) return cells;
+  for (const localDate of Object.keys(byDay)) {
+    const dow = localDateToWeekday(localDate);
+    for (const window of byDay[localDate] ?? []) {
+      const startMin = minutesInZone(window.startsAt, displayTimeZone);
+      const endMin = minutesInZone(window.endsAt, displayTimeZone);
+      for (let hour = 0; hour < 24; hour++) {
+        if (hourCellOccupied(startMin, endMin, hour)) {
+          cells.add(`${dow}-${hour}`);
+        }
+      }
+    }
+  }
+  return cells;
+}
+
 export function WeekRibbonView({
   shifts,
   displayTimeZone,
@@ -157,6 +183,7 @@ export function WeekRibbonView({
   householdTimeZone = 'UTC',
   weekDates = [],
   uncoveredByDay,
+  awaitingByDay,
   listHeader,
 }: WeekRibbonViewProps) {
   const { t } = useTranslation('schedule');
@@ -170,27 +197,24 @@ export function WeekRibbonView({
   const displayOrder = getWeekdayOrder(weekStartsOn);
 
   const visibleHours = useMemo(
-    () => computeVisibleHours(shifts, displayTimeZone, uncoveredByDay),
-    [shifts, displayTimeZone, uncoveredByDay]
+    () =>
+      computeVisibleHours(
+        shifts,
+        displayTimeZone,
+        uncoveredByDay,
+        awaitingByDay
+      ),
+    [shifts, displayTimeZone, uncoveredByDay, awaitingByDay]
   );
 
-  const uncoveredCells = useMemo(() => {
-    const cells = new Set<string>();
-    if (!uncoveredByDay) return cells;
-    for (const localDate of Object.keys(uncoveredByDay)) {
-      const dow = localDateToWeekday(localDate);
-      for (const window of uncoveredByDay[localDate] ?? []) {
-        const startMin = minutesInZone(window.startsAt, displayTimeZone);
-        const endMin = minutesInZone(window.endsAt, displayTimeZone);
-        for (let hour = 0; hour < 24; hour++) {
-          if (hourCellOccupied(startMin, endMin, hour)) {
-            cells.add(`${dow}-${hour}`);
-          }
-        }
-      }
-    }
-    return cells;
-  }, [uncoveredByDay, displayTimeZone]);
+  const uncoveredCells = useMemo(
+    () => windowCells(uncoveredByDay, displayTimeZone),
+    [uncoveredByDay, displayTimeZone]
+  );
+  const awaitingCells = useMemo(
+    () => windowCells(awaitingByDay, displayTimeZone),
+    [awaitingByDay, displayTimeZone]
+  );
 
   const awayByDow = useMemo(() => {
     const map = new Map<number, boolean>();
@@ -335,7 +359,20 @@ export function WeekRibbonView({
             const shift = densestShift(shifts, dow, hour, displayTimeZone);
             const isUncovered = uncoveredCells.has(`${dow}-${hour}`);
             const filled = shift !== undefined;
-            const visual = shift ? cellVisual(shift, themeColors) : undefined;
+            // Asked, not yet answered (a pending pattern materialises no
+            // shifts): drawn exactly like a pending shift. A real pending
+            // shift in the cell already draws that way on its own.
+            const isAwaiting =
+              !isUncovered && !filled && awaitingCells.has(`${dow}-${hour}`);
+            const visual = shift
+              ? cellVisual(shift, themeColors)
+              : isAwaiting
+                ? {
+                    backgroundColor: themeColors.primary,
+                    opacity: 0.45,
+                    height: 16,
+                  }
+                : undefined;
             const isParentCover = shift?.kind === SHIFT_KINDS.PARENT_COVER;
             // Empty cells are a thin centred rule, not a full-height muted
             // capsule — the row's own `items-center` centres it — so an
@@ -347,13 +384,15 @@ export function WeekRibbonView({
             const cell = (
               <View
                 testID={`week-ribbon-cell-${dow}-${hour}`}
-                accessibilityState={{ selected: isUncovered || filled }}
+                accessibilityState={{
+                  selected: isUncovered || filled || isAwaiting,
+                }}
                 accessibilityLabel={
                   isUncovered
                     ? 'uncovered'
                     : isParentCover
                       ? 'parent_cover'
-                      : (shift?.status ?? 'empty')
+                      : (shift?.status ?? (isAwaiting ? 'pending' : 'empty'))
                 }
                 className="mx-0.5 flex-1 rounded-full"
                 style={

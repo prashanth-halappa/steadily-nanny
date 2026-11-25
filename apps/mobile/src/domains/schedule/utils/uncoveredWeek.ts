@@ -77,7 +77,8 @@ function offsetMinutesAt(utcMillis: number, timeZone: string): number {
   return (localAsUtc - utcMillis) / 60_000;
 }
 
-function zonedWallTimeToUtcMillis(
+/** UTC millis for a nominal local wall-clock time on one local date. */
+export function zonedWallTimeToUtcMillis(
   dateStr: string,
   timeStr: string,
   timeZone: string
@@ -116,22 +117,6 @@ export function closuresForLocalDate(
       startsAt: closure.starts_at,
       endsAt: closure.ends_at,
     }));
-}
-
-/** UTC millis for a commitment's nominal wall-clock span on one local date. */
-export function commitmentBoundsOnLocalDate(
-  commitment: ChildCommitment,
-  localDate: string,
-  timezone: string
-): { startUtc: number; endUtc: number } {
-  return {
-    startUtc: zonedWallTimeToUtcMillis(
-      localDate,
-      commitment.start_time,
-      timezone
-    ),
-    endUtc: zonedWallTimeToUtcMillis(localDate, commitment.end_time, timezone),
-  };
 }
 
 export interface UncoveredWeekResult {

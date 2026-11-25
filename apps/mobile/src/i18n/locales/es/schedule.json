@@ -367,6 +367,7 @@
     "weekSummaryTitle_one": "¿Quién cubre 1 turno esta semana?",
     "weekSummaryTitle_other": "¿Quién cubre {{count}} turnos esta semana?",
     "rowPill": "Aún sin reservar",
+    "rowPillPending": "Pendiente",
     "rowMeta": "{{childName}} · {{cause}}",
     "askToCover": "Pide a {{carerName}} que empiece a las {{start}}",
     "askSomeoneToCover": "Pide a una niñera que cubra {{start}} – {{end}}",

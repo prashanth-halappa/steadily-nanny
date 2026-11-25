@@ -63,8 +63,7 @@
       "windowLine": "{{childName}} · {{start}} – {{end}} · {{cause}}",
       "windowAllDay": "{{childName}} · all day · {{cause}}",
       "windowFallback": "{{childName}} · {{cause}}",
-      "andMore": "and {{count}} more",
-      "allDay": "all day"
+      "andMore": "and {{count}} more"
     },
     "plan": {
       "booked": "{{name}} has the children {{start}} – {{end}}.",
