@@ -23,7 +23,10 @@ import {
   it,
   mock,
 } from 'bun:test';
-import { fireEvent, render, within } from '@testing-library/react-native';
+import { act, fireEvent, render, within } from '@testing-library/react-native';
+import { View } from 'react-native';
+import { addWeeks, getWeekStartISO } from '@/src/domains/timesheet/utils/week';
+import { wallClockToUtcIso } from '@/src/lib/wallClock';
 import {
   CALENDAR_VIEWS,
   useCalendarViewStore,
@@ -161,6 +164,16 @@ mock.module('@/src/hooks/mutations/useRemoveParentCover', () => ({
 
 let ScheduleShiftsScreen: typeof import('../components/ScheduleShiftsScreen').ScheduleShiftsScreen;
 let mockUseShiftsRange: ReturnType<typeof mock>;
+// The continuous Agenda's extra week pages. Default: every page still loading.
+const mockUseShiftsRanges = mock(
+  (_householdId: unknown, ranges: readonly { from: string; to: string }[]) =>
+    ranges.map(() => ({
+      data: undefined as unknown,
+      isLoading: true,
+      isError: false,
+      refetch: mock(() => Promise.resolve()),
+    }))
+);
 let mockUseActiveHousehold: ReturnType<typeof mock>;
 let mockIsShiftsRouteUnavailable: ReturnType<typeof mock>;
 let mockUseIsOnboarded: ReturnType<typeof mock>;
@@ -268,6 +281,9 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useShiftsRange', () => ({
     useShiftsRange: mockUseShiftsRange,
     isShiftsRouteUnavailable: mockIsShiftsRouteUnavailable,
+  }));
+  mock.module('@/src/hooks/queries/useShiftsRanges', () => ({
+    useShiftsRanges: mockUseShiftsRanges,
   }));
   mock.module('@/src/hooks/queries/useActiveHousehold', () => ({
     useActiveHousehold: mockUseActiveHousehold,
@@ -640,15 +656,18 @@ describe('ScheduleShiftsScreen', () => {
       error: null,
     }));
 
-    const { getByTestId, getByText } = render(<ScheduleShiftsScreen />);
+    const { getByTestId } = render(<ScheduleShiftsScreen />);
 
     // Agenda (default view): 13:00Z-21:00Z in America/New_York is 9:00 AM-5:00 PM.
     // Before the fix, Agenda used profile tz only and would show 18:30-02:30.
     // The ZONE is what this regression guards — the literals moved from "09:00"
     // to "9:00 AM" when schedule screens adopted the app-wide device-locale
     // clock format (GOLDEN-FIXES #21), which is a display change, not a zone one.
-    expect(getByText(/9:00\s*AM/)).toBeTruthy();
-    expect(getByText(/5:00\s*PM/)).toBeTruthy();
+    // Scoped to the shift's own row: the now-line also prints a time, and
+    // between 9 and 10 AM / 5 and 6 PM New York it matched these too.
+    const row = within(getByTestId('schedule-shift-shift-tz'));
+    expect(row.getByText(/9:00\s*AM/)).toBeTruthy();
+    expect(row.getByText(/5:00\s*PM/)).toBeTruthy();
 
     fireEvent.press(getByTestId('calendar-view-week_ribbon'));
 
@@ -721,7 +740,7 @@ describe('ScheduleShiftsScreen', () => {
   // (see the '"Add a one-off shift" is a control' describe below), so the
   // constraint it encoded is gone — it is a Button now, and the only thing
   // still worth asserting is that it carries the label.
-  it('P1: "Add a one-off shift" still carries its label after the move off the heading row', () => {
+  it('P1: "Add a one-off shift" still announces its full label, now compact in the pinned bar', () => {
     mockUseIsOnboarded.mockImplementation(() => ({
       role: 'parent',
       status: 'onboarded',
@@ -735,9 +754,10 @@ describe('ScheduleShiftsScreen', () => {
 
     const { getByTestId } = render(<ScheduleShiftsScreen />);
 
-    expect(getByTestId('schedule-shifts-add-extra').props.children).toBe(
-      'shifts.addExtra'
-    );
+    const action = getByTestId('schedule-shifts-add-extra');
+    // Icon-only (layout spec §9): the full phrase is its accessible name.
+    expect(action.props.accessibilityLabel).toBe('shifts.addExtra');
+    expect(within(action).queryByText(/./)).toBeNull();
   });
 
   describe('S12: role-forked H1 (same screen, two voices)', () => {
@@ -1230,7 +1250,9 @@ describe('P0: uncovered windows join the agenda, never the contradicting empty s
 
     // The two lines that used to disagree now agree: the summary is
     // visible AND the agenda (not the empty state) is what's mounted.
-    expect(getByTestId('schedule-cover-week-summary')).toBeTruthy();
+    // The week-summary chip is retired (layout spec §9): the agenda's own
+    // amber cards are the count.
+    expect(queryByTestId('schedule-cover-week-summary')).toBeNull();
     expect(queryByTestId('schedule-shifts-empty')).toBeNull();
     expect(getByTestId('schedule-shifts-list')).toBeTruthy();
     expect(getAllByTestId(/^schedule-uncovered-/).length).toBeGreaterThan(0);
@@ -1580,7 +1602,7 @@ describe('P0 0.3: empty/unavailable states use the inline EmptyState variant', (
 // leave gaps even with an accepted pattern, and a household with no pattern
 // at all is exactly the state with the MOST gaps to report — so the summary
 // shows in every pattern state, never suppressed by the banner.
-describe('the week-summary line reports gaps regardless of pattern state', () => {
+describe('the per-day gap cards show regardless of pattern state (the summary chip is retired, §9)', () => {
   function renderWithPattern(pattern: unknown) {
     mockUseIsOnboarded.mockImplementation(() => ({
       role: 'parent',
@@ -1608,12 +1630,10 @@ describe('the week-summary line reports gaps regardless of pattern state', () =>
     ['pending', { status: 'pending' }],
     ['draft', { status: 'draft' }],
     ['declined', { status: 'declined' }],
-  ])('keeps the summary line when the pattern is %s', (_label, pattern) => {
-    const { getByTestId, getAllByTestId } = renderWithPattern(pattern);
+  ])('keeps the gap cards, and no summary chip, when the pattern is %s', (_label, pattern) => {
+    const { queryByTestId, getAllByTestId } = renderWithPattern(pattern);
 
-    expect(getByTestId('schedule-cover-week-summary')).toBeTruthy();
-    // The per-day uncovered rows in the agenda stay too — the week-level
-    // headline and the day-level detail are two different things.
+    expect(queryByTestId('schedule-cover-week-summary')).toBeNull();
     expect(getAllByTestId(/^schedule-uncovered-/).length).toBeGreaterThan(0);
   });
 });
@@ -1770,5 +1790,341 @@ describe('Pattern B: a failed cover input never renders as "you are set up"', ()
       isError: false,
       refetch: mock(() => Promise.resolve()),
     }));
+  });
+});
+
+describe('continuous Agenda: week pages beyond the anchor week', () => {
+  const TZ = 'America/New_York';
+  const thisWeek = getWeekStartISO(new Date(), TZ, 1);
+  const nextWeek = addWeeks(thisWeek, 1);
+  const lastWeek = addWeeks(thisWeek, -1);
+
+  function lastRanges(): readonly { from: string; to: string }[] {
+    const calls = mockUseShiftsRanges.mock.calls;
+    return calls[calls.length - 1]?.[1] ?? [];
+  }
+
+  function renderAgenda() {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'parent',
+      status: 'onboarded',
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [makeShift({ id: 'shift-anchor', local_date: thisWeek })],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+    return render(
+      <ScheduleShiftsScreen pattern={{ status: 'accepted' } as never} />
+    );
+  }
+
+  afterEach(() => {
+    mockUseShiftsRanges.mockClear();
+    mockUseShiftsRanges.mockImplementation((_id, ranges) =>
+      ranges.map(() => ({
+        data: undefined,
+        isLoading: true,
+        isError: false,
+        refetch: mock(() => Promise.resolve()),
+      }))
+    );
+    mockUseHouseholdCommitments.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+    }));
+    useCalendarViewStore.getState().reset();
+  });
+
+  it('opens on the anchor week alone — no past page fetched up front', () => {
+    renderAgenda();
+    expect(mockUseShiftsRanges).toHaveBeenCalled();
+    expect(lastRanges()).toEqual([]);
+  });
+
+  it('the next week loads as its own page: a spinner while in flight, never "nothing scheduled"', () => {
+    const utils = renderAgenda();
+
+    fireEvent.press(utils.getByTestId('schedule-agenda-load-later'));
+
+    expect(lastRanges()).toMatchObject([
+      {
+        from: wallClockToUtcIso(nextWeek, '00:00', TZ),
+        to: wallClockToUtcIso(addWeeks(nextWeek, 1), '00:00', TZ),
+      },
+    ]);
+    expect(
+      utils.getByTestId(`schedule-agenda-week-loading-${nextWeek}`)
+    ).toBeTruthy();
+    expect(
+      utils.queryByTestId(`schedule-agenda-week-empty-${nextWeek}`)
+    ).toBeNull();
+    // The anchor week is still there above it.
+    expect(utils.getByTestId('schedule-shift-shift-anchor')).toBeTruthy();
+  });
+
+  it('renders the loaded page’s shifts under the anchor week', () => {
+    mockUseShiftsRanges.mockImplementation((_id, ranges) =>
+      ranges.map(() => ({
+        data: [makeShift({ id: 'shift-next', local_date: nextWeek })],
+        isLoading: false,
+        isError: false,
+        refetch: mock(() => Promise.resolve()),
+      }))
+    );
+    const utils = renderAgenda();
+    fireEvent.press(utils.getByTestId('schedule-agenda-load-later'));
+
+    expect(utils.getByTestId('schedule-shift-shift-next')).toBeTruthy();
+    expect(utils.getByTestId('schedule-shift-shift-anchor')).toBeTruthy();
+  });
+
+  it('a failed page offers its own retry, and the rest of the agenda stays', () => {
+    const refetch = mock(() => Promise.resolve());
+    mockUseShiftsRanges.mockImplementation((_id, ranges) =>
+      ranges.map(() => ({
+        data: undefined,
+        isLoading: false,
+        isError: true,
+        refetch,
+      }))
+    );
+    const utils = renderAgenda();
+    fireEvent.press(utils.getByTestId('schedule-agenda-load-later'));
+
+    fireEvent.press(
+      utils.getByTestId(`schedule-agenda-week-error-${nextWeek}-button`)
+    );
+    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(utils.getByTestId('schedule-shift-shift-anchor')).toBeTruthy();
+    expect(utils.queryByTestId('schedule-shifts-empty')).toBeNull();
+    expect(utils.queryByTestId('schedule-shifts-error')).toBeNull();
+  });
+
+  it('loads the past week ABOVE the header when the reader reaches the top', () => {
+    mockUseShiftsRanges.mockImplementation((_id, ranges) =>
+      ranges.map(() => ({
+        data: [makeShift({ id: 'shift-past', local_date: lastWeek })],
+        isLoading: false,
+        isError: false,
+        refetch: mock(() => Promise.resolve()),
+      }))
+    );
+    const utils = renderAgenda();
+    // The global FlashList mock drops scroll props; drive the real callbacks.
+    const list = () =>
+      utils.UNSAFE_root.findAll(
+        node => typeof node.props.onScrollBeginDrag === 'function'
+      )[0];
+    // No earlier week is wired until the reader actually drags.
+    expect(list()?.props.onStartReached).toBeUndefined();
+    act(() => {
+      list()?.props.onScrollBeginDrag();
+    });
+    act(() => {
+      list()?.props.onStartReached();
+    });
+    utils.rerender(
+      <ScheduleShiftsScreen pattern={{ status: 'accepted' } as never} />
+    );
+
+    expect(lastRanges()).toMatchObject([
+      {
+        from: wallClockToUtcIso(lastWeek, '00:00', TZ),
+        to: wallClockToUtcIso(thisWeek, '00:00', TZ),
+      },
+    ]);
+    const json = JSON.stringify(utils.toJSON());
+    expect(json.indexOf('"schedule-shift-shift-past"')).toBeGreaterThan(-1);
+    expect(json.indexOf('"schedule-shift-shift-past"')).toBeLessThan(
+      json.indexOf('"schedule-lead"')
+    );
+  });
+
+  it('Week view fetches no extra pages', () => {
+    useCalendarViewStore
+      .getState()
+      .setView('parent', CALENDAR_VIEWS.WEEK_RIBBON);
+    renderAgenda();
+    expect(mockUseShiftsRanges).toHaveBeenCalled();
+    expect(lastRanges()).toEqual([]);
+  });
+
+  it('opens on the NOW block, and the Week arrows never move the Agenda', () => {
+    const listProps = (utils: ReturnType<typeof render>) =>
+      utils.UNSAFE_root.findAll(
+        node =>
+          node.props.testID === 'schedule-shifts-list' &&
+          Array.isArray(node.props.data)
+      )[0]?.props as {
+        data: { key: string }[];
+        initialScrollIndex?: number;
+      };
+    const utils = renderAgenda();
+    const opened = listProps(utils);
+    expect(opened.data[opened.initialScrollIndex ?? -1]?.key).toBe('hero');
+    expect(utils.getByTestId('schedule-agenda-now')).toBeTruthy();
+
+    // Page the Week grid forward, then come back to the Agenda.
+    fireEvent.press(utils.getByTestId('calendar-view-week_ribbon'));
+    fireEvent.press(utils.getByTestId('schedule-week-next'));
+    fireEvent.press(utils.getByTestId('calendar-view-agenda'));
+
+    const calls = mockUseShiftsRange.mock.calls;
+    expect(calls[calls.length - 1]?.[1]).toBe(
+      wallClockToUtcIso(thisWeek, '00:00', TZ)
+    );
+  });
+});
+
+describe('pinned controls (layout spec §9): Agenda one row [switcher · Today · + · gear]; Week adds the nav', () => {
+  function withShifts() {
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'parent',
+      status: 'onboarded',
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [makeShift({ id: 'shift-pinned' })],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+  }
+
+  afterEach(() => {
+    useCalendarViewStore.getState().reset();
+  });
+
+  it('Agenda: switcher, Today, + and the gear are pinned, in that order; no week arrows, no chip', () => {
+    withShifts();
+    const utils = render(<ScheduleShiftsScreen showBack={false} />);
+    const bar = utils.getByTestId('schedule-controls-bar');
+    const list = utils.getByTestId('schedule-shifts-list');
+
+    for (const id of [
+      'calendar-view-switcher',
+      'schedule-shifts-add-extra',
+      'header-settings',
+      'schedule-jump-today',
+    ]) {
+      expect(within(bar).getByTestId(id)).toBeTruthy();
+      expect(within(list).queryByTestId(id)).toBeNull();
+    }
+    for (const id of [
+      'schedule-week-prev',
+      'schedule-week-label',
+      'schedule-week-next',
+    ]) {
+      expect(utils.queryByTestId(id)).toBeNull();
+    }
+    const order = [
+      'calendar-view-switcher',
+      'schedule-jump-today',
+      'schedule-shifts-add-extra',
+      'header-settings',
+    ];
+    const json = JSON.stringify(utils.toJSON());
+    expect(
+      [...order].sort((a, b) => json.indexOf(`"${a}"`) - json.indexOf(`"${b}"`))
+    ).toEqual(order);
+    expect(utils.queryByTestId('schedule-cover-week-summary')).toBeNull();
+    // The hero (title, lead) still scrolls, as the NOW block.
+    expect(within(list).getByTestId('schedule-lead')).toBeTruthy();
+  });
+
+  it('"Today" asks the Agenda to scroll back to the NOW block', () => {
+    withShifts();
+    const utils = render(<ScheduleShiftsScreen />);
+    const nowRequest = () =>
+      utils.UNSAFE_root.findAll(
+        node => typeof node.props.nowRequest === 'number'
+      )[0]?.props.nowRequest;
+    const before = nowRequest();
+    fireEvent.press(utils.getByTestId('schedule-jump-today'));
+    expect(nowRequest()).toBe(before + 1);
+  });
+
+  it('Week: row 2 is the week nav; Add shift stays pinned in row 1; no "Today"', () => {
+    useCalendarViewStore
+      .getState()
+      .setView('parent', CALENDAR_VIEWS.WEEK_RIBBON);
+    withShifts();
+    const utils = render(<ScheduleShiftsScreen />);
+    const bar = utils.getByTestId('schedule-controls-bar');
+    const ribbon = utils.getByTestId('calendar-week-ribbon-view');
+
+    for (const id of [
+      'calendar-view-switcher',
+      'schedule-shifts-add-extra',
+      'schedule-week-prev',
+      'schedule-week-label',
+      'schedule-week-next',
+    ]) {
+      expect(within(bar).getByTestId(id)).toBeTruthy();
+      expect(within(ribbon).queryByTestId(id)).toBeNull();
+    }
+    expect(utils.queryByTestId('schedule-jump-today')).toBeNull();
+    expect(within(ribbon).getByTestId('schedule-lead')).toBeTruthy();
+  });
+
+  it('the empty state keeps the bar', () => {
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+    const utils = render(<ScheduleShiftsScreen />);
+
+    expect(utils.getByTestId('schedule-shifts-empty')).toBeTruthy();
+    expect(
+      within(utils.getByTestId('schedule-controls-bar')).getByTestId(
+        'calendar-view-switcher'
+      )
+    ).toBeTruthy();
+  });
+});
+
+describe('the week-summary chip is retired in every view (layout spec §9)', () => {
+  afterEach(() => {
+    mockUseHouseholdCommitments.mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      isError: false,
+    }));
+    useCalendarViewStore.getState().reset();
+  });
+
+  it.each([
+    ['Agenda', CALENDAR_VIEWS.AGENDA],
+    ['Week', CALENDAR_VIEWS.WEEK_RIBBON],
+  ])('%s: gaps this week, a plain banner, and no chip anywhere', (_label, view) => {
+    useCalendarViewStore.getState().setView('parent', view);
+    mockUseIsOnboarded.mockImplementation(() => ({
+      role: 'parent',
+      status: 'onboarded',
+    }));
+    mockUseShiftsRange.mockImplementation(() => ({
+      data: [makeShift({ id: 'shift-chip' })],
+      isLoading: false,
+      isError: false,
+      error: null,
+    }));
+    mockUseHouseholdCommitments.mockImplementation(() => ({
+      data: [makeCommitment()],
+      isLoading: false,
+      isError: false,
+    }));
+    const utils = render(
+      <ScheduleShiftsScreen
+        patternBanner={<View testID="test-banner" />}
+        pattern={{ status: 'accepted' } as never}
+      />
+    );
+
+    expect(utils.getByTestId('test-banner')).toBeTruthy();
+    expect(utils.queryByTestId('schedule-cover-week-summary')).toBeNull();
   });
 });

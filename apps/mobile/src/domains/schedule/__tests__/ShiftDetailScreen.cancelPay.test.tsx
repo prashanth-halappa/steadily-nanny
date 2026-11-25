@@ -198,6 +198,12 @@ beforeAll(async () => {
       isPending: false,
     }),
   }));
+  mock.module('@/src/hooks/mutations/useWithdrawCoverAsk', () => ({
+    useWithdrawCoverAsk: () => ({
+      mutateAsync: mock(() => Promise.resolve({})),
+      isPending: false,
+    }),
+  }));
   mock.module('@/src/hooks/mutations/useWithdrawChangeRequest', () => ({
     useWithdrawChangeRequest: () => ({
       mutateAsync: mock(() => Promise.resolve({})),

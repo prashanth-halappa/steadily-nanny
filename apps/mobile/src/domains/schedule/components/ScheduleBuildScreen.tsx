@@ -53,6 +53,14 @@
  *     until it does). Two recoveries are offered: retry the fetch, or
  *     abandon hydration and build the week by hand against the same draft.
  *
+ * CHANGE A PENDING WEEK (UX §2b): an optional `fromPatternId` prop (from
+ * SchedulePendingScreen's "Change it", which withdraws the pending pattern
+ * first) hydrates the days from that pattern through the same
+ * `useSchedulePattern` + `hydrateDraftPattern` path, but never seeds
+ * `patternId` — so Send creates a NEW pattern and the withdrawn one stays
+ * withdrawn. If that fetch fails there is nothing to resume, so it falls
+ * through to the care-hours prefill below instead of 'draft-error'.
+ *
  * CARE-HOURS PREFILL (P3.2): a fresh wizard (no `?patternId=`) opens on the
  * week the parent already stated as care hours rather than a hard-coded
  * 09:00-17:00 — `hydrateFromCommitments` (`../utils`, unit-tested) unions
@@ -144,12 +152,16 @@ interface ScheduleBuildScreenProps {
    * hydrate effect derives the carer from the draft pattern itself instead.
    */
   carerId?: string;
+  /** A withdrawn pending pattern to copy days from — never edited or reused; see CHANGE A PENDING WEEK in the header comment. Ignored when `patternId` is set. */
+  fromPatternId?: string;
 }
 
 export function ScheduleBuildScreen({
   patternId: resumePatternId,
   carerId,
+  fromPatternId: fromPatternIdProp,
 }: ScheduleBuildScreenProps = {}) {
+  const fromPatternId = resumePatternId ? undefined : fromPatternIdProp;
   const router = useRouter();
   const { t } = useTranslation('schedule');
   const { t: tCommon } = useTranslation('common');
@@ -170,7 +182,7 @@ export function ScheduleBuildScreen({
 
   const carers = useHouseholdCarers(householdId);
   const children = useChildren(householdId);
-  const existingPattern = useSchedulePattern(resumePatternId);
+  const existingPattern = useSchedulePattern(resumePatternId ?? fromPatternId);
   // P3.2: the care hours the parent already stated. Read-only — nothing here
   // is ever written back, and a commitment still never becomes a shift
   // (`docs/12-NEED-COVERAGE.md` §9). Not fetched at all when resuming a
@@ -200,7 +212,9 @@ export function ScheduleBuildScreen({
     resumePatternId
   );
   const [isSending, setIsSending] = useState(false);
-  const [hasHydratedDraft, setHasHydratedDraft] = useState(!resumePatternId);
+  const [hasHydratedDraft, setHasHydratedDraft] = useState(
+    !resumePatternId && !fromPatternId
+  );
   // P3.2: a resumed draft carries its own days, so the care-hours seed is
   // already "done" in that case and must never run over them.
   const [hasSeededCareHours, setHasSeededCareHours] = useState(
@@ -229,10 +243,15 @@ export function ScheduleBuildScreen({
   useEffect(() => {
     if (hasHydratedDraft) return;
     if (existingPattern.isError) {
-      setStep('draft-error');
+      // Nothing to resume for a copy: let the care-hours seed run instead.
+      if (fromPatternId) setHasHydratedDraft(true);
+      else setStep('draft-error');
       return;
     }
     if (!existingPattern.data) return;
+    // The copy's days are the truth; the care-hours seed must not run over
+    // them (or claim them in its disclosure note).
+    if (fromPatternId) setHasSeededCareHours(true);
     const hydrated = hydrateDraftPattern(existingPattern.data);
     if (hydrated.carerId) setSelectedCarerId(hydrated.carerId);
     if (hydrated.selectedDays.length > 0) {
@@ -242,7 +261,12 @@ export function ScheduleBuildScreen({
     setIntervalWeeks(hydrated.intervalWeeks);
     setStep('loading');
     setHasHydratedDraft(true);
-  }, [hasHydratedDraft, existingPattern.data, existingPattern.isError]);
+  }, [
+    hasHydratedDraft,
+    existingPattern.data,
+    existingPattern.isError,
+    fromPatternId,
+  ]);
 
   /** 'draft-error' recovery A: refetch the draft and re-enter the wizard. */
   const retryDraftLoad = () => {
@@ -272,6 +296,8 @@ export function ScheduleBuildScreen({
   // back to the ordinary hard-coded defaults instead.
   useEffect(() => {
     if (hasSeededCareHours || !householdId) return;
+    // Wait for a `fromPatternId` copy to hydrate (or fail) first.
+    if (!hasHydratedDraft) return;
     if (householdCommitments.isLoading) return;
     setHasSeededCareHours(true);
     const seeded = hydrateFromCommitments(householdCommitments.data ?? []);
@@ -294,6 +320,7 @@ export function ScheduleBuildScreen({
     setPrefilledFromCareHours(true);
   }, [
     hasSeededCareHours,
+    hasHydratedDraft,
     householdId,
     householdCommitments.isLoading,
     householdCommitments.data,
@@ -306,7 +333,7 @@ export function ScheduleBuildScreen({
   // straight to 'review' instead.
   useEffect(() => {
     if (step !== 'loading' || carers.isLoading) return;
-    if (resumePatternId && !hasHydratedDraft) return;
+    if (!hasHydratedDraft) return;
     // P3.2: decide only once the care-hours seed has resolved, or the wizard
     // opens on 'days' and then jumps to 'review' under the parent.
     if (!hasSeededCareHours) return;
@@ -330,7 +357,6 @@ export function ScheduleBuildScreen({
     step,
     carers.isLoading,
     carers.data,
-    resumePatternId,
     hasHydratedDraft,
     hasSeededCareHours,
     prefilledFromCareHours,

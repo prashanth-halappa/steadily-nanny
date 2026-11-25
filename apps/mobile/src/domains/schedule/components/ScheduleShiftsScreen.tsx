@@ -9,13 +9,25 @@
  * `MATERIALISATION_HORIZON_WEEKS` (shared-types — matches API
  * materialisation horizon); back at −104. Shares `WeekNavHeader` with Hours
  * so the two tabs cannot drift.
+ *
+ * The week offset names the ANCHOR week: the hero band, the summary chip and
+ * every empty/error/loading gate below speak about it, and the Week view
+ * shows it. The Agenda scrolls continuously around it — further week pages
+ * load above (`onStartReached`) and below (`onEndReached`) the anchor, each
+ * its own query with its own loading/error state. The arrows still work in
+ * Agenda as "jump to week": they move the anchor and the Agenda restarts
+ * there.
  */
 
 import type { FlashListRef } from '@shopify/flash-list';
 import { MATERIALISATION_HORIZON_WEEKS } from '@steadily-nanny/shared-types';
+import type { HouseholdClosure } from '@steadily-nanny/shared-types/schemas/availability.schema';
+import type { ChildCommitment } from '@steadily-nanny/shared-types/schemas/child.schema';
 import type { SchedulePattern } from '@steadily-nanny/shared-types/schemas/schedule.schema';
+import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { uncoveredKey } from '@steadily-nanny/shared-types/uncoveredCare';
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
+import { Plus } from 'lucide-react-native';
 import {
   type ReactNode,
   useCallback,
@@ -25,9 +37,10 @@ import {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { illustrations } from '@/assets/illustrations';
-import { SCREEN_CONTENT_STYLE, spacing } from '@/lib/design-tokens';
+import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
+import { Icon } from '@/lib/icons/iconWithClassName';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { ErrorState } from '@/src/components/custom/ErrorState';
 import { InlineRetry } from '@/src/components/custom/InlineRetry';
@@ -43,6 +56,7 @@ import { WeekNavHeader } from '@/src/components/ui/week-nav-header';
 import {
   type AgendaItem,
   AgendaView,
+  type AgendaWeek,
 } from '@/src/domains/schedule/components/AgendaView';
 import {
   CalendarViewSwitcher,
@@ -59,7 +73,9 @@ import {
 } from '@/src/domains/schedule/utils/shiftGrouping';
 import { timeOffCoversLocalDate } from '@/src/domains/schedule/utils/timeOffOverlap';
 import {
+  type AwaitingPattern,
   splitAwaiting,
+  type UncoveredWindowDisplay,
   withCauses,
 } from '@/src/domains/schedule/utils/uncoveredDisplay';
 import { computeUncoveredWeek } from '@/src/domains/schedule/utils/uncoveredWeek';
@@ -87,6 +103,7 @@ import {
   isShiftsRouteUnavailable,
   useShiftsRange,
 } from '@/src/hooks/queries/useShiftsRange';
+import { useShiftsRanges } from '@/src/hooks/queries/useShiftsRanges';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
 import { useWeekTimeEntries } from '@/src/hooks/queries/useWeekTimeEntries';
 import { useDeepLinkHousehold } from '@/src/hooks/useDeepLinkHousehold';
@@ -97,17 +114,74 @@ import { parseDateOnlyLocal } from '@/src/utils/parseDateOnlyLocal';
 const MAX_WEEKS_BACK = 104;
 const MAX_WEEKS_FORWARD = MATERIALISATION_HORIZON_WEEKS;
 
+type CoverDays = {
+  byDay: Record<string, UncoveredWindowDisplay[]>;
+  awaitingByDay: Record<string, UncoveredWindowDisplay[]>;
+  totalCount: number;
+  awaitingCount: number;
+};
+
+const NO_COVER: CoverDays = {
+  byDay: {},
+  awaitingByDay: {},
+  totalCount: 0,
+  awaitingCount: 0,
+};
+
+/**
+ * `byDay`/`totalCount` are the UNBOOKED pieces only — the summary count,
+ * first-gap jump and empty-state fold all speak about those. The slices a
+ * pending ask covers drop out (a partial ask leaves its edges unbooked);
+ * pending-PATTERN slices go to `awaitingByDay` and render as Pending, while
+ * a pending SHIFT's slice is shown by the shift itself. Display only: the
+ * server alarm still counts the whole window (S1).
+ */
+function buildCoverDays(args: {
+  dates: readonly string[];
+  timeZone: string;
+  commitments: readonly ChildCommitment[];
+  shifts: readonly Shift[];
+  closures: readonly HouseholdClosure[];
+  pendingPattern: AwaitingPattern | null;
+}): CoverDays {
+  const shifts = [...args.shifts];
+  const raw = computeUncoveredWeek({
+    weekDates: args.dates,
+    timezone: args.timeZone,
+    commitments: args.commitments,
+    shifts,
+    closures: args.closures,
+  });
+  const result: CoverDays = {
+    byDay: {},
+    awaitingByDay: {},
+    totalCount: 0,
+    awaitingCount: 0,
+  };
+  for (const [date, windows] of Object.entries(raw.byDay)) {
+    const { unbooked, awaiting } = splitAwaiting({
+      windows,
+      localDate: date,
+      timezone: args.timeZone,
+      commitments: args.commitments,
+      shifts: shifts.filter(shift => shift.local_date === date),
+      closures: args.closures,
+      pendingPattern: args.pendingPattern,
+    });
+    result.byDay[date] = withCauses(unbooked, shifts);
+    result.awaitingByDay[date] = withCauses(awaiting, shifts);
+    result.totalCount += unbooked.length;
+    result.awaitingCount += awaiting.length;
+  }
+  return result;
+}
+
 type ScheduleShiftsScreenProps = {
   /** When false, omits the back affordance (Schedule tab root). */
   showBack?: boolean;
-  /** Optional banner above the week nav (accepted-pattern context for parents). */
-  /**
-   * Rendered above the calendar. Takes this week's uncovered-count node so the
-   * caller can fold it INTO the banner card it owns (one cause, its
-   * consequence, one action) rather than leaving it as a second pill beside
-   * it.
-   */
-  patternBanner?: (coverSummary: ReactNode) => ReactNode;
+  /** The usual-week banner(s), rendered in the scrolling header (the NOW
+   * block in the Agenda, the top of the grid in Week/Rhythm). */
+  patternBanner?: ReactNode;
   /**
    * The household's active (non-ended) schedule pattern, if any — fetched
    * by the tab route for the banner and passed down here too, purely to
@@ -157,7 +231,15 @@ export function ScheduleShiftsScreen({
     typeof params.localDate === 'string' && params.localDate.length > 0
       ? params.localDate
       : null;
+  // Week / Rhythm only (layout spec §7.2): the arrows page the one-week
+  // grid. The Agenda always anchors on the CURRENT week and moves by
+  // scrolling, so it reads offset 0 regardless.
   const [weekOffset, setWeekOffset] = useState(0);
+  const isAgenda = calendarView === CALENDAR_VIEWS.AGENDA;
+  const anchorOffset = isAgenda ? 0 : weekOffset;
+  // Agenda week pages loaded before/after the current week.
+  const [agendaPages, setAgendaPages] = useState({ before: 0, after: 0 });
+  const [nowRequest, setNowRequest] = useState(0);
   const agendaListRef = useRef<FlashListRef<AgendaItem> | null>(null);
   const [scrollToUncoveredKey, setScrollToUncoveredKey] = useState<
     string | null
@@ -184,8 +266,8 @@ export function ScheduleShiftsScreen({
     [timeZone, weekStartsOn]
   );
   const weekStartISO = useMemo(
-    () => addWeeks(currentWeekStartISO, weekOffset),
-    [currentWeekStartISO, weekOffset]
+    () => addWeeks(currentWeekStartISO, anchorOffset),
+    [currentWeekStartISO, anchorOffset]
   );
   const weekDates = useMemo(() => getWeekDates(weekStartISO), [weekStartISO]);
   const weekRangeLabel = useMemo(
@@ -313,65 +395,126 @@ export function ScheduleShiftsScreen({
     [carerList, coveringShifts, t]
   );
   const pendingPattern = pendingPatternQuery.data ?? null;
-  // `byDay`/`totalCount` are the UNBOOKED pieces only — the summary count,
-  // first-gap jump and empty-state fold all speak about those. The slices a
-  // pending ask covers drop out (a partial ask leaves its edges unbooked);
-  // pending-PATTERN slices go to `awaitingByDay` and render as Pending, while
-  // a pending SHIFT's slice is shown by the shift itself. Display only: the
-  // server alarm still counts the whole window (S1).
-  const uncoveredWeek = useMemo(() => {
-    if (!canViewCover) {
-      return {
-        byDay: {} as Record<string, never[]>,
-        awaitingByDay: {} as Record<string, never[]>,
-        totalCount: 0,
-        awaitingCount: 0,
-      };
-    }
-    const raw = computeUncoveredWeek({
+  const uncoveredWeek = useMemo(
+    () =>
+      canViewCover
+        ? buildCoverDays({
+            dates: weekDates,
+            timeZone,
+            commitments: commitmentsQuery.data ?? [],
+            shifts,
+            closures: closuresQuery.data ?? [],
+            pendingPattern,
+          })
+        : NO_COVER,
+    [
+      canViewCover,
       weekDates,
-      timezone: timeZone,
-      commitments: commitmentsQuery.data ?? [],
+      timeZone,
+      commitmentsQuery.data,
       shifts,
-      closures: closuresQuery.data ?? [],
-    });
-    const byDay: Record<string, ReturnType<typeof withCauses>> = {};
-    const awaitingByDay: Record<string, ReturnType<typeof withCauses>> = {};
-    let totalCount = 0;
-    let awaitingCount = 0;
-    for (const [date, windows] of Object.entries(raw.byDay)) {
-      const { unbooked, awaiting } = splitAwaiting({
-        windows,
-        localDate: date,
-        timezone: timeZone,
-        commitments: commitmentsQuery.data ?? [],
-        shifts: shifts.filter(shift => shift.local_date === date),
-        closures: closuresQuery.data ?? [],
-        pendingPattern,
+      closuresQuery.data,
+      pendingPattern,
+    ]
+  );
+
+  // ---- Continuous Agenda: week pages around the anchor week ----
+  const extraPages = useMemo(() => {
+    const pages: { weekStart: string; from: string; to: string }[] = [];
+    for (let k = -agendaPages.before; k <= agendaPages.after; k++) {
+      if (k === 0) continue;
+      const pageStart = addWeeks(weekStartISO, k);
+      pages.push({
+        weekStart: pageStart,
+        from: wallClockToUtcIso(pageStart, '00:00', timeZone),
+        to: wallClockToUtcIso(addWeeks(pageStart, 1), '00:00', timeZone),
       });
-      byDay[date] = withCauses(unbooked, shifts);
-      awaitingByDay[date] = withCauses(awaiting, shifts);
-      totalCount += unbooked.length;
-      awaitingCount += awaiting.length;
     }
-    return { byDay, awaitingByDay, totalCount, awaitingCount };
+    return pages;
+  }, [agendaPages.before, agendaPages.after, weekStartISO, timeZone]);
+  const activeExtraPages = isAgenda ? extraPages : [];
+  const extraQueries = useShiftsRanges(
+    activeHousehold.householdId,
+    activeExtraPages
+  );
+  // The anchor week comes from `shiftsQuery`; the screen gates below only
+  // mount the Agenda once it has loaded, so it is always `ready` here.
+  const agendaWeeks: AgendaWeek[] = useMemo(() => {
+    const extra = activeExtraPages.map((page, i): AgendaWeek => {
+      const query = extraQueries[i];
+      return {
+        weekStart: page.weekStart,
+        dates: getWeekDates(page.weekStart),
+        // `data` decides, not `isLoading`: a query that hasn't run yet has
+        // neither, and must not render as a loaded, empty week.
+        status: query?.data ? 'ready' : query?.isError ? 'error' : 'loading',
+        onRetry: () => {
+          void query?.refetch();
+        },
+      };
+    });
+    return [
+      ...extra.filter(week => week.weekStart < weekStartISO),
+      { weekStart: weekStartISO, dates: weekDates, status: 'ready' },
+      ...extra.filter(week => week.weekStart > weekStartISO),
+    ];
+  }, [activeExtraPages, extraQueries, weekStartISO, weekDates]);
+  const agendaShifts = useMemo(() => {
+    const byId = new Map(shifts.map(shift => [shift.id, shift]));
+    for (const query of extraQueries) {
+      for (const shift of query.data ?? []) {
+        byId.set(shift.id, shift);
+      }
+    }
+    return [...byId.values()];
+  }, [shifts, extraQueries]);
+  const agendaCover = useMemo(() => {
+    if (!canViewCover || activeExtraPages.length === 0) {
+      return uncoveredWeek;
+    }
+    // ponytail: recomputes every loaded week on each page load — fine for
+    // the tens of weeks a reader scrolls; memoise per week if it ever shows.
+    return buildCoverDays({
+      dates: agendaWeeks
+        .filter(week => week.status === 'ready')
+        .flatMap(week => week.dates),
+      timeZone,
+      commitments: commitmentsQuery.data ?? [],
+      shifts: agendaShifts,
+      closures: closuresQuery.data ?? [],
+      pendingPattern,
+    });
   }, [
     canViewCover,
-    weekDates,
+    activeExtraPages.length,
+    uncoveredWeek,
+    agendaWeeks,
     timeZone,
     commitmentsQuery.data,
-    shifts,
+    agendaShifts,
     closuresQuery.data,
     pendingPattern,
   ]);
+  const firstPage = agendaWeeks[0];
+  const lastPage = agendaWeeks[agendaWeeks.length - 1];
+  const canLoadEarlier =
+    agendaPages.before < MAX_WEEKS_BACK && firstPage?.status === 'ready';
+  const canLoadLater =
+    agendaPages.after < MAX_WEEKS_FORWARD && lastPage?.status === 'ready';
+  const loadEarlier = useCallback(() => {
+    setAgendaPages(p => ({ ...p, before: p.before + 1 }));
+  }, []);
+  const loadLater = useCallback(() => {
+    setAgendaPages(p => ({ ...p, after: p.after + 1 }));
+  }, []);
 
   const focusUncoveredKey = useMemo(() => {
     if (!arrivalLocalDate || !focusUncovered) {
       return null;
     }
-    const first = uncoveredWeek.byDay[arrivalLocalDate]?.[0];
+    const first = agendaCover.byDay[arrivalLocalDate]?.[0];
     return first ? uncoveredKey(first) : null;
-  }, [arrivalLocalDate, focusUncovered, uncoveredWeek.byDay]);
+  }, [arrivalLocalDate, focusUncovered, agendaCover.byDay]);
 
   useEffect(() => {
     if (!arrivalLocalDate || !focusUncovered) {
@@ -384,6 +527,15 @@ export function ScheduleShiftsScreen({
     );
     const offset = weeksBetween(currentWeekStartISO, targetWeekStart);
     setWeekOffset(offset);
+    // The Agenda stays anchored on the current week; load out to the
+    // target week so its gap is in the list to jump to.
+    setAgendaPages(p =>
+      offset < -p.before
+        ? { ...p, before: Math.min(-offset, MAX_WEEKS_BACK) }
+        : offset > p.after
+          ? { ...p, after: Math.min(offset, MAX_WEEKS_FORWARD) }
+          : p
+    );
     if (calendarView !== CALENDAR_VIEWS.AGENDA) {
       setCalendarView(CALENDAR_VIEWS.AGENDA);
     }
@@ -401,15 +553,6 @@ export function ScheduleShiftsScreen({
     focusUncoveredKey,
   ]);
 
-  const firstUncoveredKey = useMemo(() => {
-    for (const date of weekDates) {
-      const first = uncoveredWeek.byDay[date]?.[0];
-      if (first) {
-        return uncoveredKey(first);
-      }
-    }
-    return null;
-  }, [weekDates, uncoveredWeek.byDay]);
   const weekHasAway = useMemo(
     () =>
       timeOff.some(row =>
@@ -447,34 +590,6 @@ export function ScheduleShiftsScreen({
   // to show their Pending rows — same P0 contradiction otherwise.
   const hasAwaitingForViewer = canViewCover && uncoveredWeek.awaitingCount > 0;
 
-  /**
-   * This week's uncovered count, as a node the pattern banner can fold into
-   * its own card (see `patternBanner`). Still tappable, and still jumps to the
-   * first gap — the complaint was never that it was interactive, it was that a
-   * warning-toned pill beside the banner wore the same skin as this screen's
-   * non-interactive status labels and so read as a second telling of the
-   * banner's own alarm.
-   */
-  const coverSummary = hasUncoveredForViewer ? (
-    <Pressable
-      testID="schedule-cover-week-summary"
-      accessibilityRole="button"
-      className="self-start flex-row items-center rounded-row border-1.5 border-border-strong px-4 py-2.5"
-      style={{ minHeight: spacing.minTouchTarget }}
-      onPress={() => {
-        if (firstUncoveredKey) {
-          setScrollToUncoveredKey(firstUncoveredKey);
-        }
-        if (calendarView !== CALENDAR_VIEWS.AGENDA) {
-          setCalendarView(CALENDAR_VIEWS.AGENDA);
-        }
-      }}
-    >
-      <Small weight="medium">
-        {t('cover.weekSummaryTitle', { count: uncoveredWeek.totalCount })}
-      </Small>
-    </Pressable>
-  ) : null;
   const showEmpty =
     !isLoading &&
     !showUnavailable &&
@@ -567,7 +682,8 @@ export function ScheduleShiftsScreen({
       style={{
         gap: 8,
         paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
-        paddingTop: SCREEN_CONTENT_STYLE.padding,
+        // The pinned bar above already carries the top inset.
+        paddingTop: 8,
         paddingBottom: 8,
       }}
     >
@@ -629,9 +745,6 @@ export function ScheduleShiftsScreen({
             </Small>
           ) : null}
         </View>
-        {/* Tab-root only: Settings is reached from the header now (WP-C),
-            and the pushed variant above already has its own back button. */}
-        {showBack ? null : <SettingsHeaderButton />}
       </View>
       {/* S11: a nanny had no pattern-level surface at all — this is the one
           link into her read-only `NannyUsualWeekScreen` from her Schedule
@@ -652,7 +765,7 @@ export function ScheduleShiftsScreen({
           {t('shifts.usualWeekLink')}
         </Button>
       ) : null}
-      {patternBanner ? patternBanner(coverSummary) : coverSummary}
+      {patternBanner ?? null}
       {coverInputsFailed ? (
         <InlineRetry
           testID="schedule-cover-retry"
@@ -666,10 +779,64 @@ export function ScheduleShiftsScreen({
           }}
         />
       ) : null}
-      {/* A 16px gap (double the 8px used above) separates the hero band from
-          week navigation + view switching — the header visibly ends before
-          this section begins (Rule H). */}
-      <View style={{ gap: 8, marginTop: 8 }}>
+    </View>
+  );
+  // Pinned above every scroller (and above the stacked header in the
+  // non-scrolling states). Layout spec §9: in the Agenda ONE row, in fixed
+  // order — switcher (flex-1) · Today · + · gear (~78pt). Week / Rhythm drop
+  // Today and add the week nav as row 2 (its label matches the one week on
+  // screen by construction). The Agenda has NO pinned week label — its
+  // in-list week dividers name the rows beside them. No gap count here
+  // either: Today's coverage surface counts gaps, and on this screen the
+  // amber cards are the count.
+  const controlsBar = (
+    <View
+      testID="schedule-controls-bar"
+      style={{
+        gap: 8,
+        paddingHorizontal: SCREEN_CONTENT_STYLE.padding,
+        paddingTop: SCREEN_CONTENT_STYLE.padding,
+        paddingBottom: 8,
+      }}
+    >
+      <View className="flex-row items-center gap-2">
+        <View className="flex-1">
+          <CalendarViewSwitcher
+            value={calendarView}
+            onChange={setCalendarView}
+          />
+        </View>
+        {isAgenda ? (
+          // Always rendered (never toggled by scroll position), so the
+          // switcher never changes width mid-scroll.
+          <Button
+            testID="schedule-jump-today"
+            variant="ghost"
+            size="sm"
+            onPress={() => setNowRequest(n => n + 1)}
+          >
+            {t('shifts.jumpToday')}
+          </Button>
+        ) : null}
+        {canAddExtra ? (
+          // Icon-only: four items don't fit at 375pt with a text label. The
+          // full phrase is its accessible name.
+          <Button
+            testID="schedule-shifts-add-extra"
+            variant="secondary"
+            size="icon"
+            accessibilityLabel={t('shifts.addExtra')}
+            onPress={() =>
+              router.push('/(private)/schedule/shifts/extra' as Href)
+            }
+          >
+            <Icon icon={Plus} size={20} className="text-foreground" />
+          </Button>
+        ) : null}
+        {/* Tab-root only: the pushed variant has its own back button. */}
+        {showBack ? null : <SettingsHeaderButton />}
+      </View>
+      {isAgenda ? null : (
         <WeekNavHeader
           label={weekRangeLabel}
           onPreviousWeek={handlePreviousWeek}
@@ -682,28 +849,7 @@ export function ScheduleShiftsScreen({
           nextTestID="schedule-week-next"
           labelTestID="schedule-week-label"
         />
-        <CalendarViewSwitcher value={calendarView} onChange={setCalendarView} />
-        {canAddExtra ? (
-          // Was a `Small semibold text-primary` pressable beside the H1 —
-          // the highest-status slot on the screen, holding the lesser of the
-          // two acts a parent takes here (the greater one is the usual week,
-          // which the banner above owns). `docs/design/screens-schedule.md`
-          // §2 puts this in the FOOTER — it sits at the end of the shared
-          // header instead because a real list footer needs a `listFooter`
-          // prop on AgendaView / WeekRibbonView / CrossFamilyRhythmView, and
-          // the three of them own their own scrollers. Move it when that
-          // prop exists.
-          <Button
-            testID="schedule-shifts-add-extra"
-            variant="secondary"
-            onPress={() =>
-              router.push('/(private)/schedule/shifts/extra' as Href)
-            }
-          >
-            {t('shifts.addExtra')}
-          </Button>
-        ) : null}
-      </View>
+      )}
     </View>
   );
   // Agenda's FlashList has no horizontal padding of its own; the two
@@ -731,6 +877,7 @@ export function ScheduleShiftsScreen({
       className="bg-background"
     >
       <ScreenWash testID="schedule-screen-wash" kind="brand" />
+      {controlsBar}
       {/* Only the states that render no scroller keep the header stacked. */}
       {showContent || showCrossFamily ? null : header}
 
@@ -802,16 +949,22 @@ export function ScheduleShiftsScreen({
       {showContent && calendarView === CALENDAR_VIEWS.AGENDA ? (
         <AgendaView
           listRef={agendaListRef}
-          shifts={shifts}
+          shifts={agendaShifts}
+          weeks={agendaWeeks}
+          heroWeekStart={weekStartISO}
+          onLoadEarlier={canLoadEarlier ? loadEarlier : undefined}
+          onLoadLater={canLoadLater ? loadLater : undefined}
           displayTimeZone={timeZone}
           timeOff={timeOff}
           householdTimeZone={timeZone}
-          weekDates={weekDates}
           householdId={activeHousehold.householdId}
-          uncoveredByDay={canViewCover ? uncoveredWeek.byDay : undefined}
-          awaitingByDay={canViewCover ? uncoveredWeek.awaitingByDay : undefined}
+          uncoveredByDay={canViewCover ? agendaCover.byDay : undefined}
+          awaitingByDay={canViewCover ? agendaCover.awaitingByDay : undefined}
           showUncoveredActions={canEditCover}
           focusUncoveredKey={scrollToUncoveredKey ?? focusUncoveredKey}
+          nowRequest={nowRequest}
+          commitments={canViewCover ? commitmentsQuery.data : undefined}
+          pendingPattern={pendingPattern}
           listHeader={header}
           runningShiftIds={runningShiftIds}
         />

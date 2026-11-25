@@ -85,6 +85,14 @@ appId: com.jetto.steadily.nanny
           visible:
             id: 'calendar-agenda-view'
           timeout: 8000
+# The Agenda opens scrolled to today; the header sits above it. Back to the
+# real top first (lead line, or its read-only twin for a past member).
+- scrollUntilVisible:
+    element:
+      id: 'schedule-lead|schedule-header-read-only'
+    direction: UP
+    timeout: 10000
+    optional: true
 - takeScreenshot: ${OUT}/${ROLE}-2-schedule-a-top
 - scroll
 - waitForAnimationToEnd

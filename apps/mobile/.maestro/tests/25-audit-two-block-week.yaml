@@ -58,18 +58,14 @@ tags:
 - takeScreenshot: 25-e-accepted
 
 # === E: the agenda shows TWO Monday shifts (07:00-13:00, 15:00-18:00) =====
-- extendedWaitUntil:
-    visible:
-      id: 'schedule-week-next'
-    timeout: 15000
-- tapOn:
-    id: 'schedule-week-next'
-- waitForAnimationToEnd
+# The Agenda has no week arrows any more (layout spec §7.2): next week's
+# Monday is reached by scrolling the continuous list, which loads the next
+# week as it nears the end — hence the longer timeout.
 - scrollUntilVisible:
     element:
       text: '7:00.AM.–.1:00.PM'
     direction: DOWN
-    timeout: 15000
+    timeout: 30000
 - scrollUntilVisible:
     element:
       text: '3:00.PM.–.6:00.PM'

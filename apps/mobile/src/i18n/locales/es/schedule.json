@@ -118,7 +118,11 @@
     "sentAgo_one": "Enviado hace {{count}} día",
     "sentAgo_other": "Enviado hace {{count}} días",
     "statusEnded": "Terminada",
-    "setNewWeekCta": "Configura un nuevo horario habitual"
+    "setNewWeekCta": "Configura un nuevo horario habitual",
+    "changePending": "Cambiarla",
+    "changePendingConfirmTitle": "¿Retirarla y hacer cambios?",
+    "changePendingConfirmBody": "{{name}} ya no podrá responder a esta versión. Empezarás con los mismos días, cambiarás lo que necesites y la volverás a enviar.",
+    "changePendingConfirmConfirm": "Retirar y cambiar"
   },
   "respond": {
     "screenTitle": "Revisa tu semana",
@@ -190,12 +194,17 @@
     "statusCompleted": "Completado",
     "shortNotice": "Última hora",
     "timeOffConflict": "Se solapa con tiempo libre",
+    "weekEmpty": "{{range}} · nada programado",
+    "weekLoading": "Cargando {{range}}",
+    "weekLoadFailed": "No se pudo cargar {{range}}.",
+    "showNextWeek": "Mostrar la semana siguiente",
     "awayBand": "Ausente",
     "awaySummary": "Tu cuidador tiene tiempo libre esta semana — mira Agenda para los detalles.",
     "awaySummaryNanny": "Tienes tiempo libre esta semana — mira Agenda para los detalles.",
     "axisTime": "Hora",
     "legendMultiCarer": "Toca un bloque para ver quién lo cubre.",
-    "usualWeekLink": "Tu horario habitual"
+    "usualWeekLink": "Tu horario habitual",
+    "jumpToday": "Hoy"
   },
   "clash": {
     "busyOverlap": "Esto se solapa con otro compromiso — aún puedes continuar.",
@@ -265,7 +274,8 @@
     "childrenEmptyParent": "Sin especificar todavía.",
     "editConsentNote": "Ambos acordasteis estos horarios. Guardar un cambio se lo comunica a {{name}}.",
     "timeZoneNote": "Horas mostradas en {{zone}}.",
-    "roleResolving": "Comprobando qué puedes hacer en esta familia."
+    "roleResolving": "Comprobando qué puedes hacer en esta familia.",
+    "askEditNote": "{{name}} todavía no ha respondido a esta solicitud. Para cambiar el horario, envía una nueva."
   },
   "change": {
     "requestedToast": "Cambio solicitado",
@@ -364,8 +374,6 @@
     "expired": "Caducado"
   },
   "cover": {
-    "weekSummaryTitle_one": "¿Quién cubre 1 turno esta semana?",
-    "weekSummaryTitle_other": "¿Quién cubre {{count}} turnos esta semana?",
     "rowPill": "Aún sin reservar",
     "rowPillPending": "Pendiente",
     "rowMeta": "{{childName}} · {{cause}}",
@@ -389,6 +397,7 @@
     "coveringToast": "Marcado como cubierto por ti",
     "undoneToast": "Quitado: ese rato vuelve a estar sin cubrir.",
     "hoursWrong": "Cambiar nuestras horas de cuidado",
+    "explainer": "Marcaste estas horas de cuidado y todavía nadie las ha reservado. Pedirlo abre una solicitud y no se envía nada hasta que la envíes. Si te encargas tú, no se avisa a nadie, salvo que la tarjeta diga a quién.",
     "allCovered": "Todo lo que pediste está reservado.",
     "cause": {
       "cancelled": "Se canceló un turno",
@@ -406,14 +415,23 @@
       "declined": "{{start}} – {{end}} sigue sin cubrir. {{carerName}} no puede cubrir este turno.",
       "expired": "{{start}} – {{end}} sigue sin cubrir. La solicitud a {{carerName}} venció el {{expiredDay}}."
     },
-    "loadFailed": "No pudimos cargar las horas de cuidado de esta familia, así que la cobertura de esta semana es desconocida."
+    "loadFailed": "No pudimos cargar las horas de cuidado de esta familia, así que la cobertura de esta semana es desconocida.",
+    "changeAsk": "Cambiar la solicitud",
+    "changeAskHint": "Al enviarla se retira tu solicitud anterior de {{start}} – {{end}}. {{carerName}} recibe la nueva.",
+    "awaitingLine": "Forma parte de la semana habitual que enviaste. Esperando respuesta.",
+    "awaitingSee": "Ver la semana habitual",
+    "slice": {
+      "heading": "El resto de {{start}} – {{end}}",
+      "asked": "{{start}} – {{end}} · se lo pediste a {{carerName}}",
+      "askedNoName": "{{start}} – {{end}} · pedido",
+      "booked": "{{start}} – {{end}} · con {{carerName}}",
+      "bookedNoName": "{{start}} – {{end}} · reservado",
+      "parentCover": "{{start}} – {{end}} · te encargas tú"
+    }
   },
   "recipient": {
-    "askCover": "Abre una solicitud. No se envía nada hasta que la envíes.",
     "sendExtra": "{{name}} recibe la solicitud y puede aceptarla o rechazarla.",
-    "parentCover": "Marca estas horas como cubiertas por ti. No se avisa a nadie.",
-    "parentCoverAdjacent": "Marca estas horas como cubiertas por ti. Se avisa a {{name}} de que su día sigue empezando a las {{time}}.",
-    "careHours": "Abre tus horas de cuidado en ajustes. No se avisa a nadie."
+    "parentCoverAdjacent": "Se avisa a {{name}} de que su día sigue empezando a las {{time}}."
   },
   "lead": {
     "nanny_one": "{{count}} turno esta semana.",

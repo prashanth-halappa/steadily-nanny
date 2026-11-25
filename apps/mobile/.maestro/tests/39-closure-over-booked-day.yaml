@@ -190,10 +190,13 @@ tags:
     timeout: 15000
 # THE CAUSE-COPY FINDING. `cover.cause.closureRemoved` ("Your away dates
 # changed") is what the header above documents as unreachable client-side —
-# what actually renders is the generic `cover.cause.nothingScheduled` line,
-# identical to a need window that was never covered by anything. If this
+# the resolver falls back to the generic `cover.cause.nothingScheduled`,
+# identical to a need window that was never covered by anything. Since
+# 2026-11-25 ("say it once", ux-schedule spec §4) the card renders NO cause
+# line for that generic cause — it lives once in `schedule-uncovered-explainer`
+# — so the finding is now asserted as the specific copy's absence. If this
 # assertion ever starts failing because `closureRemoved` DOES appear, that
 # is `inferUncoveredCauseDetail` having grown the missing branch — a real
 # improvement, and this flow (and its header) should be updated to match.
-- assertVisible: "You set these as care hours. Nobody's booked yet."
+- assertNotVisible: 'Your away dates changed'
 - takeScreenshot: ${OUT}/s5-39-h-agenda-cause-after-removal

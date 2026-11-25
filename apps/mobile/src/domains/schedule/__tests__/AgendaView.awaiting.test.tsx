@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { uncoveredKey } from '@steadily-nanny/shared-types/uncoveredCare';
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import type { UncoveredWindowDisplay } from '@/src/domains/schedule/utils/uncoveredDisplay';
 
 const HOUSEHOLD_ID = '11111111-1111-4111-8111-111111111111';
@@ -46,6 +46,7 @@ function interpolate(template: string, vars?: Record<string, unknown>): string {
   );
 }
 
+const mockPush = mock();
 const mockUseHouseholdMembers = mock((): { data: unknown[] } => ({ data: [] }));
 const mockUseHouseholdCarers = mock((): { data: unknown[] } => ({ data: [] }));
 
@@ -64,7 +65,7 @@ beforeAll(async () => {
     initReactI18next: { type: '3rdParty', init: mock() },
   }));
   mock.module('expo-router', () => ({
-    useRouter: () => ({ push: () => {} }),
+    useRouter: () => ({ push: mockPush }),
     router: { push: () => {}, replace: () => {}, back: () => {} },
   }));
   mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
@@ -164,7 +165,7 @@ function makeShift(overrides: Partial<Shift> = {}): Shift {
   } as Shift;
 }
 
-function renderAwaiting(shifts: Shift[]) {
+function renderAwaiting(shifts: Shift[], showUncoveredActions = true) {
   const window = makeUncoveredWindow('nothingScheduled');
   mockUseHouseholdCarers.mockImplementation(() => ({
     data: [nannyMember(NANNY_ID, 'Maria Lopez')],
@@ -180,7 +181,7 @@ function renderAwaiting(shifts: Shift[]) {
       weekDates={[LOCAL_DATE]}
       uncoveredByDay={{ [LOCAL_DATE]: [] }}
       awaitingByDay={{ [LOCAL_DATE]: [window] }}
-      showUncoveredActions
+      showUncoveredActions={showUncoveredActions}
     />
   );
   return { ...utils, key: uncoveredKey(window) };
@@ -211,5 +212,24 @@ describe('AgendaView awaiting windows', () => {
     expect(getByTestId('schedule-shift-shift-pending')).toBeTruthy();
     expect(queryByTestId(`schedule-awaiting-${key}`)).toBeNull();
     expect(queryByTestId(`schedule-uncovered-${key}`)).toBeNull();
+  });
+
+  it('says which ask it is part of and links to the usual week (layout spec §2b)', () => {
+    mockPush.mockClear();
+    const { getByTestId, key } = renderAwaiting([]);
+
+    expect(getByTestId(`schedule-awaiting-${key}-line`).props.children).toBe(
+      getNested(scheduleEn, 'cover.awaitingLine')
+    );
+    fireEvent.press(getByTestId(`schedule-awaiting-${key}-see`));
+    expect(mockPush).toHaveBeenCalledWith('/(private)/schedule/usual-week');
+  });
+
+  it('no line and no link for a viewer who cannot act', () => {
+    const { queryByTestId, getByTestId, key } = renderAwaiting([], false);
+
+    expect(getByTestId(`schedule-awaiting-${key}`)).toBeTruthy();
+    expect(queryByTestId(`schedule-awaiting-${key}-line`)).toBeNull();
+    expect(queryByTestId(`schedule-awaiting-${key}-see`)).toBeNull();
   });
 });

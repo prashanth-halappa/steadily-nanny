@@ -141,104 +141,64 @@ function makeUncoveredWindow(
   };
 }
 
-describe('WeekRibbonView cell tiers (P1)', () => {
-  it('REGRESSION: cancelled cell paints borderStrong #D2C5CD, distinct from the empty-cell rule', () => {
+describe('WeekRibbonView cell tiers (spec §1: shape + hue per state)', () => {
+  const cellAt9 = (shift: Shift) => {
     const { getByTestId } = render(
       <WeekRibbonView
-        shifts={[makeShift({ status: 'cancelled' })]}
+        shifts={[shift]}
         weekDates={WEEK_DATES}
         householdTimeZone="Europe/London"
       />
     );
-
-    const cell = StyleSheet.flatten(
+    return StyleSheet.flatten(
       getByTestId(`week-ribbon-cell-${MONDAY_DOW}-9`).props.style
     );
-    expect(cell.backgroundColor).toBe('#D2C5CD');
+  };
+
+  it('cancelled and declined are a gray[500] half-height (8) bar, no border', () => {
+    for (const status of ['cancelled', 'declined'] as const) {
+      const cell = cellAt9(makeShift({ status }));
+      expect(cell.backgroundColor).toBe('#7E7280'); // gray[500]
+      expect(cell.height).toBe(8);
+      expect(cell.borderWidth).toBe(0);
+    }
   });
 
-  it('declined cell gets the same borderStrong treatment as cancelled', () => {
-    const { getByTestId } = render(
-      <WeekRibbonView
-        shifts={[makeShift({ status: 'declined' })]}
-        weekDates={WEEK_DATES}
-        householdTimeZone="Europe/London"
-      />
+  it('REGRESSION: parent_cover is a 1.5px solid primary outline over washPlum, not primaryLight', () => {
+    const cell = cellAt9(
+      makeShift({ kind: 'parent_cover', status: 'confirmed' })
     );
-
-    const cell = StyleSheet.flatten(
-      getByTestId(`week-ribbon-cell-${MONDAY_DOW}-9`).props.style
-    );
-    expect(cell.backgroundColor).toBe('#D2C5CD');
-  });
-
-  it('REGRESSION: parent_cover paints primaryLight, distinct from the cancelled/declined grey', () => {
-    const { getByTestId } = render(
-      <WeekRibbonView
-        shifts={[makeShift({ kind: 'parent_cover', status: 'confirmed' })]}
-        weekDates={WEEK_DATES}
-        householdTimeZone="Europe/London"
-      />
-    );
-
-    const cell = StyleSheet.flatten(
-      getByTestId(`week-ribbon-cell-${MONDAY_DOW}-9`).props.style
-    );
-    expect(cell.backgroundColor).toBe('#7C5A7F'); // primaryLight
-    expect(cell.backgroundColor).not.toBe('#D2C5CD'); // borderStrong (cancelled)
+    expect(cell.backgroundColor).toBe('#DFD8DD'); // washPlum
+    expect(cell.backgroundColor).not.toBe('#7C5A7F'); // primaryLight
+    expect(cell.borderWidth).toBe(1.5);
+    expect(cell.borderStyle).toBe('solid');
+    expect(cell.borderColor).toBe('#5B3E5D'); // primary
     expect(cell.height).toBe(16);
   });
 
-  it('confirmed/completed paint solid primary at full opacity, full height', () => {
-    const { getByTestId } = render(
-      <WeekRibbonView
-        shifts={[makeShift({ status: 'confirmed' })]}
-        weekDates={WEEK_DATES}
-        householdTimeZone="Europe/London"
-      />
-    );
-
-    const cell = StyleSheet.flatten(
-      getByTestId(`week-ribbon-cell-${MONDAY_DOW}-9`).props.style
-    );
-    expect(cell.backgroundColor).toBe('#5B3E5D'); // primary
-    expect(cell.opacity).toBe(1);
-    expect(cell.height).toBe(16);
+  it('confirmed/completed are a solid primary capsule, full height, no translucency', () => {
+    for (const status of ['confirmed', 'completed'] as const) {
+      const cell = cellAt9(makeShift({ status }));
+      expect(cell.backgroundColor).toBe('#5B3E5D'); // primary
+      expect(cell.borderWidth).toBe(0);
+      expect(cell.opacity).toBeUndefined();
+      expect(cell.height).toBe(16);
+    }
   });
 
-  it('pending/draft paint the same primary hue as confirmed but at ~45% opacity', () => {
-    const { getByTestId } = render(
-      <WeekRibbonView
-        shifts={[makeShift({ status: 'pending' })]}
-        weekDates={WEEK_DATES}
-        householdTimeZone="Europe/London"
-      />
-    );
-
-    const cell = StyleSheet.flatten(
-      getByTestId(`week-ribbon-cell-${MONDAY_DOW}-9`).props.style
-    );
-    expect(cell.backgroundColor).toBe('#5B3E5D'); // primary
-    expect(cell.opacity).toBeCloseTo(0.45, 2);
-    expect(cell.height).toBe(16);
+  it('REGRESSION: pending/draft are a hollow 1.5px dashed warningStrong capsule, not plum@45%', () => {
+    for (const status of ['pending', 'draft'] as const) {
+      const cell = cellAt9(makeShift({ status }));
+      expect(cell.backgroundColor).toBe('transparent');
+      expect(cell.borderWidth).toBe(1.5);
+      expect(cell.borderStyle).toBe('dashed');
+      expect(cell.borderColor).toBe('#9C6E2E'); // warningStrong
+      expect(cell.opacity).toBeUndefined();
+      expect(cell.height).toBe(16);
+    }
   });
 
-  it('REGRESSION: cancelled/declined are drawn half-height (8px), spatially distinct from a live booking', () => {
-    const { getByTestId } = render(
-      <WeekRibbonView
-        shifts={[makeShift({ status: 'cancelled' })]}
-        weekDates={WEEK_DATES}
-        householdTimeZone="Europe/London"
-      />
-    );
-
-    const cell = StyleSheet.flatten(
-      getByTestId(`week-ribbon-cell-${MONDAY_DOW}-9`).props.style
-    );
-    expect(cell.height).toBe(8);
-  });
-
-  it('an empty cell renders a thin (~2px) rule instead of a full-height capsule', () => {
+  it('an empty cell is a 2px border rule, shorter than any occupied cell', () => {
     const { getByTestId } = render(
       <WeekRibbonView
         shifts={[makeShift({ status: 'confirmed' })]}
@@ -254,7 +214,9 @@ describe('WeekRibbonView cell tiers (P1)', () => {
     const empty = StyleSheet.flatten(
       getByTestId(`week-ribbon-cell-${MONDAY_DOW}-10`).props.style
     );
-    expect(empty.height).toBeLessThanOrEqual(2);
+    expect(empty.height).toBe(2);
+    expect(empty.backgroundColor).toBe('#E5DDE2'); // border
+    expect(empty.borderWidth).toBe(0);
     expect(occupied.height).toBeGreaterThan(empty.height as number);
   });
 });
@@ -317,7 +279,7 @@ describe('WeekRibbonView uncovered cells', () => {
     expect(getByText('cover.rowPill')).toBeTruthy();
   });
 
-  it('REGRESSION: uncovered is a solid warning-filled capsule, not a transparent red outline', () => {
+  it('REGRESSION: uncovered is a solid full-height warningStrong capsule, not an outline', () => {
     const { getByTestId } = render(
       <WeekRibbonView
         shifts={[]}
@@ -330,9 +292,11 @@ describe('WeekRibbonView uncovered cells', () => {
     const cell = StyleSheet.flatten(
       getByTestId(`week-ribbon-cell-${MONDAY_DOW}-9`).props.style
     );
-    expect(cell.backgroundColor).toBe('#C08A3E'); // warning
-    expect(cell.borderWidth ?? 0).toBe(0);
-    expect(cell.height).toBe(8);
+    // warningStrong, not warning: #C08A3E is only 2.7:1 on the ground.
+    expect(cell.backgroundColor).toBe('#9C6E2E');
+    expect(cell.borderWidth).toBe(0);
+    // Full height — the most important cell on the grid must not read as "less".
+    expect(cell.height).toBe(16);
   });
 
   it('uncovered wins over a shift in the same cell', () => {
@@ -385,8 +349,10 @@ describe('WeekRibbonView awaiting windows', () => {
     const cell = getByTestId(`week-ribbon-cell-${MONDAY_DOW}-9`);
     expect(cell.props.accessibilityLabel).toBe('pending');
     const style = StyleSheet.flatten(cell.props.style);
-    expect(style.backgroundColor).toBe('#5B3E5D'); // primary
-    expect(style.opacity).toBeCloseTo(0.45, 2);
+    // Same hollow dashed amber as a pending shift.
+    expect(style.backgroundColor).toBe('transparent');
+    expect(style.borderStyle).toBe('dashed');
+    expect(style.borderColor).toBe('#9C6E2E'); // warningStrong
   });
 
   it('an uncovered window still wins over an awaiting one in the same cell', () => {

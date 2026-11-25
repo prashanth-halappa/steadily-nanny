@@ -5,6 +5,7 @@
  * markers instead of rendering.
  */
 import { beforeAll, describe, expect, it } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const viewPath = join(__dirname, '../components/AgendaView.tsx');
@@ -138,29 +139,46 @@ describe('AgendaView source', () => {
     ).toBe("You set these as care hours. Nobody's booked yet.");
     expect(enSchedule.cover?.iveGotIt).toBe("I'm covering this");
     expect(enSchedule.cover?.hoursWrong).toBe('Change our care hours');
-    expect(enSchedule.cover?.weekSummaryTitle_one).toBe(
-      "Who's covering 1 window this week?"
-    );
-    expect(enSchedule.cover?.weekSummaryTitle_other).toBe(
-      "Who's covering {{count}} windows this week?"
-    );
+    // The week-summary chip is retired (layout spec §9), and its copy with it.
+    expect(enSchedule.cover?.weekSummaryTitle_one).toBeUndefined();
+    expect(enSchedule.cover?.weekSummaryTitle_other).toBeUndefined();
   });
 
-  // C — every uncovered-row action states who hears it, directly beneath
-  // the button, via the shared `Caption` (14/21/400) typography component.
-  it('C: every uncovered action grows a recipient caption naming who hears it', () => {
-    expect(agendaSource).toContain(
-      "import { Body, Caption, H4, Small } from '@/src/components/ui/typography';"
+  // C, revised (ux-schedule spec §4, "say it once"): the generic who-hears-
+  // what moved into ONE explainer above the first actionable card. A card
+  // keeps a caption only for the one push that is specific to it — the
+  // adjacent carer told their day still starts on time.
+  it('C: the generic recipient captions are gone; one explainer carries them', () => {
+    expect(agendaSource).not.toContain("t('recipient.askCover')");
+    expect(agendaSource).not.toContain("t('recipient.careHours')");
+    expect(agendaSource).not.toContain("t('recipient.parentCover')");
+    expect(agendaSource).not.toContain(
+      `schedule-uncovered-ask-\${key}-recipient`
     );
-    expect(agendaSource).toContain("t('recipient.askCover')");
-    expect(agendaSource).toContain("t('recipient.careHours')");
-    expect(agendaSource).toContain(`schedule-uncovered-ask-\${key}-recipient`);
+    expect(agendaSource).not.toContain(`schedule-uncovered-hours-\${key}`);
     expect(agendaSource).toContain(
       `schedule-uncovered-cover-\${key}-recipient`
     );
-    expect(agendaSource).toContain(
-      `schedule-uncovered-hours-\${key}-recipient`
+    expect(agendaSource).toContain("t('cover.explainer')");
+    expect(agendaSource).toContain('schedule-uncovered-explainer');
+    expect(agendaSource).toContain('schedule-uncovered-hours-explainer');
+    expect(enSchedule.cover?.explainer).toBe(
+      "You set these as care hours, and nobody's booked yet. Asking opens a request, and nothing is sent until you send it. Covering it yourself tells no one unless the card says who."
     );
+    for (const locale of ['en', 'es']) {
+      const recipient = JSON.parse(
+        readFileSync(
+          join(
+            import.meta.dir,
+            `../../../i18n/locales/${locale}/schedule.json`
+          ),
+          'utf8'
+        )
+      ).recipient as Record<string, string>;
+      expect(recipient.askCover).toBeUndefined();
+      expect(recipient.parentCover).toBeUndefined();
+      expect(recipient.careHours).toBeUndefined();
+    }
   });
 
   // C — "I'm covering this" cannot flatly say nobody is told: a carer whose
@@ -174,7 +192,10 @@ describe('AgendaView source', () => {
       /shifts\.find\(\s*s =>\s*s\.carer_id[\s\S]{0,120}s\.status === 'pending'[\s\S]{0,40}s\.status === 'confirmed'[\s\S]{0,40}s\.starts_at === window\.endsAt/
     );
     expect(agendaSource).toContain("t('recipient.parentCoverAdjacent'");
-    expect(agendaSource).toContain("t('recipient.parentCover')");
+    expect(
+      (enSchedule as { recipient?: Record<string, string> }).recipient
+        ?.parentCoverAdjacent
+    ).toBe('{{name}} is told their day still starts at {{time}}.');
   });
 
   it('REGRESSION: the uncovered pill is `uncovered`, never `pending` — that pill means "waiting on a reply", not "unattended" (StatusPill doc comment)', () => {

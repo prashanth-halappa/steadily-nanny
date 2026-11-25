@@ -101,6 +101,12 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useChildren', () => ({
     useChildren: () => ({ data: [], isLoading: false }),
   }));
+  mock.module('@/src/hooks/queries/useShift', () => ({
+    useShift: () => ({ data: undefined, isLoading: false }),
+  }));
+  mock.module('@/src/hooks/mutations/useWithdrawCoverAsk', () => ({
+    useWithdrawCoverAsk: () => ({ mutateAsync: mock(), isPending: false }),
+  }));
   mock.module('@/src/hooks/mutations/useCreateExtraShift', () => ({
     useCreateExtraShift: () => ({
       mutateAsync: mockCreateMutateAsync,

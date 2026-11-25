@@ -5,7 +5,10 @@
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
 import { formatInstantInZone, timeToMinutes } from '@/src/lib/displayTime';
-import { formatInstantDisplay } from '@/src/lib/wallClock';
+import {
+  formatInstantDisplay,
+  utcIsoToWallClockHHMM,
+} from '@/src/lib/wallClock';
 
 export type ListItem =
   | { type: 'header'; key: string; label: string }
@@ -145,4 +148,40 @@ export function shiftPeriod(shift: Shift, timeZone: string): DayPeriod {
   if (startHour < 12) return 'morning';
   if (startHour < 17) return 'afternoon';
   return 'evening';
+}
+
+/**
+ * An unanswered cover ask the parent can still withdraw or re-ask: mirrors
+ * `shiftCommandService.isOutstandingCoverAsk` (apps/api/src/domains/shift/
+ * services/shiftCommandService.ts — extra/cover kind, a carer, a stamped
+ * `cover_ask_expires_at`) plus the `status === 'pending'` gate
+ * `withdrawCoverAsk` applies right after it. Anything this rejects, the
+ * server's `POST /shifts/:id/withdraw-cover-ask` refuses
+ * (`COVER_ASK_NOT_WITHDRAWABLE`).
+ */
+export function isOutstandingCoverAsk(shift: Shift): boolean {
+  return (
+    shift.status === 'pending' &&
+    shift.cover_ask_expires_at != null &&
+    shift.carer_id != null &&
+    (shift.kind === 'extra' || shift.kind === 'cover')
+  );
+}
+
+/**
+ * "Change the ask": the extra-shift form prefilled from an outstanding ask,
+ * with `replacesShiftId` so Send withdraws this ask before creating the new
+ * one (ExtraShiftScreen). Wall-clock times in the shift's own zone.
+ */
+export function changeAskHref(shift: Shift): string {
+  const q = new URLSearchParams({
+    date: shift.local_date,
+    start: utcIsoToWallClockHHMM(shift.starts_at, shift.timezone),
+    end: utcIsoToWallClockHHMM(shift.ends_at, shift.timezone),
+    replacesShiftId: shift.id,
+  });
+  const childId = shift.shift_children?.[0]?.child_id;
+  if (childId) q.set('childId', childId);
+  if (shift.carer_id) q.set('carerId', shift.carer_id);
+  return `/(private)/schedule/shifts/extra?${q.toString()}`;
 }

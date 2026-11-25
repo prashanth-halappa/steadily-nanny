@@ -28,7 +28,7 @@ import type {
   ShiftChild,
   ShiftEvent,
 } from '@steadily-nanny/shared-types/schemas/shift.schema';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
@@ -49,6 +49,7 @@ import {
 import { Button } from '@/src/components/ui/button';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { FieldLabel } from '@/src/components/ui/field-label';
+import { InlineError } from '@/src/components/ui/inline-error';
 import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import {
   StatusPill,
@@ -70,7 +71,11 @@ import {
 } from '@/src/domains/schedule/utils/cancellationPay';
 import { isCoverAskUrgent } from '@/src/domains/schedule/utils/coverAskDeadline';
 import { resolveMemberDisplayName } from '@/src/domains/schedule/utils/memberDisplayName';
-import { localDateToWeekday } from '@/src/domains/schedule/utils/shiftGrouping';
+import {
+  changeAskHref as changeAskHrefFor,
+  isOutstandingCoverAsk,
+  localDateToWeekday,
+} from '@/src/domains/schedule/utils/shiftGrouping';
 import {
   isParentEditorRole,
   SETUP_ROLES,
@@ -84,6 +89,7 @@ import { useDeclineShift } from '@/src/hooks/mutations/useDeclineShift';
 import { useRespondToShiftChangeRequest } from '@/src/hooks/mutations/useRespondToShiftChangeRequest';
 import { useUpdateShift } from '@/src/hooks/mutations/useUpdateShift';
 import { useWithdrawChangeRequest } from '@/src/hooks/mutations/useWithdrawChangeRequest';
+import { useWithdrawCoverAsk } from '@/src/hooks/mutations/useWithdrawCoverAsk';
 import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
@@ -96,7 +102,10 @@ import { useShiftChangeRequests } from '@/src/hooks/queries/useShiftChangeReques
 import { useShiftEvents } from '@/src/hooks/queries/useShiftEvents';
 import { useUserProfile } from '@/src/hooks/queries/useUserProfile';
 import { shortZoneLabel } from '@/src/lib/displayTime';
-import { httpStatusOf } from '@/src/lib/errorLocalization';
+import {
+  getLocalizedErrorMessage,
+  httpStatusOf,
+} from '@/src/lib/errorLocalization';
 import { localDateInZone } from '@/src/lib/localDate';
 import { showSuccessToast } from '@/src/lib/toast';
 import {
@@ -171,6 +180,7 @@ export function ShiftDetailScreen() {
   // `deadlineForItem` — "byte-identical string... a deadline that lives
   // only on the card she tapped away from is a deadline she cannot check."
   const { t } = useTranslation(['schedule', 'today', 'inbox', 'common']);
+  const { t: tErrors } = useTranslation('errors');
   const { refreshControl } = usePullToRefresh();
   const elevation = useElevation();
   const router = useRouter();
@@ -190,6 +200,7 @@ export function ShiftDetailScreen() {
   const respondChange = useRespondToShiftChangeRequest();
   const withdrawChange = useWithdrawChangeRequest();
   const changeRequests = useShiftChangeRequests(shiftId);
+  const withdrawCoverAsk = useWithdrawCoverAsk();
   // The carer's own arrangement — the ONE cancellation window in the product
   // (§6.1 / D21). `households.cancellation_paid_within_hours` is deprecated
   // and is never consulted here.
@@ -201,6 +212,11 @@ export function ShiftDetailScreen() {
   const cancelRestriction = useRestrictedAction({
     householdId: shiftQuery.data?.household_id,
     action: t('detail.restrictedActionCancelShift'),
+  });
+  // Same owner_only gate TodayCoverage puts on its withdraw-ask link.
+  const withdrawAskRestriction = useRestrictedAction({
+    householdId: shiftQuery.data?.household_id,
+    action: t('cover.restrictedActionWithdrawAsk'),
   });
   // Second, orthogonal gate from `useRestrictedAction` above: that hook asks
   // "does the OWNER_ONLY approval mode restrict THIS member"; this one asks
@@ -317,6 +333,12 @@ export function ShiftDetailScreen() {
   const [withdrawConfirmId, setWithdrawConfirmId] = useState<string | null>(
     null
   );
+  const [withdrawAskOpen, setWithdrawAskOpen] = useState(false);
+  const [withdrawAskError, setWithdrawAskError] = useState<string | null>(null);
+  // §2a — an unanswered one-off ask isn't re-timed in place (PATCH is silent
+  // to the carer). Times are changed by re-asking; only the note edits here.
+  const isAskEdit =
+    isParent && shift !== undefined && isOutstandingCoverAsk(shift);
 
   useEffect(() => {
     if (!shift || hydratedFor === shift.id) return;
@@ -339,14 +361,13 @@ export function ShiftDetailScreen() {
       endTime,
       shift.timezone
     );
+    const trimmedNote = note.trim() === '' ? null : note.trim();
     try {
       await updateShift.mutateAsync({
         shiftId: shift.id,
-        input: {
-          starts_at,
-          ends_at,
-          note: note.trim() === '' ? null : note.trim(),
-        },
+        input: isAskEdit
+          ? { note: trimmedNote }
+          : { starts_at, ends_at, note: trimmedNote },
       });
     } catch {
       return;
@@ -445,6 +466,22 @@ export function ShiftDetailScreen() {
     hoursUntilStart(shift.starts_at) < household.short_notice_hours
       ? cancelRestriction.reason
       : null;
+  const carerFirstName = nameFor(shift.carer_id).trim().split(/\s+/)[0] ?? '';
+  const changeAskHref = changeAskHrefFor(shift) as Href;
+  const withdrawAskReason = withdrawAskRestriction.reason ?? closedReason;
+  const handleWithdrawAskConfirm = () => {
+    setWithdrawAskError(null);
+    void withdrawCoverAsk
+      .mutateAsync(shift.id)
+      .then(() => {
+        setWithdrawAskOpen(false);
+        router.back();
+      })
+      .catch(error => {
+        setWithdrawAskError(getLocalizedErrorMessage(error, tErrors));
+      });
+  };
+
   // Label only — never converts times. Null when the zone is unrecognized.
   const shiftZoneLabel = shortZoneLabel(shift.timezone);
 
@@ -593,15 +630,31 @@ export function ShiftDetailScreen() {
                 {t('detail.timeZoneNote', { zone: shiftZoneLabel })}
               </Small>
             ) : null}
-            <TimeRangePicker
-              testID="shift-detail-times"
-              start={startTime}
-              end={endTime}
-              onChange={(nextStart, nextEnd) => {
-                setStartTime(nextStart);
-                setEndTime(nextEnd);
-              }}
-            />
+            {isAskEdit ? (
+              <>
+                {/* The picker was the parent's only view of the window. */}
+                <H3 testID="shift-detail-ask-window" tabular>
+                  {utcIsoToWallClockHHMM(shift.starts_at, shift.timezone)} –{' '}
+                  {utcIsoToWallClockHHMM(shift.ends_at, shift.timezone)}
+                </H3>
+                <Small
+                  testID="shift-detail-ask-note"
+                  className="text-muted-foreground"
+                >
+                  {t('detail.askEditNote', { name: carerFirstName })}
+                </Small>
+              </>
+            ) : (
+              <TimeRangePicker
+                testID="shift-detail-times"
+                start={startTime}
+                end={endTime}
+                onChange={(nextStart, nextEnd) => {
+                  setStartTime(nextStart);
+                  setEndTime(nextEnd);
+                }}
+              />
+            )}
             <FieldLabel>{t('detail.noteLabel')}</FieldLabel>
             <Textarea
               testID="shift-detail-note"
@@ -609,19 +662,92 @@ export function ShiftDetailScreen() {
               onChangeText={setNote}
               accessibilityLabel={t('detail.noteLabel')}
             />
+            {/* Ask mode keeps Save for the note alone (times are fixed). */}
             <RestrictedActionButton
               testID="shift-detail-save"
               size="default"
               label={t('detail.save')}
               reason={closedReason}
               disabled={
-                !isRangeValid ||
+                (!isAskEdit && !isRangeValid) ||
                 updateShift.isPending ||
                 canWriteHousehold.isLoading
               }
               onPress={() => void handleSave()}
             />
-            {shift.status !== 'cancelled' ? (
+            {isAskEdit ? (
+              <>
+                <RestrictedActionButton
+                  testID="shift-detail-change-ask"
+                  variant="secondary"
+                  size="default"
+                  label={t('cover.changeAsk')}
+                  reason={closedReason}
+                  disabled={canWriteHousehold.isLoading}
+                  onPress={() => router.push(changeAskHref)}
+                />
+                <RestrictedActionButton
+                  testID="shift-detail-withdraw-ask"
+                  variant="outline"
+                  size="default"
+                  label={t('cover.withdrawAsk')}
+                  reason={withdrawAskReason}
+                  disabled={
+                    withdrawCoverAsk.isPending || canWriteHousehold.isLoading
+                  }
+                  onPress={() => {
+                    setWithdrawAskError(null);
+                    setWithdrawAskOpen(true);
+                  }}
+                />
+                <AlertDialog
+                  open={withdrawAskOpen}
+                  onOpenChange={open => {
+                    if (!open) {
+                      setWithdrawAskOpen(false);
+                      setWithdrawAskError(null);
+                    }
+                  }}
+                >
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>
+                        {t('cover.withdrawAskConfirmTitle')}
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {t('cover.withdrawAskConfirmBody', {
+                          carerName: carerFirstName,
+                        })}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    {withdrawAskError ? (
+                      <InlineError
+                        testID="shift-detail-withdraw-ask-error"
+                        message={withdrawAskError}
+                      />
+                    ) : null}
+                    <AlertDialogFooter>
+                      <AlertDialogCancel
+                        testID="shift-detail-withdraw-ask-keep"
+                        onPress={() => {
+                          setWithdrawAskOpen(false);
+                          setWithdrawAskError(null);
+                        }}
+                      >
+                        <Text>{t('cover.withdrawAskConfirmKeep')}</Text>
+                      </AlertDialogCancel>
+                      <AlertDialogAction
+                        testID="shift-detail-withdraw-ask-confirm"
+                        disabled={withdrawCoverAsk.isPending}
+                        onPress={handleWithdrawAskConfirm}
+                      >
+                        <Text>{t('cover.withdrawAskConfirmWithdraw')}</Text>
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
+            ) : shift.status !== 'cancelled' ? (
               <RestrictedActionButton
                 testID="shift-detail-cancel"
                 variant="outline"

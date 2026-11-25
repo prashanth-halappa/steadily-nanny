@@ -195,7 +195,10 @@ describe('ShiftDetailScreen source', () => {
     // Pin the two guards, not the whole expression: both now also refuse
     // while the household's write permission is still resolving, and a test
     // that spells out every condition breaks on the next one added.
-    expect(source).toMatch(/!isRangeValid \|\|\s*\n?\s*updateShift\.isPending/);
+    // Ask mode (note-only save) skips the range guard: `(!isAskEdit && !isRangeValid)`.
+    expect(source).toMatch(
+      /!isRangeValid\)? \|\|\s*\n?\s*updateShift\.isPending/
+    );
     expect(source).toMatch(
       /!isRangeValid \|\|\s*\n?\s*createChange\.isPending/
     );

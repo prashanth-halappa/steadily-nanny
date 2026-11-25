@@ -68,3 +68,40 @@ tags:
 - assertVisible:
     id: 'shift-detail-answer-by'
 - takeScreenshot: nanny-second-cover-ask-awaiting
+
+# --- Parent: the same unanswered ask is editable (layout spec §2a) ---------
+# The parent's side of an outstanding ask: on the Agenda row and on the
+# detail screen it offers "Change the ask" / "Withdraw the ask" instead of
+# the silent time editor. Asserted, NOT tapped: 13b still needs both asks
+# outstanding (it expires one and declines the other), and this household
+# has no care hours, so a withdraw would bring back no gap card to assert
+# (see 13b's scoping note).
+- runFlow:
+    file: ../flows/login.yaml
+    env:
+      PHASE4_HOUSEHOLD_ID: ${PHASE4_HOUSEHOLD_ID}
+- tapOn:
+    id: 'tab-schedule'
+- waitForAnimationToEnd
+# Seeded for TOMORROW, so below the NOW block the Agenda opens on.
+- scrollUntilVisible:
+    element:
+      id: 'schedule-shift-withdraw-ask-.*'
+    direction: DOWN
+    timeout: 15000
+- assertVisible:
+    id: 'schedule-shift-change-ask-.*'
+- takeScreenshot: parent-cover-ask-row-actions
+- openLink: steadilynanny:///(private)/schedule/shifts/${PHASE4_DECLINE_ASK_SHIFT_ID}
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'shift-detail-withdraw-ask'
+    timeout: 10000
+- assertVisible:
+    id: 'shift-detail-change-ask'
+- assertVisible:
+    id: 'shift-detail-ask-note'
+- assertNotVisible:
+    id: 'shift-detail-cancel'
+- takeScreenshot: parent-cover-ask-detail-actions

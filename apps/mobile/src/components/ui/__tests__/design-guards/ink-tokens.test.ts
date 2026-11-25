@@ -14,9 +14,11 @@ const tailwindConfigPath = join(
   '../../../../../tailwind.config.js'
 );
 
-/** FILL tokens used as text colour — use the paired *-ink token instead. */
+/** FILL tokens used as text colour — use the paired *-ink token instead.
+ * `(?![-\w])`, not `(?!-)`: `text-warningForeground` is the paired
+ * foreground ink for a solid `bg-warning`, not the fill. */
 const FILL_AS_TEXT_PATTERN =
-  /\btext-(destructive|warning|success|short-notice)(?!-)/g;
+  /\btext-(destructive|warning|success|short-notice)(?![-\w])/g;
 
 function pathIsExcluded(relativePath: string): boolean {
   return relativePath.includes('__tests__') || relativePath.includes('.test.');
@@ -75,6 +77,17 @@ describe('ink token guard', () => {
   it('does not use FILL tokens as text colour (text-destructive, text-warning, text-success, text-short-notice)', () => {
     const violations = scanForFillAsTextViolations();
     expect(violations).toEqual([]);
+  });
+
+  it('flags the bare fill but not the camelCase foreground ink token', () => {
+    const hits = (line: string) => {
+      FILL_AS_TEXT_PATTERN.lastIndex = 0;
+      return FILL_AS_TEXT_PATTERN.test(line);
+    };
+    expect(hits("'text-warning'")).toBe(true);
+    expect(hits("'text-warning/50'")).toBe(true);
+    expect(hits("'text-warningForeground'")).toBe(false);
+    expect(hits("'text-warning-ink'")).toBe(false);
   });
 
   it('exposes ink tokens in tailwind.config.js', () => {

@@ -170,7 +170,7 @@ describe('AgendaView uncovered row tiers (L1 attaches to the group)', () => {
       '2026-08-03T22:00:00.000Z'
     );
 
-    const { getByTestId } = render(
+    const { getByTestId, getAllByTestId, queryByTestId } = render(
       <AgendaView
         shifts={[]}
         householdId={HOUSEHOLD_ID}
@@ -184,8 +184,16 @@ describe('AgendaView uncovered row tiers (L1 attaches to the group)', () => {
       const key = uncoveredKey(w);
       expect(getByTestId(`schedule-uncovered-ask-${key}`)).toBeTruthy();
       expect(getByTestId(`schedule-uncovered-cover-${key}`)).toBeTruthy();
-      expect(getByTestId(`schedule-uncovered-hours-${key}`)).toBeTruthy();
+      // "Change our care hours" left the cards — it is said once, above them.
+      expect(queryByTestId(`schedule-uncovered-hours-${key}`)).toBeNull();
+      expect(
+        queryByTestId(`schedule-uncovered-ask-${key}-recipient`)
+      ).toBeNull();
     }
+    expect(getAllByTestId('schedule-uncovered-explainer')).toHaveLength(1);
+    expect(getAllByTestId('schedule-uncovered-hours-explainer')).toHaveLength(
+      1
+    );
   });
 
   it('showActions=false hides the buttons on both the primary and quiet rows alike', () => {
@@ -213,6 +221,8 @@ describe('AgendaView uncovered row tiers (L1 attaches to the group)', () => {
       expect(queryByTestId(`schedule-uncovered-cover-${key}`)).toBeNull();
       expect(queryByTestId(`schedule-uncovered-hours-${key}`)).toBeNull();
     }
+    expect(queryByTestId('schedule-uncovered-explainer')).toBeNull();
+    expect(queryByTestId('schedule-uncovered-hours-explainer')).toBeNull();
   });
 
   it('a single uncovered row in the week keeps the loud treatment', () => {
@@ -235,5 +245,147 @@ describe('AgendaView uncovered row tiers (L1 attaches to the group)', () => {
       getByTestId(`schedule-uncovered-${uncoveredKey(onlyWindow)}`).props.style
     );
     expect(style.backgroundColor).toBe(palette.light.surfaceAttention.hex);
+  });
+
+  it('the explainer says the generic part once, directly above the first card that needs action', () => {
+    const early = makeWindow(
+      '2026-08-03T13:00:00.000Z',
+      '2026-08-03T17:00:00.000Z'
+    );
+    const later = makeWindow(
+      '2026-08-04T13:00:00.000Z',
+      '2026-08-04T17:00:00.000Z'
+    );
+
+    const utils = render(
+      <AgendaView
+        shifts={[]}
+        householdId={HOUSEHOLD_ID}
+        weekDates={['2026-08-03', '2026-08-04']}
+        uncoveredByDay={{
+          '2026-08-03': [early],
+          '2026-08-04': [later],
+        }}
+        showUncoveredActions
+      />
+    );
+
+    expect(
+      utils.getByText(getNested(scheduleEn, 'cover.explainer'))
+    ).toBeTruthy();
+    const json = JSON.stringify(utils.toJSON());
+    const at = (id: string) => json.indexOf(`"${id}"`);
+    expect(at('schedule-day-2026-08-03')).toBeLessThan(
+      at('schedule-uncovered-explainer')
+    );
+    expect(at('schedule-uncovered-explainer')).toBeLessThan(
+      at(`schedule-uncovered-${uncoveredKey(early)}`)
+    );
+    // The generic cause line moved into the explainer; the cards don't repeat it.
+    expect(
+      utils.queryByText(getNested(scheduleEn, 'cover.cause.nothingScheduled'))
+    ).toBeNull();
+  });
+
+  it('no explainer when only awaiting rows exist — nothing there needs action', () => {
+    const asked = makeWindow(
+      '2026-08-03T13:00:00.000Z',
+      '2026-08-03T17:00:00.000Z'
+    );
+
+    const { queryByTestId } = render(
+      <AgendaView
+        shifts={[]}
+        householdId={HOUSEHOLD_ID}
+        weekDates={['2026-08-03']}
+        uncoveredByDay={{ '2026-08-03': [] }}
+        awaitingByDay={{ '2026-08-03': [asked] }}
+        showUncoveredActions
+      />
+    );
+
+    expect(
+      queryByTestId(`schedule-awaiting-${uncoveredKey(asked)}`)
+    ).toBeTruthy();
+    expect(queryByTestId('schedule-uncovered-explainer')).toBeNull();
+  });
+
+  it('the cover caption only appears when the adjacent carer really is told', () => {
+    const window = makeWindow(
+      '2026-08-03T13:00:00.000Z',
+      '2026-08-03T17:00:00.000Z'
+    );
+    const key = uncoveredKey(window);
+    const lone = render(
+      <AgendaView
+        shifts={[]}
+        householdId={HOUSEHOLD_ID}
+        weekDates={['2026-08-03']}
+        uncoveredByDay={{ '2026-08-03': [window] }}
+        showUncoveredActions
+      />
+    );
+    expect(
+      lone.queryByTestId(`schedule-uncovered-cover-${key}-recipient`)
+    ).toBeNull();
+    lone.unmount();
+
+    const adjacent = {
+      id: 'shift-after',
+      household_id: HOUSEHOLD_ID,
+      carer_id: '22222222-2222-4222-8222-222222222222',
+      starts_at: window.endsAt,
+      ends_at: '2026-08-03T21:00:00.000Z',
+      timezone: 'UTC',
+      local_date: '2026-08-03',
+      kind: 'recurring',
+      status: 'confirmed',
+      shift_children: [],
+    } as never;
+    const withAdjacent = render(
+      <AgendaView
+        shifts={[adjacent]}
+        householdId={HOUSEHOLD_ID}
+        weekDates={['2026-08-03']}
+        uncoveredByDay={{ '2026-08-03': [window] }}
+        showUncoveredActions
+      />
+    );
+    expect(
+      withAdjacent.getByTestId(`schedule-uncovered-cover-${key}-recipient`)
+    ).toBeTruthy();
+  });
+
+  it('the explainer skips past gaps: it rides the first actionable card from today on, where the list opens', () => {
+    const past = makeWindow(
+      '2020-01-06T13:00:00.000Z',
+      '2020-01-06T17:00:00.000Z'
+    );
+    const future = makeWindow(
+      '2099-01-05T13:00:00.000Z',
+      '2099-01-05T17:00:00.000Z'
+    );
+
+    const utils = render(
+      <AgendaView
+        shifts={[]}
+        householdId={HOUSEHOLD_ID}
+        weekDates={['2020-01-06', '2099-01-05']}
+        uncoveredByDay={{ '2020-01-06': [past], '2099-01-05': [future] }}
+        showUncoveredActions
+      />
+    );
+
+    const json = JSON.stringify(utils.toJSON());
+    const at = (id: string) => json.indexOf(`"${id}"`);
+    expect(utils.getAllByTestId('schedule-uncovered-explainer')).toHaveLength(
+      1
+    );
+    expect(at(`schedule-uncovered-${uncoveredKey(past)}`)).toBeLessThan(
+      at('schedule-uncovered-explainer')
+    );
+    expect(at('schedule-uncovered-explainer')).toBeLessThan(
+      at(`schedule-uncovered-${uncoveredKey(future)}`)
+    );
   });
 });

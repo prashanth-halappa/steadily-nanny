@@ -4,8 +4,9 @@
 # (now a real button, not a 13px grey link), the two-tap send-and-land-on-
 # Review path, the nanny-side handoff, her own no-week-yet card + its
 # same-week dismissal, and — the regression this is most likely to have
-# silently broken — that suppressing the week-summary headline did NOT also
-# remove the agenda's per-day uncovered-care rows.
+# silently broken — that removing the week-summary headline (retired
+# 2026-11-25, layout spec §9) did NOT also remove the agenda's per-day
+# uncovered-care rows.
 #
 # Fixture: scripts/seed-usual-week-fixtures.ts — one household, parent +
 # nanny both active, pay terms agreed (direct `pay_arrangements` write), one
@@ -49,38 +50,29 @@ tags:
 - tapOn:
     id: 'tab-schedule'
 - waitForAnimationToEnd
+# RETIRED 2026-11-25 (layout spec §9): the "Who's covering N windows this
+# week?" chip (`schedule-cover-week-summary`) is gone in every view — Today's
+# coverage surface counts gaps, and here the amber cards are the count. Wait
+# on the pinned controls bar instead (switcher · Today · + · gear).
 - extendedWaitUntil:
     visible:
-      id: 'schedule-pattern-banner'
+      id: 'schedule-controls-bar'
     timeout: 10000
+- assertVisible:
+    id: 'schedule-controls-bar'
+# The Agenda opens on the NOW block (title, total, usual-week banner) at the
+# top of the viewport, so the banner is visible on open — no scroll.
 - assertVisible:
     id: 'schedule-pattern-banner'
 - assertVisible:
     id: 'schedule-pattern-banner-action'
-# INVERTED 2026-08-21. This asserted `assertNotVisible` from 2026-08-17, one
-# day before the product deliberately decided the opposite: the count is never
-# suppressed by the banner, because "you haven't set the weekly hours" and
-# "N windows have nobody booked" are different facts and the no-pattern state
-# has the MOST gaps to report. The flow was never updated, so for three days it
-# failed by design and read as a product regression.
-#
-# The resolution went further than either side: the count is now folded INSIDE
-# the banner card rather than sitting beside it as a second warning-toned pill.
-# So it must be visible, and it must be visible WITHIN the banner.
-- assertVisible:
-    id: 'schedule-cover-week-summary'
-
-- scrollUntilVisible:
-    element:
-      id: 'schedule-shifts-add-extra'
-    direction: DOWN
-    timeout: 10000
+# "+" (icon-only add shift) is pinned in the controls bar (layout spec §9).
 - assertVisible:
     id: 'schedule-shifts-add-extra'
 - takeScreenshot: 21-a-schedule-pattern-banner
 
-# === E: regression guard — per-day uncovered rows survive the banner's ====
-# suppression of the week-summary line. Agenda is the parent's default view
+# === E: regression guard — per-day uncovered rows survive the removal ====
+# of the week-summary headline. Agenda is the parent's default view
 # (calendarViewStore.ts), so no view switch needed. Regex ids: the row key
 # is `childId|commitmentId|startsAt|endsAt`, not a stable literal.
 - scrollUntilVisible:
@@ -170,6 +162,7 @@ tags:
 - tapOn:
     id: 'tab-schedule'
 - waitForAnimationToEnd
+# The banner is in the NOW block, which the Agenda opens on.
 - extendedWaitUntil:
     visible:
       id: 'schedule-pattern-banner-action'

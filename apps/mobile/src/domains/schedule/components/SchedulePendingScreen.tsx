@@ -161,6 +161,7 @@ function SchedulePendingCarerSection({
   const withdraw = useWithdrawSchedulePattern(pattern.id);
   const amend = useAmendSchedulePattern(pattern.id);
   const [adjustOpen, setAdjustOpen] = useState(false);
+  const [changeOpen, setChangeOpen] = useState(false);
   const detail = useSchedulePattern(
     pattern.status !== 'draft' ? pattern.id : null
   );
@@ -175,6 +176,25 @@ function SchedulePendingCarerSection({
     } catch {
       // onError already surfaced a toast.
     }
+  };
+
+  // UX §2b: a pending pattern can't be edited in place (no endpoint), so
+  // "Change it" is withdraw-then-rebuild. Navigate ONLY after the withdraw
+  // succeeds; on failure the mutation's onError toast is the error and the
+  // parent stays here. `fromPatternId` prefills the wizard without reusing
+  // the withdrawn id, so Send creates a new pattern.
+  const handleChange = async () => {
+    try {
+      await withdraw.mutateAsync();
+    } catch {
+      return;
+    }
+    setChangeOpen(false);
+    router.push(
+      `/(private)/schedule/build?fromPatternId=${pattern.id}${
+        pattern.carer_id ? `&carerId=${pattern.carer_id}` : ''
+      }` as Href
+    );
   };
 
   // Same try/catch discipline as handleWithdraw above.
@@ -346,6 +366,44 @@ function SchedulePendingCarerSection({
                   >
                     <Text className="text-destructive-foreground">
                       {t('pending.withdrawConfirmConfirm')}
+                    </Text>
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : null}
+
+          {pattern.status === 'pending' && canEditSchedule ? (
+            <AlertDialog open={changeOpen} onOpenChange={setChangeOpen}>
+              <RestrictedActionButton
+                testID="schedule-pending-change"
+                variant="outline"
+                label={t('pending.changePending')}
+                reason={closedReason}
+                disabled={writeDisabled || withdraw.isPending}
+                onPress={() => setChangeOpen(true)}
+              />
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>
+                    {t('pending.changePendingConfirmTitle')}
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {t('pending.changePendingConfirmBody', { name: carerName })}
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>
+                    <Text>{t('pending.withdrawConfirmCancel')}</Text>
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    testID="schedule-pending-change-confirm"
+                    className={buttonVariants({ variant: 'destructive' })}
+                    disabled={withdraw.isPending || closedReason !== null}
+                    onPress={() => void handleChange()}
+                  >
+                    <Text className="text-destructive-foreground">
+                      {t('pending.changePendingConfirmConfirm')}
                     </Text>
                   </AlertDialogAction>
                 </AlertDialogFooter>

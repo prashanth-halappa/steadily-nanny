@@ -6,7 +6,7 @@
  */
 
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, ScrollView, View } from 'react-native';
 import { SCREEN_CONTENT_STYLE } from '@/lib/design-tokens';
@@ -40,17 +40,22 @@ import {
   primaryExtraShiftWarning,
 } from '@/src/domains/schedule/utils/extraShiftWarnings';
 import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
+import { isOutstandingCoverAsk } from '@/src/domains/schedule/utils/shiftGrouping';
 import { isParentEditorRole } from '@/src/domains/setup/types';
 import {
   formatDate,
   parseDate,
 } from '@/src/domains/timeOff/components/TimeOffDateRangePicker.utils';
+import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
 import { useCreateExtraShift } from '@/src/hooks/mutations/useCreateExtraShift';
+import { useWithdrawCoverAsk } from '@/src/hooks/mutations/useWithdrawCoverAsk';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
 import { useRestrictedAction } from '@/src/hooks/queries/useRestrictedAction';
+import { useShift } from '@/src/hooks/queries/useShift';
+import { getLocalizedErrorMessage } from '@/src/lib/errorLocalization';
 import { addLocalDays, localDateInZone } from '@/src/lib/localDate';
 import { showErrorToast } from '@/src/lib/toast';
 import { wallClockToUtcIso } from '@/src/lib/wallClock';
@@ -58,6 +63,7 @@ import { wallClockToUtcIso } from '@/src/lib/wallClock';
 export function ExtraShiftScreen() {
   const { t } = useTranslation('schedule');
   const { t: tCommon } = useTranslation('common');
+  const { t: tErrors } = useTranslation('errors');
   const router = useRouter();
   const params = useLocalSearchParams<{
     date?: string;
@@ -65,7 +71,21 @@ export function ExtraShiftScreen() {
     end?: string;
     carerId?: string;
     childId?: string;
+    replacesShiftId?: string;
   }>();
+  // "Change the ask": this send replaces an unanswered cover ask. The old ask
+  // is withdrawn FIRST, then the new one is created — two calls, not atomic,
+  // ordered so the failure mode is "no ask" (the gap reappears), never "two".
+  const replacesShiftId =
+    (typeof params.replacesShiftId === 'string' && params.replacesShiftId) ||
+    null;
+  const replacedShift = useShift(replacesShiftId);
+  const withdrawCoverAsk = useWithdrawCoverAsk();
+  // Set once the old ask is gone, so a retry after a failed create only
+  // creates. A ref, not state: the retry tap must see it without a re-render.
+  const replacedWithdrawnRef = useRef(false);
+  // Synchronous double-tap guard across the lookups, withdraw, and create.
+  const submittingRef = useRef(false);
   const onboarding = useIsOnboarded();
   const active = useActiveHousehold();
   const timeZone = active.household?.timezone ?? 'UTC';
@@ -136,6 +156,7 @@ export function ExtraShiftScreen() {
       isExtraShiftFormValid({ date, start, end, carerId }) &&
       !!active.householdId &&
       !createExtra.isPending &&
+      !withdrawCoverAsk.isPending &&
       canWriteHousehold.canWrite,
     [
       date,
@@ -144,6 +165,7 @@ export function ExtraShiftScreen() {
       carerId,
       active.householdId,
       createExtra.isPending,
+      withdrawCoverAsk.isPending,
       canWriteHousehold.canWrite,
     ]
   );
@@ -193,7 +215,19 @@ export function ExtraShiftScreen() {
   ]);
 
   const submitPayload = async (payload: CreateExtraShiftInput) => {
+    if (replacesShiftId && !replacedWithdrawnRef.current) {
+      try {
+        await withdrawCoverAsk.mutateAsync(replacesShiftId);
+      } catch (error) {
+        // The old ask still stands: creating now would leave two asks.
+        showErrorToast(getLocalizedErrorMessage(error, tErrors));
+        return;
+      }
+      replacedWithdrawnRef.current = true;
+    }
     try {
+      // On failure after a withdraw, the hook's onError toasts and the
+      // withdraw's shift invalidation brings the gap card back on its own.
       await createExtra.mutateAsync(payload);
       router.back();
     } catch (error) {
@@ -215,10 +249,24 @@ export function ExtraShiftScreen() {
     setClashReason(null);
     setClashHouseholdCarerId(null);
     setPendingPayload(null);
-    void submitPayload(payload);
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    void submitPayload(payload).finally(() => {
+      submittingRef.current = false;
+    });
   };
 
   const handleSubmit = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    try {
+      await runSubmit();
+    } finally {
+      submittingRef.current = false;
+    }
+  };
+
+  const runSubmit = async () => {
     if (!canSubmit || !active.householdId || !carerId) return;
     const payload: CreateExtraShiftInput = {
       starts_at: wallClockToUtcIso(date, start, timeZone),
@@ -250,6 +298,23 @@ export function ExtraShiftScreen() {
           })
           .catch(() => {}),
       ]);
+
+      // The ask being replaced is withdrawn just before this create, so it
+      // must not flag itself: drop it from the household shifts, and drop
+      // the carer's busy block that is exactly its window.
+      // ponytail: busy blocks are anonymised, so an unrelated block with the
+      // identical window for the same carer is dropped too.
+      const old = replacesShiftId ? replacedShift.data : undefined;
+      if (old && !replacedWithdrawnRef.current) {
+        shifts = shifts.filter(s => s.id !== old.id);
+        if (old.carer_id === carerId) {
+          busyBlocks = busyBlocks.filter(
+            b =>
+              Date.parse(b.starts_at) !== Date.parse(old.starts_at) ||
+              Date.parse(b.ends_at) !== Date.parse(old.ends_at)
+          );
+        }
+      }
 
       const { sameCarerConflict, warnings } = collectExtraShiftWarnings({
         startsAt: payload.starts_at,
@@ -288,6 +353,25 @@ export function ExtraShiftScreen() {
 
     await submitPayload(payload);
   };
+
+  // Facts about the old ask only once it has loaded AND is still outstanding
+  // — loading, failed, or already gone (incl. our own withdraw) says nothing.
+  const replacedAsk = replacedShift.data;
+  const replacedAskHint =
+    replacesShiftId && replacedAsk && isOutstandingCoverAsk(replacedAsk)
+      ? t('cover.changeAskHint', {
+          start: formatClockTime(replacedAsk.starts_at, replacedAsk.timezone),
+          end: formatClockTime(replacedAsk.ends_at, replacedAsk.timezone),
+          carerName: (() => {
+            const member = (carers.data ?? []).find(
+              m => m.user_id === replacedAsk.carer_id
+            );
+            return member
+              ? resolveCarerName(member, carerFallback)
+              : carerFallback;
+          })(),
+        })
+      : null;
 
   // Parent-only, same guard the siblings (SchedulePendingScreen,
   // ScheduleBuildScreen) use. This screen used to rely entirely on the
@@ -415,6 +499,14 @@ export function ExtraShiftScreen() {
           </>
         ) : null}
 
+        {replacedAskHint ? (
+          <Small
+            testID="extra-shift-replaces-hint"
+            className="mt-2 text-muted-foreground"
+          >
+            {replacedAskHint}
+          </Small>
+        ) : null}
         <RestrictedActionButton
           testID="schedule-extra-submit"
           className="mt-2"

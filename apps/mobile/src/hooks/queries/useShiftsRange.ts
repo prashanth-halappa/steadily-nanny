@@ -26,6 +26,24 @@ export function isShiftsRouteUnavailable(error: unknown): boolean {
   return (error as AxiosLikeError)?.response?.status === 404;
 }
 
+/** One `[from, to)` range's query — shared with `useShiftsRanges`, so a week
+ * fetched by either hook is the same cache entry. */
+export function shiftsRangeQuery(
+  householdId: string | null | undefined,
+  from: string,
+  to: string,
+  enabled: boolean
+) {
+  return {
+    queryKey: queryKeys.shift.range(householdId ?? undefined, from, to),
+    queryFn: () => shiftApi.range(householdId as string, from, to),
+    staleTime: QUERY_TIMING.STALE_1M,
+    enabled: enabled && isValidId(householdId),
+    retry: (failureCount: number, error: unknown) =>
+      !isShiftsRouteUnavailable(error) && failureCount < 2,
+  };
+}
+
 export function useShiftsRange(
   householdId: string | null | undefined,
   from: string,
@@ -35,17 +53,17 @@ export function useShiftsRange(
   const isInitialized = useAuthStore(s => s.isInitialized);
   const { canWrite } = useCanWriteHousehold(householdId);
 
-  return useQuery({
-    queryKey: queryKeys.shift.range(householdId ?? undefined, from, to),
-    queryFn: () => shiftApi.range(householdId as string, from, to),
-    staleTime: QUERY_TIMING.STALE_1M,
-    // Household-scoped reads 404 for a removed member (the server refuses
-    // them by design, while it keeps payroll readable). Asking anyway turns
-    // that refusal into a re-ask loop that trips the rate limiter, so we stop
-    // asking once membership resolves to `removed` — and we wait, rather than
-    // guess, while it is still unknown.
-    enabled: !!session && isInitialized && isValidId(householdId) && canWrite,
-    retry: (failureCount, error) =>
-      !isShiftsRouteUnavailable(error) && failureCount < 2,
-  });
+  // Household-scoped reads 404 for a removed member (the server refuses
+  // them by design, while it keeps payroll readable). Asking anyway turns
+  // that refusal into a re-ask loop that trips the rate limiter, so we stop
+  // asking once membership resolves to `removed` — and we wait, rather than
+  // guess, while it is still unknown.
+  return useQuery(
+    shiftsRangeQuery(
+      householdId,
+      from,
+      to,
+      !!session && isInitialized && canWrite
+    )
+  );
 }

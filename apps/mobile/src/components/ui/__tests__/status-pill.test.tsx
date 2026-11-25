@@ -123,7 +123,7 @@ describe('StatusPill', () => {
     );
   });
 
-  it('uses the warning treatment for uncovered — distinct from pending, never destructive', () => {
+  it('REGRESSION: uncovered is a SOLID warning pill (needs you), distinct from the tinted pending pill', () => {
     const { getByTestId } = render(
       <StatusPill
         variant="uncovered"
@@ -133,8 +133,9 @@ describe('StatusPill', () => {
     );
     const container = getByTestId('pill-uncovered');
     const label = getByTestId('pill-uncovered-label');
-    expect(container.props.className).toContain('bg-pill-warning');
-    expect(label.props.className).toContain('text-warning-ink');
+    expect(container.props.className).toContain('bg-warning');
+    expect(container.props.className).not.toContain('bg-pill-warning');
+    expect(label.props.className).toContain('text-warningForeground');
     expect(label.props.className).not.toContain('destructive');
   });
 });

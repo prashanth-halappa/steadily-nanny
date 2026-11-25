@@ -5,6 +5,7 @@
  */
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import type { CarerTimeOff } from '@steadily-nanny/shared-types/schemas/availability.schema';
+import type { ChildCommitment } from '@steadily-nanny/shared-types/schemas/child.schema';
 import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/household.schema';
 import {
   SHIFT_KINDS,
@@ -13,18 +14,33 @@ import {
 import { uncoveredKey } from '@steadily-nanny/shared-types/uncoveredCare';
 import { type Href, useRouter } from 'expo-router';
 import { AlertCircle, HelpCircle, Plane } from 'lucide-react-native';
-import { type ReactElement, type RefObject, useEffect, useMemo } from 'react';
+import {
+  type ReactElement,
+  type RefObject,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
+import { InlineRetry } from '@/src/components/custom/InlineRetry';
 import { RestrictedActionButton } from '@/src/components/custom/RestrictedActionButton';
 import { Button } from '@/src/components/ui/button';
 import { DayHeader } from '@/src/components/ui/day-header';
 import { IconChip } from '@/src/components/ui/icon-chip';
+import { LoadingDots } from '@/src/components/ui/loading-dots';
 import { NowLine } from '@/src/components/ui/now-line';
 import { StatusPill } from '@/src/components/ui/status-pill';
-import { Body, Caption, H4, Small } from '@/src/components/ui/typography';
+import {
+  Body,
+  Caption,
+  H4,
+  MetadataLabel,
+  Small,
+} from '@/src/components/ui/typography';
 import { useHouseholdCarers } from '@/src/domains/schedule/hooks/useHouseholdCarers';
 import {
   resolveCarerName,
@@ -32,6 +48,7 @@ import {
 } from '@/src/domains/schedule/utils/memberDisplayName';
 import {
   formatShiftTime,
+  isOutstandingCoverAsk,
   localDateToWeekday,
   totalCoveringMinutes,
 } from '@/src/domains/schedule/utils/shiftGrouping';
@@ -40,13 +57,19 @@ import {
   timeOffRowsForLocalDate,
 } from '@/src/domains/schedule/utils/timeOffOverlap';
 import {
+  type AwaitingPattern,
   describeUncoveredCause,
   inferUncoveredCauseDetail,
   overlappingShifts,
   type UncoveredWindowDisplay,
+  type WindowSlice,
+  windowSlices,
 } from '@/src/domains/schedule/utils/uncoveredDisplay';
 import { formatDuration } from '@/src/domains/timesheet/utils/duration';
-import { formatDisplayDate } from '@/src/domains/timesheet/utils/week';
+import {
+  formatDisplayDate,
+  formatWeekRangeLabel,
+} from '@/src/domains/timesheet/utils/week';
 import { useCreateParentCover } from '@/src/hooks/mutations/useCreateParentCover';
 import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
@@ -56,6 +79,7 @@ import { utcIsoToWallClockHHMM } from '@/src/lib/wallClock';
 import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
 import { useThemeColors } from '~/lib/design-tokens/useThemeColors';
+import { PendingAskActions } from './PendingAskActions';
 import { ShiftRow } from './ShiftRow';
 
 interface AgendaViewProps {
@@ -80,7 +104,33 @@ interface AgendaViewProps {
   /** Ids of shifts someone is clocked into right now — threaded straight to
    * `ShiftRow`, resolved once per screen rather than queried per row. */
   runningShiftIds?: ReadonlySet<string>;
+  /** Continuous Agenda: the loaded week pages, oldest first. Replaces
+   * `weekDates`; each page renders its own loading / error / empty state, so
+   * an unloaded range never reads as "nothing on". */
+  weeks?: AgendaWeek[];
+  /** With `weeks`: `listHeader` rides as an ITEM just above this week rather
+   * than as the list header, so earlier pages load above it while
+   * maintainVisibleContentPosition holds the reader in place. */
+  heroWeekStart?: string;
+  /** Called when the reader nears the top / bottom; omit at the range cap. */
+  onLoadEarlier?: () => void;
+  onLoadLater?: () => void;
+  /** Household care hours + pending pattern: lets a remainder card name the
+   * rest of its window (addendum A1). Omitted → cards render as before. */
+  commitments?: readonly ChildCommitment[];
+  pendingPattern?: SlicePattern | null;
+  /** Bump to scroll back to the NOW block (the pinned "Today" jump). */
+  nowRequest?: number;
 }
+
+type SlicePattern = AwaitingPattern & { carer_id?: string | null };
+
+export type AgendaWeek = {
+  weekStart: string;
+  dates: string[];
+  status: 'ready' | 'loading' | 'error';
+  onRetry?: () => void;
+};
 
 export type AgendaItem =
   | {
@@ -114,7 +164,21 @@ export type AgendaItem =
       localDate: string;
       window: UncoveredWindowDisplay;
     }
-  | { type: 'shift'; key: string; shift: Shift };
+  | { type: 'shift'; key: string; shift: Shift }
+  | { type: 'hero'; key: string }
+  | { type: 'weekLabel'; key: string; weekStart: string; label: string }
+  // One item per non-ready / empty week, and a zero-height end marker for a
+  // filled one, all keyed `week-<start>`: the key survives loading -> loaded,
+  // so a reader parked on a loading page above stays put as it fills in.
+  | {
+      type: 'weekStatus';
+      key: string;
+      weekStart: string;
+      label: string;
+      status: 'loading' | 'error' | 'empty';
+      onRetry?: () => void;
+    }
+  | { type: 'weekEnd'; key: string };
 
 function UncoveredRow({
   localDate,
@@ -133,6 +197,8 @@ function UncoveredRow({
   memberLabels,
   closedReason,
   awaiting = false,
+  commitments,
+  pendingPattern,
 }: {
   localDate: string;
   window: UncoveredWindowDisplay;
@@ -160,6 +226,10 @@ function UncoveredRow({
   /** Asked, not yet answered: Pending pill, no cause line, no actions (the
    * pattern banner already carries withdraw/edit). */
   awaiting?: boolean;
+  /** Household care hours + the pending pattern, for the remainder card's
+   * "The rest of …" section (addendum A1). Absent → no section. */
+  commitments?: readonly ChildCommitment[];
+  pendingPattern?: SlicePattern | null;
 }) {
   const { t } = useTranslation('schedule');
   const router = useRouter();
@@ -248,12 +318,14 @@ function UncoveredRow({
         memberLabels
       )
     : null;
+  // Only the one push that is specific to THIS card earns a caption; the
+  // generic "tells no one" lives once in the explainer (`cover.explainer`).
   const coverRecipientLine = adjacentCarerName
     ? t('recipient.parentCoverAdjacent', {
         name: adjacentCarerName,
         time: formatShiftTime(window.endsAt, displayTimeZone),
       })
-    : t('recipient.parentCover');
+    : null;
 
   const askLabel = carerFirstName
     ? t('cover.askToCover', {
@@ -278,6 +350,49 @@ function UncoveredRow({
       ends_at: window.endsAt,
       child_id: window.childId,
     });
+  };
+
+  // Addendum A1: the remainder card names what the rest of its need window
+  // is — asked, booked, parent-covered. Context only: the remainder keeps
+  // its own pill, tier, actions and count (S1).
+  const zone = displayTimeZone ?? 'UTC';
+  const rest = useMemo(
+    () =>
+      awaiting || !commitments
+        ? null
+        : windowSlices({
+            remainder: window,
+            commitments,
+            shifts: shifts.filter(s => s.local_date === localDate),
+            pendingPattern: pendingPattern ?? null,
+            localDate,
+            timezone: zone,
+          }),
+    [awaiting, commitments, window, shifts, pendingPattern, localDate, zone]
+  );
+  const sliceCarerName = (carerId: string | null) => {
+    const member = carerId
+      ? carers.find(c => c.user_id === carerId)
+      : undefined;
+    return member ? resolveCarerName(member, '').trim().split(/\s+/)[0] : '';
+  };
+  const sliceText = (slice: WindowSlice) => {
+    const range = {
+      start: formatShiftTime(slice.startsAt, displayTimeZone),
+      end: formatShiftTime(slice.endsAt, displayTimeZone),
+    };
+    if (slice.kind === 'parentCover') {
+      return t('cover.slice.parentCover', range);
+    }
+    const carerName = sliceCarerName(slice.carerId);
+    if (slice.kind === 'pending') {
+      return carerName
+        ? t('cover.slice.asked', { ...range, carerName })
+        : t('cover.slice.askedNoName', range);
+    }
+    return carerName
+      ? t('cover.slice.booked', { ...range, carerName })
+      : t('cover.slice.bookedNoName', range);
   };
 
   const recipientToneClass = isLoud
@@ -319,132 +434,143 @@ function UncoveredRow({
             <StatusPill variant="uncovered" label={t('cover.rowPill')} />
           )}
         </View>
-        {awaiting ? null : (
+        {/* The generic cause ("you set these as care hours, nobody's booked")
+            is said once, in the explainer above the first card. */}
+        {awaiting || cause === 'nothingScheduled' ? null : (
           <Small
             className={isLoud ? 'text-muted-strong' : 'text-muted-foreground'}
           >
             {causeLabel}
           </Small>
         )}
+        {/* Layout spec §2b: an asked-but-unanswered usual week can't be
+            edited in place (the server has no pending→draft), so the card
+            names what it's part of and points at the screen that owns
+            "Withdraw" / "Change it". Parent-voiced ("you sent"), so only for
+            a viewer who can act. */}
+        {awaiting && showActions ? (
+          <Small
+            testID={`schedule-awaiting-${key}-line`}
+            className="text-muted-foreground"
+          >
+            {t('cover.awaitingLine')}
+          </Small>
+        ) : null}
       </View>
+      {rest && rest.slices.length > 0 ? (
+        <View testID={`schedule-uncovered-${key}-slices`} className="gap-1">
+          <MetadataLabel className="text-muted-foreground">
+            {t('cover.slice.heading', {
+              start: formatShiftTime(rest.needStart, displayTimeZone),
+              end: formatShiftTime(rest.needEnd, displayTimeZone),
+            })}
+          </MetadataLabel>
+          {rest.slices.map((slice, i) => (
+            <View
+              // biome-ignore lint/suspicious/noArrayIndexKey: slices are positional, time-ordered within one window
+              key={i}
+              testID={`schedule-uncovered-${key}-slice-${i}`}
+              className="flex-row items-center gap-2"
+            >
+              {slice.kind === 'parentCover' ? null : (
+                <StatusPill
+                  testID={`schedule-uncovered-${key}-slice-${i}-pill`}
+                  variant={slice.kind === 'pending' ? 'pending' : 'confirmed'}
+                  label={
+                    slice.kind === 'pending'
+                      ? t('cover.rowPillPending')
+                      : t('shifts.statusConfirmed')
+                  }
+                />
+              )}
+              <Small
+                testID={`schedule-uncovered-${key}-slice-${i}-text`}
+                className="flex-1 text-muted-foreground"
+                tabular
+              >
+                {sliceText(slice)}
+              </Small>
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {awaiting && showActions ? (
+        <Button
+          testID={`schedule-awaiting-${key}-see`}
+          variant="ghost"
+          size="sm"
+          className="self-start"
+          onPress={() => router.push('/(private)/schedule/usual-week' as Href)}
+        >
+          {t('cover.awaitingSee')}
+        </Button>
+      ) : null}
       {showActions && !awaiting ? (
-        <View className="gap-2">
-          {isLoud ? (
-            <>
-              <View className="gap-1">
-                <RestrictedActionButton
-                  testID={`schedule-uncovered-ask-${key}`}
-                  size="sm"
-                  label={askLabel}
-                  reason={closedReason}
-                  onPress={() => router.push(extraHref)}
-                />
-                <Caption
-                  testID={`schedule-uncovered-ask-${key}-recipient`}
-                  className={recipientToneClass}
-                >
-                  {t('recipient.askCover')}
-                </Caption>
-              </View>
-              <View className="gap-1">
-                <RestrictedActionButton
-                  testID={`schedule-uncovered-cover-${key}`}
-                  size="sm"
-                  variant="secondary"
-                  label={t('cover.iveGotIt')}
-                  reason={closedReason}
-                  disabled={createCover.isPending}
-                  onPress={handleCoverPress}
-                />
+        isLoud ? (
+          <View className="gap-2">
+            <RestrictedActionButton
+              testID={`schedule-uncovered-ask-${key}`}
+              size="sm"
+              label={askLabel}
+              reason={closedReason}
+              onPress={() => router.push(extraHref)}
+            />
+            <View className="gap-1">
+              <RestrictedActionButton
+                testID={`schedule-uncovered-cover-${key}`}
+                size="sm"
+                variant="secondary"
+                label={t('cover.iveGotIt')}
+                reason={closedReason}
+                disabled={createCover.isPending}
+                onPress={handleCoverPress}
+              />
+              {coverRecipientLine ? (
                 <Caption
                   testID={`schedule-uncovered-cover-${key}-recipient`}
                   className={recipientToneClass}
                 >
                   {coverRecipientLine}
                 </Caption>
-              </View>
-              {/* A ghost Button, not a bare Pressable wrapping coloured Body
-                  text — see SchedulePatternBanner.tsx:222-234. Also fixes a
-                  sub-44pt touch target. */}
-              <View className="gap-1">
-                <Button
-                  testID={`schedule-uncovered-hours-${key}`}
-                  variant="ghost"
-                  size="sm"
-                  onPress={() => router.push('/settings/children' as Href)}
-                >
-                  {t('cover.hoursWrong')}
-                </Button>
+              ) : null}
+            </View>
+          </View>
+        ) : (
+          // B2 — the quiet tier's two REAL choices side by side, both
+          // secondary — the H4 above already names the child and time, so
+          // there is no full-width alarm button to earn its own row.
+          <View className="flex-row gap-2">
+            <View className="flex-1">
+              <RestrictedActionButton
+                testID={`schedule-uncovered-ask-${key}`}
+                size="sm"
+                variant="secondary"
+                label={askLabelQuiet}
+                reason={closedReason}
+                onPress={() => router.push(extraHref)}
+              />
+            </View>
+            <View className="flex-1 gap-1">
+              <RestrictedActionButton
+                testID={`schedule-uncovered-cover-${key}`}
+                size="sm"
+                variant="secondary"
+                label={t('cover.iveGotIt')}
+                reason={closedReason}
+                disabled={createCover.isPending}
+                onPress={handleCoverPress}
+              />
+              {coverRecipientLine ? (
                 <Caption
-                  testID={`schedule-uncovered-hours-${key}-recipient`}
+                  testID={`schedule-uncovered-cover-${key}-recipient`}
                   className={recipientToneClass}
                 >
-                  {t('recipient.careHours')}
+                  {coverRecipientLine}
                 </Caption>
-              </View>
-            </>
-          ) : (
-            // B2 — the quiet tier's two REAL choices side by side, both
-            // secondary — the H4 above already names the child and time,
-            // so there is no full-width alarm button to earn its own row.
-            // The settings link demotes to a ghost, self-start link rather
-            // than a third equal action.
-            <>
-              <View className="flex-row gap-2">
-                <View className="flex-1 gap-1">
-                  <RestrictedActionButton
-                    testID={`schedule-uncovered-ask-${key}`}
-                    size="sm"
-                    variant="secondary"
-                    label={askLabelQuiet}
-                    reason={closedReason}
-                    onPress={() => router.push(extraHref)}
-                  />
-                  <Caption
-                    testID={`schedule-uncovered-ask-${key}-recipient`}
-                    className={recipientToneClass}
-                  >
-                    {t('recipient.askCover')}
-                  </Caption>
-                </View>
-                <View className="flex-1 gap-1">
-                  <RestrictedActionButton
-                    testID={`schedule-uncovered-cover-${key}`}
-                    size="sm"
-                    variant="secondary"
-                    label={t('cover.iveGotIt')}
-                    reason={closedReason}
-                    disabled={createCover.isPending}
-                    onPress={handleCoverPress}
-                  />
-                  <Caption
-                    testID={`schedule-uncovered-cover-${key}-recipient`}
-                    className={recipientToneClass}
-                  >
-                    {coverRecipientLine}
-                  </Caption>
-                </View>
-              </View>
-              <View className="gap-1 self-start">
-                <Button
-                  testID={`schedule-uncovered-hours-${key}`}
-                  variant="ghost"
-                  size="sm"
-                  className="self-start"
-                  onPress={() => router.push('/settings/children' as Href)}
-                >
-                  {t('cover.hoursWrong')}
-                </Button>
-                <Caption
-                  testID={`schedule-uncovered-hours-${key}-recipient`}
-                  className={recipientToneClass}
-                >
-                  {t('recipient.careHours')}
-                </Caption>
-              </View>
-            </>
-          )}
-        </View>
+              ) : null}
+            </View>
+          </View>
+        )
       ) : null}
     </View>
   );
@@ -464,7 +590,15 @@ export function AgendaView({
   listRef,
   listHeader,
   runningShiftIds,
+  weeks,
+  heroWeekStart,
+  onLoadEarlier,
+  onLoadLater,
+  nowRequest = 0,
+  commitments,
+  pendingPattern,
 }: AgendaViewProps) {
+  const router = useRouter();
   const { t } = useTranslation('schedule');
   const { t: tCommon } = useTranslation('common');
   // Computed ONCE per screen, not per row/shift — the closed-household gate
@@ -554,125 +688,192 @@ export function AgendaView({
       byDate.set(shift.local_date, list);
     }
 
-    const dates = new Set<string>([
-      ...byDate.keys(),
-      ...weekDates,
-      ...(uncoveredByDay ? Object.keys(uncoveredByDay) : []),
-      ...(awaitingByDay ? Object.keys(awaitingByDay) : []),
-    ]);
-    dates.forEach(date => {
-      if (
-        timeOffRowsForLocalDate(timeOff, date, householdTimeZone).length > 0
-      ) {
-        dates.add(date);
-      }
-    });
-
     const result: AgendaItem[] = [];
-    // Days are visited chronologically and each day's rows are sorted by
-    // `at`, so the first uncovered row this flips past IS the earliest
-    // uncovered window in the whole visible week — see `isPrimary` above.
-    let primaryUncoveredAssigned = false;
-    for (const localDate of [...dates].sort()) {
-      const dayShifts = (byDate.get(localDate) ?? []).sort((a, b) =>
-        a.starts_at.localeCompare(b.starts_at)
-      );
-      const totalMinutes =
-        dayShifts.length === 0 ? null : totalCoveringMinutes(dayShifts);
-      result.push({
-        type: 'header',
-        key: `header-${localDate}`,
-        label: `${t(`weekday.${localDateToWeekday(localDate)}`)} · ${formatDisplayDate(localDate)}`,
-        localDate,
-        totalMinutes,
-        isToday: localDate === todayLocalDate,
-      });
-      for (const row of timeOffRowsForLocalDate(
-        timeOff,
-        localDate,
-        householdTimeZone
-      )) {
-        result.push({
-          type: 'away',
-          key: `away-${row.id}-${localDate}`,
-          localDate,
-          message: row.message,
-        });
-      }
-
-      type TimedRow =
-        | { kind: 'shift'; at: number; shift: Shift }
-        | {
-            kind: 'uncovered';
-            at: number;
-            window: UncoveredWindowDisplay;
-            highlighted: boolean;
-          }
-        | { kind: 'awaiting'; at: number; window: UncoveredWindowDisplay };
-
-      const timed: TimedRow[] = dayShifts.map(shift => ({
-        kind: 'shift',
-        at: Date.parse(shift.starts_at),
-        shift,
-      }));
-      for (const window of uncoveredByDay?.[localDate] ?? []) {
-        const key = uncoveredKey(window);
-        timed.push({
-          kind: 'uncovered',
-          at: Date.parse(window.startsAt),
-          window,
-          highlighted: focusUncoveredKey === key,
-        });
-      }
-      for (const window of awaitingByDay?.[localDate] ?? []) {
-        const askedByShift = overlappingShifts(window, dayShifts).some(
-          shift => shift.status === 'pending'
+    const pushDays = (dates: Iterable<string>) => {
+      // Days are visited chronologically and each day's rows are sorted by
+      // `at`, so the first uncovered row this flips past IS the earliest
+      // uncovered window in the visible week — see `isPrimary` above. One
+      // call per week, so each week page keeps its own primary row.
+      let primaryUncoveredAssigned = false;
+      for (const localDate of [...dates].sort()) {
+        const dayShifts = (byDate.get(localDate) ?? []).sort((a, b) =>
+          a.starts_at.localeCompare(b.starts_at)
         );
-        if (!askedByShift) {
+        const totalMinutes =
+          dayShifts.length === 0 ? null : totalCoveringMinutes(dayShifts);
+        result.push({
+          type: 'header',
+          key: `header-${localDate}`,
+          label: `${t(`weekday.${localDateToWeekday(localDate)}`)} · ${formatDisplayDate(localDate)}`,
+          localDate,
+          totalMinutes,
+          isToday: localDate === todayLocalDate,
+        });
+        for (const row of timeOffRowsForLocalDate(
+          timeOff,
+          localDate,
+          householdTimeZone
+        )) {
+          result.push({
+            type: 'away',
+            key: `away-${row.id}-${localDate}`,
+            localDate,
+            message: row.message,
+          });
+        }
+
+        type TimedRow =
+          | { kind: 'shift'; at: number; shift: Shift }
+          | {
+              kind: 'uncovered';
+              at: number;
+              window: UncoveredWindowDisplay;
+              highlighted: boolean;
+            }
+          | { kind: 'awaiting'; at: number; window: UncoveredWindowDisplay };
+
+        const timed: TimedRow[] = dayShifts.map(shift => ({
+          kind: 'shift',
+          at: Date.parse(shift.starts_at),
+          shift,
+        }));
+        for (const window of uncoveredByDay?.[localDate] ?? []) {
+          const key = uncoveredKey(window);
           timed.push({
-            kind: 'awaiting',
+            kind: 'uncovered',
             at: Date.parse(window.startsAt),
             window,
+            highlighted: focusUncoveredKey === key,
           });
         }
-      }
-      timed.sort((a, b) => a.at - b.at);
+        for (const window of awaitingByDay?.[localDate] ?? []) {
+          const askedByShift = overlappingShifts(window, dayShifts).some(
+            shift => shift.status === 'pending'
+          );
+          if (!askedByShift) {
+            timed.push({
+              kind: 'awaiting',
+              at: Date.parse(window.startsAt),
+              window,
+            });
+          }
+        }
+        timed.sort((a, b) => a.at - b.at);
 
-      const isToday = localDate === todayLocalDate;
-      let nowLinePlaced = false;
-      const placeNowLine = () => {
-        if (!isToday || nowLinePlaced) return;
-        result.push({ type: 'now', key: 'now-line' });
-        nowLinePlaced = true;
-      };
+        const isToday = localDate === todayLocalDate;
+        let nowLinePlaced = false;
+        const placeNowLine = () => {
+          if (!isToday || nowLinePlaced) return;
+          result.push({ type: 'now', key: 'now-line' });
+          nowLinePlaced = true;
+        };
 
-      for (const row of timed) {
-        if (row.at > nowMs) {
-          placeNowLine();
+        for (const row of timed) {
+          if (row.at > nowMs) {
+            placeNowLine();
+          }
+          if (row.kind === 'shift') {
+            result.push({ type: 'shift', key: row.shift.id, shift: row.shift });
+          } else if (row.kind === 'awaiting') {
+            result.push({
+              type: 'awaiting',
+              key: `awaiting-${uncoveredKey(row.window)}`,
+              localDate,
+              window: row.window,
+            });
+          } else {
+            const isPrimary = !primaryUncoveredAssigned;
+            primaryUncoveredAssigned = true;
+            result.push({
+              type: 'uncovered',
+              key: `uncovered-${uncoveredKey(row.window)}`,
+              localDate,
+              window: row.window,
+              highlighted: row.highlighted,
+              isPrimary,
+            });
+          }
         }
-        if (row.kind === 'shift') {
-          result.push({ type: 'shift', key: row.shift.id, shift: row.shift });
-        } else if (row.kind === 'awaiting') {
-          result.push({
-            type: 'awaiting',
-            key: `awaiting-${uncoveredKey(row.window)}`,
-            localDate,
-            window: row.window,
-          });
-        } else {
-          const isPrimary = !primaryUncoveredAssigned;
-          primaryUncoveredAssigned = true;
-          result.push({
-            type: 'uncovered',
-            key: `uncovered-${uncoveredKey(row.window)}`,
-            localDate,
-            window: row.window,
-            highlighted: row.highlighted,
-            isPrimary,
-          });
-        }
+        placeNowLine();
       }
-      placeNowLine();
+    };
+
+    if (!weeks) {
+      pushDays(
+        new Set<string>([
+          ...byDate.keys(),
+          ...weekDates,
+          ...(uncoveredByDay ? Object.keys(uncoveredByDay) : []),
+          ...(awaitingByDay ? Object.keys(awaitingByDay) : []),
+        ])
+      );
+      return result;
+    }
+
+    // A day no page owns (a shift whose own `local_date` falls just outside
+    // the range it was fetched by) joins the week it falls in, or the first
+    // week — dropping it would hide a real shift.
+    const weekDays = weeks.map(week => new Set(week.dates));
+    for (const date of new Set([
+      ...byDate.keys(),
+      ...(uncoveredByDay ? Object.keys(uncoveredByDay) : []),
+      ...(awaitingByDay ? Object.keys(awaitingByDay) : []),
+    ])) {
+      if (weekDays.some(days => days.has(date))) continue;
+      const owner = weeks.findLastIndex(week => week.weekStart <= date);
+      weekDays[Math.max(0, owner)]?.add(date);
+    }
+
+    weeks.forEach((week, index) => {
+      const key = `week-${week.weekStart}`;
+      const label = formatWeekRangeLabel(week.dates);
+      const days = [...(weekDays[index] ?? [])];
+      const hasAnything = days.some(
+        date =>
+          byDate.has(date) ||
+          (uncoveredByDay?.[date]?.length ?? 0) > 0 ||
+          (awaitingByDay?.[date]?.length ?? 0) > 0 ||
+          timeOffRowsForLocalDate(timeOff, date, householdTimeZone).length > 0
+      );
+      if (week.status !== 'ready' || !hasAnything) {
+        result.push({
+          type: 'weekStatus',
+          key,
+          weekStart: week.weekStart,
+          label,
+          status: week.status === 'ready' ? 'empty' : week.status,
+          onRetry: week.onRetry,
+        });
+        return;
+      }
+      // Orientation in a continuous list: the week's range, in the list,
+      // beside the rows it describes — never a pinned label that goes stale
+      // as the reader scrolls. An empty / loading / failed week's single line
+      // already names its range, so it gets no second one.
+      result.push({
+        type: 'weekLabel',
+        key: `label-${week.weekStart}`,
+        weekStart: week.weekStart,
+        label,
+      });
+      pushDays(days);
+      result.push({ type: 'weekEnd', key });
+    });
+
+    // The NOW block (the screen's hero: title, total, usual-week banner)
+    // rides directly above the first day from today on — where the list
+    // opens — so the old page top is what the reader sees first. Fallback:
+    // after the current week when nothing loaded is upcoming.
+    if (listHeader) {
+      const firstUpcoming = result.findIndex(
+        item => item.type === 'header' && item.localDate >= todayLocalDate
+      );
+      const afterAnchor =
+        result.findIndex(item => item.key === `week-${heroWeekStart}`) + 1;
+      result.splice(firstUpcoming >= 0 ? firstUpcoming : afterAnchor, 0, {
+        type: 'hero',
+        key: 'hero',
+      });
     }
     return result;
   }, [
@@ -680,6 +881,9 @@ export function AgendaView({
     timeOff,
     householdTimeZone,
     weekDates,
+    weeks,
+    heroWeekStart,
+    listHeader,
     uncoveredByDay,
     awaitingByDay,
     focusUncoveredKey,
@@ -688,8 +892,15 @@ export function AgendaView({
     t,
   ]);
 
+  // Once per key: pages loading later change `items` too, and re-running the
+  // jump on each would yank the reader back to the gap mid-scroll.
+  const scrolledToKey = useRef<string | null>(null);
   useEffect(() => {
-    if (!focusUncoveredKey || !listRef?.current) {
+    if (!focusUncoveredKey) {
+      scrolledToKey.current = null;
+      return;
+    }
+    if (!listRef?.current || scrolledToKey.current === focusUncoveredKey) {
       return;
     }
     const index = items.findIndex(
@@ -698,9 +909,59 @@ export function AgendaView({
         uncoveredKey(item.window) === focusUncoveredKey
     );
     if (index >= 0) {
+      scrolledToKey.current = focusUncoveredKey;
       listRef.current.scrollToIndex({ index, animated: false });
     }
   }, [focusUncoveredKey, items, listRef]);
+
+  const heroIndex = items.findIndex(item => item.type === 'hero');
+  const lastNowRequest = useRef(nowRequest);
+  useEffect(() => {
+    if (lastNowRequest.current === nowRequest) return;
+    lastNowRequest.current = nowRequest;
+    if (heroIndex >= 0) {
+      listRef?.current?.scrollToIndex({ index: heroIndex, animated: true });
+    }
+  }, [nowRequest, heroIndex, listRef]);
+  // FlashList 2.3.2 can fire onStartReached during mount, before the
+  // initial offset (the NOW block) settles — which would fetch, and prepend,
+  // last week on every open. Earlier weeks wait for a real drag.
+  const [hasDragged, setHasDragged] = useState(false);
+
+  // ux-schedule spec §4, "say it once": the generic part of every gap card
+  // (why it's here, who hears what, where care hours live) rides once, above
+  // the first card that needs action. Part of that item, so a jump to it
+  // lands on the explainer too.
+  // From today on, not the earliest loaded: the list opens on today and
+  // past pages load above it, so an explainer pinned to a past gap would sit
+  // scrolled away above everything the reader sees. Falls back to the first
+  // gap when every gap loaded is in the past.
+  const uncoveredItems = showUncoveredActions
+    ? items.filter(item => item.type === 'uncovered')
+    : [];
+  const explainerKey =
+    (
+      uncoveredItems.find(
+        item => item.type === 'uncovered' && item.localDate >= todayLocalDate
+      ) ?? uncoveredItems[0]
+    )?.key ?? null;
+
+  const lastWeek = weeks?.[weeks.length - 1];
+  const loadLaterFooter =
+    onLoadLater && lastWeek?.status === 'ready' ? (
+      // Scrolling to the end also loads the next week (onEndReached); this
+      // is the same act for a reader who can't, or for when a short page
+      // leaves the list still inside the end threshold.
+      <Button
+        testID="schedule-agenda-load-later"
+        variant="ghost"
+        size="sm"
+        className="mx-5.5 self-start"
+        onPress={onLoadLater}
+      >
+        {t('shifts.showNextWeek')}
+      </Button>
+    ) : null;
 
   return (
     <View testID="calendar-agenda-view" style={{ flex: 1 }}>
@@ -712,12 +973,69 @@ export function AgendaView({
         data={items}
         keyExtractor={item => item.key}
         getItemType={item => item.type}
-        ListHeaderComponent={listHeader}
+        initialScrollIndex={heroIndex >= 0 ? heroIndex : undefined}
+        ListHeaderComponent={weeks ? undefined : listHeader}
+        ListFooterComponent={loadLaterFooter}
+        onStartReached={hasDragged ? onLoadEarlier : undefined}
+        onScrollBeginDrag={() => setHasDragged(true)}
+        onEndReached={onLoadLater}
         contentContainerStyle={{ paddingBottom: tabBarScrollPadding }}
         renderItem={({ item }) => {
+          if (item.type === 'hero') {
+            return <View testID="schedule-agenda-now">{listHeader}</View>;
+          }
+          if (item.type === 'weekLabel') {
+            return (
+              <MetadataLabel
+                testID={`schedule-agenda-week-label-${item.weekStart}`}
+                className="px-5.5 pt-4 pb-1 text-muted-strong"
+                tabular
+              >
+                {item.label}
+              </MetadataLabel>
+            );
+          }
+          if (item.type === 'weekEnd') {
+            return <View />;
+          }
+          if (item.type === 'weekStatus') {
+            const testID = `schedule-agenda-week-${item.status}-${item.weekStart}`;
+            if (item.status === 'loading') {
+              return (
+                <View
+                  testID={testID}
+                  accessibilityLabel={t('shifts.weekLoading', {
+                    range: item.label,
+                  })}
+                  className="items-center py-4"
+                >
+                  <LoadingDots />
+                </View>
+              );
+            }
+            if (item.status === 'error') {
+              return (
+                <View className="mx-5.5 mb-2">
+                  <InlineRetry
+                    testID={testID}
+                    message={t('shifts.weekLoadFailed', { range: item.label })}
+                    onRetry={() => item.onRetry?.()}
+                  />
+                </View>
+              );
+            }
+            return (
+              <View testID={testID} className="mx-5.5 mb-2 py-2">
+                <Small className="text-muted-foreground">
+                  {t('shifts.weekEmpty', { range: item.label })}
+                </Small>
+              </View>
+            );
+          }
           if (item.type === 'header') {
             return (
               <DayHeader
+                testID={`schedule-day-${item.localDate}`}
                 label={item.label}
                 localDate={item.localDate}
                 isToday={item.isToday}
@@ -766,7 +1084,7 @@ export function AgendaView({
             }
             const child = childrenById.get(item.window.childId);
             const isUncovered = item.type === 'uncovered';
-            return (
+            const row = (
               <UncoveredRow
                 awaiting={!isUncovered}
                 localDate={item.localDate}
@@ -784,7 +1102,36 @@ export function AgendaView({
                 membersByUserId={membersByUserId}
                 memberLabels={memberLabels}
                 closedReason={closedReason}
+                commitments={commitments}
+                pendingPattern={pendingPattern}
               />
+            );
+            if (item.key !== explainerKey) {
+              return row;
+            }
+            return (
+              <View>
+                <View
+                  testID="schedule-uncovered-explainer"
+                  className="mx-5.5 mb-2 gap-2"
+                >
+                  <Small className="text-muted-foreground">
+                    {t('cover.explainer')}
+                  </Small>
+                  {/* A ghost Button, not a bare Pressable wrapping coloured
+                      Body text — see SchedulePatternBanner.tsx:222-234. */}
+                  <Button
+                    testID="schedule-uncovered-hours-explainer"
+                    variant="ghost"
+                    size="sm"
+                    className="self-start"
+                    onPress={() => router.push('/settings/children' as Href)}
+                  >
+                    {t('cover.hoursWrong')}
+                  </Button>
+                </View>
+                {row}
+              </View>
             );
           }
           if (item.type !== 'shift') {
@@ -834,6 +1181,15 @@ export function AgendaView({
                 }
                 coverUndoDisabledReason={closedReason}
                 runningShiftIds={runningShiftIds}
+                pendingAskActions={
+                  showUncoveredActions && isOutstandingCoverAsk(item.shift) ? (
+                    <PendingAskActions
+                      shift={item.shift}
+                      carerName={carerFirstName(item.shift) ?? ''}
+                      closedReason={closedReason}
+                    />
+                  ) : undefined
+                }
               />
               {hasTimeOffConflict ? (
                 <View

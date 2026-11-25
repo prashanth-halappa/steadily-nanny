@@ -10,6 +10,7 @@ import {
   type Shift,
 } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { type Href, useRouter } from 'expo-router';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
 import { cn } from '@/lib/utils';
@@ -70,6 +71,7 @@ export function ShiftRow({
   showParentCoverUndo,
   coverUndoDisabledReason,
   runningShiftIds = EMPTY_RUNNING_SHIFT_IDS,
+  pendingAskActions,
 }: {
   shift: Shift;
   displayTimeZone?: string | null;
@@ -104,6 +106,10 @@ export function ShiftRow({
    * nobody is on the clock: a caller with no clock reading gets the honest
    * answer, not the loud one. */
   runningShiftIds?: ReadonlySet<string>;
+  /** An outstanding cover ask's action row (`PendingAskActions`), placed
+   * under the row body inside the same card. Absent for every other caller
+   * and row, which render exactly as before. */
+  pendingAskActions?: ReactNode;
 }) {
   const { t } = useTranslation('schedule');
   const router = useRouter();
@@ -291,12 +297,23 @@ export function ShiftRow({
         router.push(`/(private)/schedule/shifts/${shift.id}` as Href)
       }
       className={cn(
-        'relative mx-5.5 mb-2 flex-row items-center justify-between gap-2 rounded-row p-3',
+        pendingAskActions
+          ? 'relative mx-5.5 mb-2 gap-2 rounded-row p-3'
+          : 'relative mx-5.5 mb-2 flex-row items-center justify-between gap-2 rounded-row p-3',
         isResolved ? 'bg-muted' : isLive ? undefined : 'bg-card'
       )}
       style={rowStyle}
     >
-      {rowBody}
+      {pendingAskActions ? (
+        <>
+          <View className="flex-row items-center justify-between gap-2">
+            {rowBody}
+          </View>
+          {pendingAskActions}
+        </>
+      ) : (
+        rowBody
+      )}
     </Pressable>
   );
 }

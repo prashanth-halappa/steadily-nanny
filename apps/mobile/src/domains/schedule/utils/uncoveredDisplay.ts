@@ -16,6 +16,7 @@ import { SHIFT_KINDS } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import {
   type CoveredShiftInput,
   computeUncovered,
+  SCHEDULED_SHIFT_STATUSES,
   type UncoveredWindow,
 } from '@steadily-nanny/shared-types/uncoveredCare';
 import { formatClockTime } from '@/src/domains/timesheet/utils/duration';
@@ -423,6 +424,128 @@ export function splitAwaiting(args: {
     }
   }
   return { unbooked, awaiting };
+}
+
+export type WindowSliceKind = 'pending' | 'confirmed' | 'parentCover';
+
+export interface WindowSlice {
+  kind: WindowSliceKind;
+  /** ISO-8601 UTC instants, clipped to the need window. */
+  startsAt: string;
+  endsAt: string;
+  carerId: string | null;
+}
+
+/**
+ * The rest of a remainder card's need window (A1): the asked-about, booked and
+ * parent-covered pieces of the same child's need window on `localDate`,
+ * clipped to it and sorted by start. Nothing is merged.
+ *
+ * The need window is the commitment's full interval (`computeUncovered` with
+ * no cover), picked by `remainder.commitmentId` + child, containing the
+ * remainder. Shifts match a child exactly as `computeUncovered` does (empty
+ * `shift_children` = every child, whole span; otherwise that child's entry,
+ * with null times meaning the shift's own). Pending-pattern blocks are
+ * `pending`, carrying the pattern's `carer_id` when it has one.
+ *
+ * Fallback: when no need window contains the remainder, returns
+ * `{ needStart: remainder.startsAt, needEnd: remainder.endsAt, slices: [] }`.
+ */
+export function windowSlices(args: {
+  remainder: UncoveredWindow;
+  commitments: readonly ChildCommitment[];
+  /** That day's shifts. */
+  shifts: readonly Shift[];
+  pendingPattern: (AwaitingPattern & { carer_id?: string | null }) | null;
+  localDate: string;
+  timezone: string;
+}): { needStart: string; needEnd: string; slices: WindowSlice[] } {
+  const { remainder } = args;
+  const remStart = Date.parse(remainder.startsAt);
+  const remEnd = Date.parse(remainder.endsAt);
+  const need = computeUncovered({
+    localDate: args.localDate,
+    timezone: args.timezone,
+    needWindows: args.commitments.map(toNeedWindow),
+    shifts: [],
+    closures: [],
+  }).find(
+    w =>
+      w.childId === remainder.childId &&
+      w.commitmentId === remainder.commitmentId &&
+      Date.parse(w.startsAt) <= remStart &&
+      Date.parse(w.endsAt) >= remEnd
+  );
+  if (!need) {
+    return {
+      needStart: remainder.startsAt,
+      needEnd: remainder.endsAt,
+      slices: [],
+    };
+  }
+  const needStart = Date.parse(need.startsAt);
+  const needEnd = Date.parse(need.endsAt);
+
+  const raw: Array<{
+    kind: WindowSliceKind;
+    start: number;
+    end: number;
+    carerId: string | null;
+  }> = [];
+  for (const shift of args.shifts) {
+    if (!SCHEDULED_SHIFT_STATUSES.includes(shift.status)) continue;
+    const kind: WindowSliceKind =
+      shift.kind === SHIFT_KINDS.PARENT_COVER
+        ? 'parentCover'
+        : shift.status === 'pending'
+          ? 'pending'
+          : 'confirmed';
+    const covered = toCoveredShift(shift);
+    const spans =
+      covered.children.length === 0
+        ? [{ startsAt: null, endsAt: null }]
+        : covered.children.filter(c => c.childId === remainder.childId);
+    for (const span of spans) {
+      raw.push({
+        kind,
+        start: Date.parse(span.startsAt ?? covered.startsAt),
+        end: Date.parse(span.endsAt ?? covered.endsAt),
+        carerId: kind === 'parentCover' ? null : shift.carer_id,
+      });
+    }
+  }
+  const patternCarer = args.pendingPattern?.carer_id ?? null;
+  for (const block of patternBlocksOnDate(
+    args.pendingPattern,
+    args.localDate
+  )) {
+    if (block.childId !== null && block.childId !== remainder.childId) continue;
+    raw.push({
+      kind: 'pending',
+      start: block.startMs,
+      end: block.endMs,
+      carerId: patternCarer,
+    });
+  }
+
+  const slices = raw
+    .map(s => ({
+      ...s,
+      start: Math.max(s.start, needStart),
+      end: Math.min(s.end, needEnd),
+    }))
+    .filter(
+      s =>
+        s.start < s.end && !intervalsOverlap(s.start, s.end, remStart, remEnd)
+    )
+    .sort((a, b) => a.start - b.start)
+    .map(s => ({
+      kind: s.kind,
+      startsAt: new Date(s.start).toISOString(),
+      endsAt: new Date(s.end).toISOString(),
+      carerId: s.carerId,
+    }));
+  return { needStart: need.startsAt, needEnd: need.endsAt, slices };
 }
 
 export function withCauses(

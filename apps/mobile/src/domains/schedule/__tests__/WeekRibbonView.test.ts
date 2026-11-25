@@ -149,16 +149,16 @@ describe('WeekRibbonView source', () => {
 
   it('REGRESSION: filled/empty cells are told apart by colour, not by a near-invisible opacity/border trick', () => {
     expect(viewSource).not.toContain('opacity: filled ? 0.85 : 0.15');
-    expect(viewSource).toContain('opacity: 1');
-    expect(viewSource).toContain('borderWidth: 0');
-    expect(viewSource).toContain('themeColors.border');
+    // No state uses translucency any more (spec §1).
+    expect(viewSource).not.toContain('opacity');
+    expect(viewSource).toContain('colors.border');
   });
 
   it('renders a status legend, with a 4th item gated on 2+ distinct carers', () => {
     expect(viewSource).toContain('testID="week-ribbon-legend"');
-    expect(viewSource).toContain("t('shifts.statusConfirmed')");
-    expect(viewSource).toContain("t('shifts.statusPending')");
-    expect(viewSource).toContain("t('shifts.statusCancelled')");
+    expect(viewSource).toContain("'shifts.statusConfirmed'");
+    expect(viewSource).toContain("'shifts.statusPending'");
+    expect(viewSource).toContain("'shifts.statusCancelled'");
     expect(viewSource).toContain('showMultiCarerLegend');
     expect(viewSource).toContain("t('shifts.legendMultiCarer')");
   });
@@ -175,7 +175,8 @@ describe('WeekRibbonView source', () => {
     // The old encoding painted parent_cover with `colors.borderStrong` — the
     // exact grey used for declined/cancelled, telling a parent the gap she
     // personally covered was cancelled.
-    expect(viewSource).toContain('colors.primaryLight');
+    expect(viewSource).toContain('colors.washPlum');
+    expect(viewSource).not.toContain('colors.primaryLight');
     expect(viewSource).not.toContain(
       'if (shift.kind === SHIFT_KINDS.PARENT_COVER) {\n    return colors.borderStrong;'
     );
@@ -190,10 +191,22 @@ describe('WeekRibbonView source', () => {
     // for the same fact, and an outline on a grid whose empty cells are also
     // unfilled reads as "nothing here" instead of "missing".
     expect(viewSource).not.toContain('themeColors.destructive');
-    expect(viewSource).toContain('themeColors.warning');
+    expect(viewSource).toContain('colors.warningStrong');
   });
 
-  it('REGRESSION: uncovered and declined/cancelled are drawn half-height, spatially distinct from a live booking', () => {
+  it('REGRESSION: declined/cancelled are drawn half-height, spatially distinct from a live booking', () => {
     expect(viewSource).toContain('height: 8');
+  });
+
+  it('REGRESSION: the inner cell has no flex-1, which would override its per-state height', () => {
+    expect(viewSource).not.toContain('mx-0.5 flex-1 rounded-full');
+    expect(viewSource).toContain('className="mx-0.5 rounded-full"');
+  });
+
+  it('draws grid cells and legend swatches from one cellStyle, so they cannot drift apart', () => {
+    expect(
+      viewSource.match(/cellStyle\(/g)?.length ?? 0
+    ).toBeGreaterThanOrEqual(3);
+    expect(viewSource).not.toContain('cellVisual');
   });
 });

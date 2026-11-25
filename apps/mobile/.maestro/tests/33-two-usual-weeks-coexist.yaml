@@ -60,10 +60,12 @@ tags:
 # the coexistence assertion below for why. Nanny 2 shows as "Sam Okafor":
 # that is the name flow 31 types when she joins, and it wins over her
 # account name ("Test Nanny Two") in every carer label.
+# UP, not DOWN: the Agenda opens scrolled to today (2026-11-25), and the
+# pattern banners live in the header above today's day header.
 - scrollUntilVisible:
     element:
       text: ".*Test Nanny's usual week is set.*"
-    direction: DOWN
+    direction: UP
     timeout: 10000
 - assertVisible: ".*Test Nanny's usual week is set.*"
 - takeScreenshot: ${OUT}/s3-33-a-nanny1-accepted-before
@@ -308,10 +310,11 @@ tags:
 # Nanny 1's own line is anchored on the exact possessive ("Test Nanny's"):
 # her account name is a prefix of nanny 2's ("Test Nanny Two"), so a loose
 # `.*Test Nanny.*` could match a fallback label for nanny 2.
+# UP: the banners are in the header above today (the Agenda opens on today).
 - scrollUntilVisible:
     element:
       text: '.*Sam Okafor.*usual week is set.*'
-    direction: DOWN
+    direction: UP
     timeout: 15000
 - assertVisible: '.*Sam Okafor.*usual week is set.*'
 - scrollUntilVisible:

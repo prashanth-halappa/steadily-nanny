@@ -8,6 +8,7 @@
 import { beforeAll, describe, expect, it, mock } from 'bun:test';
 import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { render } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 
 mock.module('expo-router', () => ({
   useRouter: () => ({ push: () => {} }),
@@ -113,16 +114,106 @@ describe('WeekRibbonView legend', () => {
     expect(queryByText('cover.parentCoveringRow')).toBeNull();
   });
 
-  it('always renders the 3 status legend items, with no multi-carer item for 0/1 carers', () => {
-    const { getByTestId, queryByTestId, getByText } = render(
+  it('shows only the states present in the visible week, with no multi-carer item for 0/1 carers', () => {
+    const { getByTestId, queryByTestId, getByText, queryByText } = render(
       <WeekRibbonView shifts={[makeShift()]} weekDates={[]} />
     );
 
     expect(getByTestId('week-ribbon-legend')).toBeTruthy();
+    expect(getByTestId('week-ribbon-legend-confirmed')).toBeTruthy();
     expect(getByText('shifts.statusConfirmed')).toBeTruthy();
-    expect(getByText('shifts.statusPending')).toBeTruthy();
-    expect(getByText('shifts.statusCancelled')).toBeTruthy();
+    // A legend item with no matching cell is noise.
+    expect(queryByText('shifts.statusPending')).toBeNull();
+    expect(queryByText('shifts.statusCancelled')).toBeNull();
+    expect(queryByTestId('week-ribbon-legend-pending')).toBeNull();
+    expect(queryByTestId('week-ribbon-legend-cancelled')).toBeNull();
     expect(queryByTestId('week-ribbon-legend-multi-carer')).toBeNull();
+  });
+
+  it('orders legend items by consequence: not booked, pending, confirmed, covering, cancelled', () => {
+    const day = (
+      d: string,
+      status: Shift['status'],
+      kind: Shift['kind'] = 'recurring'
+    ) =>
+      makeShift({
+        id: `shift-${d}`,
+        local_date: `2026-08-0${d}`,
+        starts_at: `2026-08-0${d}T13:00:00.000Z`,
+        ends_at: `2026-08-0${d}T14:00:00.000Z`,
+        status,
+        kind,
+      });
+    const { toJSON } = render(
+      <WeekRibbonView
+        shifts={[
+          day('4', 'cancelled'),
+          day('5', 'confirmed', 'parent_cover'),
+          day('6', 'confirmed'),
+          day('7', 'pending'),
+        ]}
+        displayTimeZone="UTC"
+        weekDates={[]}
+        uncoveredByDay={{
+          '2026-08-03': [
+            {
+              childId: 'child-1',
+              commitmentId: 'commitment-1',
+              startsAt: '2026-08-03T09:00:00.000Z',
+              endsAt: '2026-08-03T10:00:00.000Z',
+            },
+          ],
+        }}
+      />
+    );
+
+    const ids: string[] = [];
+    collectTestIds(toJSON(), ids);
+    const legendIds = ids.filter(
+      id => id.startsWith('week-ribbon-legend-') && !id.endsWith('-swatch')
+    );
+    expect(legendIds).toEqual([
+      'week-ribbon-legend-uncovered',
+      'week-ribbon-legend-pending',
+      'week-ribbon-legend-confirmed',
+      'week-ribbon-legend-parent-cover',
+      'week-ribbon-legend-cancelled',
+    ]);
+  });
+
+  it('draws swatches as mini cells in the grid style: dashed pending capsule, half-height cancelled bar', () => {
+    const { getByTestId } = render(
+      <WeekRibbonView
+        shifts={[
+          makeShift({ id: 'p', status: 'pending' }),
+          makeShift({
+            id: 'c',
+            status: 'cancelled',
+            local_date: '2026-08-04',
+            starts_at: '2026-08-04T13:00:00.000Z',
+            ends_at: '2026-08-04T14:00:00.000Z',
+          }),
+        ]}
+        displayTimeZone="UTC"
+        weekDates={[]}
+      />
+    );
+
+    const pending = StyleSheet.flatten(
+      getByTestId('week-ribbon-legend-pending-swatch').props.style
+    );
+    expect(pending.width).toBe(20);
+    expect(pending.height).toBe(10);
+    expect(pending.borderStyle).toBe('dashed');
+    expect(pending.borderWidth).toBe(1);
+    expect(pending.borderColor).toBe('#9C6E2E'); // warningStrong
+
+    const cancelled = StyleSheet.flatten(
+      getByTestId('week-ribbon-legend-cancelled-swatch').props.style
+    );
+    expect(cancelled.width).toBe(20);
+    expect(cancelled.height).toBe(5);
+    expect(cancelled.backgroundColor).toBe('#7E7280'); // gray[500]
   });
 
   it('adds the multi-carer legend item once the week has 2+ distinct carer_ids', () => {

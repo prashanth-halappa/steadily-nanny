@@ -88,41 +88,186 @@ interface WeekRibbonViewProps {
   listHeader?: ReactNode;
 }
 
-interface CellVisual {
-  backgroundColor: string;
-  opacity: number;
-  /** Full-height (16) reads as "is"; half-height (8) reads as "was, isn't" /
-   * "should be, isn't" — spatially distinct from a live booking, not just a
-   * duller colour. */
-  height: 16 | 8;
-}
+type CellKind =
+  | 'uncovered'
+  | 'pending'
+  | 'confirmed'
+  | 'parentCover'
+  | 'cancelled'
+  | 'empty';
 
-function cellVisual(
-  shift: Shift,
-  colors: ReturnType<typeof useThemeColors>
-): CellVisual {
-  // primaryLight, not borderStrong — a gap the parent covered herself is not
-  // the same fact as a cancelled shift, so it can't share cancelled's grey.
-  if (shift.kind === SHIFT_KINDS.PARENT_COVER) {
-    return { backgroundColor: colors.primaryLight, opacity: 1, height: 16 };
-  }
+function cellKind(
+  shift: Shift | undefined,
+  isUncovered: boolean,
+  isAwaiting: boolean
+): CellKind {
+  // Uncovered wins over any shift, so a visible cancelled bar always means
+  // "nothing needed here now".
+  if (isUncovered) return 'uncovered';
+  if (!shift) return isAwaiting ? 'pending' : 'empty';
+  if (shift.kind === SHIFT_KINDS.PARENT_COVER) return 'parentCover';
   switch (shift.status) {
     case 'confirmed':
     case 'completed':
-      return { backgroundColor: colors.primary, opacity: 1, height: 16 };
+      return 'confirmed';
     case 'pending':
     case 'draft':
-      return { backgroundColor: colors.primary, opacity: 0.45, height: 16 };
+      return 'pending';
     default:
-      // declined | cancelled. borderStrong, not gray200 — gray200 is the
-      // same hex as themeColors.border, which paints empty cells, so a
-      // cancelled block was invisible against the empty grid. Every
-      // ShiftStatus is one of the 6 cases above; this default only exists
-      // so TS sees an exhaustive return, it is not reachable by a distinct
-      // "unknown status" value.
-      return { backgroundColor: colors.borderStrong, opacity: 1, height: 8 };
+      // declined | cancelled — every other ShiftStatus is handled above.
+      return 'cancelled';
   }
 }
+
+/**
+ * The one source of truth for a cell's look; the legend draws its swatches
+ * from this too, so grid and legend cannot drift. Shape (fill / dashed
+ * outline / outline-on-wash / half bar / rule) and hue each carry the state —
+ * no two states share both. Solid amber = you need to act; hollow dashed
+ * amber = asked, waiting on the nanny (dashed = waiting, as `Card
+ * provisional`). Inline style only (GOLDEN-FIXES #2).
+ */
+function cellStyle(kind: CellKind, colors: ReturnType<typeof useThemeColors>) {
+  const none = { borderWidth: 0, borderStyle: 'solid' as const };
+  switch (kind) {
+    case 'uncovered':
+      // warningStrong: plain `warning` is only 2.7:1 on the ground.
+      return {
+        height: 16,
+        backgroundColor: colors.warningStrong,
+        ...none,
+        borderColor: 'transparent',
+      };
+    case 'pending':
+      return {
+        height: 16,
+        backgroundColor: 'transparent',
+        borderWidth: 1.5,
+        borderStyle: 'dashed' as const,
+        borderColor: colors.warningStrong,
+      };
+    case 'confirmed':
+      return {
+        height: 16,
+        backgroundColor: colors.primary,
+        ...none,
+        borderColor: 'transparent',
+      };
+    case 'parentCover':
+      // Household hue, hollow-ish: covered, but not a booking.
+      return {
+        height: 16,
+        backgroundColor: colors.washPlum,
+        borderWidth: 1.5,
+        borderStyle: 'solid' as const,
+        borderColor: colors.primary,
+      };
+    case 'cancelled':
+      // History, so it recedes — but still 3:1+ and never the 2px empty rule.
+      return {
+        height: 8,
+        backgroundColor: colors.gray[500],
+        ...none,
+        borderColor: 'transparent',
+      };
+    case 'empty':
+      return {
+        height: 2,
+        backgroundColor: colors.border,
+        ...none,
+        borderColor: 'transparent',
+      };
+  }
+}
+
+type SegmentKind = Exclude<CellKind, 'cancelled'>;
+interface Segment {
+  kind: SegmentKind;
+  minutes: number;
+}
+interface MinuteSource {
+  startMin: number;
+  endMin: number;
+  kind: SegmentKind;
+  shift?: Shift;
+}
+/** Precedence where sources overlap within the same minutes (addendum A2). */
+const SEGMENT_RANK: Record<SegmentKind, number> = {
+  empty: 0,
+  parentCover: 1,
+  confirmed: 2,
+  pending: 3,
+  uncovered: 4,
+};
+/** Unoccupied minutes inside a split hour: no fill, no rule. */
+const EMPTY_SEGMENT_STYLE = {
+  height: 16,
+  backgroundColor: 'transparent',
+  borderWidth: 0,
+};
+
+/** Does `[startMin, endMin)` (wrapping past midnight, as `hourCellOccupied`) hold minute `t`? */
+function rangeHolds(startMin: number, endMin: number, t: number): boolean {
+  return endMin > startMin
+    ? t >= startMin && t < endMin
+    : t >= startMin || t < endMin;
+}
+
+/**
+ * The hour's minutes as time-ordered, merged `{ kind, minutes }` runs.
+ * Cancelled sources are never passed in, so they count as empty here.
+ */
+function hourSegments(sources: readonly MinuteSource[], hour: number) {
+  const segments: Segment[] = [];
+  for (let m = 0; m < 60; m++) {
+    let kind: SegmentKind = 'empty';
+    for (const source of sources) {
+      if (
+        SEGMENT_RANK[source.kind] > SEGMENT_RANK[kind] &&
+        rangeHolds(source.startMin, source.endMin, hour * 60 + m)
+      ) {
+        kind = source.kind;
+      }
+    }
+    const last = segments[segments.length - 1];
+    if (last?.kind === kind) last.minutes++;
+    else segments.push({ kind, minutes: 1 });
+  }
+  return segments;
+}
+
+/** Legend order is by consequence; empty gets no item (a hairline explains itself). */
+const LEGEND_ITEMS: ReadonlyArray<{
+  kind: Exclude<CellKind, 'empty'>;
+  testID: string;
+  labelKey: string;
+}> = [
+  {
+    kind: 'uncovered',
+    testID: 'week-ribbon-legend-uncovered',
+    labelKey: 'cover.rowPill',
+  },
+  {
+    kind: 'pending',
+    testID: 'week-ribbon-legend-pending',
+    labelKey: 'shifts.statusPending',
+  },
+  {
+    kind: 'confirmed',
+    testID: 'week-ribbon-legend-confirmed',
+    labelKey: 'shifts.statusConfirmed',
+  },
+  {
+    kind: 'parentCover',
+    testID: 'week-ribbon-legend-parent-cover',
+    labelKey: 'cover.parentCoveringRow',
+  },
+  {
+    kind: 'cancelled',
+    testID: 'week-ribbon-legend-cancelled',
+    labelKey: 'shifts.statusCancelled',
+  },
+];
 
 function densestShift(
   shifts: Shift[],
@@ -235,12 +380,89 @@ export function WeekRibbonView({
     new Set(
       shifts.map(s => s.carer_id).filter((id): id is string => Boolean(id))
     ).size >= 2;
-  const showUncoveredLegend =
-    uncoveredByDay !== undefined &&
-    Object.values(uncoveredByDay).some(windows => windows.length > 0);
-  const showParentCoverLegend = shifts.some(
-    s => s.kind === SHIFT_KINDS.PARENT_COVER
-  );
+  // One pass resolves every visible cell; the legend shows only the kinds
+  // that actually appear, so it never explains a state that isn't on screen.
+  const grid = useMemo(() => {
+    const cells = new Map<
+      string,
+      { kind: CellKind; shift?: Shift; segments?: Segment[] }
+    >();
+    const present = new Set<CellKind>();
+    // Minute ranges per weekday, for hours that are themselves partial.
+    const sourcesByDow = new Map<number, MinuteSource[]>();
+    const addSource = (localDate: string, source: MinuteSource) => {
+      const dow = localDateToWeekday(localDate);
+      const list = sourcesByDow.get(dow) ?? [];
+      list.push(source);
+      sourcesByDow.set(dow, list);
+    };
+    for (const [byDay, kind] of [
+      [uncoveredByDay, 'uncovered'],
+      [awaitingByDay, 'pending'],
+    ] as const) {
+      for (const [localDate, windows] of Object.entries(byDay ?? {})) {
+        for (const window of windows) {
+          addSource(localDate, {
+            startMin: minutesInZone(window.startsAt, displayTimeZone),
+            endMin: minutesInZone(window.endsAt, displayTimeZone),
+            kind,
+          });
+        }
+      }
+    }
+    for (const shift of shifts) {
+      const kind = cellKind(shift, false, false);
+      if (kind === 'cancelled') continue;
+      addSource(shift.local_date, {
+        startMin: minutesInZone(shift.starts_at, displayTimeZone),
+        endMin: minutesInZone(shift.ends_at, displayTimeZone),
+        kind,
+        shift,
+      });
+    }
+    for (const hour of visibleHours) {
+      for (const dow of displayOrder) {
+        const key = `${dow}-${hour}`;
+        const sources = sourcesByDow.get(dow) ?? [];
+        const segments = hourSegments(sources, hour);
+        const kinds = new Set(
+          segments.map(s => s.kind).filter(k => k !== 'empty')
+        );
+        if (kinds.size >= 2) {
+          // Routable only when exactly one shift is in the hour; a
+          // parent-cover cell is never routable, split or not.
+          const inHour = sources.filter(
+            s => s.shift && hourCellOccupied(s.startMin, s.endMin, hour)
+          );
+          const only = inHour.length === 1 ? inHour[0] : undefined;
+          const shift = only?.kind === 'parentCover' ? undefined : only?.shift;
+          const [first] = kinds;
+          cells.set(key, { kind: first ?? 'empty', shift, segments });
+          for (const k of kinds) present.add(k);
+          continue;
+        }
+        const shift = densestShift(shifts, dow, hour, displayTimeZone);
+        // Asked, not yet answered (a pending pattern materialises no shifts).
+        const kind = cellKind(
+          shift,
+          uncoveredCells.has(key),
+          awaitingCells.has(key)
+        );
+        cells.set(key, { kind, shift });
+        present.add(kind);
+      }
+    }
+    return { cells, present };
+  }, [
+    visibleHours,
+    displayOrder,
+    shifts,
+    displayTimeZone,
+    uncoveredCells,
+    awaitingCells,
+    uncoveredByDay,
+    awaitingByDay,
+  ]);
 
   return (
     <ScrollView
@@ -259,61 +481,32 @@ export function WeekRibbonView({
         testID="week-ribbon-legend"
         className="flex-row flex-wrap items-center gap-4 pb-4"
       >
-        <View className="flex-row items-center gap-2">
-          <View
-            className="h-3 w-3 rounded-full"
-            style={{ backgroundColor: themeColors.primary }}
-          />
-          <MetadataLabel className="text-muted-foreground">
-            {t('shifts.statusConfirmed')}
-          </MetadataLabel>
-        </View>
-        <View className="flex-row items-center gap-2">
-          <View
-            className="h-3 w-3 rounded-full"
-            style={{ backgroundColor: themeColors.primary, opacity: 0.45 }}
-          />
-          <MetadataLabel className="text-muted-foreground">
-            {t('shifts.statusPending')}
-          </MetadataLabel>
-        </View>
-        <View className="flex-row items-center gap-2">
-          <View
-            className="h-3 w-3 rounded-full"
-            style={{ backgroundColor: themeColors.borderStrong }}
-          />
-          <MetadataLabel className="text-muted-foreground">
-            {t('shifts.statusCancelled')}
-          </MetadataLabel>
-        </View>
-        {showParentCoverLegend ? (
-          <View
-            testID="week-ribbon-legend-parent-cover"
-            className="flex-row items-center gap-2"
-          >
+        {LEGEND_ITEMS.filter(item => grid.present.has(item.kind)).map(item => {
+          const style = cellStyle(item.kind, themeColors);
+          return (
             <View
-              className="h-3 w-3 rounded-full"
-              style={{ backgroundColor: themeColors.primaryLight }}
-            />
-            <MetadataLabel className="text-muted-foreground">
-              {t('cover.parentCoveringRow')}
-            </MetadataLabel>
-          </View>
-        ) : null}
-        {showUncoveredLegend ? (
-          <View
-            testID="week-ribbon-legend-uncovered"
-            className="flex-row items-center gap-2"
-          >
-            <View
-              className="h-3 w-3 rounded-full"
-              style={{ backgroundColor: themeColors.warning }}
-            />
-            <MetadataLabel className="text-muted-foreground">
-              {t('cover.rowPill')}
-            </MetadataLabel>
-          </View>
-        ) : null}
+              key={item.kind}
+              testID={item.testID}
+              className="flex-row items-center gap-2"
+            >
+              {/* A mini cell, not a dot — a dot can't show "hollow dashed"
+                    or "half-height". */}
+              <View
+                testID={`${item.testID}-swatch`}
+                className="rounded-full"
+                style={{
+                  ...style,
+                  width: 20,
+                  height: item.kind === 'cancelled' ? 5 : 10,
+                  borderWidth: style.borderWidth ? 1 : 0,
+                }}
+              />
+              <MetadataLabel className="text-muted-foreground">
+                {t(item.labelKey)}
+              </MetadataLabel>
+            </View>
+          );
+        })}
         {showMultiCarerLegend ? (
           <MetadataLabel
             testID="week-ribbon-legend-multi-carer"
@@ -356,70 +549,57 @@ export function WeekRibbonView({
             </MetadataLabel>
           </View>
           {displayOrder.map(dow => {
-            const shift = densestShift(shifts, dow, hour, displayTimeZone);
-            const isUncovered = uncoveredCells.has(`${dow}-${hour}`);
-            const filled = shift !== undefined;
-            // Asked, not yet answered (a pending pattern materialises no
-            // shifts): drawn exactly like a pending shift. A real pending
-            // shift in the cell already draws that way on its own.
-            const isAwaiting =
-              !isUncovered && !filled && awaitingCells.has(`${dow}-${hour}`);
-            const visual = shift
-              ? cellVisual(shift, themeColors)
-              : isAwaiting
-                ? {
-                    backgroundColor: themeColors.primary,
-                    opacity: 0.45,
-                    height: 16,
-                  }
-                : undefined;
-            const isParentCover = shift?.kind === SHIFT_KINDS.PARENT_COVER;
-            // Empty cells are a thin centred rule, not a full-height muted
-            // capsule — the row's own `items-center` centres it — so an
-            // occupied block is the only real shape on screen. An uncovered
-            // cell wins over any shift and stays a non-navigating View. It
-            // is FILLED with warning, never an outline — an outline on a
-            // grid whose empty cells are also unfilled reads as "nothing
-            // here", the opposite of "something is required and missing".
-            const cell = (
+            const { kind, shift, segments } = grid.cells.get(
+              `${dow}-${hour}`
+            ) ?? { kind: 'empty' as const };
+            const isUncovered = kind === 'uncovered';
+            const isParentCover = kind === 'parentCover';
+            // No flex-1 here: its flexBasis would fight the per-state height.
+            // The wrapper is flex-1 in the row and stretches this across.
+            const cell = segments ? (
               <View
                 testID={`week-ribbon-cell-${dow}-${hour}`}
-                accessibilityState={{
-                  selected: isUncovered || filled || isAwaiting,
-                }}
+                accessibilityState={{ selected: true }}
+                accessibilityLabel={segments
+                  .filter(s => s.kind !== 'empty')
+                  .map(s => s.kind)
+                  .join('+')}
+                className="mx-0.5"
+                style={{ flexDirection: 'row', gap: 1, height: 16 }}
+              >
+                {segments.map((s, i) => (
+                  <View
+                    // biome-ignore lint/suspicious/noArrayIndexKey: segments are positional within a fixed hour
+                    key={i}
+                    testID={`week-ribbon-cell-${dow}-${hour}-seg-${i}`}
+                    style={{
+                      ...(s.kind === 'empty'
+                        ? EMPTY_SEGMENT_STYLE
+                        : cellStyle(s.kind, themeColors)),
+                      flex: s.minutes,
+                      minWidth: 6,
+                      borderRadius: 8,
+                    }}
+                  />
+                ))}
+              </View>
+            ) : (
+              <View
+                testID={`week-ribbon-cell-${dow}-${hour}`}
+                accessibilityState={{ selected: kind !== 'empty' }}
                 accessibilityLabel={
                   isUncovered
                     ? 'uncovered'
                     : isParentCover
                       ? 'parent_cover'
-                      : (shift?.status ?? (isAwaiting ? 'pending' : 'empty'))
+                      : (shift?.status ?? kind)
                 }
-                className="mx-0.5 flex-1 rounded-full"
-                style={
-                  isUncovered
-                    ? {
-                        height: 8,
-                        backgroundColor: themeColors.warning,
-                        opacity: 1,
-                        borderWidth: 0,
-                      }
-                    : visual
-                      ? {
-                          height: visual.height,
-                          backgroundColor: visual.backgroundColor,
-                          opacity: visual.opacity,
-                          borderWidth: 0,
-                        }
-                      : {
-                          height: 2,
-                          backgroundColor: themeColors.border,
-                          opacity: 1,
-                          borderWidth: 0,
-                        }
-                }
+                className="mx-0.5 rounded-full"
+                style={cellStyle(kind, themeColors)}
               />
             );
-            if (isUncovered || !shift || isParentCover) {
+            // A split cell carries a shift only when it is routable.
+            if (!shift || (!segments && (isUncovered || isParentCover))) {
               return (
                 <View key={`${dow}-${hour}`} className="flex-1">
                   {cell}
