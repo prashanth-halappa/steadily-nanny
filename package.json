@@ -7,7 +7,9 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "turbo run dev",
+    "dev": "bash scripts/dev.sh local",
+    "devapp-devapi-proddata": "bash scripts/dev.sh devapi-proddata",
+    "devapp-prodapi-proddata": "bash scripts/dev.sh prodapi-proddata",
     "dev:mobile": "turbo run dev --filter=@steadily-nanny/mobile",
     "dev:api": "turbo run dev --filter=@steadily-nanny/api",
     "build": "turbo run build",

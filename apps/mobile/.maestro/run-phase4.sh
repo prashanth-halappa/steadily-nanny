@@ -29,7 +29,7 @@ REPO_ROOT="/Users/prashanthhalappa/Documents/Steadily-Nanny/steadily-nanny"
 MAESTRO_DIR="${REPO_ROOT}/apps/mobile/.maestro"
 ENV_FILE="${REPO_ROOT}/apps/mobile/.env.maestro"
 API_BASE="${API_BASE:-http://localhost:8080}"
-SIM_UDID="${SIM_UDID:-3DE35533-5F01-4D79-80AC-15CF0DCDFECE}"
+SIM_UDID="${SIM_UDID:-406FAE1A-D588-401D-B69A-32E0F5EEFDA2}" # iPhone 18 Pro (the 16 Pro was deleted 2026-11-25)
 
 # --- simulator prep (2026-08-11) -------------------------------------------
 disable_ios_quicktype() {

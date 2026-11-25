@@ -58,5 +58,38 @@
   // lives in CRON_JOBS in src/scheduled.ts and is matched on every tick.
   "triggers": {
     "crons": ["* * * * *"]
+  },
+
+  // `bun run devapp-devapi-proddata` ONLY: local API code (`wrangler dev --env
+  // proddata`) over the PRODUCTION D1 via a remote binding. Secrets come from
+  // .dev.vars.proddata (wrangler picks it over .dev.vars for this env).
+  // Never deploy this env: no routes, no workers.dev, no crons — so a stray
+  // `wrangler deploy --env proddata` can't take traffic or run jobs. `define`,
+  // `vars`, `d1_databases` and `triggers` don't inherit, hence restated.
+  "env": {
+    "proddata": {
+      "routes": [],
+      "workers_dev": false,
+      "define": {
+        "process.env.NODE_ENV": "globalThis.process.env.NODE_ENV",
+        "global.process.env.NODE_ENV": "globalThis.process.env.NODE_ENV",
+        "globalThis.process.env.NODE_ENV": "globalThis.process.env.NODE_ENV"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "steadily-nanny",
+          "database_id": "e005f65c-5eed-48de-a8bd-799d63d826c3",
+          "migrations_dir": "migrations",
+          "remote": true
+        }
+      ],
+      "vars": {
+        "NODE_ENV": "production",
+        "LOG_LEVEL": "info",
+        "BETTER_AUTH_URL": "https://api.nanny.getsteadily.app"
+      },
+      "triggers": { "crons": [] }
+    }
   }
 }
