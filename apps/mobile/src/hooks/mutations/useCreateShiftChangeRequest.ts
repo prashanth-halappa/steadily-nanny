@@ -21,13 +21,17 @@ export function useCreateShiftChangeRequest() {
       shiftId: string;
       input: CreateShiftChangeRequestInput;
     }) => changeRequestApi.create(shiftId, input),
-    onSuccess: (_result, vars) => {
+    onSuccess: (result, vars) => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.shift.changeRequests(vars.shiftId),
       });
       queryClient.invalidateQueries({ queryKey: queryKeys.shift.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.me.all });
-      showSuccessToast(t('schedule:change.requestedToast'));
+      showSuccessToast(
+        result.status === 'applied'
+          ? t('schedule:change.cancelledToast')
+          : t('schedule:change.requestedToast')
+      );
     },
     onSettled: () => {
       requestCalendarSync();

@@ -23,7 +23,7 @@ import {
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { usePullToRefresh } from '@/lib/layout/usePullToRefresh';
 import { useTabBarScrollPadding } from '@/lib/layout/useTabBarScrollPadding';
 import { InlineRetry } from '@/src/components/custom/InlineRetry';
@@ -75,6 +75,7 @@ import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { localDateInZone } from '@/src/lib/localDate';
+import { showInfoToast } from '@/src/lib/toast';
 import { utcIsoToWallClockHHMM } from '@/src/lib/wallClock';
 import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
@@ -352,9 +353,11 @@ function UncoveredRow({
     });
   };
 
-  // Addendum A1: the remainder card names what the rest of its need window
-  // is — asked, booked, parent-covered. Context only: the remainder keeps
-  // its own pill, tier, actions and count (S1).
+  // Addendum A1: the remainder card names the ASKED part of the rest of its
+  // need window ("asked Andrea"). Booked and parent-covered parts are left
+  // out on purpose — their own rows sit right above this card, so a slice
+  // would only repeat them (user, 2026-11-25 phone review). Context only:
+  // the remainder keeps its own pill, tier, actions and count (S1).
   const zone = displayTimeZone ?? 'UTC';
   const rest = useMemo(
     () =>
@@ -376,31 +379,47 @@ function UncoveredRow({
       : undefined;
     return member ? resolveCarerName(member, '').trim().split(/\s+/)[0] : '';
   };
-  const sliceText = (slice: WindowSlice) => {
+  const askedSlices =
+    rest?.slices.filter(slice => slice.kind === 'pending') ?? [];
+  const askedText = (slice: WindowSlice) => {
     const range = {
       start: formatShiftTime(slice.startsAt, displayTimeZone),
       end: formatShiftTime(slice.endsAt, displayTimeZone),
     };
-    if (slice.kind === 'parentCover') {
-      return t('cover.slice.parentCover', range);
-    }
     const carerName = sliceCarerName(slice.carerId);
-    if (slice.kind === 'pending') {
-      return carerName
-        ? t('cover.slice.asked', { ...range, carerName })
-        : t('cover.slice.askedNoName', range);
-    }
     return carerName
-      ? t('cover.slice.booked', { ...range, carerName })
-      : t('cover.slice.bookedNoName', range);
+      ? t('cover.slice.asked', { ...range, carerName })
+      : t('cover.slice.askedNoName', range);
   };
 
   const recipientToneClass = isLoud
     ? 'text-muted-strong'
     : 'text-muted-foreground';
 
+  // An awaiting row is a slice of a usual week the carer hasn't answered.
+  // A parent tapping it expects to edit that one day — which isn't possible
+  // until it's accepted (the server has no pending→draft; layout spec §2b).
+  // So the tap answers instead of doing nothing: a toast saying when single
+  // days unlock. Only the inner "See the usual week" button navigates; a
+  // press on it goes to that button alone, so nothing fires twice.
+  const isLockedAwaiting = awaiting && showActions;
+  const lockedCarerName = sliceCarerName(pendingPattern?.carer_id ?? null);
+  const lockedNote = lockedCarerName
+    ? t('cover.awaitingLockedNote', { carerName: lockedCarerName })
+    : t('cover.awaitingLockedNoteNoName');
+  const openUsualWeek = () =>
+    router.push('/(private)/schedule/usual-week' as Href);
+  const RowContainer = isLockedAwaiting ? Pressable : View;
+
   return (
-    <View
+    <RowContainer
+      {...(isLockedAwaiting
+        ? {
+            onPress: () => showInfoToast(lockedNote),
+            accessibilityRole: 'button' as const,
+            accessibilityHint: lockedNote,
+          }
+        : {})}
       testID={`schedule-${awaiting ? 'awaiting' : 'uncovered'}-${key}`}
       className="mx-5.5 mb-2 gap-3 rounded-row p-4"
       style={[
@@ -457,7 +476,7 @@ function UncoveredRow({
           </Small>
         ) : null}
       </View>
-      {rest && rest.slices.length > 0 ? (
+      {rest && askedSlices.length > 0 ? (
         <View testID={`schedule-uncovered-${key}-slices`} className="gap-1">
           <MetadataLabel className="text-muted-foreground">
             {t('cover.slice.heading', {
@@ -465,30 +484,24 @@ function UncoveredRow({
               end: formatShiftTime(rest.needEnd, displayTimeZone),
             })}
           </MetadataLabel>
-          {rest.slices.map((slice, i) => (
+          {askedSlices.map((slice, i) => (
             <View
               // biome-ignore lint/suspicious/noArrayIndexKey: slices are positional, time-ordered within one window
               key={i}
               testID={`schedule-uncovered-${key}-slice-${i}`}
               className="flex-row items-center gap-2"
             >
-              {slice.kind === 'parentCover' ? null : (
-                <StatusPill
-                  testID={`schedule-uncovered-${key}-slice-${i}-pill`}
-                  variant={slice.kind === 'pending' ? 'pending' : 'confirmed'}
-                  label={
-                    slice.kind === 'pending'
-                      ? t('cover.rowPillPending')
-                      : t('shifts.statusConfirmed')
-                  }
-                />
-              )}
+              <StatusPill
+                testID={`schedule-uncovered-${key}-slice-${i}-pill`}
+                variant="pending"
+                label={t('cover.rowPillPending')}
+              />
               <Small
                 testID={`schedule-uncovered-${key}-slice-${i}-text`}
                 className="flex-1 text-muted-foreground"
                 tabular
               >
-                {sliceText(slice)}
+                {askedText(slice)}
               </Small>
             </View>
           ))}
@@ -500,7 +513,7 @@ function UncoveredRow({
           variant="ghost"
           size="sm"
           className="self-start"
-          onPress={() => router.push('/(private)/schedule/usual-week' as Href)}
+          onPress={openUsualWeek}
         >
           {t('cover.awaitingSee')}
         </Button>
@@ -572,7 +585,7 @@ function UncoveredRow({
           </View>
         )
       ) : null}
-    </View>
+    </RowContainer>
   );
 }
 

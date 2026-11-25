@@ -29,8 +29,10 @@ export const changeRequestEndpoints = {
     `/v1/households/${householdId}/shifts/extra`,
 } as const;
 
+// `applied` = a no-fee cancel the server applied straight away (sent only
+// when the client opts in with `cancel_now_if_unpaid`).
 const CreateResultSchema = z.object({
-  status: z.literal('pending'),
+  status: z.enum(['pending', 'applied']),
   shift_change_request: ShiftChangeRequestSchema,
 });
 

@@ -462,6 +462,7 @@ export function ManageHouseholdScreen() {
             <PaySetupPromptCard
               key={nanny.id}
               householdId={household.id}
+              householdTimezone={household.timezone}
               carerId={nanny.user_id}
               // Override -> profile name -> role label. Without the middle
               // link two un-renamed nannies rendered identical cards.

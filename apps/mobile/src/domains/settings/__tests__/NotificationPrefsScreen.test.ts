@@ -113,6 +113,14 @@ describe('NotificationPrefsScreen', () => {
     expect(source).toContain('PUSH_TYPE_AUDIENCE[type]');
   });
 
+  // The nanny is pushed `shift_cancelled` (pay outcome, and the instant
+  // no-fee cancel), so she gets its toggle.
+  it('surfaces the shift_cancelled toggle to a nanny', () => {
+    expect(PUSH_TYPE_AUDIENCE[PUSH_NOTIFICATION_TYPES.SHIFT_CANCELLED]).toBe(
+      'both'
+    );
+  });
+
   it('groups visible push types under Schedule, Hours and pay, and Your household headings', () => {
     expect(source).toContain('notificationPrefs.groups.schedule');
     expect(source).toContain('notificationPrefs.groups.hoursAndPay');

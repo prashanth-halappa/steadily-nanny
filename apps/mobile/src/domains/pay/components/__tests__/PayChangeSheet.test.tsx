@@ -236,6 +236,31 @@ describe('PayChangeSheet', () => {
     expect(getByTestId('pay-change-consequence-1')).toBeTruthy();
   });
 
+  it('no "two rates" consequence when the seeded terms have not started (no rate in effect)', () => {
+    const { getByTestId, queryByTestId } = renderSheet({ rateInEffect: false });
+    fireEvent.changeText(getByTestId('pay-change-rate-input'), '19.50');
+    expect(queryByTestId('pay-change-consequence-card')).toBeNull();
+  });
+
+  it('says a change is a proposal the other side must agree to', () => {
+    const { getByTestId, queryByTestId } = renderSheet({
+      counterpartyName: 'Andrea',
+    });
+    expect(getByTestId('pay-change-agreement-note').props.children).toBe(
+      'changeSheet.agreementNote'
+    );
+    expect(queryByTestId('pay-change-supersedes-note')).toBeNull();
+  });
+
+  it('says it replaces the open round when one is waiting', () => {
+    const { getByTestId, queryByTestId } = renderSheet({
+      counterpartyName: 'Andrea',
+      supersedesOpenProposal: true,
+    });
+    expect(getByTestId('pay-change-supersedes-note')).toBeTruthy();
+    expect(queryByTestId('pay-change-agreement-note')).toBeNull();
+  });
+
   it('a changed GUARANTEE gets its own consequence sentence, not only the rate', () => {
     const { getByTestId } = renderSheet();
 

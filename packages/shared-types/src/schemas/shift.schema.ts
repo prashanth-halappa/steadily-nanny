@@ -282,6 +282,15 @@ export const CreateShiftChangeRequestSchema = z
     proposed_starts_at: z.iso.datetime({ offset: true }).optional(),
     proposed_ends_at: z.iso.datetime({ offset: true }).optional(),
     message: z.string().optional(),
+    /**
+     * Cancel only. The client can show "cancelled straight away" copy, so it
+     * opts in to the server applying a cancel that the SERVER prices as unpaid
+     * (arrangement effective on the shift's household-local date). The flag
+     * never decides whether a cancel is paid. It only lets the server skip the
+     * nanny's accept when nothing is owed. Old clients leave it out and keep
+     * the request flow their copy describes.
+     */
+    cancel_now_if_unpaid: z.boolean().optional(),
   })
   .refine(
     data =>

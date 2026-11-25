@@ -154,7 +154,7 @@ describe('AgendaView row tiers (P0-4)', () => {
     expect(queryByTestId('schedule-shift-accent-s-draft')).toBeNull();
   });
 
-  it('confirmed/completed rows are unchanged — bg-card, elevation, no accent bar, and no StatusPill (a settled row is not a thing to act on)', () => {
+  it('confirmed rows show the green Confirmed pill; completed rows stay pill-free; neither gets an accent bar', () => {
     const { getByTestId, queryByTestId } = render(
       <AgendaView
         shifts={[
@@ -173,7 +173,11 @@ describe('AgendaView row tiers (P0-4)', () => {
     expect(confirmedRow.props.className).toContain('bg-card');
     expect(confirmedRow.props.style).toBeTruthy();
     expect(queryByTestId('schedule-shift-accent-s-confirmed')).toBeNull();
-    expect(queryByTestId('schedule-shift-status-s-confirmed')).toBeNull();
+    const pill = getByTestId('schedule-shift-status-s-confirmed');
+    expect(pill).toBeTruthy();
+    expect(
+      getByTestId('schedule-shift-status-s-confirmed-label').props.children
+    ).toBe('shifts.statusConfirmed');
 
     const completedRow = getByTestId('schedule-shift-s-completed');
     expect(completedRow.props.className).toContain('bg-card');

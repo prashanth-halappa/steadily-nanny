@@ -27,25 +27,33 @@ import { CardArt } from '@/src/components/ui/card-art';
 import { Text } from '@/src/components/ui/text';
 import { Body, Small } from '@/src/components/ui/typography';
 import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
+import { usePayArrangementHistory } from '@/src/hooks/queries/usePayArrangementHistory';
 import {
   findOpenTermsProposal,
   useTermsProposals,
 } from '@/src/hooks/queries/useTermsProposals';
+import { localDateInZone } from '@/src/lib/localDate';
+import { payTermsState } from '../utils/payTermsState';
 
 interface PaySetupPromptCardProps {
   householdId: string;
   carerId: string;
   carerName: string;
+  /** For household-local "today": agreed terms that start later are not a
+   * gap to fill (`payTermsState`). */
+  householdTimezone: string;
 }
 
 export function PaySetupPromptCard({
   householdId,
   carerId,
   carerName,
+  householdTimezone,
 }: PaySetupPromptCardProps) {
   const { t } = useTranslation('pay');
   const router = useRouter();
   const current = useCurrentPayArrangement(householdId, carerId);
+  const history = usePayArrangementHistory(householdId, carerId);
   const proposals = useTermsProposals(householdId, carerId);
   const openProposal = findOpenTermsProposal(proposals.data);
 
@@ -55,11 +63,20 @@ export function PaySetupPromptCard({
   // know there IS a gap, once an arrangement exists the card's whole reason
   // to exist is gone, and with an open proposal the parent should review
   // that negotiation rather than write terms over it (B2).
+  // Agreed terms that start later are terms too (`payTermsState`), so no
+  // "Set up pay" over them; and nothing is said until BOTH reads resolve.
   if (
     current.isPending ||
     current.isError ||
-    current.data !== null ||
-    openProposal
+    history.isPending ||
+    history.isError ||
+    openProposal ||
+    payTermsState({
+      current: current.data,
+      history: history.data,
+      openProposal,
+      todayISO: localDateInZone(householdTimezone),
+    }).kind !== 'none'
   ) {
     return null;
   }

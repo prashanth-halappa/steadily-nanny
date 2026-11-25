@@ -2,8 +2,9 @@
  * @module domains/schedule/__tests__/AgendaView.slices.test
  *
  * Partial-coverage addendum A1: the remainder "Not booked yet" card names
- * the REST of its need window — what is asked, booked, or parent-covered —
- * as a section of slice rows. S1 is untouched: the remainder keeps its pill,
+ * the ASKED part of the rest of its need window as slice rows ("asked
+ * Andrea"). Booked and parent-covered parts are not repeated — their own
+ * rows sit right above the card (user, 2026-11-25 phone review). S1 is untouched: the remainder keeps its pill,
  * its actions and its own row; the section only adds context, and only when
  * there is something to say.
  */
@@ -195,26 +196,40 @@ describe('AgendaView partial coverage: "The rest of …" on the remainder card',
     expect(utils.getByTestId(`schedule-uncovered-cover-${key}`)).toBeTruthy();
   });
 
-  it('partial coverage: a confirmed rest is "with Andrea", Confirmed pill', () => {
-    const utils = renderCard([shift({ status: 'confirmed' })]);
-    expect(
-      textOf(utils.getByTestId(`schedule-uncovered-${key}-slice-0-text`))
-    ).toBe('8:00 AM – 9:00 AM · with Andrea');
-    expect(
-      textOf(utils.getByTestId(`schedule-uncovered-${key}-slice-0-pill-label`))
-    ).toBe('Confirmed');
+  it('a confirmed or parent-cover rest adds no section — its own row sits right above the card', () => {
+    for (const rest of [
+      shift({ status: 'confirmed' }),
+      shift({ status: 'completed' }),
+      shift({ kind: 'parent_cover', status: 'confirmed', carer_id: null }),
+    ]) {
+      const utils = renderCard([rest]);
+      expect(
+        utils.queryByTestId(`schedule-uncovered-${key}-slices`)
+      ).toBeNull();
+      expect(utils.queryByText(/^The rest of/)).toBeNull();
+      utils.unmount();
+    }
   });
 
-  it('a parent-cover rest reads "you\'re covering" and carries no pill', () => {
+  it('mixed rest: only the asked part is listed', () => {
     const utils = renderCard([
-      shift({ kind: 'parent_cover', status: 'confirmed', carer_id: null }),
+      shift({
+        id: 'shift-asked',
+        status: 'pending',
+        starts_at: '2026-08-03T12:00:00.000Z',
+        ends_at: '2026-08-03T12:30:00.000Z',
+      }),
+      shift({
+        id: 'shift-booked',
+        status: 'confirmed',
+        starts_at: '2026-08-03T12:30:00.000Z',
+        ends_at: z(13),
+      }),
     ]);
     expect(
       textOf(utils.getByTestId(`schedule-uncovered-${key}-slice-0-text`))
-    ).toBe("8:00 AM – 9:00 AM · you're covering");
-    expect(
-      utils.queryByTestId(`schedule-uncovered-${key}-slice-0-pill`)
-    ).toBeNull();
+    ).toBe('8:00 AM – 8:30 AM · asked Andrea');
+    expect(utils.queryByTestId(`schedule-uncovered-${key}-slice-1`)).toBeNull();
   });
 
   it('a plain whole-window gap has no section', () => {

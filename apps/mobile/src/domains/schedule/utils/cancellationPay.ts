@@ -12,8 +12,13 @@
  * pay (D-48): the server's old fallback to
  * `households.cancellation_paid_within_hours` was removed in 3-T3, so the
  * "ONE deliberate difference" this comment used to describe no longer exists.
- * Without an arrangement the week cannot be priced at all, and "there are no
- * pay terms set, so we can't say" is the honest thing to show.
+ * Without an arrangement the server pays nothing, so the copy says so.
+ *
+ * Every variant except `paid` (and `pending`) is a cancel the server applies
+ * straight away, without the carer's accept (`create` with
+ * `cancel_now_if_unpaid`). The caller must pass the arrangement effective on
+ * the SHIFT's household-local date (`usePayArrangementOn`), the same row the
+ * server prices with, never today's.
  *
  * The arrangement's window is the ONLY cancellation window in the product
  * (§6.1 / D21). `households.cancellation_paid_within_hours` is deprecated and
@@ -29,7 +34,7 @@ import { formatMoney } from '@/src/lib/money';
 export type CancellationPayVariant =
   /** The arrangement query has not resolved — assert nothing about pay. */
   | 'pending'
-  /** No arrangement at all: unpriceable, and we say exactly that. */
+  /** No arrangement at all: the server does not pay it. */
   | 'unknown'
   /** An arrangement with an explicit `null` window: no cancellation pay. */
   | 'noCancellationTerms'

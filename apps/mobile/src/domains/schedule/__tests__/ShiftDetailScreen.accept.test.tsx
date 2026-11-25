@@ -96,8 +96,8 @@ beforeAll(async () => {
   // cancel dialog's pay sentence and the household for the co-parent
   // restricted state. Stubbed here so this suite keeps testing its own
   // subject — see ShiftDetailScreen.cancelPay.test.tsx for their behaviour.
-  mock.module('@/src/hooks/queries/useCurrentPayArrangement', () => ({
-    useCurrentPayArrangement: () => ({ data: null, isLoading: false }),
+  mock.module('@/src/hooks/queries/usePayArrangementOn', () => ({
+    usePayArrangementOn: () => ({ data: null, isLoading: false }),
   }));
   mock.module('@/src/hooks/queries/useHouseholds', () => ({
     useHouseholds: () => ({ data: [], isLoading: false }),

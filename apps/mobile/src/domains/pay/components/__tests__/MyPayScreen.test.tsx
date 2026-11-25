@@ -279,6 +279,25 @@ describe('MyPayScreen', () => {
     );
   });
 
+  it('(b) agreed terms that start later: the terms with "Starts", not the empty state', async () => {
+    const startsISO = new Date(Date.now() + 3 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    payHistoryMock.mockImplementation(((householdId: string) =>
+      Promise.resolve(
+        householdId === HOUSEHOLD_B
+          ? [{ ...arrangementFor(HOUSEHOLD_B), valid_from: startsISO }]
+          : []
+      )) as unknown as () => Promise<unknown[]>);
+
+    const { getByTestId, queryByTestId } = renderWithProviders(<MyPayScreen />);
+
+    await waitFor(() =>
+      expect(getByTestId(`my-pay-terms-starts-on-${HOUSEHOLD_B}`)).toBeTruthy()
+    );
+    expect(queryByTestId(`my-pay-empty-${HOUSEHOLD_B}`)).toBeNull();
+  });
+
   it('an entitlement is set: fetches and renders the real per-family PTO balance', async () => {
     payCurrentMock.mockImplementation((householdId: string) =>
       Promise.resolve(

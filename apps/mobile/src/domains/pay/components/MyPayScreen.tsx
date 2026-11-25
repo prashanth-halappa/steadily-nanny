@@ -93,7 +93,11 @@ import { formatMoney } from '@/src/lib/money';
 import { proposalReviewHref } from '@/src/lib/notificationRouteMap';
 import { useAuthStore } from '@/src/store/auth';
 import { hasSeenAck, resolveAckState, seenAckAt } from '../utils/ackState';
-import { formatDisplayDateWithYear } from '../utils/payArrangementForm';
+import {
+  formatDisplayDateWithWeekday,
+  formatDisplayDateWithYear,
+} from '../utils/payArrangementForm';
+import { payTermsState } from '../utils/payTermsState';
 import {
   proposalHistoryLabel,
   proposalStateWord,
@@ -199,18 +203,31 @@ function MyPayHouseholdCard({
   const router = useRouter();
   const current = useCurrentPayArrangement(household.id, carerId);
   const history = usePayArrangementHistory(household.id, carerId);
-  const acks = usePayArrangementAcks(household.id, carerId, current.data?.id);
+  const proposals = useTermsProposals(household.id, carerId);
+  // This household's own local year — each card is per-family, so the
+  // year the balance covers is THAT family's calendar, not the device's.
+  const todayISO = localDateInZone(household.timezone);
+  // Exactly one proposal can be open at a time; everything else is history —
+  // one read, not a `current` and a `history` that can disagree.
+  const openProposal = (proposals.data ?? []).find(
+    row => row.status === 'proposed'
+  );
+  // The SAME derivation as the parent's screen (`payTermsState`): agreed
+  // terms that start later are her terms too, not an empty state.
+  const terms = payTermsState({
+    current: current.data,
+    history: history.data,
+    openProposal,
+    todayISO,
+  });
+  const acks = usePayArrangementAcks(household.id, carerId, terms.shown?.id);
   const ackTerms = useAckPayArrangement(household.id, carerId);
   const dissentTerms = useDissentPayArrangement(household.id, carerId);
-  const proposals = useTermsProposals(household.id, carerId);
   const proposeTerms = useProposeTerms(household.id, carerId);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [dissentOpen, setDissentOpen] = useState(false);
   const [proposeOpen, setProposeOpen] = useState(false);
 
-  // This household's own local year — each card is per-family, so the
-  // year the balance covers is THAT family's calendar, not the device's.
-  const todayISO = localDateInZone(household.timezone);
   const currentYear = Number(todayISO.slice(0, 4));
   const hasEntitlement = current.data?.pto_entitlement_minutes_per_year != null;
   const balance = usePtoBalance(
@@ -219,12 +236,11 @@ function MyPayHouseholdCard({
     hasEntitlement ? currentYear : undefined
   );
 
-  const arrangement = current.data;
-  // F18 — the same `valid_from > today` derivation `PayArrangementScreen`
-  // uses for its own `scheduled` card, read-only here (no `canManage`).
-  const scheduled: PayArrangement | undefined = (history.data ?? [])
-    .filter(row => row.valid_from > todayISO)
-    .at(-1);
+  const arrangement = terms.shown;
+  const startsLater = terms.kind === 'startsLater';
+  // F18 — the same scheduled card `PayArrangementScreen` uses, read-only
+  // here (no `canManage`). Only over terms in force (state c).
+  const scheduled = terms.scheduled;
   const ackState = resolveAckState(acks.data);
   const _previous = arrangement
     ? previousVersion(history.data, arrangement.id)
@@ -242,11 +258,6 @@ function MyPayHouseholdCard({
   const seenDate = seenAt ? cardDate(seenAt) : null;
   const disagreedDate =
     ackState.kind === 'disagreed' ? cardDate(ackState.createdAt) : null;
-  // Exactly one proposal can be open at a time; everything else is history —
-  // one read, not a `current` and a `history` that can disagree.
-  const openProposal = (proposals.data ?? []).find(
-    row => row.status === 'proposed'
-  );
   // Unconditional, like every hook: an empty id simply has nothing to
   // withdraw, and the button that would call it is not on screen.
   const withdrawTerms = useWithdrawTerms(openProposal?.id ?? '');
@@ -361,7 +372,9 @@ function MyPayHouseholdCard({
       </MetadataLabel>
       <Card testID={`my-pay-household-${household.id}`}>
         <CardContent className="gap-3">
-          {current.isPending ? (
+          {/* Nothing says "no terms" until BOTH reads resolve: agreed terms
+              that start later live only in the history. */}
+          {current.isPending || history.isPending ? (
             <LoadingIndicator testID="my-pay-loading" />
           ) : current.isError ? (
             <View testID={`my-pay-error-${household.id}`}>
@@ -453,12 +466,24 @@ function MyPayHouseholdCard({
                     balance={balance.data}
                     testIDPrefix={`my-pay-term-${household.id}`}
                   />
-                  <StatusPill
-                    variant="confirmed"
-                    label={t('inEffectSince', {
-                      date: formatDisplayDateWithYear(arrangement.valid_from),
-                    })}
-                  />
+                  {startsLater ? (
+                    <StatusPill
+                      testID={`my-pay-terms-starts-on-${household.id}`}
+                      variant="confirmed"
+                      label={t('startsOn', {
+                        date: formatDisplayDateWithWeekday(
+                          arrangement.valid_from
+                        ),
+                      })}
+                    />
+                  ) : (
+                    <StatusPill
+                      variant="confirmed"
+                      label={t('inEffectSince', {
+                        date: formatDisplayDateWithYear(arrangement.valid_from),
+                      })}
+                    />
+                  )}
                   {/* F18 — read-only: no `onEdit`/`onCancel`, `canManage={false}`.
                     A nanny sees the raise coming; only the parent who owns the
                     arrangement can edit or call it off. */}

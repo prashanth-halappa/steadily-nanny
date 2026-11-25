@@ -76,7 +76,7 @@ onto rungs instead of onto a 3px bar.
 |---|---|---|---|---|---|
 | **L1** | uncovered window | `surfaceAttention` `#F4EADC` | `cardProminent` | `Figure` tabular `foreground` | `pending` pill + inline actions |
 | **L2** | shift in progress | `surfaceLive` `#FDF5EF` | `liveCard` | `Figure` tabular | `LiveDot` |
-| **L3** | confirmed / pending shift | `card` | `row` | `Figure` tabular `foreground` | `StatusPill` when not confirmed |
+| **L3** | confirmed / pending shift | `card` | `row` | `Figure` tabular `foreground` | `StatusPill` on every status but completed (confirmed shows its green pill since 2026-11-25; a running shift shows the LiveDot instead) |
 | **L4** | cancelled / declined / parent cover | `muted` `#F0E9ED` | none | `Body` `mutedForeground`, strikethrough on resolved | `cancelled` / `declined` pill |
 
 Changes to make:

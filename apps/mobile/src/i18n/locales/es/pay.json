@@ -6,6 +6,7 @@
   "notSet": "No establecido",
   "noCancellationPay": "Sin pago por cancelación",
   "inEffectSince": "Vigente desde el {{date}}",
+  "startsOn": "Empieza el {{date}}",
   "changeTermsButton": "Cambiar condiciones",
   "appendOnlyNote": "Puedes cambiar las condiciones más adelante. Los cambios se añaden al registro, nunca se editan encima.",
   "historyHeading": "Historial",
@@ -23,7 +24,6 @@
   "noArrangementTitle": "Aún no hay condiciones de pago",
   "noArrangementDescription": "Establece una tarifa por hora y Steadily podrá totalizar la semana para ambos.",
   "setPayTermsAction": "Establecer condiciones de pago",
-  "reviewProposedTermsAction": "Revisar condiciones propuestas",
   "terms": {
     "overtimeLabel": "Horas extra",
     "overtimeValue": "Después de {{hours}}h, a {{multiplier}}×",
@@ -69,6 +69,8 @@
   "currencySearchPlaceholder": "Buscar monedas",
   "currencySearchEmpty": "No hay monedas que coincidan",
   "changeSheet": {
+    "agreementNote": "{{name}} lo recibe como propuesta. No cambia nada hasta que {{name}} esté de acuerdo.",
+    "supersedesNote": "Esto sustituye las condiciones que {{name}} aún no ha respondido. No cambia nada hasta que {{name}} esté de acuerdo.",
     "title": "Cambiar condiciones",
     "currencyLabel": "Moneda",
     "rateLabel": "Tarifa por hora",

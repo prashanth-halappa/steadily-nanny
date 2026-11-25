@@ -338,7 +338,11 @@ export const PUSH_TYPE_AUDIENCE: Record<PushNotificationType, PushAudience> = {
   [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_RESPONDED]: 'parent',
   [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_SENT]: 'carer',
   [PUSH_NOTIFICATION_TYPES.SCHEDULE_PATTERN_WITHDRAWN]: 'carer',
-  [PUSH_NOTIFICATION_TYPES.SHIFT_CANCELLED]: 'parent',
+  // WIDENED from 'parent': the carer has always been sent this type
+  // (`notifyCarerCancellationOutcome`), and the instant no-fee cancel's
+  // "{parent} cancelled your shift" push is the same type, so she needs the
+  // toggle too.
+  [PUSH_NOTIFICATION_TYPES.SHIFT_CANCELLED]: 'both',
   [PUSH_NOTIFICATION_TYPES.SHIFT_CHANGE_REQUESTED]: 'both',
   [PUSH_NOTIFICATION_TYPES.SHIFT_CONFIRMED]: 'parent',
   [PUSH_NOTIFICATION_TYPES.SHIFT_DECLINED]: 'parent',

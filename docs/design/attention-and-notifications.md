@@ -103,7 +103,7 @@ Sorted as `PUSH_TYPE_AUDIENCE` is sorted, so a reviewer can diff the two by eye.
 | `schedule_pattern_amended` | carer | immediate | schedule | — | `shiftsCal` | |
 | `schedule_pattern_responded` | parent | immediate | schedule | — | `scheduleTab` | |
 | `schedule_pattern_sent` | carer | immediate | schedule | — | `patternRespond` | |
-| `shift_cancelled` | parent | immediate | schedule | — | `shift` | **A6**: suppressed when an uncovered push already fired |
+| `shift_cancelled` | both | immediate | schedule | — | `shift` | **A6**: suppressed when an uncovered push already fired |
 | `shift_change_requested` | both | immediate | schedule | **exempt** | `shift` | Deadline-bearing (D-28 keeps it) |
 | `shift_confirmed` | parent | immediate | schedule | — | `shift` | |
 | `shift_declined` | parent | immediate | schedule | — | `shift` | **A6** suppression — and see the `cover_ask_declined` carve-out, §1.4 |
@@ -1051,15 +1051,29 @@ Three cases, and the third is why this is not a one-line change.
 **Unpaid — an arrangement exists and this is outside the window, or the
 arrangement's `cancellation_paid_within_hours` is null (an explicit "no"):**
 
-> **Cancel Tuesday's shift?**
+> **Cancel this shift?**
 > This is outside your 24-hour cancellation window, so the shift isn't paid.
-> Priya has to accept the cancellation before it's final.
+> It's cancelled straight away, and Priya is told.
+>
+> [ Keep shift ]  [ Cancel shift ]
 
-**No arrangement, or the week is unpriceable:**
+**No arrangement:** the server pays nothing (`resolveCancellationPaid` arm 3),
+so this is unpaid too and applies straight away:
 
-> **Cancel Tuesday's shift?**
-> There are no pay terms set, so we can't say whether this one is paid.
-> Priya has to accept the cancellation before it's final.
+> **Cancel this shift?**
+> There are no pay terms set, so the shift isn't paid.
+> It's cancelled straight away, and Priya is told.
+
+**Instant no-fee cancel (2026-11-25).** A parent's cancel that the SERVER
+prices as unpaid (arrangement effective on the shift's household-local date,
+the same row accept-time pricing uses) is applied at once through the accept
+path (`applyAccepted`): same RPC, events, uncovered-care detection, with the
+parent recorded as `cancelled_by` and `responded_by`. The carer gets a
+`shift_cancelled` push ("Sam cancelled your shift on Thu Nov 26, 9:00 AM –
+5:00 PM."), co-parents get `co_parent_action_fyi`. A paid cancel keeps the
+two-party request. The client opts in with `cancel_now_if_unpaid: true`, so an
+older app, whose copy promises a request, keeps getting one. The dialog must
+price with the shift-date arrangement (`usePayArrangementOn`), never today's.
 
 **Never fabricate the figure.** The paid case names an amount only when the
 engine can price it; if the hours are known but the rate is not, the first
@@ -1068,10 +1082,10 @@ the same omit-never-invent rule as `hours-approved-by-note`
 (`WeekTotal.tsx:392–411`, `docs/11-MONEY.md`). **$0.00 never appears in this
 dialog in any case.**
 
-The third sentence is in all three variants and is not optional: cancellation is
-always a two-party change request (S14 — there is no direct cancel endpoint),
-and a dialog that reads like the parent just cancelled the shift misrepresents
-what pressing the button does.
+The paid variant's third sentence is not optional: a paid cancellation is a
+two-party change request (S14), and a dialog that reads like the parent just
+cancelled the shift misrepresents what pressing the button does. The unpaid
+variants say the opposite for the same reason: they ARE cancelled at once.
 
 ### 6.1 One number, not two (D21)
 
@@ -1211,7 +1225,7 @@ that looks unrelated.
 | S11 clash warnings never block | 062 header | Untouched |
 | S12 day thread append-only | 015:274, 030 | §3's thread follows the same rule |
 | S13 accepted time-change does not demote | 029/071 | Untouched |
-| S14 cancellation is always a two-party change request | `resolveCancellationPaid` | §6's third sentence exists because of it; §6.2 writes the declined branch |
+| S14 a PAID cancellation is a two-party change request (unpaid parent cancels apply at once, §6) | `resolveCancellationPaid` | §6's third sentence exists because of it; §6.2 writes the declined branch |
 | S15 unassigned shift has no valid responder | `assertCanRespond` | §5's expired state must not create one |
 
 ---

@@ -357,8 +357,9 @@ describe('ScheduleShiftsScreen', () => {
     expect(getByTestId('calendar-view-switcher')).toBeTruthy();
     expect(getByTestId('schedule-shifts-list')).toBeTruthy();
     expect(getByTestId('schedule-shift-shift-mon')).toBeTruthy();
-    // docs/design/01-LAWS.md: a confirmed row is a settled fact — no StatusPill.
-    expect(queryByTestId('schedule-shift-status-shift-mon')).toBeNull();
+    // A confirmed row shows its green Confirmed pill (user decision,
+    // 2026-11-25 phone review — it used to be hidden as a "settled fact").
+    expect(getByTestId('schedule-shift-status-shift-mon')).toBeTruthy();
     expect(getByTestId('schedule-shift-shift-tue')).toBeTruthy();
     expect(getByTestId('schedule-shift-status-shift-tue')).toBeTruthy();
     expect(queryByTestId('schedule-shifts-empty')).toBeNull();

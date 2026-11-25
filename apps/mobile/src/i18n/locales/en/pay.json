@@ -6,6 +6,7 @@
   "notSet": "Not set",
   "noCancellationPay": "No cancellation pay",
   "inEffectSince": "In effect since {{date}}",
+  "startsOn": "Starts {{date}}",
   "changeTermsButton": "Change terms",
   "appendOnlyNote": "You can change terms later. Changes are added to the record, never edited over.",
   "historyHeading": "History",
@@ -23,7 +24,6 @@
   "noArrangementTitle": "No pay terms set yet",
   "noArrangementDescription": "Set an hourly rate and Steadily can total the week for both of you.",
   "setPayTermsAction": "Set pay terms",
-  "reviewProposedTermsAction": "Review proposed terms",
   "terms": {
     "overtimeLabel": "Overtime",
     "overtimeValue": "After {{hours}}h, at {{multiplier}}×",
@@ -69,6 +69,8 @@
   "currencySearchPlaceholder": "Search currencies",
   "currencySearchEmpty": "No currencies match",
   "changeSheet": {
+    "agreementNote": "{{name}} gets this as a proposal. Nothing changes until {{name}} agrees.",
+    "supersedesNote": "This replaces the terms still waiting with {{name}}. Nothing changes until {{name}} agrees.",
     "title": "Change terms",
     "currencyLabel": "Currency",
     "rateLabel": "Hourly rate",

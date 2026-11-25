@@ -103,8 +103,8 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useShift', () => ({
     useShift: () => ({ data: currentShift(), isLoading: false }),
   }));
-  mock.module('@/src/hooks/queries/useCurrentPayArrangement', () => ({
-    useCurrentPayArrangement: () => ({ data: arrangement, isLoading: false }),
+  mock.module('@/src/hooks/queries/usePayArrangementOn', () => ({
+    usePayArrangementOn: () => ({ data: arrangement, isLoading: false }),
   }));
   mock.module('@/src/hooks/queries/useRestrictedAction', () => ({
     useRestrictedAction: () => restriction,
@@ -240,7 +240,7 @@ describe('ShiftDetailScreen — the cancel dialog carries the paid outcome', () 
     expect(body).toContain('12.00');
   });
 
-  it('outside the window: not paid, and still names the window', () => {
+  it('outside the window: not paid, names the window, and cancels straight away', () => {
     shiftStartOffsetHours = 48;
     arrangement = paidArrangement();
 
@@ -248,25 +248,67 @@ describe('ShiftDetailScreen — the cancel dialog carries the paid outcome', () 
 
     expect(body).toContain('detail.cancelPayUnpaid');
     expect(body).toContain('"hours":24');
+    expect(body).toContain('detail.cancelInstant');
+    expect(body).not.toContain('detail.cancelNeedsAccept');
   });
 
-  it('a null window is an explicit no, not an unset one', () => {
+  it('a null window is an explicit no, not an unset one, and cancels straight away', () => {
     shiftStartOffsetHours = 2;
     arrangement = paidArrangement({ cancellation_paid_within_hours: null });
 
     const body = dialogBody();
 
     expect(body).toContain('detail.cancelPayNoCancellationTerms');
+    expect(body).toContain('detail.cancelInstant');
   });
 
-  it('D-48: no arrangement says we cannot say — never a confident "isn\'t paid"', () => {
+  it('no arrangement: the server does not pay it, so it cancels straight away', () => {
     shiftStartOffsetHours = 2;
     arrangement = null;
 
     const body = dialogBody();
 
     expect(body).toContain('detail.cancelPayUnknown');
-    expect(body).not.toContain('detail.cancelPayUnpaid');
+    expect(body).toContain('detail.cancelInstant');
+    expect(body).not.toContain('detail.cancelNeedsAccept');
+  });
+
+  it('while the arrangement is loading: asserts nothing about pay or acceptance', () => {
+    shiftStartOffsetHours = 2;
+    arrangement = undefined;
+
+    const body = dialogBody();
+
+    expect(body).toContain('detail.cancelTellsCarer');
+    expect(body).not.toContain('detail.cancelPay');
+    expect(body).not.toContain('detail.cancelInstant');
+    expect(body).not.toContain('detail.cancelNeedsAccept');
+  });
+
+  it('no fee: the button, title and confirm say "Cancel shift", not "Request"', () => {
+    shiftStartOffsetHours = 48;
+    arrangement = paidArrangement();
+
+    const { getByTestId, getByText, getAllByText } = render(
+      <ShiftDetailScreen />
+    );
+    expect(getByText('detail.cancelShiftNow')).toBeTruthy();
+    fireEvent.press(getByTestId('shift-detail-cancel'));
+    expect(getByText('detail.cancelNowTitle')).toBeTruthy();
+    // The screen button and the dialog's confirm share the label.
+    expect(getAllByText('detail.cancelShiftNow').length).toBe(2);
+    expect(getByText('today:shiftDetail.cancelConfirmCancel')).toBeTruthy();
+  });
+
+  it('paid: keeps the request button, title and copy', () => {
+    shiftStartOffsetHours = 2;
+    arrangement = paidArrangement();
+
+    const { getByTestId, getByText } = render(<ShiftDetailScreen />);
+    expect(getByText('detail.cancelShift')).toBeTruthy();
+    fireEvent.press(getByTestId('shift-detail-cancel'));
+    expect(getByText('today:shiftDetail.cancelConfirmTitle')).toBeTruthy();
+    expect(getByText('today:shiftDetail.cancelConfirmConfirm')).toBeTruthy();
   });
 
   it('OMIT NEVER INVENT: an unpriceable rate keeps "still paid" and drops the money clause', () => {
@@ -279,17 +321,12 @@ describe('ShiftDetailScreen — the cancel dialog carries the paid outcome', () 
     expect(body).not.toContain('0.00');
   });
 
-  it('S14: every variant says the carer has to accept before it is final', () => {
-    for (const fixture of [
-      paidArrangement(),
-      paidArrangement({ cancellation_paid_within_hours: null }),
-      null,
-    ]) {
-      arrangement = fixture;
-      const body = dialogBody();
-      expect(body).toContain('detail.cancelNeedsAccept');
-      expect(body).toContain('Priya');
-    }
+  it('S14: the paid variant says the carer has to accept before it is final', () => {
+    shiftStartOffsetHours = 2;
+    arrangement = paidArrangement();
+    const body = dialogBody();
+    expect(body).toContain('detail.cancelNeedsAccept');
+    expect(body).toContain('Priya');
   });
 
   it('§6.1: the hint renders inside the paid window even when is_short_notice is false', () => {

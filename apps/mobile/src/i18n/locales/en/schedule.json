@@ -232,6 +232,8 @@
       "crossFamilyClashNanny": "This shift overlaps a shift with another family"
     },
     "cancelShift": "Request cancel",
+    "cancelShiftNow": "Cancel shift",
+    "cancelNowTitle": "Cancel this shift?",
     "accept": "Accept",
     "acceptedToast": "Shift confirmed",
     "freshProposal": "A parent proposed this new shift — accept or counter-offer to confirm.",
@@ -248,8 +250,10 @@
     "cancelPayPaidUnpriced": "This is inside your {{hours}}-hour cancellation window, so the shift is still paid.",
     "cancelPayUnpaid": "This is outside your {{hours}}-hour cancellation window, so the shift isn't paid.",
     "cancelPayNoCancellationTerms": "Your pay terms don't include cancellation pay, so the shift isn't paid.",
-    "cancelPayUnknown": "There are no pay terms set, so we can't say whether this one is paid.",
+    "cancelPayUnknown": "There are no pay terms set, so the shift isn't paid.",
     "cancelNeedsAccept": "{{name}} has to accept the cancellation before it's final.",
+    "cancelInstant": "It's cancelled straight away, and {{name}} is told.",
+    "cancelTellsCarer": "{{name}} is told.",
     "restrictedActionCancelShift": "cancel short-notice shifts",
     "askExpired": "This ask expired {{weekday}} at {{time}}.",
     "askWithdrawn": "The family withdrew this ask.",
@@ -279,6 +283,7 @@
   },
   "change": {
     "requestedToast": "Change requested",
+    "cancelledToast": "Shift cancelled",
     "respondedToast": "Response sent"
   },
   "weekday": {
@@ -420,13 +425,12 @@
     "changeAskHint": "Sending this withdraws your earlier ask for {{start}} – {{end}}. {{carerName}} gets the new one.",
     "awaitingLine": "Part of the usual week you sent. Waiting on an answer.",
     "awaitingSee": "See the usual week",
+    "awaitingLockedNote": "You can change single days once {{carerName}} accepts your usual week.",
+    "awaitingLockedNoteNoName": "You can change single days once your nanny accepts your usual week.",
     "slice": {
       "heading": "The rest of {{start}} – {{end}}",
       "asked": "{{start}} – {{end}} · asked {{carerName}}",
-      "askedNoName": "{{start}} – {{end}} · asked",
-      "booked": "{{start}} – {{end}} · with {{carerName}}",
-      "bookedNoName": "{{start}} – {{end}} · booked",
-      "parentCover": "{{start}} – {{end}} · you're covering"
+      "askedNoName": "{{start}} – {{end}} · asked"
     }
   },
   "recipient": {

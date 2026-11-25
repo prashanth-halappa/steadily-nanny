@@ -28,7 +28,10 @@ const input: CreateShiftChangeRequestInput = {
   kind: 'cancel',
 };
 
-const createMock = mock(() => Promise.resolve(changeRequest));
+const createMock = mock(
+  (): Promise<{ status: string; shift_change_request: unknown }> =>
+    Promise.resolve({ status: 'pending', shift_change_request: changeRequest })
+);
 const showErrorToastMock = mock(() => {});
 const showSuccessToastMock = mock(() => {});
 const requestCalendarSyncMock = mock(() => {});
@@ -48,7 +51,9 @@ let useCreateShiftChangeRequest: typeof import('../useCreateShiftChangeRequest')
 
 beforeEach(async () => {
   createMock.mockReset();
-  createMock.mockImplementation(() => Promise.resolve(changeRequest));
+  createMock.mockImplementation(() =>
+    Promise.resolve({ status: 'pending', shift_change_request: changeRequest })
+  );
   showErrorToastMock.mockReset();
   showSuccessToastMock.mockReset();
   requestCalendarSyncMock.mockReset();
@@ -83,5 +88,35 @@ describe('useCreateShiftChangeRequest', () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(showErrorToastMock).toHaveBeenCalledWith('errors:notHouseholdOwner');
+  });
+
+  it('toasts "Shift cancelled" when the server applied a no-fee cancel', async () => {
+    createMock.mockImplementationOnce(() =>
+      Promise.resolve({
+        status: 'applied',
+        shift_change_request: { ...changeRequest, status: 'accepted' },
+      })
+    );
+    const { result } = renderHookWithProviders(() =>
+      useCreateShiftChangeRequest()
+    );
+    await act(async () => {
+      await result.current.mutateAsync({ shiftId: SHIFT_ID, input });
+    });
+    expect(showSuccessToastMock).toHaveBeenCalledWith(
+      'schedule:change.cancelledToast'
+    );
+  });
+
+  it('toasts "Change requested" when the server opened a request', async () => {
+    const { result } = renderHookWithProviders(() =>
+      useCreateShiftChangeRequest()
+    );
+    await act(async () => {
+      await result.current.mutateAsync({ shiftId: SHIFT_ID, input });
+    });
+    expect(showSuccessToastMock).toHaveBeenCalledWith(
+      'schedule:change.requestedToast'
+    );
   });
 });

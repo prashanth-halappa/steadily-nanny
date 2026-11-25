@@ -131,13 +131,11 @@ export function ShiftRow({
     startMs <= nowMs &&
     nowMs < endMs &&
     runningShiftIds.has(shift.id);
-  // StatusPill only when the row isn't already a settled fact (L3 rule) —
-  // a confirmed/completed row showing "Confirmed" on every single row is
-  // the noise the pill was invented to avoid, not information.
-  const showStatusPill =
-    !isParentCover &&
-    shift.status !== 'confirmed' &&
-    shift.status !== 'completed';
+  // Confirmed rows carry their green "Confirmed" pill (user decision,
+  // 2026-11-25 phone review: the bare row didn't read as booked). Completed
+  // rows stay pill-free — they're history on a muted ground. A running
+  // shift shows the LiveDot in the pill's place (below), as before.
+  const showStatusPill = !isParentCover && shift.status !== 'completed';
 
   const parentCoverLabel = (() => {
     if (!isParentCover) return null;

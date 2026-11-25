@@ -47,6 +47,7 @@ function interpolate(template: string, vars?: Record<string, unknown>): string {
 }
 
 const mockPush = mock();
+const mockInfoToast = mock();
 const mockUseHouseholdMembers = mock((): { data: unknown[] } => ({ data: [] }));
 const mockUseHouseholdCarers = mock((): { data: unknown[] } => ({ data: [] }));
 
@@ -67,6 +68,12 @@ beforeAll(async () => {
   mock.module('expo-router', () => ({
     useRouter: () => ({ push: mockPush }),
     router: { push: () => {}, replace: () => {}, back: () => {} },
+  }));
+  mock.module('@/src/lib/toast', () => ({
+    showInfoToast: mockInfoToast,
+    showSuccessToast: mock(),
+    showErrorToast: mock(),
+    showWarningToast: mock(),
   }));
   mock.module('@/src/hooks/queries/useHouseholdMembers', () => ({
     useHouseholdMembers: mockUseHouseholdMembers,
@@ -165,7 +172,11 @@ function makeShift(overrides: Partial<Shift> = {}): Shift {
   } as Shift;
 }
 
-function renderAwaiting(shifts: Shift[], showUncoveredActions = true) {
+function renderAwaiting(
+  shifts: Shift[],
+  showUncoveredActions = true,
+  pendingPattern: unknown = null
+) {
   const window = makeUncoveredWindow('nothingScheduled');
   mockUseHouseholdCarers.mockImplementation(() => ({
     data: [nannyMember(NANNY_ID, 'Maria Lopez')],
@@ -182,6 +193,7 @@ function renderAwaiting(shifts: Shift[], showUncoveredActions = true) {
       uncoveredByDay={{ [LOCAL_DATE]: [] }}
       awaitingByDay={{ [LOCAL_DATE]: [window] }}
       showUncoveredActions={showUncoveredActions}
+      pendingPattern={pendingPattern as never}
     />
   );
   return { ...utils, key: uncoveredKey(window) };
@@ -231,5 +243,54 @@ describe('AgendaView awaiting windows', () => {
     expect(getByTestId(`schedule-awaiting-${key}`)).toBeTruthy();
     expect(queryByTestId(`schedule-awaiting-${key}-line`)).toBeNull();
     expect(queryByTestId(`schedule-awaiting-${key}-see`)).toBeNull();
+  });
+
+  it('tapping the row says single days unlock once the carer accepts — and does not navigate', () => {
+    mockPush.mockClear();
+    mockInfoToast.mockClear();
+    const { getByTestId, key } = renderAwaiting([], true, {
+      carer_id: NANNY_ID,
+      days: [],
+    });
+    const message = interpolate(
+      getNested(scheduleEn, 'cover.awaitingLockedNote'),
+      { carerName: 'Maria' }
+    );
+
+    const row = getByTestId(`schedule-awaiting-${key}`);
+    expect(row.props.accessibilityRole).toBe('button');
+    expect(row.props.accessibilityHint).toBe(message);
+    fireEvent.press(row);
+    expect(mockInfoToast).toHaveBeenCalledWith(message);
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('no carer on the pattern: the generic "your nanny" copy', () => {
+    mockInfoToast.mockClear();
+    const { getByTestId, key } = renderAwaiting([]);
+
+    fireEvent.press(getByTestId(`schedule-awaiting-${key}`));
+    expect(mockInfoToast).toHaveBeenCalledWith(
+      getNested(scheduleEn, 'cover.awaitingLockedNoteNoName')
+    );
+  });
+
+  it('the inner "See the usual week" button still works, and navigates once', () => {
+    mockPush.mockClear();
+    mockInfoToast.mockClear();
+    const { getByTestId, key } = renderAwaiting([]);
+
+    fireEvent.press(getByTestId(`schedule-awaiting-${key}-see`));
+    expect(mockPush).toHaveBeenCalledTimes(1);
+    expect(mockPush).toHaveBeenCalledWith('/(private)/schedule/usual-week');
+    expect(mockInfoToast).not.toHaveBeenCalled();
+  });
+
+  it('a viewer who cannot act gets a plain, non-pressable row', () => {
+    const { getByTestId, key } = renderAwaiting([], false);
+
+    const row = getByTestId(`schedule-awaiting-${key}`);
+    expect(row.props.accessibilityRole).toBeUndefined();
+    expect(row.props.onPress).toBeUndefined();
   });
 });

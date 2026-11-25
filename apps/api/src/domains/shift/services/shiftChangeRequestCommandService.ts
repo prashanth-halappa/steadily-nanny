@@ -120,10 +120,14 @@ export function setCancellationPaidEntryRecorder(
   cancellationPaidEntryRecorder = recorder;
 }
 
-export type CreateChangeRequestResult = {
-  status: 'pending';
-  shift_change_request: ShiftChangeRequest;
-};
+export type CreateChangeRequestResult =
+  | { status: 'pending'; shift_change_request: ShiftChangeRequest }
+  | {
+      /** A no-fee parent cancel, applied without the nanny's accept. */
+      status: 'applied';
+      shift_change_request: ShiftChangeRequest;
+      shift: Shift;
+    };
 
 export type CreateExtraShiftResult = {
   status: 'created';
@@ -387,6 +391,39 @@ export class ShiftChangeRequestCommandService {
       coParentFyiAction = action;
     }
 
+    // Instant no-fee cancel. The SERVER prices it, with the same arrangement
+    // and rule accept-time pricing uses, and only a cancel that is NOT paid
+    // skips the nanny's accept. `resolveCancellationPaid` treats "no
+    // arrangement" as not paid, so that applies instantly too. A cancel kind
+    // has already been limited to parents by `assertKindAllowedForRole`.
+    if (
+      input.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL &&
+      input.cancel_now_if_unpaid === true
+    ) {
+      const arrangement = await this.cancelArrangementFor(shift, household);
+      if (!resolveCancellationPaid(shift.starts_at, arrangement)) {
+        // ponytail: open + apply are two writes, not one batch. If the apply
+        // throws, a pending cancel request is left behind, which is exactly
+        // today's request flow (the nanny can still accept it). One combined
+        // repository batch if that ever shows up in support.
+        const opened = await this.openChangeRequest(shift, userId, input);
+        const applied = await this.applyAccepted(
+          userId,
+          opened,
+          shift,
+          household,
+          arrangement,
+          null,
+          { instant: true }
+        );
+        return {
+          status: 'applied',
+          shift_change_request: applied.changeRequest,
+          shift: applied.shift,
+        };
+      }
+    }
+
     const changeRequest = await this.openChangeRequest(shift, userId, input);
     if (coParentFyiAction) {
       void this.notifyCoParentActionFyi(
@@ -644,153 +681,21 @@ export class ShiftChangeRequestCommandService {
       await this.shiftRepo.assertMutable(shift.id);
 
       const household = await this.requireHousehold(shift.household_id);
-      // Only the cancel branch reads the arrangement, and it must be the one
-      // effective on the SHIFT's household-local start date — not today, not
-      // the accept date, since a rate/window change can land between the two
-      // (owner decision 5, review finding 10). Skip the lookup for other
-      // kinds and for an unassigned shift, where no arrangement can exist.
-      //
-      // "Household-local" is computed here rather than read off
-      // `shift.local_date` (Phase 2 review, finding 8). That column is
-      // derived by migration 015's `sync_shift_local_date` from the shift's
-      // OWN `timezone` — the zone the shift was AUTHORED in, which 015 keeps
-      // frozen on purpose so the original wall-clock intent survives the
-      // household moving. Two supported actions make the two disagree:
-      // `PATCH /households/:id { timezone }` (every already-materialised
-      // shift keeps the old zone), and `POST .../shifts/extra`, whose
-      // `timezone` is client-supplied and never checked against the
-      // household's. Arrangements are household-scoped and every other date
-      // in the pay domain is resolved with `localDateOf(instant,
-      // household.timezone)` — `payArrangementCommandService`'s no-future
-      // check and `weekEarningsService`'s closure days both — so this one
-      // has to be too, or a cancellation gets priced against a day the
-      // arrangement history was never keyed on.
       const arrangement =
-        request.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL && shift.carer_id
-          ? await this.payArrangementRepo.effectiveOn(
-              shift.household_id,
-              shift.carer_id,
-              localDateOf(new Date(shift.starts_at), household.timezone)
-            )
+        request.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL
+          ? await this.cancelArrangementFor(shift, household)
           : null;
-      const { rpcArgs, events: applyEvents } = planAcceptedChange(
+      const applied = await this.applyAccepted(
         userId,
         request,
         shift,
         household,
         arrangement,
-        input.message
+        input.message,
+        { instant: false }
       );
-      const rpcEvents: ShiftEventRpcInsert[] = [
-        {
-          household_id: shift.household_id,
-          shift_id: shift.id,
-          actor_id: userId,
-          event_type: 'change_request_accepted',
-          payload: {
-            change_request_id: changeRequestId,
-            kind: request.kind,
-            message: input.message ?? null,
-          },
-        },
-        ...applyEvents,
-      ];
-      const applied = await this.changeRequestRepo.acceptAndApply({
-        ...rpcArgs,
-        p_events: rpcEvents,
-      });
       updatedRequest = applied.changeRequest;
-      // accept_shift_change_request returns the shift row only — no
-      // shift_children join. Preserve the pre-fetch so accept paths stay
-      // usable without a second round-trip.
-      updatedShift = {
-        ...applied.shift,
-        shift_children: shift.shift_children,
-      };
-
-      if (request.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL) {
-        // Household parents get SHIFT_CANCELLED unless uncovered-care
-        // detection already pushed for the gap (one parent push per event).
-        // A far-out window that only got inserted (gated to the evening
-        // digest) must NOT suppress this — otherwise a cancel 10 days out
-        // tells the parent nothing at all.
-        let uncovered: Awaited<ReturnType<typeof detectUncoveredCareForDate>> =
-          { inserted: [], pushed: [] };
-        try {
-          uncovered = await detectUncoveredCareForDate({
-            householdId: shift.household_id,
-            localDate: updatedShift.local_date,
-            cause: 'cancelled',
-            actorId: userId,
-          });
-        } catch (error) {
-          logger.error('Uncovered-care detection failed after cancel accept', {
-            shiftId: updatedShift.id,
-            householdId: shift.household_id,
-            localDate: updatedShift.local_date,
-            error,
-          });
-        }
-        if (uncovered.pushed.length === 0) {
-          this.notifyShiftCancelled(shift, changeRequestId);
-        }
-        // Only a CARER requester gets the "your request was accepted" ping.
-        // Parents already learn of the cancellation through the household
-        // push above, so sending it to a parent requester notifies the same
-        // person twice for one action. The carer's pay push below is a
-        // different fact and goes out either way.
-        if (request.requested_by === shift.carer_id) {
-          this.notifyChangeRequestResponded(
-            shift,
-            request,
-            PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_ACCEPTED
-          );
-        }
-        this.notifyCarerCancellationOutcome(
-          updatedShift,
-          applied.shift.cancellation_paid
-        );
-      } else {
-        this.notifyChangeRequestResponded(
-          shift,
-          request,
-          PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_ACCEPTED
-        );
-      }
-
-      if (
-        request.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL &&
-        applied.shift.cancellation_paid
-      ) {
-        // ORCH: cancellation_paid entry — timesheet owns the write. The cancel
-        // RPC has already committed `cancellation_paid = true`, so a swallowed
-        // failure here returns 200 on a shift that is flagged as paid with no
-        // `time_entries` row behind it: the carer is owed the hours, nothing is
-        // user-visible, and no retry path exists. Silent underpay on a money
-        // path — fail the request instead, and leave the flag standing as the
-        // durable claim `cancellationPayReconcileJob` sweeps up and settles.
-        // The repair is safe to re-run: since migration 053 a cancelled window
-        // can pay out as several fragments, so idempotency is no longer a
-        // find-first on `shift_id` — rows already written come back from
-        // `recordCancellationPaidEntry`'s overlap query and are subtracted out
-        // of the remainder, so a re-call writes only the genuinely missing
-        // gaps. Clearing the flag would make the row
-        // self-consistent by DELETING the only evidence she is owed anything —
-        // and the sweep would then have nothing to find.
-        //
-        // Runs after the pushes on purpose: the cancellation itself is
-        // committed and irreversible, so the household still has to hear about
-        // it. The throw reports the missing pay entry, not a failed cancel.
-        try {
-          await cancellationPaidEntryRecorder(updatedShift);
-        } catch (error) {
-          logger.error('Failed to record cancellation_paid time entry', {
-            shiftId: updatedShift.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          throw error;
-        }
-      }
+      updatedShift = applied.shift;
     } else {
       events.push({
         household_id: shift.household_id,
@@ -821,6 +726,195 @@ export class ShiftChangeRequestCommandService {
       await this.eventRepo.insertMany(events);
     }
     return { shift_change_request: updatedRequest, shift: updatedShift };
+  }
+
+  /**
+   * The cancellation arrangement for a shift. Shared by accept-time pricing
+   * (`respond`) and the instant no-fee cancel (`create`) so both price a
+   * cancel against the SAME row. Null for an unassigned shift.
+   *
+   * Only the cancel branch reads the arrangement, and it must be the one
+   * effective on the SHIFT's household-local start date — not today, not
+   * the accept date, since a rate/window change can land between the two
+   * (owner decision 5, review finding 10). Skip the lookup for other
+   * kinds and for an unassigned shift, where no arrangement can exist.
+   *
+   * "Household-local" is computed here rather than read off
+   * `shift.local_date` (Phase 2 review, finding 8). That column is
+   * derived by migration 015's `sync_shift_local_date` from the shift's
+   * OWN `timezone` — the zone the shift was AUTHORED in, which 015 keeps
+   * frozen on purpose so the original wall-clock intent survives the
+   * household moving. Two supported actions make the two disagree:
+   * `PATCH /households/:id { timezone }` (every already-materialised
+   * shift keeps the old zone), and `POST .../shifts/extra`, whose
+   * `timezone` is client-supplied and never checked against the
+   * household's. Arrangements are household-scoped and every other date
+   * in the pay domain is resolved with `localDateOf(instant,
+   * household.timezone)` — `payArrangementCommandService`'s no-future
+   * check and `weekEarningsService`'s closure days both — so this one
+   * has to be too, or a cancellation gets priced against a day the
+   * arrangement history was never keyed on.
+   */
+  private async cancelArrangementFor(
+    shift: Shift,
+    household: Household
+  ): Promise<PayArrangement | null> {
+    if (!shift.carer_id) return null;
+    return this.payArrangementRepo.effectiveOn(
+      shift.household_id,
+      shift.carer_id,
+      localDateOf(new Date(shift.starts_at), household.timezone)
+    );
+  }
+
+  /**
+   * Accept + apply a pending request, with its events and side effects. The
+   * ONE apply path: a nanny's accept (`respond`) and a parent's instant no-fee
+   * cancel (`create`, `instant: true`) both land here, so a shift cancelled
+   * either way is in the identical state. `instant` only changes who is told.
+   */
+  private async applyAccepted(
+    userId: string,
+    request: ShiftChangeRequest,
+    shift: ShiftWithChildren,
+    household: Household,
+    arrangement: PayArrangement | null,
+    responseMessage: string | null | undefined,
+    opts: { instant: boolean }
+  ): Promise<{ changeRequest: ShiftChangeRequest; shift: Shift }> {
+    const { rpcArgs, events: applyEvents } = planAcceptedChange(
+      userId,
+      request,
+      shift,
+      household,
+      arrangement,
+      responseMessage
+    );
+    const rpcEvents: ShiftEventRpcInsert[] = [
+      {
+        household_id: shift.household_id,
+        shift_id: shift.id,
+        actor_id: userId,
+        event_type: 'change_request_accepted',
+        payload: {
+          change_request_id: request.id,
+          kind: request.kind,
+          message: responseMessage ?? null,
+        },
+      },
+      ...applyEvents,
+    ];
+    const applied = await this.changeRequestRepo.acceptAndApply({
+      ...rpcArgs,
+      p_events: rpcEvents,
+    });
+    // accept_shift_change_request returns the shift row only — no
+    // shift_children join. Preserve the pre-fetch so accept paths stay
+    // usable without a second round-trip.
+    const updatedShift: Shift = {
+      ...applied.shift,
+      shift_children: shift.shift_children,
+    };
+
+    if (request.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL) {
+      // Household parents get SHIFT_CANCELLED unless uncovered-care
+      // detection already pushed for the gap (one parent push per event).
+      // A far-out window that only got inserted (gated to the evening
+      // digest) must NOT suppress this — otherwise a cancel 10 days out
+      // tells the parent nothing at all.
+      let uncovered: Awaited<ReturnType<typeof detectUncoveredCareForDate>> = {
+        inserted: [],
+        pushed: [],
+      };
+      try {
+        uncovered = await detectUncoveredCareForDate({
+          householdId: shift.household_id,
+          localDate: updatedShift.local_date,
+          cause: 'cancelled',
+          actorId: userId,
+        });
+      } catch (error) {
+        logger.error('Uncovered-care detection failed after cancel accept', {
+          shiftId: updatedShift.id,
+          householdId: shift.household_id,
+          localDate: updatedShift.local_date,
+          error,
+        });
+      }
+      if (opts.instant) {
+        // Nobody else accepted this, so nobody else knows yet. The acting
+        // parent is never pushed about their own tap; co-parents get the
+        // FYI naming who did it, and the nanny is told directly below.
+        void this.notifyCoParentActionFyi(
+          userId,
+          shift.household_id,
+          shift,
+          'cancel'
+        );
+        void this.notifyCarerCancelledByParent(updatedShift, userId);
+      } else {
+        if (uncovered.pushed.length === 0) {
+          this.notifyShiftCancelled(shift, request.id);
+        }
+        // Only a CARER requester gets the "your request was accepted" ping.
+        // Parents already learn of the cancellation through the household
+        // push above, so sending it to a parent requester notifies the same
+        // person twice for one action. The carer's pay push below is a
+        // different fact and goes out either way.
+        if (request.requested_by === shift.carer_id) {
+          this.notifyChangeRequestResponded(
+            shift,
+            request,
+            PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_ACCEPTED
+          );
+        }
+        this.notifyCarerCancellationOutcome(
+          updatedShift,
+          applied.shift.cancellation_paid
+        );
+      }
+    } else {
+      this.notifyChangeRequestResponded(
+        shift,
+        request,
+        PUSH_NOTIFICATION_TYPES.CHANGE_REQUEST_ACCEPTED
+      );
+    }
+
+    if (
+      request.kind === SHIFT_CHANGE_REQUEST_KINDS.CANCEL &&
+      applied.shift.cancellation_paid
+    ) {
+      // ORCH: cancellation_paid entry — timesheet owns the write. The cancel
+      // RPC has already committed `cancellation_paid = true`, so a swallowed
+      // failure here returns 200 on a shift that is flagged as paid with no
+      // `time_entries` row behind it: the carer is owed the hours, nothing is
+      // user-visible, and no retry path exists. Silent underpay on a money
+      // path — fail the request instead, and leave the flag standing as the
+      // durable claim `cancellationPayReconcileJob` sweeps up and settles.
+      // The repair is safe to re-run: since migration 053 a cancelled window
+      // can pay out as several fragments, so idempotency is no longer a
+      // find-first on `shift_id` — rows already written come back from
+      // `recordCancellationPaidEntry`'s overlap query and are subtracted out
+      // of the remainder, so a re-call writes only the genuinely missing
+      // gaps. Clearing the flag would make the row
+      // self-consistent by DELETING the only evidence she is owed anything —
+      // and the sweep would then have nothing to find.
+      //
+      // Runs after the pushes on purpose: the cancellation itself is
+      // committed and irreversible, so the household still has to hear about
+      // it. The throw reports the missing pay entry, not a failed cancel.
+      try {
+        await cancellationPaidEntryRecorder(updatedShift);
+      } catch (error) {
+        logger.error('Failed to record cancellation_paid time entry', {
+          shiftId: updatedShift.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    }
+    return { changeRequest: applied.changeRequest, shift: updatedShift };
   }
 
   /** pending -> withdrawn. Only the original requester may withdraw. */
@@ -1187,6 +1281,43 @@ export class ShiftChangeRequestCommandService {
         },
       });
     });
+  }
+
+  /**
+   * Fire-and-forget: the nanny learns a parent cancelled her shift outright
+   * (instant no-fee cancel). Nothing to answer, so it names who and when.
+   */
+  private async notifyCarerCancelledByParent(
+    shift: Shift,
+    parentId: string
+  ): Promise<void> {
+    try {
+      const carerId = shift.carer_id;
+      if (!carerId) return;
+      const parentName = await this.resolveParentDisplayName(
+        shift.household_id,
+        parentId
+      );
+      const day = formatShiftAskDateLabel(shift.starts_at, shift.timezone);
+      const window = formatShiftWindow12h(
+        shift.starts_at,
+        shift.ends_at,
+        shift.timezone
+      );
+      this.safeNotify(() => {
+        notifyUser(carerId, {
+          title: 'Shift cancelled',
+          body: `${parentName} cancelled your shift on ${day}, ${window}.`,
+          data: {
+            type: PUSH_NOTIFICATION_TYPES.SHIFT_CANCELLED,
+            shiftId: shift.id,
+            householdId: shift.household_id,
+          },
+        });
+      });
+    } catch {
+      // fire-and-forget
+    }
   }
 
   private async resolveShiftChildrenLabel(

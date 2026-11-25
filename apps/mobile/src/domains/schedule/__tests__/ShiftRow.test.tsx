@@ -115,6 +115,19 @@ describe('ShiftRow', () => {
     );
     expect(liveRender.getByTestId('schedule-shift-live-live-1')).toBeTruthy();
     expect(liveRender.queryByTestId('schedule-shift-status-live-1')).toBeNull();
+    liveRender.unmount();
+
+    // Not running: a confirmed row carries its Confirmed pill.
+    const confirmed = makeShift({ id: 'confirmed-1', status: 'confirmed' });
+    const confirmedRender = render(
+      <ShiftRow {...defaultProps} shift={confirmed} />
+    );
+    expect(
+      confirmedRender.getByTestId('schedule-shift-status-confirmed-1')
+    ).toBeTruthy();
+    expect(
+      confirmedRender.queryByTestId('schedule-shift-live-confirmed-1')
+    ).toBeNull();
   });
 
   // P11: apricot is the design system's reservation for "on the clock". The

@@ -140,6 +140,18 @@ export function formatDisplayDateWithYear(dateISO: string): string {
   }).format(toLocalDate(dateISO));
 }
 
+/** "Thu, Nov 26, 2026": the date with its weekday, for a start date that is
+ * about to arrive ("Starts …"), where the day of the week is the fact read. */
+export function formatDisplayDateWithWeekday(dateISO: string): string {
+  if (!isValidCalendarDate(dateISO)) return dateISO;
+  return new Intl.DateTimeFormat(i18n.language, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(toLocalDate(dateISO));
+}
+
 /** Parses a typed hours field ("40", "1.5") to integer minutes. Blank -> null
  * (the field's "not set" state); anything unparsable or negative -> null too
  * — callers distinguish "blank" from "invalid" by checking the text first. */

@@ -68,8 +68,8 @@ beforeAll(async () => {
   // cancel dialog's pay sentence and the household for the co-parent
   // restricted state. Stubbed here so this suite keeps testing its own
   // subject — see ShiftDetailScreen.cancelPay.test.tsx for their behaviour.
-  mock.module('@/src/hooks/queries/useCurrentPayArrangement', () => ({
-    useCurrentPayArrangement: () => ({ data: null, isLoading: false }),
+  mock.module('@/src/hooks/queries/usePayArrangementOn', () => ({
+    usePayArrangementOn: () => ({ data: null, isLoading: false }),
   }));
   mock.module('@/src/hooks/queries/useHouseholds', () => ({
     useHouseholds: () => ({ data: [], isLoading: false }),
@@ -188,7 +188,8 @@ describe('ShiftDetailScreen — cancel action confirm', () => {
     await waitFor(() =>
       expect(mockCreateChangeMutateAsync).toHaveBeenCalledWith({
         shiftId: SHIFT_ID,
-        input: { kind: 'cancel' },
+        // Opts in to the server's instant no-fee cancel; the SERVER prices it.
+        input: { kind: 'cancel', cancel_now_if_unpaid: true },
       })
     );
   });

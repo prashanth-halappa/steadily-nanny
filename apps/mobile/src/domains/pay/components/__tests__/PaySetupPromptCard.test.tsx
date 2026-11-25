@@ -17,6 +17,8 @@ const now = '2026-08-01T00:00:00.000Z';
 let currentArrangement: unknown = null;
 let currentPending = false;
 let proposalRows: unknown[] = [];
+let historyRows: unknown[] = [];
+let historyPending = false;
 
 const routerPush = mock();
 
@@ -41,6 +43,14 @@ mock.module('@/src/hooks/queries/useCurrentPayArrangement', () => ({
   useCurrentPayArrangement: () => ({
     data: currentArrangement,
     isPending: currentPending,
+    isError: false,
+  }),
+}));
+
+mock.module('@/src/hooks/queries/usePayArrangementHistory', () => ({
+  usePayArrangementHistory: () => ({
+    data: historyPending ? undefined : historyRows,
+    isPending: historyPending,
     isError: false,
   }),
 }));
@@ -88,6 +98,8 @@ beforeEach(() => {
   currentArrangement = null;
   currentPending = false;
   proposalRows = [];
+  historyRows = [];
+  historyPending = false;
   routerPush.mockClear();
 });
 
@@ -101,6 +113,7 @@ describe('PaySetupPromptCard', () => {
         householdId={HOUSEHOLD_ID}
         carerId={CARER_ID}
         carerName="Priya"
+        householdTimezone="UTC"
       />
     );
 
@@ -113,6 +126,7 @@ describe('PaySetupPromptCard', () => {
         householdId={HOUSEHOLD_ID}
         carerId={CARER_ID}
         carerName="Priya"
+        householdTimezone="UTC"
       />
     );
 
@@ -126,9 +140,43 @@ describe('PaySetupPromptCard', () => {
         householdId={HOUSEHOLD_ID}
         carerId={CARER_ID}
         carerName="Priya"
+        householdTimezone="UTC"
       />
     );
 
     expect(getByTestId(`pay-setup-prompt-${CARER_ID}-art`)).toBeTruthy();
+  });
+
+  it('renders nothing when agreed terms exist that only start later', () => {
+    const tomorrow = new Date(Date.now() + 2 * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    historyRows = [{ id: 'arr-later', valid_from: tomorrow, valid_to: null }];
+
+    const { queryByTestId } = render(
+      <PaySetupPromptCard
+        householdId={HOUSEHOLD_ID}
+        carerId={CARER_ID}
+        carerName="Priya"
+        householdTimezone="UTC"
+      />
+    );
+
+    expect(queryByTestId(`pay-setup-prompt-${CARER_ID}`)).toBeNull();
+  });
+
+  it('renders nothing until the history has resolved too', () => {
+    historyPending = true;
+
+    const { queryByTestId } = render(
+      <PaySetupPromptCard
+        householdId={HOUSEHOLD_ID}
+        carerId={CARER_ID}
+        carerName="Priya"
+        householdTimezone="UTC"
+      />
+    );
+
+    expect(queryByTestId(`pay-setup-prompt-${CARER_ID}`)).toBeNull();
   });
 });

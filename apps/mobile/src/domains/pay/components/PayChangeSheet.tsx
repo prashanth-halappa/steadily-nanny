@@ -135,6 +135,12 @@ interface PayChangeSheetProps {
    * shows — a Monday literal would warn a Sunday-start household on exactly
    * the wrong day. */
   householdWeekStartsOn: number;
+  /** False when `currentArrangement` is agreed terms that have not started
+   * yet: no rate is in effect, so no week can be "paid at two rates" and the
+   * consequence card has nothing true to say. */
+  rateInEffect?: boolean;
+  /** `change` mode: an open round exists and this send replaces it. */
+  supersedesOpenProposal?: boolean;
 }
 
 export function PayChangeSheet({
@@ -152,6 +158,8 @@ export function PayChangeSheet({
   initialEffectiveDateISO,
   householdTimezone,
   householdWeekStartsOn,
+  rateInEffect = true,
+  supersedesOpenProposal = false,
 }: PayChangeSheetProps) {
   const { t } = useTranslation('pay');
   // The offer's copy lives in `household.json` (the invite-offer card's
@@ -244,7 +252,7 @@ export function PayChangeSheet({
   // of it — and an offer has no PRIOR arrangement to diff against at all —
   // so the consequence card has nothing true to say in either mode.
   const consequences =
-    request && mode === 'change' && currentArrangement
+    request && mode === 'change' && currentArrangement && rateInEffect
       ? buildTermsChangeConsequence(
           buildTermsDiff(
             currentArrangement,
@@ -413,6 +421,27 @@ export function PayChangeSheet({
           >
             {submitError}
           </Small>
+        ) : null}
+        {/* A change is a proposal, never a write: say so above the button
+            that sends it (literal `t()` per branch, for the locale guard). */}
+        {mode === 'change' ? (
+          supersedesOpenProposal ? (
+            <Small
+              testID="pay-change-supersedes-note"
+              className="text-muted-foreground"
+            >
+              {t('changeSheet.supersedesNote', {
+                name: counterpartyName ?? '',
+              })}
+            </Small>
+          ) : (
+            <Small
+              testID="pay-change-agreement-note"
+              className="text-muted-foreground"
+            >
+              {t('changeSheet.agreementNote', { name: counterpartyName ?? '' })}
+            </Small>
+          )
         ) : null}
         <LoadingButton
           testID={`${testIDPrefix}-submit`}

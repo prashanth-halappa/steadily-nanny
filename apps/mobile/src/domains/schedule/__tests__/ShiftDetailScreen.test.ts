@@ -100,14 +100,16 @@ describe('ShiftDetailScreen source', () => {
   // computed from an unrelated column, and could contradict the dialog.
   it('S3/§6.1: the short-notice hint and the cancel dialog read the same arrangement-derived answer', () => {
     expect(source).toContain('resolveCancellationPayOutcome');
-    expect(source).toContain('useCurrentPayArrangement');
+    // Arrangement effective on the SHIFT's date, like the server — not today.
+    expect(source).toContain('usePayArrangementOn');
+    expect(source).not.toContain('useCurrentPayArrangement');
     expect(source).not.toContain('detail.shortNoticePaidHint');
     // One derivation, rendered in both places.
     expect(source.match(/resolveCancellationPayOutcome\(/g)?.length).toBe(1);
     expect(source).toContain('{cancelPaySentence}');
     expect(source).toContain('cancelDialogBody');
     expect(source).toContain('shift-detail-cancel-body');
-    // S14 — the third sentence is in every variant, not a branch.
+    // S14 — the paid (request) variant still says the carer must accept.
     expect(source).toContain('detail.cancelNeedsAccept');
   });
 

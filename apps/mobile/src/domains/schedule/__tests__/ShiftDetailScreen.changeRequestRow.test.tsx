@@ -103,8 +103,8 @@ beforeAll(async () => {
   mock.module('@/src/hooks/queries/useShift', () => ({
     useShift: () => ({ data: baseShift, isLoading: false }),
   }));
-  mock.module('@/src/hooks/queries/useCurrentPayArrangement', () => ({
-    useCurrentPayArrangement: () => ({ data: null, isLoading: false }),
+  mock.module('@/src/hooks/queries/usePayArrangementOn', () => ({
+    usePayArrangementOn: () => ({ data: null, isLoading: false }),
   }));
   mock.module('@/src/hooks/queries/useHouseholds', () => ({
     useHouseholds: () => ({ data: [], isLoading: false }),

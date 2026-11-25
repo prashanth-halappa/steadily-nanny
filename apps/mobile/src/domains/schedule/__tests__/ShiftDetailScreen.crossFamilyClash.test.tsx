@@ -115,8 +115,8 @@ beforeAll(async () => {
       refetch: mock(),
     }),
   }));
-  mock.module('@/src/hooks/queries/useCurrentPayArrangement', () => ({
-    useCurrentPayArrangement: () => ({ data: null, isLoading: false }),
+  mock.module('@/src/hooks/queries/usePayArrangementOn', () => ({
+    usePayArrangementOn: () => ({ data: null, isLoading: false }),
   }));
   mock.module('@/src/hooks/queries/useHouseholds', () => ({
     useHouseholds: () => ({ data: [], isLoading: false }),

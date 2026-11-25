@@ -310,36 +310,69 @@ describe('PayArrangementScreen', () => {
   // B2 — an open terms proposal must surface even when there is no
   // arrangement yet; "Set pay" must not bypass a live negotiation.
   describe('open proposal with no arrangement (B2)', () => {
-    it('no arrangement + open proposal: renders pay-open-proposal-row', async () => {
+    it('(e) no arrangement + her open proposal: the row, Review as the primary, and NO empty state under it', async () => {
       proposalRows = [openProposalRow];
 
-      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <PayArrangementScreen />
+      );
 
       await waitFor(() =>
-        expect(getByTestId('pay-empty-no-arrangement')).toBeTruthy()
+        expect(getByTestId('pay-open-proposal-row')).toBeTruthy()
       );
-      expect(getByTestId('pay-open-proposal-row')).toBeTruthy();
-    });
-
-    it('no arrangement + open proposal: empty-state CTA routes to the proposal, not setup', async () => {
-      proposalRows = [openProposalRow];
-
-      const { getByTestId, getByLabelText, queryByLabelText } =
-        renderWithProviders(<PayArrangementScreen />);
-
-      await waitFor(() =>
-        expect(getByTestId('pay-empty-no-arrangement')).toBeTruthy()
+      expect(queryByTestId('pay-empty-no-arrangement')).toBeNull();
+      expect(getByTestId('pay-open-proposal-review').props.variant).toBe(
+        'secondary'
       );
-      expect(queryByLabelText('setPayTermsAction')).toBeNull();
-      fireEvent.press(getByLabelText('reviewProposedTermsAction'));
+      fireEvent.press(getByTestId('pay-open-proposal-review'));
       // Aligned to `proposalReviewHref` (F16) — same destination a push
       // notification for this proposal resolves to.
       expect(routerPush).toHaveBeenCalledWith(
         `/(private)/pay/proposal/${openProposalRow.id}`
       );
-      expect(routerPush).not.toHaveBeenCalledWith(
-        `/settings/pay/setup/${NANNY_A_ID}`
+    });
+
+    it('(d) no arrangement + a round the parent sent: the receipt and NO empty state', async () => {
+      proposalRows = [
+        {
+          ...openProposalRow,
+          direction: 'parent',
+          proposed_by: PARENT_USER_ID,
+        },
+      ];
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <PayArrangementScreen />
       );
+
+      await waitFor(() =>
+        expect(getByTestId('pay-terms-receipt')).toBeTruthy()
+      );
+      expect(queryByTestId('pay-empty-no-arrangement')).toBeNull();
+    });
+
+    it('(b) agreed terms that start later: the terms card with "Starts", never the empty state or a scheduled card', async () => {
+      const startsISO = new Date(Date.now() + 3 * 86_400_000)
+        .toISOString()
+        .slice(0, 10);
+      payHistoryMock.mockImplementation(() =>
+        Promise.resolve([
+          { ...arrangementFor(NANNY_A_ID), valid_from: startsISO },
+        ])
+      );
+
+      const { getByTestId, queryByTestId } = renderWithProviders(
+        <PayArrangementScreen />
+      );
+
+      await waitFor(() =>
+        expect(getByTestId('pay-current-terms-card')).toBeTruthy()
+      );
+      expect(getByTestId('pay-terms-starts-on')).toBeTruthy();
+      expect(getByTestId('pay-current-rate')).toBeTruthy();
+      expect(queryByTestId('pay-terms-in-effect-since')).toBeNull();
+      expect(queryByTestId('pay-empty-no-arrangement')).toBeNull();
+      expect(queryByTestId('pay-scheduled-change-card')).toBeNull();
     });
 
     it('no arrangement + NO open proposal: empty-state CTA still routes to setup with the original label', async () => {

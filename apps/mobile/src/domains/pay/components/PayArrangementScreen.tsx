@@ -20,10 +20,7 @@
  */
 
 import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/household.schema';
-import type {
-  CreatePayArrangementRequest,
-  PayArrangement,
-} from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
+import type { CreatePayArrangementRequest } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
 import { type Href, useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -79,7 +76,11 @@ import { proposalReviewHref } from '@/src/lib/notificationRouteMap';
 import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
 import { resolveAckState, seenAckAt } from '../utils/ackState';
-import { formatDisplayDateWithYear } from '../utils/payArrangementForm';
+import {
+  formatDisplayDateWithWeekday,
+  formatDisplayDateWithYear,
+} from '../utils/payArrangementForm';
+import { payTermsState } from '../utils/payTermsState';
 import {
   proposalHistoryLabel,
   proposalStateWord,
@@ -179,7 +180,6 @@ function CarerPayDetail({
   const router = useRouter();
   const current = useCurrentPayArrangement(householdId, carerId);
   const history = usePayArrangementHistory(householdId, carerId);
-  const acks = usePayArrangementAcks(householdId, carerId, current.data?.id);
   const proposeTerms = useProposeTerms(householdId, carerId);
   const cancelScheduled = useCancelScheduledPayArrangement(
     householdId,
@@ -195,6 +195,18 @@ function CarerPayDetail({
   // returns below, because `useWithdrawTerms` is a hook and an empty id
   // simply has nothing to withdraw.
   const openProposal = findOpenTermsProposal(proposals.data);
+  // Household-local "today" — called unconditionally (rules of hooks), BEFORE
+  // `current` is known to have settled.
+  const todayISO = localDateInZone(householdTimezone);
+  // ONE derivation of "what terms are there" (`payTermsState`): agreed terms
+  // that start tomorrow leave `current` null, and must still show.
+  const terms = payTermsState({
+    current: current.data,
+    history: history.data,
+    openProposal,
+    todayISO,
+  });
+  const acks = usePayArrangementAcks(householdId, carerId, terms.shown?.id);
   const withdrawTerms = useWithdrawTerms(openProposal?.id ?? '');
   // WP-G — the author's nudge. Same empty-id-is-inert shape as the
   // withdraw hook above, for the same reason: hooks cannot be conditional.
@@ -203,13 +215,10 @@ function CarerPayDetail({
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false);
   const elevation = useElevation();
 
-  // Household-local "today"'s year — called unconditionally (rules of
-  // hooks), BEFORE `current` is known to have settled. `hasEntitlement`
-  // reads `current.data` directly (not the later `arrangement` const, which
-  // doesn't exist yet at this point in the render) so the balance query
-  // only turns on once there is an entitlement to compute against
-  // (TIER0-CX-SPEC.md §5.2: "no entitlement -> no balance is computed").
-  const todayISO = localDateInZone(householdTimezone);
+  // `hasEntitlement` reads `current.data` directly (a future row has no
+  // balance yet) so the balance query only turns on once there is an
+  // entitlement in force to compute against (TIER0-CX-SPEC.md §5.2: "no
+  // entitlement -> no balance is computed").
   const currentYear = Number(todayISO.slice(0, 4));
   const hasEntitlement = current.data?.pto_entitlement_minutes_per_year != null;
   const balance = usePtoBalance(
@@ -226,7 +235,7 @@ function CarerPayDetail({
   // therefore `isPending` FOREVER, per TanStack Query v5) until there's an
   // arrangement/entitlement to ask about, and including either unconditionally
   // would pin the "no arrangement yet" empty state on a spinner forever.
-  const hasArrangement = !!current.data;
+  const hasArrangement = !!terms.shown;
   if (
     current.isPending ||
     history.isPending ||
@@ -254,7 +263,8 @@ function CarerPayDetail({
     );
   }
 
-  const arrangement = current.data;
+  const arrangement = terms.shown;
+  const startsLater = terms.kind === 'startsLater';
   // Resolved only once `current` has settled — the arrangement's stored
   // `carer_display_name` is the second link in the fallback chain (review
   // finding 8), and it isn't known any earlier than this.
@@ -337,9 +347,9 @@ function CarerPayDetail({
               : '',
           });
 
-  const scheduled: PayArrangement | undefined = (history.data ?? [])
-    .filter(row => row.valid_from > todayISO)
-    .at(-1);
+  // Only over a real `current` (state c): with nothing in force there is no
+  // "before" for its diff, and cancel-scheduled throws NOTHING_TO_REVERT_TO.
+  const scheduled = terms.scheduled;
 
   /**
    * P1: this SENDS A ROUND, it does not write terms. The success state is
@@ -428,7 +438,7 @@ function CarerPayDetail({
           />
           <Button
             testID="pay-open-proposal-review"
-            variant="ghost"
+            variant="secondary"
             className="self-start"
             onPress={goToOpenProposal}
           >
@@ -437,24 +447,22 @@ function CarerPayDetail({
         </View>
       ) : null}
       {!arrangement ? (
-        <View testID="pay-empty-no-arrangement">
-          <EmptyState
-            variant="inline"
-            image={illustrations.emptyPay}
-            title={t('noArrangementTitle')}
-            description={t('noArrangementDescription')}
-            action={() =>
-              openProposal
-                ? goToOpenProposal()
-                : router.push(`/settings/pay/setup/${carerId}` as Href)
-            }
-            actionLabel={
-              openProposal
-                ? t('reviewProposedTermsAction')
-                : t('setPayTermsAction')
-            }
-          />
-        </View>
+        // (f) only: an open round already rendered its receipt / row above,
+        // and an empty state under it would contradict it.
+        openProposal ? null : (
+          <View testID="pay-empty-no-arrangement">
+            <EmptyState
+              variant="inline"
+              image={illustrations.emptyPay}
+              title={t('noArrangementTitle')}
+              description={t('noArrangementDescription')}
+              action={() =>
+                router.push(`/settings/pay/setup/${carerId}` as Href)
+              }
+              actionLabel={t('setPayTermsAction')}
+            />
+          </View>
+        )
       ) : (
         <>
           {scheduled ? (
@@ -483,11 +491,27 @@ function CarerPayDetail({
                 </Small>
               ) : null}
               <View className="flex-row flex-wrap items-center gap-2">
-                <Small className="text-muted-foreground">
-                  {t('inEffectSince', {
-                    date: formatDisplayDateWithYear(arrangement.valid_from),
-                  })}
-                </Small>
+                {startsLater ? (
+                  <Small
+                    testID="pay-terms-starts-on"
+                    className="text-muted-foreground"
+                  >
+                    {t('startsOn', {
+                      date: formatDisplayDateWithWeekday(
+                        arrangement.valid_from
+                      ),
+                    })}
+                  </Small>
+                ) : (
+                  <Small
+                    testID="pay-terms-in-effect-since"
+                    className="text-muted-foreground"
+                  >
+                    {t('inEffectSince', {
+                      date: formatDisplayDateWithYear(arrangement.valid_from),
+                    })}
+                  </Small>
+                )}
                 <StatusPill
                   testID="pay-ack-pill"
                   variant={ackPill.variant}
@@ -638,6 +662,8 @@ function CarerPayDetail({
             }
             counterpartyName={carerName}
             currentArrangement={arrangement}
+            rateInEffect={!startsLater}
+            supersedesOpenProposal={!!openProposal}
             householdCancellationDefaultHours={
               householdCancellationDefaultHours
             }

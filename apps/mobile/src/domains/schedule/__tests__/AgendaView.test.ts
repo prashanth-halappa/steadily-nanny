@@ -208,9 +208,13 @@ describe('AgendaView source', () => {
   });
 
   it('the "hours wrong" action is a ghost Button, not a bare Pressable (SchedulePatternBanner.tsx:222-234)', () => {
-    expect(agendaSource).toContain('variant="ghost"');
+    // The one hours action (in the explainer) is a ghost Button. The file may
+    // import Pressable now — the awaiting row is a whole-row press target —
+    // but never as a bare `<Pressable>` wrapping coloured text.
+    expect(agendaSource).toMatch(
+      /<Button\s+testID="schedule-uncovered-hours-explainer"\s+variant="ghost"/
+    );
     expect(agendaSource).not.toContain('<Pressable');
-    expect(agendaSource).not.toContain("Pressable, View } from 'react-native'");
   });
 
   it('REGRESSION: the 3px accent bar and its ROW_RADIUS constant are retired (docs/design/01-LAWS.md) — the pending pill alone carries the message', () => {

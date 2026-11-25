@@ -19,10 +19,9 @@ export class ShiftChangeRequestController {
         shiftId,
         req.body
       );
-      return sendSuccessResponse(res, 'Change request created', {
-        status: result.status,
-        shift_change_request: result.shift_change_request,
-      });
+      // `status: 'applied'` = a no-fee cancel the server applied straight
+      // away; the cancelled shift rides along.
+      return sendSuccessResponse(res, 'Change request created', result);
     } catch (error) {
       return next(error);
     }

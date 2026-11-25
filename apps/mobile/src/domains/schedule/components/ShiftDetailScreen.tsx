@@ -92,10 +92,10 @@ import { useWithdrawChangeRequest } from '@/src/hooks/mutations/useWithdrawChang
 import { useWithdrawCoverAsk } from '@/src/hooks/mutations/useWithdrawCoverAsk';
 import { useCanWriteHousehold } from '@/src/hooks/queries/useCanWriteHousehold';
 import { useChildren } from '@/src/hooks/queries/useChildren';
-import { useCurrentPayArrangement } from '@/src/hooks/queries/useCurrentPayArrangement';
 import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { useHouseholds } from '@/src/hooks/queries/useHouseholds';
 import { useIsOnboarded } from '@/src/hooks/queries/useIsOnboarded';
+import { usePayArrangementOn } from '@/src/hooks/queries/usePayArrangementOn';
 import { useRestrictedAction } from '@/src/hooks/queries/useRestrictedAction';
 import { useShift } from '@/src/hooks/queries/useShift';
 import { useShiftChangeRequests } from '@/src/hooks/queries/useShiftChangeRequests';
@@ -201,14 +201,26 @@ export function ShiftDetailScreen() {
   const withdrawChange = useWithdrawChangeRequest();
   const changeRequests = useShiftChangeRequests(shiftId);
   const withdrawCoverAsk = useWithdrawCoverAsk();
+  const households = useHouseholds();
   // The carer's own arrangement — the ONE cancellation window in the product
   // (§6.1 / D21). `households.cancellation_paid_within_hours` is deprecated
-  // and is never consulted here.
-  const payArrangement = useCurrentPayArrangement(
-    shiftQuery.data?.household_id,
-    shiftQuery.data?.carer_id
+  // and is never consulted here. It is the arrangement effective on the
+  // SHIFT's household-local date, the same row the server prices the cancel
+  // with (`cancelArrangementFor`), never today's: terms accepted today that
+  // start tomorrow must price tomorrow's shift.
+  const shiftHousehold = households.data?.find(
+    h => h.id === shiftQuery.data?.household_id
   );
-  const households = useHouseholds();
+  const payArrangement = usePayArrangementOn(
+    shiftQuery.data?.household_id,
+    shiftQuery.data?.carer_id,
+    shiftQuery.data && shiftHousehold
+      ? localDateInZone(
+          shiftHousehold.timezone,
+          new Date(shiftQuery.data.starts_at)
+        )
+      : undefined
+  );
   const cancelRestriction = useRestrictedAction({
     householdId: shiftQuery.data?.household_id,
     action: t('detail.restrictedActionCancelShift'),
@@ -443,15 +455,24 @@ export function ShiftDetailScreen() {
         amount: cancelPay.amount,
       })
     : null;
-  // S14: there is no direct cancel endpoint. Pressing the button opens a
-  // request, and a dialog that reads like the shift is already cancelled
-  // misrepresents what the button does — so this sentence is in every variant.
+  // No fee → the server cancels straight away and tells the carer (it
+  // re-prices with the same arrangement, so this copy and the outcome agree).
+  // Paid → it opens a request (S14), and the copy says the carer must accept.
+  // Pending → we don't know which yet, so say only what is true either way.
+  const cancelIsInstant =
+    cancelPay.variant !== 'paid' && cancelPay.variant !== 'pending';
+  const carerName = nameFor(shift.carer_id);
   const cancelDialogBody = [
     cancelPaySentence,
-    t('detail.cancelNeedsAccept', { name: nameFor(shift.carer_id) }),
+    cancelPay.variant === 'pending'
+      ? t('detail.cancelTellsCarer', { name: carerName })
+      : cancelIsInstant
+        ? t('detail.cancelInstant', { name: carerName })
+        : t('detail.cancelNeedsAccept', { name: carerName }),
   ]
     .filter(Boolean)
     .join(' ');
+  const cancelRequests = cancelPay.variant === 'paid';
 
   // S4 §7. The server gates a co-parent's cancel ONLY when the shift is short
   // notice (`shiftChangeRequestCommandService.create`), so this mirrors that
@@ -752,7 +773,11 @@ export function ShiftDetailScreen() {
                 testID="shift-detail-cancel"
                 variant="outline"
                 size="default"
-                label={t('detail.cancelShift')}
+                label={t(
+                  cancelRequests
+                    ? 'detail.cancelShift'
+                    : 'detail.cancelShiftNow'
+                )}
                 reason={cancelReason ?? closedReason}
                 disabled={createChange.isPending || canWriteHousehold.isLoading}
                 onPress={() => setCancelConfirmOpen(true)}
@@ -765,7 +790,11 @@ export function ShiftDetailScreen() {
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>
-                    {t('today:shiftDetail.cancelConfirmTitle')}
+                    {t(
+                      cancelRequests
+                        ? 'today:shiftDetail.cancelConfirmTitle'
+                        : 'detail.cancelNowTitle'
+                    )}
                   </AlertDialogTitle>
                   <AlertDialogDescription testID="shift-detail-cancel-body">
                     {cancelDialogBody}
@@ -784,11 +813,19 @@ export function ShiftDetailScreen() {
                       setCancelConfirmOpen(false);
                       void createChange.mutateAsync({
                         shiftId: shift.id,
-                        input: { kind: 'cancel' },
+                        // The SERVER decides: unpaid → applied now, paid →
+                        // a request. The toast reports which happened.
+                        input: { kind: 'cancel', cancel_now_if_unpaid: true },
                       });
                     }}
                   >
-                    <Text>{t('today:shiftDetail.cancelConfirmConfirm')}</Text>
+                    <Text>
+                      {t(
+                        cancelRequests
+                          ? 'today:shiftDetail.cancelConfirmConfirm'
+                          : 'detail.cancelShiftNow'
+                      )}
+                    </Text>
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
