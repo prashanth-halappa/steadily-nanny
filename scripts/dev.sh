@@ -62,8 +62,11 @@ case "$MODE" in
       echo "refusing: apps/api/.dev.vars.proddata is missing" >&2
       exit 1
     fi
+    # --remote: the local code runs on Cloudflare's edge (a preview, not a
+    # deploy) because Apple's JWKS endpoint answers the local workerd runtime
+    # with 403, so Sign in with Apple can only verify from the edge.
     # No --test-scheduled: jobs must not be fireable at production data from here.
-    start_api --env proddata --var "BETTER_AUTH_URL:http://$LAN_IP:$API_PORT"
+    start_api --remote --env proddata --var "BETTER_AUTH_URL:http://$LAN_IP:$API_PORT"
     API_URL="$LOCAL_API_URL"
     DATA="PRODUCTION D1 — writes are real"
     ;;

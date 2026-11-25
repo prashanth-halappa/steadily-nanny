@@ -60,8 +60,9 @@
     "crons": ["* * * * *"]
   },
 
-  // `bun run devapp-devapi-proddata` ONLY: local API code (`wrangler dev --env
-  // proddata`) over the PRODUCTION D1 via a remote binding. Secrets come from
+  // `bun run devapp-devapi-proddata` ONLY: local API code run on the edge
+  // (`wrangler dev --remote --env proddata`) over the PRODUCTION D1. Remote, not
+  // local workerd, because Apple's JWKS endpoint 403s the local runtime. Secrets come from
   // .dev.vars.proddata (wrangler picks it over .dev.vars for this env).
   // Never deploy this env: no routes, no workers.dev, no crons — so a stray
   // `wrangler deploy --env proddata` can't take traffic or run jobs. `define`,
