@@ -2,7 +2,7 @@
   "name": "Steadily Nanny",
   "slug": "steadily-nanny",
   "scheme": "steadilynanny",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "runtimeVersion": "1.0.0",
   "owner": "jetto",
   "associatedDomain": "nanny.getsteadily.app",
