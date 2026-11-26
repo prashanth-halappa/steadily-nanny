@@ -7,6 +7,11 @@
 # prebuilt tarballs from Pods/hermes-engine-artifacts/) breaks Release
 # builds: RN 0.86's "[Hermes] Replace Hermes" phase wipes Pods/hermes-engine
 # and fails to re-extract the missing release tarball.
+# The native projects are generated (gitignored) and go stale: a local
+# prebuild for a simulator run froze CFBundleShortVersionString at 1.0.0 and
+# EAS built from it, ignoring app.config's version. Always prebuild on EAS.
+apps/mobile/ios/
+apps/mobile/android/
 apps/mobile/ios/Pods/
 
 # EAS reads ONLY this root file in the monorepo (apps/mobile/.easignore is not
