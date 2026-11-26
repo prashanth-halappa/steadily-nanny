@@ -35,6 +35,8 @@
 
 import { PUSH_NOTIFICATION_TYPES } from '@steadily-nanny/shared-types/schemas/notification.schema';
 import { CreatePayArrangementRequestSchema } from '@steadily-nanny/shared-types/schemas/payArrangement.schema';
+import { PAY_ARRANGEMENT_ACK_KINDS } from '@steadily-nanny/shared-types/schemas/payArrangementAck.schema';
+import { logger } from '../../../middlewares/logger';
 import {
   HouseholdMemberRepository,
   HouseholdRepository,
@@ -45,6 +47,7 @@ import {
   notifyUser,
 } from '../../notification/services/householdPush';
 import type { PushPayload } from '../../notification/types';
+import { PayArrangementAckRepository } from '../../pay/repositories/payArrangementAckRepository';
 import { payArrangementCommandService } from '../../pay/services/payArrangementCommandService';
 import type { CreatePayArrangementRequest } from '../../pay/types';
 import { localDateOf } from '../../timesheet/utils/weekStart';
@@ -183,7 +186,11 @@ export class TermsProposalCommandService {
     },
     private readonly arrangements: ArrangementCreator = payArrangementCommandService,
     private readonly candidates: CandidateActivator | null = new HouseholdMemberRepository(),
-    private readonly reminderLog: ReminderLedger = new ReminderLogRepository()
+    private readonly reminderLog: ReminderLedger = new ReminderLogRepository(),
+    private readonly acks: Pick<
+      PayArrangementAckRepository,
+      'create'
+    > = new PayArrangementAckRepository()
   ) {}
 
   /**
@@ -356,6 +363,29 @@ export class TermsProposalCommandService {
     });
     if (!accepted) {
       throw new TermsProposalNotActionableError(proposalId, 'lost_race');
+    }
+
+    // ACCEPTING IS READING. Whichever side tapped Agree, the carer has read
+    // these terms: she accepted the family's round, or they are her own round
+    // the family accepted. Record her `seen` ack so "Not read yet" can never
+    // sit on agreed terms. Idempotent (the unique key makes a repeat a no-op)
+    // and best-effort: the acceptance is committed by now, and failing the
+    // request over a receipt would report a bound agreement as not made. The
+    // client also reads an accepted round as read, so a miss here still
+    // renders correctly.
+    try {
+      await this.acks.create({
+        arrangement_id: arrangement.id,
+        carer_id: carerId,
+        kind: PAY_ARRANGEMENT_ACK_KINDS.SEEN,
+        note: null,
+      });
+    } catch (error) {
+      logger.error('Failed to record the seen ack on acceptance', {
+        proposalId,
+        arrangementId: arrangement.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
 
     this.notifyOfAcceptance(accepted, side.kind);

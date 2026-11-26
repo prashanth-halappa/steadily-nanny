@@ -15,7 +15,7 @@
  *
  * @module tests/unit/domains/termsProposal/services/termsProposalCommandService.accept
  */
-import { describe, expect, it, spyOn } from 'bun:test';
+import { describe, expect, it, mock, spyOn } from 'bun:test';
 import { HouseholdMemberRepository } from '../../../../../src/domains/household';
 import { TermsProposalCommandService } from '../../../../../src/domains/termsProposal/services/termsProposalCommandService';
 import {
@@ -58,6 +58,7 @@ function service(
     push?: any;
     arrangements?: any;
     candidates?: any;
+    acks?: any;
   } = {}
 ): any {
   return new TermsProposalCommandService(
@@ -72,8 +73,14 @@ function service(
     makeUserService(),
     parts.push ?? makePush(),
     parts.arrangements ?? makeArrangements(),
-    parts.candidates ?? makeCandidates()
+    parts.candidates ?? makeCandidates(),
+    undefined,
+    parts.acks ?? makeAcks()
   );
+}
+
+function makeAcks(overrides: Record<string, unknown> = {}): any {
+  return { create: mock(async () => ({ id: 'ack-1' })), ...overrides };
 }
 
 describe('TermsProposalCommandService.accept — the arrangement goes through the existing service', () => {
@@ -460,5 +467,64 @@ describe('TermsProposalCommandService.accept — the counterparty answers, eithe
       'pay_arrangements insert failed'
     );
     expect(proposalRepo.resolve).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Accepting is reading. An arrangement that comes from an accepted round was
+ * read by the carer either way: she accepted the family's terms, or the
+ * terms are her own round the family accepted. Recording her `seen` ack on
+ * the acceptance keeps "Not read yet" from ever showing on agreed terms.
+ */
+describe('TermsProposalCommandService.accept — records the carer`s seen ack', () => {
+  it('a carer accepting a parent round records her seen ack on the new arrangement', async () => {
+    const acks = makeAcks();
+    const svc = service({
+      acks,
+      proposalRepo: makeProposalRepo({ findById: async () => parentRound() }),
+    });
+    await svc.accept(CARER_ID, PROPOSAL_ID, CONFIRMED);
+    expect(acks.create).toHaveBeenCalledWith({
+      arrangement_id: 'arrangement-1',
+      carer_id: CARER_ID,
+      kind: 'seen',
+      note: null,
+    });
+  });
+
+  it('a parent accepting the carer`s own round records the carer`s seen ack too', async () => {
+    const acks = makeAcks();
+    const svc = service({ acks });
+    await svc.accept(PARENT_ID, PROPOSAL_ID, CONFIRMED);
+    expect(acks.create).toHaveBeenCalledWith(
+      expect.objectContaining({ carer_id: CARER_ID, kind: 'seen' })
+    );
+  });
+
+  it('a failed ack write never fails an acceptance that already committed', async () => {
+    const acks = makeAcks({
+      create: async () => {
+        throw new Error('ack insert failed');
+      },
+    });
+    const svc = service({ acks });
+    const accepted = await svc.accept(PARENT_ID, PROPOSAL_ID, CONFIRMED);
+    expect(accepted.status).toBe('accepted');
+  });
+
+  it('no ack when the arrangement insert throws', async () => {
+    const acks = makeAcks();
+    const svc = service({
+      acks,
+      arrangements: makeArrangements({
+        create: async () => {
+          throw new Error('boom');
+        },
+      }),
+    });
+    await expect(
+      svc.accept(PARENT_ID, PROPOSAL_ID, CONFIRMED)
+    ).rejects.toThrow();
+    expect(acks.create).not.toHaveBeenCalled();
   });
 });

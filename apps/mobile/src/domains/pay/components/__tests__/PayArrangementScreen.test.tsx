@@ -1215,6 +1215,29 @@ describe('PayArrangementScreen', () => {
       );
     });
 
+    it('accepting is reading: terms an accepted round created read as seen with no ack row', async () => {
+      proposalRows = [
+        {
+          ...openProposalRow,
+          id: 'prop-accepted',
+          direction: 'parent',
+          proposed_by: PARENT_USER_ID,
+          status: 'accepted',
+          responded_at: '2026-11-25T17:56:12.000Z',
+          accepted_by: NANNY_A_ID,
+          accepted_arrangement_id: `arr-${NANNY_A_ID}`,
+        },
+      ];
+
+      const { getByTestId } = renderWithProviders(<PayArrangementScreen />);
+
+      await waitFor(() =>
+        expect(getByTestId('pay-ack-pill-label').props.children).toBe(
+          'ack.seen'
+        )
+      );
+    });
+
     it('a seen row: the pill reads the seen state', async () => {
       listAcksMock.mockImplementation(() =>
         Promise.resolve([ackRow('seen', '2026-08-11T09:00:00.000Z')])

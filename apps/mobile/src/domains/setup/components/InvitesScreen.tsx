@@ -38,9 +38,11 @@ import { LoadingIndicator } from '@/src/components/ui/loading-indicator';
 import { Text } from '@/src/components/ui/text';
 import { Body, DayGroup } from '@/src/components/ui/typography';
 import { InviteRow } from '@/src/domains/draft';
+import { resolveCarerName } from '@/src/domains/schedule/utils/memberDisplayName';
 import { useRevokeInvite } from '@/src/hooks/mutations/useRevokeInvite';
 import { useActiveHousehold } from '@/src/hooks/queries/useActiveHousehold';
 import { useHouseholdInvites } from '@/src/hooks/queries/useHouseholdInvites';
+import { useHouseholdMembers } from '@/src/hooks/queries/useHouseholdMembers';
 import { InviteCodeCard } from './InviteCodeCard';
 import { SetupScreenShell } from './SetupScreenShell';
 
@@ -57,6 +59,17 @@ export function InvitesScreen() {
 
   const invitesQuery = useHouseholdInvites(householdId);
   const revokeInvite = useRevokeInvite(householdId ?? '');
+
+  // Who joined with a used code. A member who has since left isn't in this
+  // list, so their row falls back to "No label".
+  const membersQuery = useHouseholdMembers(householdId);
+  const joinerName = (invite: HouseholdInvite): string | null => {
+    if (!invite.accepted_by) return null;
+    const member = membersQuery.data?.find(
+      m => m.user_id === invite.accepted_by
+    );
+    return member ? resolveCarerName(member, '') || null : null;
+  };
 
   const invites = useMemo(() => invitesQuery.data ?? [], [invitesQuery.data]);
   const waiting = invites.filter(isWaiting);
@@ -155,6 +168,7 @@ export function InvitesScreen() {
                 onRevoke={() => revokeInvite.mutate(invite.id)}
                 isRevoking={revokeInvite.isPending}
                 isRevokeError={revokeInvite.isError}
+                joinerName={joinerName(invite)}
                 currency={household?.currency}
               />
             ))}

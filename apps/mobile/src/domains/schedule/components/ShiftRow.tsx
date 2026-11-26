@@ -13,6 +13,7 @@ import { type Href, useRouter } from 'expo-router';
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Pressable, View } from 'react-native';
+import { remapChildSwatch } from '@/lib/design-tokens/palette';
 import { cn } from '@/lib/utils';
 import { ChildChip } from '@/src/components/ui/child-chip';
 import { LiveDot } from '@/src/components/ui/live-dot';
@@ -231,13 +232,41 @@ export function ShiftRow({
   );
 
   if (isParentCover) {
+    // ONE line (user, 2026-11-25): "7:45 AM – 9:00 AM · You're covering",
+    // muted. A single child rides as its colour dot (named for screen
+    // readers); several children are dropped rather than wrap the row.
+    const onlyChild = childChips?.length === 1 ? childChips[0] : null;
+    const dotColour = onlyChild?.colour
+      ? remapChildSwatch(onlyChild.colour)
+      : null;
     return (
       <View
         testID={`schedule-shift-${shift.id}`}
         accessibilityRole="text"
         className="relative mx-5.5 mb-2 flex-row items-center justify-between gap-2 rounded-row bg-muted p-3"
       >
-        {rowBody}
+        <View className="min-w-0 flex-1 flex-row items-center gap-1.5">
+          {onlyChild && dotColour ? (
+            <View
+              testID={`schedule-shift-child-${onlyChild.id}`}
+              accessibilityLabel={onlyChild.name}
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 4,
+                backgroundColor: dotColour,
+              }}
+            />
+          ) : null}
+          <Body
+            testID={`schedule-shift-line-${shift.id}`}
+            tabular
+            numberOfLines={1}
+            className="flex-1 text-muted-foreground"
+          >
+            {`${formatShiftTime(shift.starts_at, displayTimeZone)} – ${formatShiftTime(shift.ends_at, displayTimeZone)} · ${parentCoverLabel}`}
+          </Body>
+        </View>
         {showParentCoverUndo ? (
           <View>
             <Pressable

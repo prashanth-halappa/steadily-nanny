@@ -61,6 +61,7 @@
       "viewed": "opened {{date}}, not answered",
       "joined": "joined {{date}}"
     },
+    "joinedBy": "Joined by {{name}}",
     "moreOptions": "More options for {{name}}"
   },
   "rowMenu": {

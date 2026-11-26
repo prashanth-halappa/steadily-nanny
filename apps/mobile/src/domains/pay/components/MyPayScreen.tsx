@@ -92,7 +92,12 @@ import { localDateInZone } from '@/src/lib/localDate';
 import { formatMoney } from '@/src/lib/money';
 import { proposalReviewHref } from '@/src/lib/notificationRouteMap';
 import { useAuthStore } from '@/src/store/auth';
-import { hasSeenAck, resolveAckState, seenAckAt } from '../utils/ackState';
+import {
+  acksWithAcceptance,
+  hasSeenAck,
+  resolveAckState,
+  seenAckAt,
+} from '../utils/ackState';
 import {
   formatDisplayDateWithWeekday,
   formatDisplayDateWithYear,
@@ -241,7 +246,14 @@ function MyPayHouseholdCard({
   // F18 — the same scheduled card `PayArrangementScreen` uses, read-only
   // here (no `canManage`). Only over terms in force (state c).
   const scheduled = terms.scheduled;
-  const ackState = resolveAckState(acks.data);
+  // Accepting is reading (`acksWithAcceptance`), for DISPLAY only: the
+  // auto-ack below still reads the raw rows, so it writes the real one.
+  const displayAcks = acksWithAcceptance(
+    acks.data,
+    arrangement?.id,
+    proposals.data
+  );
+  const ackState = resolveAckState(displayAcks);
   const _previous = arrangement
     ? previousVersion(history.data, arrangement.id)
     : null;
@@ -254,7 +266,7 @@ function MyPayHouseholdCard({
   // The two dates are independent facts and are read independently: a
   // disagreement must never swallow the date she read them (§8.4 outranks
   // the WORD, not the row).
-  const seenAt = seenAckAt(acks.data);
+  const seenAt = seenAckAt(displayAcks);
   const seenDate = seenAt ? cardDate(seenAt) : null;
   const disagreedDate =
     ackState.kind === 'disagreed' ? cardDate(ackState.createdAt) : null;
@@ -505,11 +517,13 @@ function MyPayHouseholdCard({
                     />
                   ) : (
                     <>
-                      <StatusPill
-                        variant="confirmed"
-                        label={ackStateWord}
-                        testID={`my-pay-ack-state-${household.id}`}
-                      />
+                      {proposals.isPending ? null : (
+                        <StatusPill
+                          variant="confirmed"
+                          label={ackStateWord}
+                          testID={`my-pay-ack-state-${household.id}`}
+                        />
+                      )}
                       {/* Its own line, never a replacement for the one above:
                         both are true at once, and hiding either is the
                         contradiction a nanny read as the app losing her tap. */}

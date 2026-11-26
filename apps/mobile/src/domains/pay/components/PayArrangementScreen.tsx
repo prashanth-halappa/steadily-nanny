@@ -75,7 +75,11 @@ import { formatMoney, formatRate } from '@/src/lib/money';
 import { proposalReviewHref } from '@/src/lib/notificationRouteMap';
 import { useAuthStore } from '@/src/store/auth';
 import { useElevation } from '~/lib/design-tokens/elevation';
-import { resolveAckState, seenAckAt } from '../utils/ackState';
+import {
+  acksWithAcceptance,
+  resolveAckState,
+  seenAckAt,
+} from '../utils/ackState';
 import {
   formatDisplayDateWithWeekday,
   formatDisplayDateWithYear,
@@ -274,7 +278,14 @@ function CarerPayDetail({
     arrangement?.carer_display_name
   );
 
-  const ackState = resolveAckState(acks.data);
+  // Accepting is reading (`acksWithAcceptance`): terms an accepted round
+  // created read as seen even where no ack row exists yet.
+  const displayAcks = acksWithAcceptance(
+    acks.data,
+    arrangement?.id,
+    proposals.data
+  );
+  const ackState = resolveAckState(displayAcks);
   const ackDate =
     ackState.kind === 'none'
       ? null
@@ -302,7 +313,7 @@ function CarerPayDetail({
   // nanny, since a later disagreement outranks 'seen' for the WORD but must
   // never erase the date she read it. `seenAckAt` is the ungated read;
   // `MyPayScreen` already uses it for the same reason.
-  const seenAt = seenAckAt(acks.data);
+  const seenAt = seenAckAt(displayAcks);
   const seenDate = seenAt
     ? formatDisplayDateWithYear(
         localDateInZone(householdTimezone, new Date(seenAt))
@@ -512,11 +523,15 @@ function CarerPayDetail({
                     })}
                   </Small>
                 )}
-                <StatusPill
-                  testID="pay-ack-pill"
-                  variant={ackPill.variant}
-                  label={ackPill.label}
-                />
+                {/* The acceptance is part of the answer, so no pill until
+                    the rounds have loaded (an unloaded read states no fact). */}
+                {proposals.isPending ? null : (
+                  <StatusPill
+                    testID="pay-ack-pill"
+                    variant={ackPill.variant}
+                    label={ackPill.label}
+                  />
+                )}
               </View>
               <View className="flex-row items-baseline gap-1">
                 <H1 testID="pay-current-rate" tabular>

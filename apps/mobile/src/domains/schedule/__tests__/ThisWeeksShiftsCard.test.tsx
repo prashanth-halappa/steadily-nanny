@@ -178,6 +178,26 @@ describe('ThisWeeksShiftsCard', () => {
     expect(mockPush).toHaveBeenCalledWith('/(private)/schedule/shifts');
   });
 
+  it("never lists the parent's own cover as the carer's next shift", () => {
+    // A parent_cover shift has no carer — it is the parent covering a gap.
+    // "Next up · Amara" over it would claim she is working it.
+    const parentCover = {
+      ...shift('shift-cover', AMARA_ID, '2099-08-05'),
+      kind: 'parent_cover',
+      carer_id: null,
+    };
+    mockUseShiftsRange.mockReturnValue({ data: [parentCover, ...SHIFTS] });
+    mockUseHouseholdMembers.mockReturnValue({
+      data: [member(AMARA_ID, 'Amara Okafor')],
+    });
+
+    const { getByTestId, queryByTestId } = render(<ThisWeeksShiftsCard />);
+
+    expect(queryByTestId('today-next-up-shift-cover')).toBeNull();
+    expect(getByTestId('today-next-up-shift-a')).toBeTruthy();
+    expect(getByTestId('today-next-up-shift-b')).toBeTruthy();
+  });
+
   it('one-carer household: names her once in the eyebrow, not on every row', () => {
     mockUseShiftsRange.mockReturnValue({ data: SHIFTS });
     mockUseHouseholdMembers.mockReturnValue({

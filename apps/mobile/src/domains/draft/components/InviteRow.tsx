@@ -51,6 +51,8 @@ interface InviteRowProps {
   isRevoking: boolean;
   isRevokeError: boolean;
   currency?: string;
+  /** Who joined with this code, when the caller can resolve them. */
+  joinerName?: string | null;
 }
 
 export function InviteRow({
@@ -63,6 +65,7 @@ export function InviteRow({
   isRevoking,
   isRevokeError,
   currency,
+  joinerName,
 }: InviteRowProps) {
   const { t } = useTranslation('draft');
   const [open, setOpen] = useState<OpenSheet>('none');
@@ -72,8 +75,15 @@ export function InviteRow({
     .map(entry =>
       t(`sentTo.timeline.${entry.key}`, { date: formatDateShort(entry.date) })
     )
+    .concat(
+      // A labelled code keeps its label as the title; the joiner goes in the
+      // meta line. An unlabelled one uses the joiner as the title instead.
+      invite.label && joinerName
+        ? [t('sentTo.joinedBy', { name: joinerName })]
+        : []
+    )
     .join(' · ');
-  const name = invite.label ?? t('sentTo.noLabel');
+  const name = invite.label ?? joinerName ?? t('sentTo.noLabel');
   // Nothing left to stop once it has been joined, revoked or run out.
   const canStop = state.variant === 'pending';
   const payOffer = invite.pay_offer;

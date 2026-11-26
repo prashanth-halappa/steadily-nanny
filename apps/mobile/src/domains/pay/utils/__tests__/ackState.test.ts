@@ -4,7 +4,13 @@
  * screens branch on.
  */
 import { describe, expect, it } from 'bun:test';
-import { hasSeenAck, resolveAckState, seenAckAt } from '../ackState';
+import type { TermsProposal } from '@steadily-nanny/shared-types/schemas/termsProposal.schema';
+import {
+  acksWithAcceptance,
+  hasSeenAck,
+  resolveAckState,
+  seenAckAt,
+} from '../ackState';
 
 const row = (
   kind: 'seen' | 'disagreed',
@@ -109,5 +115,60 @@ describe('hasSeenAck / seenAckAt', () => {
         row('seen', '2026-08-12T09:00:00.500+00:00'),
       ])
     ).toBe('2026-08-12T09:00:00.500+00:00');
+  });
+});
+
+/**
+ * Accepting is reading. Rows accepted before the server recorded a `seen`
+ * ack on acceptance (production: proposal f3c049f4 → arrangement 1d25a44e)
+ * must not read "Not read yet".
+ */
+describe('acksWithAcceptance', () => {
+  const ACCEPTED_AT = '2026-11-25T17:56:12.000Z';
+  const accepted = (over: Partial<TermsProposal> = {}) =>
+    ({
+      id: 'tp-1',
+      carer_id: 'nanny-1',
+      status: 'accepted',
+      responded_at: ACCEPTED_AT,
+      accepted_arrangement_id: 'arr-1',
+      ...over,
+    }) as unknown as TermsProposal;
+
+  it('an arrangement an accepted round created reads as seen on the acceptance instant', () => {
+    const acks = acksWithAcceptance([], 'arr-1', [accepted()]);
+    expect(resolveAckState(acks)).toEqual({
+      kind: 'seen',
+      createdAt: ACCEPTED_AT,
+    });
+    expect(seenAckAt(acks)).toBe(ACCEPTED_AT);
+  });
+
+  it('a real seen row wins, and nothing is added', () => {
+    const real = [row('seen', '2026-11-26T08:00:00.000Z')];
+    expect(acksWithAcceptance(real, 'arr-1', [accepted()])).toEqual(real);
+  });
+
+  it('a disagreement still outranks the acceptance', () => {
+    const acks = acksWithAcceptance(
+      [row('disagreed', '2026-11-26T08:00:00.000Z', 'Rate is wrong')],
+      'arr-1',
+      [accepted()]
+    );
+    expect(resolveAckState(acks).kind).toBe('disagreed');
+    expect(seenAckAt(acks)).toBe(ACCEPTED_AT);
+  });
+
+  it('only the row the round CREATED, never another arrangement or an open round', () => {
+    expect(acksWithAcceptance([], 'arr-2', [accepted()])).toEqual([]);
+    expect(
+      acksWithAcceptance([], 'arr-1', [accepted({ status: 'proposed' })])
+    ).toEqual([]);
+  });
+
+  it('still loading stays loading', () => {
+    expect(
+      acksWithAcceptance(undefined, 'arr-1', [accepted()])
+    ).toBeUndefined();
   });
 });

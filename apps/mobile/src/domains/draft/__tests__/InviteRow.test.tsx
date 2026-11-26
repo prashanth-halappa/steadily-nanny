@@ -46,6 +46,27 @@ describe('InviteRow', () => {
     expect(getByTestId('draft-invite-name').props.children).toBeTruthy();
   });
 
+  it('titles an unlabelled joined code with the joiner, not "No label"', () => {
+    const { getByTestId } = renderRow({
+      invite: makeInvite({ label: null, status: 'accepted' }),
+      joinerName: 'Andrea Sanchez',
+    });
+    expect(getByTestId('draft-invite-name').props.children).toBe(
+      'Andrea Sanchez'
+    );
+  });
+
+  it('keeps the label as the title and puts the joiner on the sub-line', () => {
+    const { getByTestId } = renderRow({
+      invite: makeInvite({ status: 'accepted' }),
+      joinerName: 'Andrea Sanchez',
+    });
+    expect(getByTestId('draft-invite-name').props.children).toBe('The Bakers');
+    expect(
+      String(getByTestId('draft-invite-timeline').props.children)
+    ).toContain('sentTo.joinedBy');
+  });
+
   it('renders one filled pill for the current state', () => {
     const { getByTestId } = renderRow({
       invite: makeInvite({ opened_at: '2026-08-11T08:00:00.000Z' }),

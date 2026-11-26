@@ -28,6 +28,7 @@
  */
 import type { PayArrangementAck } from '@steadily-nanny/shared-types/schemas/payArrangementAck.schema';
 import { PAY_ARRANGEMENT_ACK_KINDS } from '@steadily-nanny/shared-types/schemas/payArrangementAck.schema';
+import type { TermsProposal } from '@steadily-nanny/shared-types/schemas/termsProposal.schema';
 
 export type AckState =
   | { kind: 'none' }
@@ -85,4 +86,44 @@ export function resolveAckState(
 
   const seen = newestOfKind(acks, PAY_ARRANGEMENT_ACK_KINDS.SEEN);
   return seen ? { kind: 'seen', createdAt: seen.created_at } : { kind: 'none' };
+}
+
+/**
+ * ACCEPTING IS READING. The ack rows to DISPLAY for `arrangementId`: when an
+ * accepted round created exactly this row and no `seen` row exists, the
+ * acceptance stands in as one, dated when it was accepted. The carer read
+ * these terms either way: she accepted the family's round, or they are her
+ * own round the family accepted.
+ *
+ * The server records a real `seen` ack on acceptance now
+ * (`termsProposalCommandService.accept`); this covers rows accepted before
+ * that, without a backfill. Display only: anything that WRITES (the nanny's
+ * auto-ack) keeps reading the raw rows, so it still heals the data.
+ * `undefined` (still loading) stays `undefined`.
+ */
+export function acksWithAcceptance(
+  acks: readonly PayArrangementAck[] | undefined,
+  arrangementId: string | undefined,
+  proposals: readonly TermsProposal[] | undefined
+): PayArrangementAck[] | undefined {
+  if (!acks) return undefined;
+  if (hasSeenAck(acks)) return [...acks];
+  const acceptance = (proposals ?? []).find(
+    row =>
+      row.status === 'accepted' &&
+      row.accepted_arrangement_id === arrangementId &&
+      row.responded_at !== null
+  );
+  if (!acceptance?.responded_at || !arrangementId) return [...acks];
+  return [
+    ...acks,
+    {
+      id: `accepted-${acceptance.id}`,
+      arrangement_id: arrangementId,
+      carer_id: acceptance.carer_id,
+      kind: PAY_ARRANGEMENT_ACK_KINDS.SEEN,
+      note: null,
+      created_at: acceptance.responded_at,
+    },
+  ];
 }

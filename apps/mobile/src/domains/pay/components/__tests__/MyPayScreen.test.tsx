@@ -517,6 +517,30 @@ describe('MyPayScreen', () => {
       expect(ackMock).not.toHaveBeenCalled();
     });
 
+    it('accepting is reading: terms she accepted read as seen even before any ack row exists', async () => {
+      // The auto-ack write never resolves, so only the acceptance can say "seen".
+      ackMock.mockImplementation(() => new Promise(() => {}));
+      proposalRows = [
+        {
+          ...openProposal('parent-a'),
+          id: 'prop-accepted',
+          household_id: HOUSEHOLD_A,
+          status: 'accepted',
+          responded_at: '2026-11-25T17:56:12.000Z',
+          accepted_by: NANNY_ID,
+          accepted_arrangement_id: arrangementFor(HOUSEHOLD_A).id,
+        },
+      ];
+
+      const { getByTestId } = renderWithProviders(<MyPayScreen />);
+
+      await waitFor(() =>
+        expect(
+          getByTestId(`my-pay-ack-state-${HOUSEHOLD_A}-label`).props.children
+        ).toBe('ack.seenBy')
+      );
+    });
+
     it('never records before the ack list has loaded', async () => {
       listAcksMock.mockImplementation(() => new Promise(() => {}));
 

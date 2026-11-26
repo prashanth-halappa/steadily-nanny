@@ -61,6 +61,7 @@
       "viewed": "abierto el {{date}}, sin responder",
       "joined": "se unió el {{date}}"
     },
+    "joinedBy": "{{name}} se unió",
     "moreOptions": "Más opciones para {{name}}"
   },
   "rowMenu": {

@@ -13,7 +13,10 @@
  */
 import type { HouseholdMember } from '@steadily-nanny/shared-types/schemas/household.schema';
 import { SCHEDULE_PATTERN_STATUSES } from '@steadily-nanny/shared-types/schemas/schedule.schema';
-import type { Shift } from '@steadily-nanny/shared-types/schemas/shift.schema';
+import {
+  SHIFT_KINDS,
+  type Shift,
+} from '@steadily-nanny/shared-types/schemas/shift.schema';
 import { SCHEDULED_SHIFT_STATUSES } from '@steadily-nanny/shared-types/uncoveredCare';
 import { type Href, useRouter } from 'expo-router';
 import { useMemo } from 'react';
@@ -114,6 +117,9 @@ export function ThisWeeksShiftsCard() {
     return (shiftsQuery.data ?? [])
       .filter(
         s =>
+          // A parent's own cover is not a carer shift: listing it under
+          // "Next up · {carer}" claimed the nanny was working it.
+          s.kind !== SHIFT_KINDS.PARENT_COVER &&
           SCHEDULED_STATUS_SET.has(s.status) &&
           new Date(s.ends_at).getTime() >= now
       )

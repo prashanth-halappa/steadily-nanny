@@ -266,4 +266,56 @@ describe('ShiftRow', () => {
     expect(mockMutateAsync).toHaveBeenCalledTimes(1);
     expect(mockMutateAsync).toHaveBeenCalledWith({ shiftId: 'cover-1' });
   });
+
+  it('the parent-cover row is ONE line: "time · You\'re covering", one child as a dot, Undo on the right', () => {
+    const shift = makeShift({
+      id: 'cover-1',
+      kind: 'parent_cover',
+      status: 'confirmed',
+      created_by: 'parent-1',
+    });
+    const { getByTestId, queryByTestId, queryByText } = render(
+      <ShiftRow
+        {...defaultProps}
+        shift={shift}
+        currentUserId="parent-1"
+        showParentCoverUndo
+        assignedChildren={[{ id: 'child-1', name: 'Nia', colour: '#C08A3E' }]}
+      />
+    );
+
+    const line = getByTestId('schedule-shift-line-cover-1');
+    expect(line.props.numberOfLines).toBe(1);
+    expect(line.props.children).toBe(
+      `${formatShiftTime(shift.starts_at, TZ)} – ${formatShiftTime(shift.ends_at, TZ)} · cover.parentCoveringRow`
+    );
+    // One child: a colour dot, named for screen readers — not a chip line.
+    const dot = getByTestId('schedule-shift-child-child-1');
+    expect(dot.props.accessibilityLabel).toBe('Nia');
+    expect(queryByText('Nia')).toBeNull();
+    expect(queryByTestId('schedule-shift-children-cover-1')).toBeNull();
+    expect(getByTestId('schedule-parent-cover-undo-cover-1')).toBeTruthy();
+  });
+
+  it('a parent-cover row with several children drops them rather than wrap', () => {
+    const shift = makeShift({
+      id: 'cover-2',
+      kind: 'parent_cover',
+      status: 'confirmed',
+      created_by: 'parent-1',
+    });
+    const { queryByTestId } = render(
+      <ShiftRow
+        {...defaultProps}
+        shift={shift}
+        currentUserId="parent-1"
+        assignedChildren={[
+          { id: 'child-1', name: 'Nia', colour: '#C08A3E' },
+          { id: 'child-2', name: 'Leo', colour: null },
+        ]}
+      />
+    );
+    expect(queryByTestId('schedule-shift-children-cover-2')).toBeNull();
+    expect(queryByTestId('schedule-shift-child-child-1')).toBeNull();
+  });
 });
